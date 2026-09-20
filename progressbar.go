@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -41,16 +42,8 @@ func newProgressbar() *Progressbar {
 
 type Progressbar struct {
 	config
-
-	label          string
-	maxNum         int64
-	currentNum     int64
-	sinceRedrawNum int64
-	redrawAt       time.Time
-	startedAt      time.Time
-	rollingRates   []float64
-
-	maxWidth   int
+	progressState
+	label      string
 	increments chan int64
 	cancel     context.CancelFunc
 	io         *termIO
@@ -75,6 +68,9 @@ func (p *Progressbar) Close() error {
 }
 
 func (p *Progressbar) start(ctx context.Context) {
+	frame := bytes.NewBuffer(make([]byte, 2*p.io.Width))
+	frame.Reset()
+	var running bool
 	for {
 		select {
 		case <-ctx.Done():
@@ -90,15 +86,44 @@ func (p *Progressbar) start(ctx context.Context) {
 		case num := <-p.increments:
 			p.currentNum += num
 		case <-p.ticks:
-			p.redraw()
+			if running {
+				p.io.clear(1, frame)
+			}
+			frame.WriteByte('\r')
+			frame.WriteString(p.label)
+			frame.WriteString(" ")
+			p.redraw(p.now(), p.io.Width-len(p.label)-1)
+			running = true
 		}
 	}
 }
 
-func (p *Progressbar) redraw() {
+func (p *Progressbar) stop() error {
+	err := p.io.clear(1, p.io)
+	if err != nil {
+		return fmt.Errorf("clear: %w", err)
+	}
+	p.ticker.Stop()
+	err = p.io.Restore()
+	if err != nil {
+		return fmt.Errorf("restore: %w", err)
+	}
+	return nil
+}
+
+type progressState struct {
+	maxNum         int64
+	currentNum     int64
+	sinceRedrawNum int64
+	redrawAt       time.Time
+	startedAt      time.Time
+	rollingRates   []float64
+}
+
+func (p *progressState) redraw(now time.Time, width int) string {
 	increment := p.currentNum - p.sinceRedrawNum
 	p.sinceRedrawNum = p.currentNum
-	p.redrawAt = p.now()
+	p.redrawAt = now
 	elapsed := p.redrawAt.Sub(p.startedAt)
 	completionRate := float64(increment) / elapsed.Seconds()
 	p.rollingRates = append(p.rollingRates, completionRate)
@@ -110,15 +135,12 @@ func (p *Progressbar) redraw() {
 	if p.maxNum > 0 {
 		completion = float64(p.currentNum) / float64(p.maxNum)
 	}
-	width := 50
 	bar := p.filledBarLine(width, completion)
 	timeStr := p.remainingTime(rollingRate)
-	progressLine := fmt.Sprintf("%s %d%% %s %s", p.label, int(completion*100), bar, timeStr)
-	p.io.clear(1, p.io)
-	fmt.Fprintf(p.out, "%s\r", progressLine)
+	return fmt.Sprintf("%d%% %s %s", int(completion*100), bar, timeStr)
 }
 
-func (p *Progressbar) remainingTime(rollingRate float64) string {
+func (p *progressState) remainingTime(rollingRate float64) string {
 	remainingNum := p.maxNum - p.currentNum
 	remainingTime := time.Duration((1/rollingRate)*(float64(remainingNum))) * time.Second
 	if remainingTime.Seconds() < 0 {
@@ -137,10 +159,7 @@ func (p *Progressbar) remainingTime(rollingRate float64) string {
 	return timeStr
 }
 
-func (p *Progressbar) filledBarLine(width int, completion float64) string {
-	if p.maxWidth > 0 {
-		width = p.maxWidth
-	}
+func (p *progressState) filledBarLine(width int, completion float64) string {
 	filledWidth := int(float64(width) * completion)
 	if filledWidth > width {
 		filledWidth = width
@@ -159,7 +178,7 @@ func (p *Progressbar) filledBarLine(width int, completion float64) string {
 	return bar
 }
 
-func (p *Progressbar) rollingRate() float64 {
+func (p *progressState) rollingRate() float64 {
 	if len(p.rollingRates) == 0 {
 		return 0.0
 	}
@@ -168,19 +187,6 @@ func (p *Progressbar) rollingRate() float64 {
 		sum += rate
 	}
 	return sum / float64(len(p.rollingRates))
-}
-
-func (p *Progressbar) stop() error {
-	err := p.io.clear(1, p.io)
-	if err != nil {
-		return fmt.Errorf("clear: %w", err)
-	}
-	p.ticker.Stop()
-	err = p.io.Restore()
-	if err != nil {
-		return fmt.Errorf("restore: %w", err)
-	}
-	return nil
 }
 
 func NewFileProgressReader(r io.Reader, label string, opts ...opt) (*wrapReader, error) {
@@ -205,7 +211,6 @@ func NewFileProgressReader(r io.Reader, label string, opts ...opt) (*wrapReader,
 	if err != nil {
 		return nil, fmt.Errorf("restore: %w", err)
 	}
-	p.maxWidth = p.io.Width
 	p.label = label
 	p.startedAt = p.now()
 	go p.start(p.ctx)
