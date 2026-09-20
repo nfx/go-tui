@@ -317,6 +317,9 @@ func (w *wrapReader) Read(p []byte) (n int, err error) {
 	if n > 0 {
 		w.p.Add(int64(n))
 	}
+	if err == io.EOF {
+		w.p.cancel()
+	}
 	return n, err
 }
 
