@@ -58,6 +58,7 @@ type Progressbar struct {
 	ticker     *time.Ticker
 	ticks      <-chan time.Time
 	now        func() time.Time
+	err        error
 }
 
 func (p *Progressbar) Add(num int64) {
@@ -68,11 +69,23 @@ func (p *Progressbar) Add(num int64) {
 	}
 }
 
+func (p *Progressbar) Close() error {
+	p.cancel()
+	return p.err
+}
+
 func (p *Progressbar) start(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			p.stop()
+			err := p.stop()
+			if err != nil {
+				p.err = fmt.Errorf("stop: %w", err)
+			}
+			err = ctx.Err()
+			if err != nil && err != context.Canceled {
+				p.err = err
+			}
 			return
 		case num := <-p.increments:
 			p.currentNum += num
@@ -157,7 +170,92 @@ func (p *Progressbar) rollingRate() float64 {
 	return sum / float64(len(p.rollingRates))
 }
 
-func (p *Progressbar) stop() {
-	p.io.clear(1, p.io)
+func (p *Progressbar) stop() error {
+	err := p.io.clear(1, p.io)
+	if err != nil {
+		return fmt.Errorf("clear: %w", err)
+	}
 	p.ticker.Stop()
+	err = p.io.Restore()
+	if err != nil {
+		return fmt.Errorf("restore: %w", err)
+	}
+	return nil
+}
+
+func NewFileProgressReader(r io.Reader, label string, opts ...opt) (*wrapReader, error) {
+	p := newProgressbar()
+	for _, o := range opts {
+		err := o(p)
+		if err != nil {
+			return nil, fmt.Errorf("apply option: %w", err)
+		}
+	}
+	wrap := &wrapReader{r, p}
+	size, err := wrap.Size()
+	if err != nil {
+		return nil, fmt.Errorf("size: %w", err)
+	}
+	p.out = os.Stderr
+	p.label = label
+	p.maxNum = size
+	p.startedAt = p.now()
+	p.maxWidth = 50 // default width for the progress bar
+	p.io, err = p.makeTermIO(p.in, p.out)
+	if err != nil {
+		return nil, err
+	}
+	go p.start(p.ctx)
+	return wrap, nil
+}
+
+type fileStat interface {
+	Stat() (os.FileInfo, error)
+}
+
+type sized interface {
+	Size() int64
+}
+
+var errNoSize = fmt.Errorf("unable to determine size of reader")
+
+type wrapReader struct {
+	r io.Reader
+	p *Progressbar
+}
+
+func (w *wrapReader) Size() (int64, error) {
+	f, ok := w.r.(fileStat)
+	if ok {
+		fi, err := f.Stat()
+		if err != nil {
+			return 0, err
+		}
+		return fi.Size(), nil
+	}
+	s, ok := w.r.(sized)
+	if ok {
+		return s.Size(), nil
+	}
+	return 0, errNoSize
+}
+
+func (w *wrapReader) Read(p []byte) (n int, err error) {
+	n, err = w.r.Read(p)
+	if n > 0 {
+		w.p.Add(int64(n))
+	}
+	return n, err
+}
+
+func (w *wrapReader) Close() error {
+	err := w.p.Close()
+	if err != nil {
+		return fmt.Errorf("progress: %w", err)
+	}
+	closer, ok := w.r.(io.Closer)
+	if ok {
+		return closer.Close()
+	}
+	return nil
 }
