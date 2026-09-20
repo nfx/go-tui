@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -20,6 +21,13 @@ func progressbarOpt(o func(s *Progressbar) error) opt {
 		}
 		return o(s)
 	}
+}
+
+func WithFormatRate(f func(float64) string) opt {
+	return progressbarOpt(func(p *Progressbar) error {
+		p.fmtRate = f
+		return nil
+	})
 }
 
 func newProgressbar() *Progressbar {
@@ -68,17 +76,15 @@ func (p *Progressbar) Close() error {
 }
 
 func (p *Progressbar) start(ctx context.Context) {
+	defer p.stop()
 	frame := bytes.NewBuffer(make([]byte, 2*p.io.Width))
 	frame.Reset()
 	var running bool
+	labelWidth := width([]byte(p.label)) + 1
 	for {
 		select {
 		case <-ctx.Done():
-			err := p.stop()
-			if err != nil {
-				p.err = fmt.Errorf("stop: %w", err)
-			}
-			err = ctx.Err()
+			err := ctx.Err()
 			if err != nil && err != context.Canceled {
 				p.err = err
 			}
@@ -87,13 +93,30 @@ func (p *Progressbar) start(ctx context.Context) {
 			p.currentNum += num
 		case <-p.ticks:
 			if running {
-				p.io.clear(1, frame)
+				err := p.io.clear(1, frame)
+				if err != nil {
+					p.err = fmt.Errorf("clear: %w", err)
+				}
 			}
 			frame.WriteByte('\r')
 			frame.WriteString(p.label)
 			frame.WriteString(" ")
-			p.redraw(p.now(), p.io.Width-len(p.label)-1)
+			err := p.render(frame, p.io.Width-labelWidth, p.now())
+			if err != nil {
+				p.err = fmt.Errorf("redraw: %w", err)
+				return
+			}
+			frame.WriteByte('\n')
+			frame.WriteByte('\r')
+			_, err = frame.WriteTo(p.io)
+			if err != nil {
+				p.err = fmt.Errorf("redraw: %w", err)
+				return
+			}
 			running = true
+			if p.isDone() {
+				return
+			}
 		}
 	}
 }
@@ -118,45 +141,84 @@ type progressState struct {
 	redrawAt       time.Time
 	startedAt      time.Time
 	rollingRates   []float64
+	elapsed        time.Duration
+	fmtRate        func(float64) string
+	showEstimate   bool
+	showRate       bool
+	showElapsed    bool
 }
 
-func (p *progressState) redraw(now time.Time, width int) string {
+func (p *progressState) isDone() bool {
+	if p.maxNum <= 0 {
+		return false
+	}
+	return p.currentNum >= p.maxNum
+}
+
+func (p *progressState) render(frame *bytes.Buffer, width int, now time.Time) error {
 	increment := p.currentNum - p.sinceRedrawNum
-	p.sinceRedrawNum = p.currentNum
-	p.redrawAt = now
-	elapsed := p.redrawAt.Sub(p.startedAt)
-	completionRate := float64(increment) / elapsed.Seconds()
-	p.rollingRates = append(p.rollingRates, completionRate)
-	if len(p.rollingRates) > 10 {
-		p.rollingRates = p.rollingRates[1:] // keep only the last 10 rates
+	if increment > 0 {
+		p.sinceRedrawNum = p.currentNum
+		p.elapsed = p.redrawAt.Sub(p.startedAt)
+		since := now.Sub(p.redrawAt)
+		completionRate := float64(increment) / since.Seconds()
+		p.rollingRates = append(p.rollingRates, completionRate)
+		if len(p.rollingRates) > 5 {
+			p.rollingRates = p.rollingRates[1:] // keep only the last 10 rates
+		}
+		p.redrawAt = now
 	}
 	rollingRate := p.rollingRate()
 	completion := 0.0
 	if p.maxNum > 0 {
 		completion = float64(p.currentNum) / float64(p.maxNum)
 	}
-	bar := p.filledBarLine(width, completion)
-	timeStr := p.remainingTime(rollingRate)
-	return fmt.Sprintf("%d%% %s %s", int(completion*100), bar, timeStr)
+	tmp := frame.Len()
+	_, err := fmt.Fprintf(frame, "%d%% ", int(completion*100))
+	if err != nil {
+		return err
+	}
+	rightPad := frame.Len() - tmp
+	right := []string{}
+	if p.showRate {
+		if p.fmtRate == nil {
+			p.fmtRate = func(f float64) string { return fmt.Sprintf("%.2f", f) }
+		}
+		part := fmt.Sprintf("%s/s", p.fmtRate(rollingRate))
+		right = append(right, part)
+		rightPad += len(part) + 2 // `, `
+	}
+	if p.showEstimate {
+		part := p.remainingTime(rollingRate)
+		if part != "" {
+			right = append(right, part)
+			rightPad += len(part) + 2 // `, `
+		}
+	}
+	if p.showElapsed {
+		part := fmt.Sprintf("%s elapsed", p.elapsed.Truncate(time.Second))
+		right = append(right, part)
+		rightPad += len(part) + 2 // `, `
+	}
+	bar := p.filledBarLine(width-rightPad-3, completion)
+	_, err = fmt.Fprint(frame, bar)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(frame, " (%s)", strings.Join(right, ", "))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (p *progressState) remainingTime(rollingRate float64) string {
 	remainingNum := p.maxNum - p.currentNum
-	remainingTime := time.Duration((1/rollingRate)*(float64(remainingNum))) * time.Second
-	if remainingTime.Seconds() < 0 {
-		remainingTime = 0 * time.Second
-	}
-	timeStr := "(?)"
+	remainingTime := time.Duration(float64(remainingNum)/rollingRate*1) * time.Second
 	if rollingRate > 0 {
-		minutes := int(remainingTime.Minutes())
-		if minutes > 0 {
-			timeStr = fmt.Sprintf("(%dm remaining)", minutes)
-		} else {
-			seconds := int(remainingTime.Seconds())
-			timeStr = fmt.Sprintf("(%ds remaining)", seconds)
-		}
+		return fmt.Sprintf("%s remaining", remainingTime)
 	}
-	return timeStr
+	return ""
 }
 
 func (p *progressState) filledBarLine(width int, completion float64) string {
@@ -202,6 +264,8 @@ func NewFileProgressReader(r io.Reader, label string, opts ...opt) (*wrapReader,
 	if err != nil {
 		return nil, fmt.Errorf("size: %w", err)
 	}
+	p.showRate = true
+	p.showEstimate = true
 	p.maxNum = size
 	p.io, err = p.makeTermIO(p.in, p.out)
 	if err != nil {
