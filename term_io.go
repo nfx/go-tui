@@ -147,6 +147,10 @@ func (t *termIO) ReadRune() (rune, error) {
 			return '↑', nil
 		case 0x42: // Down arrow.
 			return '↓', nil
+		case 0x43: // Right arrow.
+			return '→', nil
+		case 0x44: // Left arrow.
+			return '←', nil
 		}
 	}
 	if n > 1 {
