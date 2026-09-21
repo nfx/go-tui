@@ -53,11 +53,7 @@ type dropdown struct {
 }
 
 func Confirmf(format string, a ...any) bool {
-	res, err := Dropdown(fmt.Sprintf(format, a...), []string{"Yes", "No"})
-	if err != nil {
-		return false
-	}
-	return strings.ToLower(res) == "yes"
+	return Confirm(fmt.Sprintf(format, a...))
 }
 
 func Confirm(action string, opts ...opt) bool {
