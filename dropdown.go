@@ -52,6 +52,14 @@ type dropdown struct {
 	makeTermIO func(in io.Reader, out io.Writer) (*termIO, error)
 }
 
+func Confirmf(format string, a ...any) bool {
+	res, err := Dropdown(fmt.Sprintf(format, a...), []string{"Yes", "No"})
+	if err != nil {
+		return false
+	}
+	return strings.ToLower(res) == "yes"
+}
+
 func Confirm(action string, opts ...opt) bool {
 	res, err := Dropdown(action, []string{"Yes", "No"}, opts...)
 	if err != nil {
@@ -62,6 +70,9 @@ func Confirm(action string, opts ...opt) bool {
 
 func Dropdown[T any](label string, items []T, opts ...opt) (T, error) {
 	var zero T
+	if len(items) == 0 {
+		return zero, fmt.Errorf("no items provided")
+	}
 	// apparently, there's no other non-reflective way around
 	anyItems := make([]any, len(items))
 	for i, v := range items {
