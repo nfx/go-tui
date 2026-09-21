@@ -8,6 +8,7 @@ import (
 	"errors"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -56,6 +57,17 @@ func True(t *testing.T, value bool) { //nolint:revive // ignore
 		_, file, line, _ := runtime.Caller(1)
 
 		t.Fatalf("%s:%d: expected true, got false", file, line)
+	}
+}
+
+// Contains asserts that the string contains the substring.
+func Contains(t *testing.T, s, substr string) {
+	t.Helper()
+
+	if !strings.Contains(s, substr) {
+		_, file, line, _ := runtime.Caller(1)
+
+		t.Fatalf("%s:%d: expected %s to contain: %s", file, line, s, substr)
 	}
 }
 

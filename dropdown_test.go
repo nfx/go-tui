@@ -11,7 +11,7 @@ import (
 	"github.com/nfx/go-tui/internal/assert"
 )
 
-func testIOforDropdown(t *testing.T, width, height int, o ...opt) (*chanIO, opt) {
+func testIOforDropdown(t *testing.T, width, height int, o ...opt) (*chanIO, opt) { //nolint:unparam // ...
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	cio := &chanIO{
@@ -213,4 +213,65 @@ func TestDropdownFiltering(t *testing.T) {
 	assert.Equal(t, "\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r", <-out)
 	assert.Equal(t, "Neque porro: condimentum libero\n", <-out)
 	assert.Equal(t, "condimentum libero", <-res)
+}
+
+func dropdownKVForTest(t *testing.T, items map[string]int) (in, out chan string, result chan struct {
+	key   string
+	value int
+	err   error
+}) {
+	t.Helper()
+	cio, opts := testIOforDropdown(t, 80, 120)
+	result = make(chan struct {
+		key   string
+		value int
+		err   error
+	})
+	go func() {
+		defer close(result)
+		key, value, err := DropdownKV("Select item", items, opts)
+		result <- struct {
+			key   string
+			value int
+			err   error
+		}{key, value, err}
+	}()
+
+	return cio.In, cio.Out, result
+}
+
+func TestDropdownKVEmpty(t *testing.T) {
+	_, _, res := dropdownKVForTest(t, map[string]int{})
+	result := <-res
+	assert.Equal(t, "", result.key)
+	assert.Equal(t, 0, result.value)
+	assert.Equal(t, ErrNoItems, result.err)
+}
+
+func TestDropdownKVSingleItem(t *testing.T) {
+	in, out, res := dropdownKVForTest(t, map[string]int{"apple": 42})
+	assert.Equal(t, "\rSelect item + {apple 42}\n\r", <-out)
+	in <- "\x0d" // enter
+	<-out
+	assert.Equal(t, "Select item: {apple 42}\n", <-out)
+	result := <-res
+	assert.Equal(t, "apple", result.key)
+	assert.Equal(t, 42, result.value)
+	assert.NoError(t, result.err)
+}
+
+func TestDropdownKVMultipleItems(t *testing.T) {
+	in, out, res := dropdownKVForTest(t, map[string]int{"zebra": 1, "apple": 2, "banana": 3})
+	assert.Equal(t, "\rSelect item + {apple 2}\n\r            - {banana 3}\n\r            - {zebra 1}\n\r", <-out)
+	in <- "\x1b\x5b\x42" // down
+	assert.Equal(t,
+		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r\rSelect item - {apple 2}\n\r            + {banana 3}\n\r            - {zebra 1}\n\r",
+		<-out)
+	in <- "\x0d" // enter
+	assert.Equal(t, "\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r", <-out)
+	assert.Equal(t, "Select item: {banana 3}\n", <-out)
+	result := <-res
+	assert.Equal(t, "banana", result.key)
+	assert.Equal(t, 3, result.value)
+	assert.NoError(t, result.err)
 }
