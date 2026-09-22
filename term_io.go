@@ -96,7 +96,13 @@ const (
 	keyEnter = 0x0d
 )
 
-var ErrUnknownRune = errors.New("unknown rune")
+type pasteTextError struct {
+	buf []byte
+}
+
+func (e *pasteTextError) Error() string {
+	return fmt.Sprintf("bigger input (%d bytes)", len(e.buf))
+}
 
 func (t *termIO) ReadKey() (rune, error) {
 	buf := make([]byte, 1)
@@ -125,7 +131,7 @@ func (t *termIO) ReadRune() (rune, int, error) {
 		return r, n, nil
 	}
 	if n > 1 {
-		return 0, n, fmt.Errorf("%w: %x", ErrUnknownRune, buf)
+		return 0, n, &pasteTextError{buf}
 	}
 	switch buf[0] {
 	case keyCtrlC, keyCtrlD:

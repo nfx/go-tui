@@ -142,9 +142,7 @@ func (p *input) run() (string, error) {
 		default:
 			// key press handlers has to be limited to state updates, not writes to the buffer.
 			out, err := p.pressKey(io)
-			if errors.Is(err, ErrUnknownRune) {
-				continue // ignore unknown runes and wait for next input
-			} else if err != nil { // e.g., Ctrl+C or Ctrl+D
+			if err != nil { // e.g., Ctrl+C or Ctrl+D
 				return "", errors.Join(err, p.clear(io))
 			} else if out != "" {
 				return p.typed, p.clear(io)
@@ -211,10 +209,17 @@ func (*input) clear(io *termIO) error {
 
 func (p *input) pressKey(io *termIO) (string, error) {
 	key, _, err := io.ReadRune()
-	if err != nil {
-		if errors.Is(err, ErrUnknownRune) {
-			return "", err
+	var more *pasteTextError
+	if errors.As(err, &more) {
+		// Ctrl+V or CMD+V will just send more bytes. So we emulate typing.
+		// This currently works with empty input only. Or appending to the end.
+		// There's a bug when you paste in the middle of the text.
+		for _, b := range more.buf {
+			p.pressAny(rune(b))
 		}
+
+		return "", nil
+	} else if err != nil {
 		// Ctrl+C or Ctrl+D will result in an error like io.EOF
 		return "", fmt.Errorf("read: %w", err)
 	}

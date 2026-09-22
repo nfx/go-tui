@@ -206,7 +206,9 @@ func (m *multichoice) run() error {
 			key, _, err := io.ReadRune()
 			io.clear(space, frame)
 			if err != nil {
-				if errors.Is(err, ErrUnknownRune) {
+				var more *pasteTextError
+				if errors.As(err, &more) {
+					// Ctrl+V or CMD+V pressed
 					continue
 				}
 				frame.WriteTo(io) // clear the screen

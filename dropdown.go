@@ -590,7 +590,9 @@ func (d *dropdown) runMain(io *termIO, frame *bytes.Buffer, space, displayed int
 		return -1, nil
 	}
 	i, err := d.pressKey(io, frame, space, displayed)
-	if errors.Is(err, ErrUnknownRune) {
+	var more *pasteTextError
+	if errors.As(err, &more) {
+		// Ctrl+V or CMD+V pressed
 		return -1, nil
 	} else if err != nil {
 		frame.WriteTo(io) //nolint:errcheck // we can't do much about it here

@@ -184,7 +184,6 @@ func TestTermIO_ReadRune(t *testing.T) {
 			if tt.wantErr {
 				if tt.name == "unknown escape" {
 					assert.Error(t, err)
-					assert.True(t, errors.Is(err, ErrUnknownRune))
 				} else {
 					assert.Error(t, err)
 					assert.True(t, errors.Is(err, io.EOF))
