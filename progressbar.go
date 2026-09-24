@@ -66,6 +66,34 @@ type Progressbar struct {
 	err        error
 }
 
+// NewMaxProgressBar returns progress bar towards the max number.
+func NewMaxProgressBar(label string, size int64, opts ...opt) (*Progressbar, error) {
+	var err error
+	p := newProgressbar()
+	for _, o := range opts {
+		err = o(p)
+		if err != nil {
+			return nil, fmt.Errorf("apply option: %w", err)
+		}
+	}
+	p.showRate = true
+	p.showEstimate = true
+	p.maxNum = size
+	p.io, err = p.makeTermIO(p.in, p.out)
+	if err != nil {
+		return nil, fmt.Errorf("make io: %w", err)
+	}
+	err = p.io.Restore()
+	if err != nil {
+		return nil, fmt.Errorf("restore: %w", err)
+	}
+	p.label = label
+	p.startedAt = p.now()
+	go p.start(p.ctx)
+
+	return p, nil
+}
+
 func (p *Progressbar) Add(num int64) {
 	select {
 	case <-p.ctx.Done():
