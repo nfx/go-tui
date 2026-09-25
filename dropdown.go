@@ -203,12 +203,14 @@ func (d *dropdown) dropdownIndex(o ...opt) (int, error) {
 	if err != nil {
 		return -1, err
 	}
-	if d.OneReturn && len(d.Items) == 1 {
-		return 0, nil
-	}
+	// we must always parse templates, because we may still
+	// want to show the answer in the call after this one.
 	err = d.parseTemplates()
 	if err != nil {
 		return -1, fmt.Errorf("templates: %w", err)
+	}
+	if d.OneReturn && len(d.Items) == 1 {
+		return 0, nil
 	}
 	j, err := d.run()
 	if err != nil {
