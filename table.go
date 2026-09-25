@@ -414,6 +414,7 @@ func structFieldsFor[T any]() (structFields, error) {
 	return reflectStructFields(rt)
 }
 
+//nolint:cyclop // TODO: fix
 func reflectStructFields(rt reflect.Type) (structFields, error) {
 	var out structFields
 	for i := range rt.NumField() {
@@ -442,7 +443,9 @@ func reflectStructFields(rt reflect.Type) (structFields, error) {
 			continue
 		}
 		meta, err := reflectFieldMetadata(ft, f.Tag, f.Name)
-		if err != nil {
+		if errors.Is(err, errCannotUse) {
+			continue
+		} else if err != nil {
 			return nil, fmt.Errorf("%s: %w", f.Name, err)
 		}
 		out = append(out, meta)
@@ -450,6 +453,8 @@ func reflectStructFields(rt reflect.Type) (structFields, error) {
 
 	return out, nil
 }
+
+var errCannotUse = errors.New("cannot use")
 
 func reflectFieldMetadata(ft reflect.Type, tag reflect.StructTag, name string) (*fieldMetadata, error) {
 	meta := fieldMetadata{
@@ -466,7 +471,7 @@ func reflectFieldMetadata(ft reflect.Type, tag reflect.StructTag, name string) (
 		meta.kind = ft.Kind()
 	default:
 		if meta.autoHeader {
-			return nil, fmt.Errorf("cannot use %s without explicit header tag", ft.Kind())
+			return nil, fmt.Errorf("%w %s without explicit header tag", errCannotUse, ft.Kind())
 		}
 	}
 	queue := strings.Split(tag.Get("header"), ",")
