@@ -60,7 +60,7 @@ func makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
 	}
 	width, height, err := term.GetSize(int(stderr.Fd()))
 	if err != nil {
-		return nil, fmt.Errorf("size: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrNoTTY, err)
 	}
 	oldState, err := term.MakeRaw(int(stdin.Fd()))
 	if err != nil {

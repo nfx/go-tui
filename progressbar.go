@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"os"
 	"strings"
 	"time"
@@ -52,22 +53,7 @@ func newProgressbar() *Progressbar {
 	}
 }
 
-type Progressbar struct {
-	config
-	progressState
-	label      string
-	increments chan int64
-	cancel     context.CancelFunc
-	io         *termIO
-	makeTermIO func(io.Reader, io.Writer) (*termIO, error)
-	ticker     *time.Ticker
-	ticks      <-chan time.Time
-	now        func() time.Time
-	err        error
-}
-
-// NewMaxProgressBar returns progress bar towards the max number.
-func NewMaxProgressBar(label string, size int64, opts ...opt) (*Progressbar, error) {
+func newStartedProgressBar(label string, size int64, opts ...opt) (*Progressbar, error) {
 	var err error
 	p := newProgressbar()
 	for _, o := range opts {
@@ -92,6 +78,62 @@ func NewMaxProgressBar(label string, size int64, opts ...opt) (*Progressbar, err
 	go p.start(p.ctx)
 
 	return p, nil
+}
+
+type Progressbar struct {
+	config
+	progressState
+	label      string
+	increments chan int64
+	cancel     context.CancelFunc
+	io         *termIO
+	makeTermIO func(io.Reader, io.Writer) (*termIO, error)
+	ticker     *time.Ticker
+	ticks      <-chan time.Time
+	now        func() time.Time
+	err        error
+}
+
+// NewMaxProgressBar returns progress bar towards the max number.
+func NewMaxProgressBar(label string, size int64, opts ...opt) (*Progressbar, error) {
+	return newStartedProgressBar(label, size)
+}
+
+// NewSliceProgressBar returns progress bar that updates as long as iterator consumed.
+func NewSliceProgressBar[T any](label string, slice []T, opts ...opt) iter.Seq2[T, error] {
+	return func(yield func(T, error) bool) {
+		var zero T
+		p, err := newStartedProgressBar(label, int64(len(slice)), opts...)
+		if err != nil {
+			if errors.Is(err, ErrNoTTY) {
+				for _, v := range slice {
+					if !yield(v, nil) {
+						return
+					}
+				}
+
+				return
+			}
+			yield(zero, err)
+
+			return
+		}
+		yieldable := true
+		defer func() {
+			err = p.Close()
+			if err != nil && yieldable {
+				yield(zero, err)
+			}
+		}()
+		for _, v := range slice {
+			if !yield(v, nil) {
+				yieldable = false
+
+				return
+			}
+			p.Add(1)
+		}
+	}
 }
 
 func (p *Progressbar) Add(num int64) {
