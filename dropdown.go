@@ -75,11 +75,17 @@ type lazyResult struct {
 	needsRender bool
 }
 
+var confirmRunner = defaultConfirmRunner
+
 func Confirmf(format string, a ...any) bool {
 	return Confirm(fmt.Sprintf(format, a...))
 }
 
 func Confirm(action string, opts ...opt) bool {
+	return confirmRunner(action, opts...)
+}
+
+func defaultConfirmRunner(action string, opts ...opt) bool {
 	res, err := Dropdown(action, []string{"Yes", "No"}, opts...)
 	if err != nil {
 		return false
@@ -349,6 +355,7 @@ func newDropdown() *dropdown {
 		MoreItemsTemplate:    DefaultMoreItemsTemplate,
 		AnswerTemplate:       DefaultAnswerTemplate,
 		IterBatchSize:        10,
+		trie:                 newTrie(),
 	}
 }
 
@@ -832,7 +839,6 @@ func (d *dropdown) runMain(io *termIO, frame *bytes.Buffer, space, displayed int
 	return i, nil
 }
 
-// this method is still work in progress.
 func (d *dropdown) loadItem(io *termIO, frame *bytes.Buffer, it itPair, more bool, space int) error {
 	if !more {
 		d.iterDone = true
@@ -857,9 +863,6 @@ func (d *dropdown) loadItem(io *termIO, frame *bytes.Buffer, it itPair, more boo
 	if err != nil {
 		return err
 	}
-	// if len(d.relevant) > displayed {
-	// 	space += 2
-	// }
 	var errs []error
 	err = io.clear(space, frame)
 	if err != nil {

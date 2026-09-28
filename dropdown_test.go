@@ -7,7 +7,11 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"iter"
+	"strings"
 	"testing"
+	"text/template"
+	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
@@ -300,4 +304,761 @@ func TestDropdownLazyClearsOnlyRenderedArea(t *testing.T) {
 	var expected bytes.Buffer
 	assert.NoError(t, tio.clear(space, &expected))
 	assert.Equal(t, expected.String(), output.String())
+}
+
+func TestDropdownRunSelectsWithArrow(t *testing.T) {
+	reader := &chunkReader{chunks: [][]byte{
+		{0x1b, 0x5b, 0x42},
+		{byte(keyEnter)},
+	}}
+	d := newDropdown()
+	d.Items = []any{"one", "two"}
+	d.in = reader
+	d.out = &bytes.Buffer{}
+	d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{
+			in:      in,
+			out:     out,
+			Width:   20,
+			Height:  6,
+			Restore: func() error { return nil },
+		}, nil
+	}
+	idx, err := d.dropdownIndex()
+	assert.NoError(t, err)
+	assert.Equal(t, 1, idx)
+}
+
+func TestDropdownRunOneReturn(t *testing.T) {
+	reader := &chunkReader{chunks: [][]byte{
+		{'b'},
+	}}
+	d := newDropdown()
+	d.Items = []any{"alpha", "beta"}
+	d.OneReturn = true
+	d.in = reader
+	d.out = &bytes.Buffer{}
+	d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{
+			in:      in,
+			out:     out,
+			Width:   20,
+			Height:  6,
+			Restore: func() error { return nil },
+		}, nil
+	}
+	idx, err := d.dropdownIndex()
+	assert.NoError(t, err)
+	assert.Equal(t, 1, idx)
+}
+
+func TestDropdownPressKeyRuneAndRenderMore(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"alpha", "beta"}
+	d.relevant = []int{0, 1}
+	d.displayed = d.relevant
+	d.trie = newTrie()
+	d.trie.Add("alpha", 0)
+	d.trie.Add("beta", 1)
+
+	tio := newTestTermIO(20, 6)
+
+	assert.Equal(t, 0, d.pressKeyRune(tio, keyEnter, len(d.displayed), 4))
+
+	d.selected = 1
+	d.pressKeyRune(tio, '↑', len(d.displayed), 4)
+	d.pressKeyRune(tio, '↓', len(d.displayed), 4)
+
+	d.typed = []rune("ab")
+	d.pressKeyRune(tio, 0x7f, len(d.displayed), 4)
+
+	d.OneReturn = true
+	d.typed = nil
+	d.trie = newTrie()
+	d.trie.Add("abc", 0)
+	d.Items = []any{"abc"}
+	d.relevant = []int{0}
+	d.displayed = d.relevant
+	assert.True(t, d.pressAny('a', len(d.displayed), 4))
+
+	var frame bytes.Buffer
+	assert.NoError(t, d.clearFrame(tio, &frame, 0))
+
+	d.relevant = []int{0, 1, 2, 3}
+	d.displayed = d.relevant[:2]
+	d.Items = append(d.Items, 3, 4)
+	assert.NoError(t, d.parseTemplates())
+	buf, longest, err := d.renderMore(4, 2, 0)
+	assert.NoError(t, err)
+	assert.True(t, longest > 0)
+	assert.True(t, len(buf) > 0)
+}
+
+func TestDropdownRenderInitAndItems(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"alpha", "beta", "gamma"}
+	d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return newTestTermIO(20, 6), nil
+	}
+	io := newTestTermIO(20, 6)
+
+	assert.NoError(t, d.parseTemplates())
+	longest, err := d.renderInit(io)
+	assert.NoError(t, err)
+	assert.True(t, longest > 0)
+	assert.True(t, len(d.displayed) > 0)
+
+	item, err := d.renderItem(io, 0, d.displayed[0])
+	assert.NoError(t, err)
+	assert.True(t, len(item) > 0)
+}
+
+func TestDropdownRenderMoreAndHeight(t *testing.T) {
+	d := newDropdown()
+	d.Items = make([]any, 10)
+	for i := range d.Items {
+		d.Items[i] = i
+	}
+	d.displayed = []int{0, 1, 2}
+	d.relevant = []int{0, 1, 2}
+
+	assert.NoError(t, d.parseTemplates())
+
+	buf, longest, err := d.renderMore(10, 3, 0)
+	assert.NoError(t, err)
+	assert.True(t, len(buf) > 0)
+	assert.True(t, longest > 0)
+	assert.True(t, d.height() >= 3)
+}
+
+func TestDropdownPressKeys(t *testing.T) {
+	d := newDropdown()
+	d.relevant = []int{0, 1, 2, 3}
+	d.displayed = []int{0, 1, 2}
+	d.selected = 1
+
+	d.pressDown(len(d.displayed))
+	assert.Equal(t, 1, d.offset)
+	d.pressUp(len(d.displayed))
+	assert.Equal(t, 0, d.selected)
+
+	d.typed = nil
+	d.trie = newTrie()
+	d.relevant = []int{0}
+	d.displayed = d.relevant
+	d.pressBackspace(newTestTermIO(10, 4))
+	assert.Equal(t, "", string(d.typed))
+	assert.True(t, !d.pressAny('z', len(d.displayed), 4))
+}
+
+func TestDropdownClearFrame(t *testing.T) {
+	d := newDropdown()
+	io := newTestTermIO(10, 4)
+	frame := &bytes.Buffer{}
+	assert.NoError(t, d.clearFrame(io, frame, 2))
+	buf, ok := io.out.(*bytes.Buffer)
+	assert.True(t, ok)
+	assert.True(t, buf.Len() > 0)
+}
+
+func TestDropdownOptionHelpers(t *testing.T) {
+	d := newDropdown()
+
+	for _, opt := range []opt{
+		WithOneReturn(),
+		WithHide(),
+		WithFieldTemplate("Label"),
+		WithTemplate(".Label"),
+		WithLabelTemplate("{{.}} "),
+		WithActiveItemTemplate("{{.}}>"),
+		WithInactiveItemTemplate("{{.}}-"),
+		WithMoreItemsTemplate("more"),
+		WithAnswerTemplate("> {{.}}"),
+	} {
+		assert.NoError(t, opt(d))
+	}
+	assert.True(t, d.OneReturn)
+	assert.True(t, d.Hide)
+}
+
+func TestShowAnswerWritesWhenVisible(t *testing.T) {
+	d := newDropdown()
+	d.Label = "Test"
+	d.out = &bytes.Buffer{}
+	assert.NoError(t, d.parseTemplates())
+	assert.NoError(t, d.showAnswer("Test", "value"))
+}
+
+func TestDropdownPressAnyOneReturn(t *testing.T) {
+	d := newDropdown()
+	d.OneReturn = true
+	d.trie = newTrie()
+	d.trie.Add("ok", 0)
+
+	assert.True(t, d.pressAny('o', 1, 1))
+}
+
+func TestConfirmfRunsWithFormattedAction(t *testing.T) {
+	orig := confirmRunner
+	defer func() { confirmRunner = orig }()
+	confirmRunner = func(action string, opts ...opt) bool {
+		assert.Equal(t, "Proceed with task?", action)
+
+		return true
+	}
+
+	assert.True(t, Confirmf("Proceed with %s?", "task"))
+}
+
+func TestDefaultConfirmRunnerReturnsTrue(t *testing.T) {
+	in := bytes.NewBuffer([]byte{keyEnter})
+	out := &bytes.Buffer{}
+	opt := opT(func(d *dropdown) error {
+		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			return &termIO{
+				in:      in,
+				out:     out,
+				Width:   20,
+				Height:  6,
+				Restore: func() error { return nil },
+			}, nil
+		}
+
+		return nil
+	})
+	assert.True(t, defaultConfirmRunner("Proceed?", WithInput(in), WithOutput(out), opt))
+}
+
+func TestDefaultConfirmRunnerReturnsFalseOnError(t *testing.T) {
+	opt := opT(func(d *dropdown) error {
+		d.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
+			return nil, io.EOF
+		}
+
+		return nil
+	})
+	assert.True(t, !defaultConfirmRunner("Proceed?", opt))
+}
+
+func TestWithTemplateSetsTemplates(t *testing.T) {
+	d := newDropdown()
+	assert.NoError(t, WithTemplate(".Name")(d))
+	assert.Equal(t, `{{ cyan "→ " .Name }}`, d.ActiveItemTemplate)
+	assert.Equal(t, `{{ dim "→ " .Name }}`, d.InactiveItemTemplate)
+	assert.Equal(t, `{{ dim "✔ " .Label " …" }} {{ bold .Answer.Name }}`, d.AnswerTemplate)
+}
+
+func TestWithTemplateAddsActiveDetails(t *testing.T) {
+	d := newDropdown()
+	assert.NoError(t, WithTemplate(".Name", ".Type", ".Owner")(d))
+	expected := `{{ cyan "→ " .Name }} {{ dim "(" (.Type) ", " (.Owner) ")" }}`
+	assert.Equal(t, expected, d.ActiveItemTemplate)
+}
+
+func TestDropdownContextAndIOSetters(t *testing.T) {
+	d := newDropdown()
+	ctx := t.Context()
+	d.setContext(ctx)
+	assert.Equal(t, ctx, d.getContext())
+	in := bytes.NewBufferString("input")
+	d.setReader(in)
+	assert.Equal(t, in, d.in)
+	out := &bytes.Buffer{}
+	d.setWriter(out)
+	assert.Equal(t, out, d.out)
+}
+
+func TestDropdownSetWriterUsesTuiViewport(t *testing.T) {
+	ctx := t.Context()
+	cio := newUnstartedIO(ctx, 10, 2)
+	tui := &Tui{ctx: ctx, termIO: &termIO{out: cio}}
+	d := newDropdown()
+	d.setWriter(tui)
+	_, ok := d.out.(*viewport)
+	assert.True(t, ok)
+}
+
+func TestDropdownPressKeyRuneEnter(t *testing.T) {
+	d := newDropdown()
+	d.relevant = []int{0, 1}
+	d.displayed = []int{0, 1}
+	d.selected = 1
+	io := newTestTermIO(10, 4)
+	assert.Equal(t, 1, d.pressKeyRune(io, keyEnter, len(d.displayed), 4))
+}
+
+func TestDropdownPressKeyRuneBackspace(t *testing.T) {
+	d := newDropdown()
+	d.trie = newTrie()
+	d.trie.Add("a", 0)
+	d.relevant = []int{0}
+	d.displayed = []int{0}
+	d.Items = []any{"a"}
+	d.typed = []rune("a")
+	io := newTestTermIO(10, 4)
+	d.pressKeyRune(io, 0x7f, len(d.displayed), 4)
+	assert.Equal(t, 0, len(d.typed))
+}
+
+type errWriterDropdown struct{}
+
+func (errWriterDropdown) Write(p []byte) (int, error) {
+	return 0, io.EOF
+}
+
+func TestDropdownParseTemplatesError(t *testing.T) {
+	d := newDropdown()
+	d.LabelTemplate = "{{"
+	assert.Error(t, d.parseTemplates())
+}
+
+func TestDropdownParseTemplatesLabelExecuteError(t *testing.T) {
+	d := newDropdown()
+	d.LabelTemplate = "{{ call . }}"
+	assert.Error(t, d.parseTemplates())
+}
+
+func TestDropdownParseTemplatesActiveError(t *testing.T) {
+	d := newDropdown()
+	d.LabelTemplate = "{{.}} "
+	d.ActiveItemTemplate = "{{"
+	assert.Error(t, d.parseTemplates())
+}
+
+func TestDropdownShowAnswerWriteError(t *testing.T) {
+	d := newDropdown()
+	d.out = errWriterDropdown{}
+	assert.NoError(t, d.parseTemplates())
+	assert.Error(t, d.showAnswer("Label", "Value"))
+}
+
+func TestDropdownPressKeyRuneArrows(t *testing.T) {
+	d := newDropdown()
+	d.relevant = []int{0, 1}
+	d.displayed = []int{0, 1}
+	d.selected = 0
+	io := newTestTermIO(10, 4)
+	d.pressKeyRune(io, '↓', len(d.displayed), 4)
+	assert.Equal(t, 1, d.selected)
+	d.pressKeyRune(io, '↑', len(d.displayed), 4)
+	assert.Equal(t, 0, d.selected)
+}
+
+func TestDropdownPressKeyRuneDefault(t *testing.T) {
+	d := newDropdown()
+	d.trie = newTrie()
+	d.trie.Add("a", 0)
+	d.Items = []any{"a"}
+	d.relevant = []int{0}
+	d.displayed = []int{0}
+	io := newTestTermIO(10, 4)
+	assert.Equal(t, -1, d.pressKeyRune(io, 'a', len(d.displayed), 4))
+	assert.Equal(t, "a", string(d.typed))
+}
+
+func TestDropdownPressKeyRuneOneReturn(t *testing.T) {
+	d := newDropdown()
+	d.OneReturn = true
+	d.trie = newTrie()
+	d.trie.Add("a", 0)
+	d.Items = []any{"a"}
+	d.relevant = []int{0}
+	d.displayed = []int{0}
+	io := newTestTermIO(10, 4)
+	assert.Equal(t, 0, d.pressKeyRune(io, 'a', len(d.displayed), 4))
+}
+
+func TestDropdownHandleLazyItemEmpty(t *testing.T) {
+	d := newDropdown()
+	assert.NoError(t, d.parseTemplates())
+	tio := newTestTermIO(20, 6)
+	frame := &bytes.Buffer{}
+	_, err := d.handleLazyItem(tio, frame, 1, itPair{}, false)
+	assert.ErrorIs(t, err, ErrEmptyLazyResult)
+}
+
+func TestDropdownHandleLazyItemError(t *testing.T) {
+	d := newDropdown()
+	assert.NoError(t, d.parseTemplates())
+	tio := newTestTermIO(20, 6)
+	frame := &bytes.Buffer{}
+	_, err := d.handleLazyItem(tio, frame, 1, itPair{err: io.EOF}, true)
+	assert.ErrorIs(t, err, io.EOF)
+}
+
+func TestDropdownHandleLazyItemAdds(t *testing.T) {
+	d := newDropdown()
+	assert.NoError(t, d.parseTemplates())
+	tio := newTestTermIO(20, 6)
+	frame := &bytes.Buffer{}
+	needsRender, err := d.handleLazyItem(tio, frame, 1, itPair{item: "item"}, true)
+	assert.NoError(t, err)
+	assert.True(t, needsRender)
+}
+
+func TestDropdownHandleLazyKeyEOF(t *testing.T) {
+	d := newDropdown()
+	tio := newTestTermIO(20, 6)
+	frame := &bytes.Buffer{}
+	_, _, err := d.handleLazyKey(tio, frame, 1, 1, keyEvent{}, false)
+	assert.ErrorIs(t, err, io.EOF)
+}
+
+func TestDropdownHandleLazyKeyPasteIgnored(t *testing.T) {
+	d := newDropdown()
+	tio := newTestTermIO(20, 6)
+	frame := &bytes.Buffer{}
+	_, _, err := d.handleLazyKey(tio, frame, 1, 1, keyEvent{err: &pasteTextError{buf: []byte("a")}}, true)
+	assert.NoError(t, err)
+}
+
+func TestDropdownHandleLazyKeyEnter(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"one"}
+	d.relevant = []int{0}
+	d.displayed = []int{0}
+	tio := newTestTermIO(20, 6)
+	frame := &bytes.Buffer{}
+	i, _, err := d.handleLazyKey(tio, frame, 1, 1, keyEvent{key: keyEnter}, true)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, i)
+}
+
+func TestDropdownRunRenderLoadsItem(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"seed"}
+	assert.NoError(t, d.parseTemplates())
+	tio := newTestTermIO(20, 6)
+	frame := bytes.NewBuffer(nil)
+	ch := make(chan itPair, 1)
+	ch <- itPair{item: "next"}
+	close(ch)
+	d.itItems = ch
+	_, err := d.runRender(tio, frame)
+	assert.NoError(t, err)
+}
+
+func TestDropdownLoadItemDone(t *testing.T) {
+	d := newDropdown()
+	tio := newTestTermIO(20, 6)
+	frame := bytes.NewBuffer(nil)
+	d.itItems = make(chan itPair)
+	err := d.loadItem(tio, frame, itPair{}, false, 1)
+	assert.NoError(t, err)
+	assert.True(t, d.itItems == nil)
+	assert.True(t, d.iterDone)
+}
+
+func TestDropdownLoadItemError(t *testing.T) {
+	d := newDropdown()
+	tio := newTestTermIO(20, 6)
+	frame := bytes.NewBuffer(nil)
+	err := d.loadItem(tio, frame, itPair{err: io.EOF}, true, 1)
+	assert.ErrorIs(t, err, io.EOF)
+}
+
+func TestDropdownLoadItemWriteError(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"seed"}
+	assert.NoError(t, d.parseTemplates())
+	initIO := newTestTermIO(20, 6)
+	_, err := d.renderInit(initIO)
+	assert.NoError(t, err)
+	tio := &termIO{
+		in:      bytes.NewBuffer(nil),
+		out:     errWriterDropdown{},
+		Width:   20,
+		Height:  6,
+		Restore: func() error { return nil },
+	}
+	frame := bytes.NewBuffer(nil)
+	err = d.loadItem(tio, frame, itPair{item: "next"}, true, 1)
+	assert.Error(t, err)
+}
+
+func TestDropdownRenderLazyFrameClears(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"item"}
+	assert.NoError(t, d.parseTemplates())
+	tio := newTestTermIO(20, 6)
+	frame := bytes.NewBuffer(nil)
+	space := 1
+	displayed := 0
+	err := d.renderLazyFrame(tio, frame, &space, &displayed)
+	assert.NoError(t, err)
+	assert.True(t, space > 0)
+	assert.True(t, displayed > 0)
+}
+
+func TestDropdownRenderLazyFrameWriteError(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"item"}
+	assert.NoError(t, d.parseTemplates())
+	tio := &termIO{
+		in:      bytes.NewBuffer(nil),
+		out:     errWriterDropdown{},
+		Width:   20,
+		Height:  6,
+		Restore: func() error { return nil },
+	}
+	frame := bytes.NewBuffer(nil)
+	space := 0
+	displayed := 0
+	err := d.renderLazyFrame(tio, frame, &space, &displayed)
+	assert.Error(t, err)
+}
+
+func TestDropdownRunRenderWriteError(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"item"}
+	assert.NoError(t, d.parseTemplates())
+	tio := &termIO{
+		in:      bytes.NewBuffer([]byte{keyEnter}),
+		out:     errWriterDropdown{},
+		Width:   20,
+		Height:  6,
+		Restore: func() error { return nil },
+	}
+	frame := bytes.NewBuffer(nil)
+	_, err := d.runRender(tio, frame)
+	assert.Error(t, err)
+}
+
+func TestDropdownHandleLazyKeyReadError(t *testing.T) {
+	d := newDropdown()
+	tio := newTestTermIO(20, 6)
+	frame := &bytes.Buffer{}
+	_, _, err := d.handleLazyKey(tio, frame, 1, 1, keyEvent{err: io.EOF}, true)
+	assert.ErrorIs(t, err, io.EOF)
+}
+
+func TestDropdownRunRenderUsesMain(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"item"}
+	assert.NoError(t, d.parseTemplates())
+	tio := &termIO{
+		in:      bytes.NewBuffer([]byte{keyEnter}),
+		out:     &bytes.Buffer{},
+		Width:   20,
+		Height:  6,
+		Restore: func() error { return nil },
+	}
+	frame := bytes.NewBuffer(nil)
+	i, err := d.runRender(tio, frame)
+	assert.NoError(t, err)
+	assert.True(t, i >= 0)
+}
+
+func TestDropdownRunMainPasteIgnored(t *testing.T) {
+	d := newDropdown()
+	tio := &termIO{
+		in:      bytes.NewBufferString("ab"),
+		out:     &bytes.Buffer{},
+		Width:   20,
+		Height:  6,
+		Restore: func() error { return nil },
+	}
+	frame := bytes.NewBuffer(nil)
+	_, err := d.runMain(tio, frame, 1, 1)
+	assert.NoError(t, err)
+}
+
+func TestDropdownRunMainReadError(t *testing.T) {
+	d := newDropdown()
+	tio := &termIO{
+		in:      bytes.NewBuffer(nil),
+		out:     &bytes.Buffer{},
+		Width:   20,
+		Height:  6,
+		Restore: func() error { return nil },
+	}
+	frame := bytes.NewBuffer(nil)
+	_, err := d.runMain(tio, frame, 1, 1)
+	assert.Error(t, err)
+}
+
+func TestDropdownRunRenderContextDone(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"item"}
+	assert.NoError(t, d.parseTemplates())
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	d.Ctx = ctx
+	tio := &termIO{
+		in:      bytes.NewBuffer([]byte{keyEnter}),
+		out:     &bytes.Buffer{},
+		Width:   20,
+		Height:  6,
+		Restore: func() error { return nil },
+	}
+	frame := bytes.NewBuffer(nil)
+	_, err := d.runRender(tio, frame)
+	assert.Error(t, err)
+}
+
+func TestDropdownNextLazyActionItem(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"seed"}
+	assert.NoError(t, d.parseTemplates())
+	tio := newTestTermIO(20, 6)
+	_, err := d.renderInit(tio)
+	assert.NoError(t, err)
+	frame := bytes.NewBuffer(nil)
+	d.itItems = make(chan itPair, 1)
+	d.itItems <- itPair{item: "next"}
+	res, err := d.nextLazyAction(tio, frame, 1, 1, make(chan keyEvent))
+	assert.NoError(t, err)
+	assert.True(t, res.needsRender)
+}
+
+func TestDropdownNextLazyActionKey(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"seed"}
+	d.relevant = []int{0}
+	d.displayed = []int{0}
+	assert.NoError(t, d.parseTemplates())
+	tio := newTestTermIO(20, 6)
+	frame := bytes.NewBuffer(nil)
+	keys := make(chan keyEvent, 1)
+	keys <- keyEvent{key: keyEnter}
+	res, err := d.nextLazyAction(tio, frame, 1, 1, keys)
+	assert.NoError(t, err)
+	assert.True(t, res.done)
+	assert.Equal(t, 0, res.index)
+}
+
+func TestDropdownNextLazyActionContextDone(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	d := newDropdown()
+	d.Ctx = ctx
+	tio := newTestTermIO(20, 6)
+	frame := bytes.NewBuffer(nil)
+	_, err := d.nextLazyAction(tio, frame, 1, 1, make(chan keyEvent))
+	assert.Error(t, err)
+}
+
+func TestDropdownHandleLazyItemDoneWithItems(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"item"}
+	assert.NoError(t, d.parseTemplates())
+	tio := newTestTermIO(20, 6)
+	frame := &bytes.Buffer{}
+	_, err := d.handleLazyItem(tio, frame, 1, itPair{}, false)
+	assert.NoError(t, err)
+	assert.True(t, d.iterDone)
+}
+
+func TestDropdownHandleLazyItemAddError(t *testing.T) {
+	d := newDropdown()
+	d.inactiveItemTemplate = template.Must(template.New("inactive").Parse("{{call .}}"))
+	d.trie = newTrie()
+	tio := newTestTermIO(20, 6)
+	frame := &bytes.Buffer{}
+	_, err := d.handleLazyItem(tio, frame, 1, itPair{item: "x"}, true)
+	assert.Error(t, err)
+}
+
+func captureOutput(cio *chanIO) <-chan string {
+	out := make(chan string, 32)
+	go func() {
+		for line := range cio.Out {
+			out <- line
+		}
+		close(out)
+	}()
+
+	return out
+}
+
+func waitForItems(t *testing.T, d **dropdown, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		if *d != nil && len((*d).Items) > 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for dropdown items")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func waitForOutputContaining(t *testing.T, out <-chan string, substr string, timeout time.Duration) string {
+	t.Helper()
+	var buf strings.Builder
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		select {
+		case chunk, ok := <-out:
+			if !ok {
+				return buf.String()
+			}
+			buf.WriteString(chunk)
+			if strings.Contains(buf.String(), substr) {
+				return buf.String()
+			}
+		case <-timer.C:
+			t.Fatalf("timeout waiting for %q, collected %q", substr, buf.String())
+		}
+	}
+}
+
+func lazySeq(values ...string) iter.Seq2[string, error] {
+	return func(yield func(string, error) bool) {
+		for _, v := range values {
+			if !yield(v, nil) {
+				return
+			}
+		}
+	}
+}
+
+func TestDropdownLazySelectsItem(t *testing.T) {
+	cio, opts := testIOforDropdown(t, 20, 6)
+	var dropdownPtr *dropdown
+	opts = WithOptions(opts, opT(func(d *dropdown) error {
+		dropdownPtr = d
+		return nil
+	}))
+	out := captureOutput(cio)
+	resCh := make(chan struct {
+		value string
+		err   error
+	}, 1)
+	go func() {
+		value, err := DropdownLazy("Select", lazySeq("red", "green", "blue"), opts)
+		resCh <- struct {
+			value string
+			err   error
+		}{value, err}
+	}()
+	waitForItems(t, &dropdownPtr, 2*time.Second)
+	cio.In <- "\x0d" // enter
+	final := waitForOutputContaining(t, out, "Select: red", 2*time.Second)
+	res := <-resCh
+	assert.NoError(t, res.err)
+	assert.Equal(t, "red", res.value)
+	assert.Contains(t, final, "Select: red")
+}
+
+func TestDropdownLazyEmptySequence(t *testing.T) {
+	cio, opts := testIOforDropdown(t, 20, 6)
+	captureOutput(cio)
+	resCh := make(chan struct {
+		value string
+		err   error
+	}, 1)
+	go func() {
+		value, err := DropdownLazy("Empty", func(yield func(string, error) bool) {}, opts)
+		resCh <- struct {
+			value string
+			err   error
+		}{value, err}
+	}()
+	res := <-resCh
+	assert.ErrorIs(t, res.err, ErrEmptyLazyResult)
+	assert.Equal(t, "", res.value)
 }
