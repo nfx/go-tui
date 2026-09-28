@@ -58,3 +58,85 @@ func TestWidthUnicode(t *testing.T) {
 		})
 	}
 }
+
+func TestTruncationTrimEscapePrefix(t *testing.T) {
+	s := &truncation{}
+	if got := s.trimEscapePrefix([]byte("\x9b0m")); string(got) != "0m" {
+		t.Fatalf("unexpected prefix trim %q", string(got))
+	}
+	if got := s.trimEscapePrefix([]byte("\x1b[31m")); string(got) != "31m" {
+		t.Fatalf("unexpected prefix trim %q", string(got))
+	}
+	if got := s.trimEscapePrefix([]byte("nope")); got != nil {
+		t.Fatalf("expected nil")
+	}
+}
+
+func TestTruncationTrimSuffix(t *testing.T) {
+	s := &truncation{}
+	if got := s.trimSuffix([]byte("31m"), 'm'); string(got) != "31" {
+		t.Fatalf("unexpected suffix trim %q", string(got))
+	}
+	if got := s.trimSuffix([]byte("31"), 'm'); string(got) != "31" {
+		t.Fatalf("unexpected suffix trim %q", string(got))
+	}
+}
+
+func TestTruncationIsResetSGR(t *testing.T) {
+	s := &truncation{
+		input:       []byte("\x1b[0m"),
+		escapeStart: 0,
+	}
+	if !s.isResetSGR(len(s.input)) {
+		t.Fatalf("expected reset")
+	}
+	s.input = []byte("\x1b[31m")
+	if s.isResetSGR(len(s.input)) {
+		t.Fatalf("expected non-reset")
+	}
+}
+
+func TestTruncationIsResetSGRVariants(t *testing.T) {
+	cases := []struct {
+		name        string
+		input       []byte
+		escapeStart int
+		end         int
+		want        bool
+	}{
+		{name: "negative escape", input: []byte("\x1b[0m"), escapeStart: -1, end: 4, want: false},
+		{name: "end past len", input: []byte("\x1b[0m"), escapeStart: 0, end: 10, want: false},
+		{name: "empty params", input: []byte("\x1b[m"), escapeStart: 0, end: 3, want: false},
+		{name: "mixed params", input: []byte("\x1b[1;0m"), escapeStart: 0, end: 6, want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &truncation{
+				input:       tc.input,
+				escapeStart: tc.escapeStart,
+			}
+			if got := s.isResetSGR(tc.end); got != tc.want {
+				t.Fatalf("expected %v, got %v", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestTruncationUpdateSGRCount(t *testing.T) {
+	s := &truncation{
+		input:        []byte("\x1b[0m"),
+		escapeStart:  0,
+		openSGRCount: 1,
+	}
+	if got := s.updateSGRCount(len(s.input)); got != 0 {
+		t.Fatalf("expected 0, got %d", got)
+	}
+	s.openSGRCount = 0
+	if got := s.updateSGRCount(len(s.input)); got != 0 {
+		t.Fatalf("expected 0, got %d", got)
+	}
+	s.input = []byte("\x1b[31m")
+	if got := s.updateSGRCount(len(s.input)); got != 1 {
+		t.Fatalf("expected 1, got %d", got)
+	}
+}
