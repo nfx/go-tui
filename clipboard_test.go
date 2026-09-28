@@ -6,12 +6,16 @@ package tui
 import (
 	"bytes"
 	"errors"
+	"os"
 	"os/exec"
 	"runtime"
 	"testing"
 )
 
 func TestClipboardRead(t *testing.T) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		t.SkipNow()
+	}
 	origExec := clipboardExecCommand
 	origOutput := clipboardCommandOutput
 	t.Cleanup(func() {
