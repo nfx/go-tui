@@ -5,12 +5,15 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"golang.org/x/term"
 )
 
 type mockDescriptor struct {
@@ -52,21 +55,28 @@ func TestMakeTermIO_NoDescriptorInput(t *testing.T) {
 }
 
 func TestMakeTermIO_WithChanIO(t *testing.T) {
-	t.Skip("TODO: bring back mock terminal")
-	in := &mockDescriptor{fd: 0}
-	cio := &chanIO{width: 80}
+	cio, _ := chainIOforTest(t, 40, 5)
+	in := &mockDescriptor{
+		Reader: bytes.NewBuffer(nil),
+		Writer: bytes.NewBuffer(nil),
+		fd:     0,
+	}
 
-	termIO, err := makeTermIO(in, cio)
+	termio, err := makeTermIO(in, cio)
 	assert.NoError(t, err)
-	assert.NotNil(t, termIO)
-	assert.Equal(t, in, termIO.in)
-	assert.Equal(t, cio, termIO.out)
-	assert.Equal(t, 80, termIO.Width)
-	assert.NotNil(t, termIO.vp)
-	assert.Equal(t, cio, termIO.cio)
-	assert.NotNil(t, termIO.Restore)
-
-	err = termIO.Restore()
+	if termio == nil {
+		t.Fatal("expected termIO")
+	}
+	if !reflect.DeepEqual(termio.in, in) {
+		t.Fatalf("unexpected stdin")
+	}
+	if termio.Width != cio.width {
+		t.Fatalf("unexpected width")
+	}
+	if termio.Restore == nil {
+		t.Fatalf("restore not set")
+	}
+	err = termio.Restore()
 	assert.NoError(t, err)
 }
 
@@ -95,6 +105,61 @@ func TestMakeTermIO_WithDescriptor(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestMakeTermIO_WithDescriptorStubbed(t *testing.T) {
+	origGet := termGetSize
+	origRaw := termMakeRaw
+	origRestore := termRestore
+	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
+	termMakeRaw = func(int) (*term.State, error) { return &term.State{}, nil }
+	termRestore = func(int, *term.State) error { return nil }
+	t.Cleanup(func() {
+		termGetSize = origGet
+		termMakeRaw = origRaw
+		termRestore = origRestore
+	})
+	in := &mockDescriptor{
+		Reader: bytes.NewBuffer(nil),
+		Writer: bytes.NewBuffer(nil),
+		fd:     0,
+	}
+	out := &mockDescriptor{
+		Reader: bytes.NewBuffer(nil),
+		Writer: bytes.NewBuffer(nil),
+		fd:     1,
+	}
+	termio, err := makeTermIO(in, out)
+	assert.NoError(t, err)
+	if termio.Width != 80 || termio.Height != 24 {
+		t.Fatalf("unexpected size %dx%d", termio.Width, termio.Height)
+	}
+	if err := termio.Restore(); err != nil {
+		t.Fatalf("restore failed: %v", err)
+	}
+}
+
+func TestMakeTermIO_RawError(t *testing.T) {
+	origGet := termGetSize
+	origRaw := termMakeRaw
+	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
+	termMakeRaw = func(int) (*term.State, error) { return nil, io.EOF }
+	t.Cleanup(func() {
+		termGetSize = origGet
+		termMakeRaw = origRaw
+	})
+	in := &mockDescriptor{
+		Reader: bytes.NewBuffer(nil),
+		Writer: bytes.NewBuffer(nil),
+		fd:     0,
+	}
+	out := &mockDescriptor{
+		Reader: bytes.NewBuffer(nil),
+		Writer: bytes.NewBuffer(nil),
+		fd:     1,
+	}
+	_, err := makeTermIO(in, out)
+	assert.Error(t, err)
+}
+
 func TestTermIO_Read(t *testing.T) {
 	buf := bytes.NewBufferString("test")
 	termIO := &termIO{in: buf}
@@ -107,8 +172,9 @@ func TestTermIO_Read(t *testing.T) {
 }
 
 func TestTermIO_Write_WithViewport(t *testing.T) {
-	t.Skip("TODO: bring back mock terminal")
-	vp := &viewport{}
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	vp := initViewport(ctx, make(chan viewportChanged, 1), 10, 2)
 	termIO := &termIO{vp: vp}
 
 	data := []byte("test")
@@ -194,6 +260,22 @@ func TestTermIO_ReadRune(t *testing.T) {
 				assert.Equal(t, len(tt.input), n)
 			}
 		})
+	}
+}
+
+func TestTermIO_ReadRunePasteError(t *testing.T) {
+	buf := bytes.NewBufferString("ab")
+	termIO := &termIO{in: buf}
+	_, _, err := termIO.ReadRune()
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	var paste *pasteTextError
+	if !errors.As(err, &paste) {
+		t.Fatalf("expected paste error, got %T", err)
+	}
+	if paste.Error() == "" {
+		t.Fatalf("expected error message")
 	}
 }
 

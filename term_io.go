@@ -30,6 +30,9 @@ type termIO struct {
 
 var ErrNoTTY = errors.New("no tty")
 
+var termMakeRaw = term.MakeRaw
+var termRestore = term.Restore
+
 func makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
 	stderr, isOutFD := out.(descriptor)
 	cio, isOutChanIO := out.(*chanIO)
@@ -58,11 +61,11 @@ func makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
 			},
 		}, nil
 	}
-	width, height, err := term.GetSize(int(stderr.Fd()))
+	width, height, err := termGetSize(int(stderr.Fd()))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrNoTTY, err)
 	}
-	oldState, err := term.MakeRaw(int(stdin.Fd()))
+	oldState, err := termMakeRaw(int(stdin.Fd()))
 	if err != nil {
 		return nil, fmt.Errorf("raw: %w", err)
 	}
@@ -73,7 +76,7 @@ func makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
 		Width:  width,
 		Height: height,
 		Restore: func() error {
-			return term.Restore(int(stdin.Fd()), oldState)
+			return termRestore(int(stdin.Fd()), oldState)
 		},
 	}, nil
 }
@@ -190,8 +193,12 @@ func (t *termIO) clear(space int, buf io.Writer) error {
 	return nil
 }
 
-func isTerminal() bool {
+var terminalChecker = func() bool {
 	return term.IsTerminal(int(os.Stdout.Fd()))
+}
+
+func isTerminal() bool {
+	return terminalChecker()
 }
 
 // see https://stackoverflow.com/a/37014283/277035
