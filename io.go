@@ -35,6 +35,8 @@ var defaultIO = &tio{
 	Writer: os.Stderr,
 }
 
+var termGetSize = term.GetSize
+
 func newUnstartedIO(ctx context.Context, width, height int) *chanIO {
 	cio := &chanIO{
 		ctx:    ctx,
@@ -65,7 +67,7 @@ type chanIO struct {
 }
 
 func NewIO(ctx context.Context) (*chanIO, error) {
-	w, h, err := term.GetSize(int(os.Stderr.Fd()))
+	w, h, err := termGetSize(int(os.Stderr.Fd()))
 	if err != nil {
 		return nil, fmt.Errorf("get size: %w", err)
 	}
