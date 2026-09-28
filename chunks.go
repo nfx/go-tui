@@ -92,13 +92,27 @@ var wideRanges = []struct{ lo, hi rune }{
 	{0x30000, 0x3FFFD},
 }
 
+// truncateVisible truncates a chunk to fit within maxLen visible characters.
+// It first strips content after any newline character to prevent layout issues.
 func truncateVisible(chunk []byte, maxLen int, tailer byte) (out []byte) {
+	chunk = truncateAtNewline(chunk)
 	out = []byte(truncateAscii(string(chunk), maxLen-1))
 	if len(out) > 0 && out[len(out)-1] != tailer {
 		out = append(out, tailer)
 	}
 
 	return
+}
+
+// truncateAtNewline returns chunk up to the first \r or \n.
+func truncateAtNewline(chunk []byte) []byte {
+	for i, b := range chunk {
+		if b == '\r' || b == '\n' {
+			return chunk[:i]
+		}
+	}
+
+	return chunk
 }
 
 func truncateAscii(chunk string, maxLen int) (out string) {

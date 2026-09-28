@@ -38,6 +38,26 @@ func TestTruncateASCII(t *testing.T) {
 	}
 }
 
+func TestTruncateAtNewline(t *testing.T) {
+	for _, tt := range []struct {
+		in   string
+		want string
+	}{
+		{"no newlines", "no newlines"},
+		{"hello\nworld", "hello"},
+		{"hello\rworld", "hello"},
+		{"hello\r\nworld", "hello"},
+		{"\nstart", ""},
+		{"\rstart", ""},
+		{"", ""},
+		{"abc\ndef\nghi", "abc"},
+	} {
+		t.Run(fmt.Sprint(tt), func(t *testing.T) {
+			assert.Equal(t, tt.want, string(truncateAtNewline([]byte(tt.in))))
+		})
+	}
+}
+
 func TestWidthUnicode(t *testing.T) {
 	//nolint:gosmopolitan // intent is to verify width handling on specific scripts.
 	for _, tt := range []struct {
