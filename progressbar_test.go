@@ -6,6 +6,7 @@ package tui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"testing"
@@ -172,18 +173,24 @@ func TestNewFileProgressReader(t *testing.T) {
 	assert.True(t, applied)
 	assert.NotNil(t, r.p.io)
 	t.Cleanup(func() { assert.NoError(t, r.Close()) })
-
 	_, err = io.ReadAll(r)
 	assert.NoError(t, err)
-	for {
-		select {
-		case n := <-r.p.increments:
-			r.p.currentNum += n
-		default:
-			goto drained
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		for {
+			select {
+			case n := <-r.p.increments:
+				r.p.currentNum += n
+			default:
+				goto drained
+			}
 		}
+	drained:
+		if r.p.currentNum == 11 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-drained:
 	assert.Equal(t, int64(11), r.p.currentNum)
 	assert.Equal(t, int64(11), r.p.maxNum)
 }
@@ -271,6 +278,15 @@ drainedSlice:
 	assert.True(t, seen.isDone())
 }
 
+func TestWithFormatRate(t *testing.T) {
+	p := newProgressbar()
+	err := WithFormatRate(func(_ float64) string { return "rate" })(p)
+	assert.NoError(t, err)
+	if p.fmtRate == nil {
+		t.Fatalf("expected format rate function")
+	}
+}
+
 func TestProgressStateHelpers(t *testing.T) {
 	ps := &progressState{
 		maxNum:     100,
@@ -280,4 +296,185 @@ func TestProgressStateHelpers(t *testing.T) {
 	assert.Equal(t, "4s remaining", ps.remainingTime(10))
 	assert.Equal(t, "", ps.remainingTime(0))
 	assert.Equal(t, "[==========]", ps.filledBarLine(10, 1.2))
+}
+
+func TestNewSliceProgressBarStopsOnYieldFalse(t *testing.T) {
+	seq := NewSliceProgressBar("label", []int{1, 2, 3}, progressbarOpt(func(p *Progressbar) error {
+		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			return nil, ErrNoTTY
+		}
+		return nil
+	}))
+	count := 0
+	seq(func(v int, err error) bool {
+		count++
+		return false
+	})
+	if count != 1 {
+		t.Fatalf("expected one item, got %d", count)
+	}
+}
+
+func TestNewSliceProgressBarReturnsError(t *testing.T) {
+	seq := NewSliceProgressBar("label", []int{1}, progressbarOpt(func(p *Progressbar) error {
+		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			return nil, errors.New("boom")
+		}
+		return nil
+	}))
+	var gotErr error
+	seq(func(v int, err error) bool {
+		gotErr = err
+		return false
+	})
+	if gotErr == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestProgressbarCloseNoIO(t *testing.T) {
+	p := &Progressbar{}
+	if err := p.Close(); err != nil {
+		t.Fatalf("expected nil error")
+	}
+}
+
+func TestProgressStateIsDone(t *testing.T) {
+	p := &progressState{maxNum: 0, currentNum: 0}
+	if p.isDone() {
+		t.Fatalf("expected not done")
+	}
+	p.maxNum = 2
+	p.currentNum = 2
+	if !p.isDone() {
+		t.Fatalf("expected done")
+	}
+}
+
+func TestProgressbarCloseWithIO(t *testing.T) {
+	p := &Progressbar{io: &termIO{}, cancel: func() {}, err: io.EOF}
+	err := p.Close()
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF, got %v", err)
+	}
+}
+
+func TestProgressbarAddContextDone(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	p := &Progressbar{
+		config:     config{ctx: ctx},
+		io:         &termIO{},
+		increments: nil,
+	}
+	p.Add(1)
+}
+
+type closeReader struct {
+	closed bool
+}
+
+func (c *closeReader) Read(p []byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (c *closeReader) Close() error {
+	c.closed = true
+	return nil
+}
+
+func TestWrapReaderCloseCallsUnderlying(t *testing.T) {
+	cr := &closeReader{}
+	w := &wrapReader{r: cr, p: &Progressbar{}}
+	err := w.Close()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cr.closed {
+		t.Fatalf("expected close to be called")
+	}
+}
+
+func TestWrapReaderCloseProgressError(t *testing.T) {
+	cr := &closeReader{}
+	p := &Progressbar{io: &termIO{}, cancel: func() {}, err: io.EOF}
+	w := &wrapReader{r: cr, p: p}
+	err := w.Close()
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF, got %v", err)
+	}
+	if cr.closed {
+		t.Fatalf("unexpected close")
+	}
+}
+
+func TestProgressbarTickShowsElapsed(t *testing.T) {
+	p := &Progressbar{
+		progressState: progressState{
+			maxNum:      10,
+			currentNum:  5,
+			showElapsed: true,
+			startedAt:   time.Now().Add(-2 * time.Second),
+			redrawAt:    time.Now().Add(-1 * time.Second),
+		},
+		label: "test",
+		io: &termIO{
+			out:     &bytes.Buffer{},
+			Width:   40,
+			Height:  1,
+			Restore: func() error { return nil },
+		},
+		now: func() time.Time { return time.Now() },
+	}
+	frame := &bytes.Buffer{}
+	if p.tick(frame, 0) {
+		t.Fatalf("unexpected done")
+	}
+}
+
+type errWriterPB struct{}
+
+func (errWriterPB) Write(p []byte) (int, error) {
+	return 0, io.EOF
+}
+
+func TestProgressbarTickWriteError(t *testing.T) {
+	p := &Progressbar{
+		progressState: progressState{
+			maxNum:     10,
+			currentNum: 5,
+			redrawAt:   time.Now(),
+			startedAt:  time.Now().Add(-time.Second),
+		},
+		label: "test",
+		io: &termIO{
+			out:     errWriterPB{},
+			Width:   40,
+			Height:  1,
+			Restore: func() error { return nil },
+		},
+		now: func() time.Time { return time.Now() },
+	}
+	frame := &bytes.Buffer{}
+	if !p.tick(frame, 0) {
+		t.Fatalf("expected done")
+	}
+	if p.err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestProgressbarStopRestoreError(t *testing.T) {
+	p := &Progressbar{
+		rendered: true,
+		io: &termIO{
+			out:     &bytes.Buffer{},
+			Restore: func() error { return io.EOF },
+		},
+		ticker: time.NewTicker(time.Hour),
+	}
+	err := p.stop()
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF, got %v", err)
+	}
 }
