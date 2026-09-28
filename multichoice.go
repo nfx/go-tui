@@ -185,7 +185,17 @@ func (m *multichoice) run() error {
 		return ErrNoSpace
 	}
 	// TODO: unfinished
-	frame := initViewport(m.Ctx, make(chan viewportChanged), io.Width, io.Height)
+	notify := make(chan viewportChanged, 16)
+	frame := initViewport(m.Ctx, notify, io.Width, io.Height)
+	go func() {
+		for {
+			select {
+			case <-m.Ctx.Done():
+				return
+			case <-notify:
+			}
+		}
+	}()
 	var typed []rune
 	for {
 		err = m.render(io, frame)

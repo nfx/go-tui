@@ -1,0 +1,166 @@
+// Copyright 2026 Serge Smertin
+// SPDX-License-Identifier: MIT
+
+package tui
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"testing"
+	"text/template"
+
+	"github.com/nfx/go-tui/internal/assert"
+)
+
+func TestMultichoiceRenderInitializes(t *testing.T) {
+	m := newMultichoice()
+	m.Items = []any{"one", "two"}
+	io := newTestTermIO(20, 6)
+	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
+	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
+	m.labelBuf.WriteString(m.Label + " ")
+
+	frame := &viewport{
+		ctx:      t.Context(),
+		inner:    make(chan []byte, 16),
+		writeTos: make(chan *writeTo, 1),
+		notify:   make(chan viewportChanged, 1),
+		width:    io.Width,
+		height:   io.Height,
+	}
+
+	assert.NoError(t, m.render(io, frame))
+}
+
+func TestMultichoiceRenderMoreItems(t *testing.T) {
+	m := newMultichoice()
+	m.Items = []any{"short", "veryverylong", "mid", "tail"}
+	m.active = 0
+	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
+	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
+	m.labelBuf.WriteString("longlabel ")
+	io := newTestTermIO(5, 4)
+	frame := &viewport{
+		ctx:      t.Context(),
+		inner:    make(chan []byte, 16),
+		writeTos: make(chan *writeTo, 1),
+		notify:   make(chan viewportChanged, 16),
+		width:    io.Width,
+		height:   io.Height,
+	}
+	assert.NoError(t, m.render(io, frame))
+}
+
+func TestMultichoiceRunNoSpace(t *testing.T) {
+	m := newMultichoice()
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{
+			in:      in,
+			out:     out,
+			Width:   10,
+			Height:  2,
+			Restore: func() error { return nil },
+		}, nil
+	}
+	err := m.run()
+	assert.ErrorIs(t, err, ErrNoSpace)
+}
+
+func TestMultichoiceRunHandlesKeys(t *testing.T) {
+	reader := &chunkReader{chunks: [][]byte{
+		{0x1b, 0x5b, 0x42},
+		{' '},
+		{'z'},
+		{'o'},
+		{0x7f},
+		{0x1b, 0x5b, 0x41},
+		{keyEnter},
+	}}
+	m := newMultichoice()
+	m.Items = []any{"one", "two", "three"}
+	m.selected = make([]bool, len(m.Items))
+	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
+	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
+	m.labelBuf.WriteString(m.Label + " ")
+	m.in = reader
+	m.out = &bytes.Buffer{}
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{
+			in:      in,
+			out:     out,
+			Width:   40,
+			Height:  6,
+			Restore: func() error { return nil },
+		}, nil
+	}
+	assert.NoError(t, m.run())
+}
+
+func TestMultichoiceRunContextDone(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	m := newMultichoice()
+	m.Ctx = ctx
+	m.Items = []any{"one"}
+	m.selected = make([]bool, len(m.Items))
+	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
+	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
+	m.labelBuf.WriteString(m.Label + " ")
+	m.in = &chunkReader{chunks: [][]byte{{byte(keyEnter)}}}
+	m.out = &bytes.Buffer{}
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{
+			in:      in,
+			out:     out,
+			Width:   40,
+			Height:  6,
+			Restore: func() error { return nil },
+		}, nil
+	}
+	err := m.run()
+	assert.Error(t, err)
+}
+
+func TestMultichoiceRunPasteIgnored(t *testing.T) {
+	m := newMultichoice()
+	m.Items = []any{"one"}
+	m.selected = make([]bool, len(m.Items))
+	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
+	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
+	m.labelBuf.WriteString(m.Label + " ")
+	m.in = &chunkReader{chunks: [][]byte{{'a', 'b'}, {byte(keyEnter)}}}
+	m.out = &bytes.Buffer{}
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{
+			in:      in,
+			out:     out,
+			Width:   40,
+			Height:  6,
+			Restore: func() error { return nil },
+		}, nil
+	}
+	assert.NoError(t, m.run())
+}
+
+func TestMultichoiceRunReadError(t *testing.T) {
+	m := newMultichoice()
+	m.Items = []any{"one"}
+	m.selected = make([]bool, len(m.Items))
+	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
+	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
+	m.labelBuf.WriteString(m.Label + " ")
+	m.in = bytes.NewBuffer(nil)
+	m.out = &bytes.Buffer{}
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{
+			in:      in,
+			out:     out,
+			Width:   40,
+			Height:  6,
+			Restore: func() error { return nil },
+		}, nil
+	}
+	err := m.run()
+	assert.Error(t, err)
+}
