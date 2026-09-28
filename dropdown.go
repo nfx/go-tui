@@ -675,11 +675,22 @@ func (d *dropdown) renderLazyFrame(tio *termIO, frame *bytes.Buffer, space *int,
 	return nil
 }
 
+// ErrEmptyLazyResult is empty lazy result.
+var ErrEmptyLazyResult = errors.New("empty lazy result")
+
 // handleLazyItem updates the dropdown for a streamed item.
 func (d *dropdown) handleLazyItem(tio *termIO, frame *bytes.Buffer, space int, it itPair, more bool) (bool, error) {
 	if !more {
 		d.iterDone = true
 		d.itItems = nil
+		if len(d.Items) == 0 {
+			clearErr := d.clearFrame(tio, frame, space)
+			if clearErr != nil {
+				return false, errors.Join(io.EOF, clearErr)
+			}
+
+			return false, ErrEmptyLazyResult
+		}
 
 		return false, nil
 	}
