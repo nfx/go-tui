@@ -10,6 +10,11 @@ import (
 	"strings"
 )
 
+var clipboardExecCommand = exec.Command
+var clipboardCommandOutput = func(cmd *exec.Cmd) ([]byte, error) {
+	return cmd.Output()
+}
+
 type clipboard struct{}
 
 func ShouldPasteFromClipboard() string {
@@ -23,7 +28,7 @@ func (cr *clipboard) Read() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("paste command: %w", err)
 	}
-	output, err := cmd.Output()
+	output, err := clipboardCommandOutput(cmd)
 	if err != nil {
 		return "", fmt.Errorf("run: %w", err)
 	}
@@ -57,7 +62,7 @@ func (cr *clipboard) pasteCommand() (*exec.Cmd, error) {
 			continue
 		}
 
-		return exec.Command(args[0], args[1:]...), nil
+		return clipboardExecCommand(args[0], args[1:]...), nil
 	}
 
 	return nil, fmt.Errorf("%w: no clipboard paste utility found", ErrUnsupportedPlatform)
