@@ -258,6 +258,7 @@ func WithHide() opt {
 	})
 }
 
+// Deprecated: use [WithTemplate] for simpler and more flexible approach.
 func WithFieldTemplate(fieldName ...string) opt {
 	return opT(func(d *dropdown) error {
 		var single, answer []string
@@ -276,11 +277,20 @@ func WithFieldTemplate(fieldName ...string) opt {
 	})
 }
 
-func WithSimpleTemplate(main string, auxTmpl string) opt {
+// WithTemplate defines main field that is visible across active, inactive,
+// and selected states; and activeDetails fields are visible in parentheses
+// for active items.
+func WithTemplate(main string, activeDetails ...string) opt {
 	return opT(func(d *dropdown) error {
-		d.ActiveItemTemplate = fmt.Sprintf(`{{ cyan "→ " .%s }} {{ dim "(" %s ")" }}`, main, auxTmpl)
-		d.InactiveItemTemplate = fmt.Sprintf(`{{ dim "→ " .%s }}`, main)
-		d.AnswerTemplate = fmt.Sprintf(`{{ dim "✔ " .Label " …" }} {{ bold .Answer.%s }}`, main)
+		details := ""
+		if len(activeDetails) > 0 {
+			details = strings.Join(activeDetails, `) ", " (`)
+			details = fmt.Sprintf(` {{ dim "(" (%s) ")" }}`, details)
+		}
+		// TODO: add template validation once we have a reflection on field structure
+		d.ActiveItemTemplate = fmt.Sprintf(`{{ cyan "→ " %s }}%s`, main, details)
+		d.InactiveItemTemplate = fmt.Sprintf(`{{ dim "→ " %s }}`, main)
+		d.AnswerTemplate = fmt.Sprintf(`{{ dim "✔ " .Label " …" }} {{ bold .Answer%s }}`, main)
 
 		return nil
 	})
