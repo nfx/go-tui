@@ -307,3 +307,83 @@ func TestSpinnerFailedState(t *testing.T) {
 	assert.Contains(t, output, "failure")
 	assert.Contains(t, output, "\x1b[1A\r\x1b[K")
 }
+
+func TestSpinnersDrainQueues(t *testing.T) {
+	s := newSpinners()
+	s.creates = make(chan createSpinner, 1)
+	s.updates = make(chan updateOffset, 1)
+	s.stops = make(chan int, 1)
+	reply := make(chan int, 1)
+	s.creates <- createSpinner{
+		cancel:      func() {},
+		frames:      []string{"."},
+		replyOffset: reply,
+	}
+	s.drainQueues()
+	if len(s.state) != 1 {
+		t.Fatalf("expected one spinner, got %d", len(s.state))
+	}
+	s.updates <- updateOffset{offset: 0, message: "msg"}
+	s.drainQueues()
+	if s.state[0].Message != "msg" {
+		t.Fatalf("expected message update")
+	}
+	s.stops <- 0
+	s.drainQueues()
+	if s.state[0] != nil {
+		t.Fatalf("expected spinner removed")
+	}
+}
+
+func TestSpinnersUpdateOffsetSends(t *testing.T) {
+	s := newSpinners()
+	s.updates = make(chan updateOffset, 1)
+	s.updateOffset(2, "note", nil)
+	got := <-s.updates
+	if got.offset != 2 || got.message != "note" || got.err != nil {
+		t.Fatalf("unexpected update %#v", got)
+	}
+}
+
+func TestSpinnersUpdateOffsetContextDone(t *testing.T) {
+	s := newSpinners()
+	s.updates = make(chan updateOffset, 1)
+	s.cancel()
+	s.updateOffset(1, "msg", nil)
+	select {
+	case <-s.updates:
+		t.Fatalf("expected no update")
+	default:
+	}
+}
+
+func TestSpinnersAddContextDone(t *testing.T) {
+	s := newSpinners()
+	s.cancel()
+	_, err := s.Add(t.Context())
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestSpinnersAddWithCanceledContext(t *testing.T) {
+	s, _, _ := spinnersForTest(t)
+	defer s.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := s.Add(ctx)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestSpinnersMustAddBackgroundPanics(t *testing.T) {
+	s := newSpinners()
+	s.cancel()
+	defer func() {
+		if recover() == nil {
+			t.Fatalf("expected panic")
+		}
+	}()
+	s.MustAddBackground()
+}
