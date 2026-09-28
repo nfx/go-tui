@@ -10,6 +10,12 @@ import (
 	"runtime"
 )
 
+var (
+	browserExecCommand    = exec.Command
+	browserGOOS           = runtime.GOOS
+	browserCommandStarter = func(cmd *exec.Cmd) error { return cmd.Start() }
+)
+
 // Browserf opens the specified URL in the default browser.
 func Browserf(addr string, args ...any) error {
 	var cmd *exec.Cmd
@@ -19,16 +25,16 @@ func Browserf(addr string, args ...any) error {
 		}
 	}
 	addr = fmt.Sprintf(addr, args...)
-	switch runtime.GOOS {
+	switch browserGOOS {
 	case "linux":
-		cmd = exec.Command("xdg-open", addr)
+		cmd = browserExecCommand("xdg-open", addr)
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", addr)
+		cmd = browserExecCommand("rundll32", "url.dll,FileProtocolHandler", addr)
 	case "darwin": // macOS
-		cmd = exec.Command("open", addr)
+		cmd = browserExecCommand("open", addr)
 	default:
-		return fmt.Errorf("%w: %s", ErrUnsupportedPlatform, runtime.GOOS)
+		return fmt.Errorf("%w: %s", ErrUnsupportedPlatform, browserGOOS)
 	}
 
-	return cmd.Start()
+	return browserCommandStarter(cmd)
 }

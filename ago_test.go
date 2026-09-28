@@ -36,3 +36,8 @@ func TestFormatAgo(t *testing.T) {
 		})
 	}
 }
+
+func TestAgoNow(t *testing.T) {
+	got := ago(time.Now())
+	assert.Equal(t, "now", got)
+}
