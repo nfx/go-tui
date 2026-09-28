@@ -64,6 +64,17 @@ type itPair struct {
 	err  error
 }
 
+type keyEvent struct {
+	key rune
+	err error
+}
+
+type lazyResult struct {
+	index       int
+	done        bool
+	needsRender bool
+}
+
 func Confirmf(format string, a ...any) bool {
 	return Confirm(fmt.Sprintf(format, a...))
 }
@@ -131,7 +142,7 @@ func DropdownLazy[V any](label string, itemFn iter.Seq2[V, error], o ...opt) (V,
 	var zero V
 	d := newDropdown()
 	d.Label = label
-	d.itItems = make(chan itPair)
+	d.itItems = make(chan itPair, max(1, d.IterBatchSize))
 	go func() {
 		defer close(d.itItems)
 		for v, err := range itemFn {
@@ -550,6 +561,9 @@ func (d *dropdown) run() (int, error) {
 	}
 	frame := bytes.NewBuffer(make([]byte, d.height()*io.Width))
 	frame.Reset()
+	if d.itItems != nil {
+		return d.runLazy(io, frame)
+	}
 	for {
 		i, err := d.runRender(io, frame)
 		if err != nil {
@@ -559,6 +573,178 @@ func (d *dropdown) run() (int, error) {
 			return i, nil
 		}
 	}
+}
+
+// runLazy renders the dropdown while items are streamed in.
+func (d *dropdown) runLazy(tio *termIO, frame *bytes.Buffer) (int, error) {
+	ctx, cancel := context.WithCancel(d.Ctx)
+	defer cancel()
+	keys := d.readKeys(ctx, tio)
+	space := 0
+	displayed := 0
+	needsRender := true
+	for {
+		var err error
+		err = d.ensureLazyRender(tio, frame, &needsRender, &space, &displayed)
+		if err != nil {
+			return -1, err
+		}
+		res, err := d.nextLazyAction(tio, frame, space, displayed, keys)
+		if err != nil {
+			return -1, err
+		}
+		if res.done {
+			return res.index, nil
+		}
+		needsRender = res.needsRender
+	}
+}
+
+// ensureLazyRender draws the dropdown only when it needs a refresh.
+func (d *dropdown) ensureLazyRender(
+	tio *termIO,
+	frame *bytes.Buffer,
+	needsRender *bool,
+	space *int,
+	displayed *int,
+) error {
+	if !*needsRender {
+		return nil
+	}
+	err := d.renderLazyFrame(tio, frame, space, displayed)
+	if err != nil {
+		return err
+	}
+	*needsRender = false
+
+	return nil
+}
+
+// nextLazyAction waits for item, key, or context updates.
+func (d *dropdown) nextLazyAction(
+	tio *termIO,
+	frame *bytes.Buffer,
+	space int,
+	displayed int,
+	keys <-chan keyEvent,
+) (lazyResult, error) {
+	select {
+	case it, more := <-d.itItems:
+		nextRender, err := d.handleLazyItem(tio, frame, space, it, more)
+		if err != nil {
+			return lazyResult{}, err
+		}
+
+		return lazyResult{needsRender: nextRender}, nil
+	case ev, ok := <-keys:
+		i, nextRender, err := d.handleLazyKey(tio, frame, space, displayed, ev, ok)
+		if err != nil {
+			return lazyResult{}, err
+		}
+
+		return lazyResult{index: i, done: i >= 0, needsRender: nextRender}, nil
+	case <-d.Ctx.Done():
+		err := d.clearFrame(tio, frame, space)
+		if err != nil {
+			return lazyResult{}, err
+		}
+
+		return lazyResult{}, d.Ctx.Err()
+	}
+}
+
+// renderLazyFrame clears the previous output and renders the dropdown.
+func (d *dropdown) renderLazyFrame(tio *termIO, frame *bytes.Buffer, space *int, displayed *int) error {
+	if *space > 0 {
+		err := tio.clear(*space, frame)
+		if err != nil {
+			return fmt.Errorf("clear: %w", err)
+		}
+	}
+	err := d.render(tio, frame)
+	if err != nil {
+		return fmt.Errorf("render: %w", err)
+	}
+	_, err = frame.WriteTo(tio)
+	if err != nil {
+		return fmt.Errorf("write: %w", err)
+	}
+	*space = d.height()
+	*displayed = len(d.displayed)
+
+	return nil
+}
+
+// handleLazyItem updates the dropdown for a streamed item.
+func (d *dropdown) handleLazyItem(tio *termIO, frame *bytes.Buffer, space int, it itPair, more bool) (bool, error) {
+	if !more {
+		d.iterDone = true
+		d.itItems = nil
+
+		return false, nil
+	}
+	if it.err != nil {
+		clearErr := d.clearFrame(tio, frame, space)
+		if clearErr != nil {
+			return false, errors.Join(it.err, clearErr)
+		}
+
+		return false, it.err
+	}
+	err := d.addItem(tio.Height, it.item)
+	if err != nil {
+		clearErr := d.clearFrame(tio, frame, space)
+		if clearErr != nil {
+			return false, errors.Join(err, clearErr)
+		}
+
+		return false, err
+	}
+
+	return true, nil
+}
+
+// handleLazyKey updates the dropdown for a key event.
+func (d *dropdown) handleLazyKey(
+	tio *termIO,
+	frame *bytes.Buffer,
+	space int,
+	displayed int,
+	ev keyEvent,
+	ok bool,
+) (int, bool, error) {
+	if !ok {
+		err := d.clearFrame(tio, frame, space)
+		if err != nil {
+			return -1, false, errors.Join(io.EOF, err)
+		}
+
+		return -1, false, io.EOF
+	}
+	if ev.err != nil {
+		var more *pasteTextError
+		if errors.As(ev.err, &more) {
+			return -1, false, nil
+		}
+		readErr := fmt.Errorf("read: %w", ev.err)
+		clearErr := d.clearFrame(tio, frame, space)
+		if clearErr != nil {
+			return -1, false, errors.Join(readErr, clearErr)
+		}
+
+		return -1, false, readErr
+	}
+	i := d.pressKeyRune(tio, ev.key, displayed, space)
+	if i >= 0 {
+		err := d.clearFrame(tio, frame, space)
+		if err != nil {
+			return -1, false, err
+		}
+
+		return i, false, nil
+	}
+
+	return -1, true, nil
 }
 
 func (d *dropdown) runRender(io *termIO, frame *bytes.Buffer) (int, error) {
@@ -594,9 +780,6 @@ func (d *dropdown) runRender(io *termIO, frame *bytes.Buffer) (int, error) {
 }
 
 func (d *dropdown) runMain(io *termIO, frame *bytes.Buffer, space, displayed int) (int, error) {
-	if d.itItems != nil && len(d.Items) < io.Height && !d.iterDone {
-		return -1, nil
-	}
 	i, err := d.pressKey(io, frame, space, displayed)
 	var more *pasteTextError
 	if errors.As(err, &more) {
@@ -639,15 +822,10 @@ func (d *dropdown) loadItem(io *termIO, frame *bytes.Buffer, it itPair, more boo
 
 		return errors.Join(errs...)
 	}
-	d.Items = append(d.Items, it.item)
-	d.inactive = append(d.inactive, nil)
-	d.widths = append(d.widths, 0)
-	d.relevant = append(d.relevant, 0)
-	err := d.setItem(len(d.Items)-1, it.item)
+	err := d.addItem(io.Height, it.item)
 	if err != nil {
-		return fmt.Errorf("set item: %w", err)
+		return err
 	}
-	d.displayed = d.relevant[:min(len(d.relevant), io.Height/2)]
 	// if len(d.relevant) > displayed {
 	// 	space += 2
 	// }
@@ -665,6 +843,42 @@ func (d *dropdown) loadItem(io *termIO, frame *bytes.Buffer, it itPair, more boo
 	}
 
 	return nil
+}
+
+// addItem appends an item and refreshes derived state.
+func (d *dropdown) addItem(height int, item any) error {
+	d.Items = append(d.Items, item)
+	d.inactive = append(d.inactive, nil)
+	d.widths = append(d.widths, 0)
+	d.relevant = append(d.relevant, 0)
+	err := d.setItem(len(d.Items)-1, item)
+	if err != nil {
+		return fmt.Errorf("set item: %w", err)
+	}
+	d.displayed = d.relevant[:min(len(d.relevant), height/2)]
+
+	return nil
+}
+
+// pressKeyRune updates dropdown state for an already-read key.
+func (d *dropdown) pressKeyRune(io *termIO, key rune, displayed, space int) int {
+	switch key {
+	case keyEnter:
+		return d.offset + d.selected
+	case '↑':
+		d.pressUp(displayed)
+	case '↓':
+		d.pressDown(displayed)
+	case 0x7f: // backspace
+		d.pressBackspace(io)
+	default:
+		done := d.pressAny(key, displayed, space)
+		if done {
+			return 0
+		}
+	}
+
+	return -1
 }
 
 func (d *dropdown) pressKey(io *termIO, frame *bytes.Buffer, space, displayed int) (i int, err error) {
@@ -698,6 +912,23 @@ func (d *dropdown) pressKey(io *termIO, frame *bytes.Buffer, space, displayed in
 	}
 
 	return -1, nil
+}
+
+// clearFrame removes the last render without drawing a new frame.
+func (d *dropdown) clearFrame(io *termIO, frame *bytes.Buffer, space int) error {
+	if space < 1 {
+		return nil
+	}
+	err := io.clear(space, frame)
+	if err != nil {
+		return fmt.Errorf("clear: %w", err)
+	}
+	_, err = frame.WriteTo(io)
+	if err != nil {
+		return fmt.Errorf("write: %w", err)
+	}
+
+	return nil
 }
 
 func (d *dropdown) pressUp(displayed int) {
@@ -746,4 +977,25 @@ func (d *dropdown) pressAny(key rune, displayed, space int) bool {
 	d.offset = 0
 
 	return false
+}
+
+// readKeys listens for key presses so item loading can continue.
+func (d *dropdown) readKeys(ctx context.Context, io *termIO) <-chan keyEvent {
+	ch := make(chan keyEvent)
+	go func() {
+		defer close(ch)
+		for {
+			key, _, err := io.ReadRune()
+			select {
+			case <-ctx.Done():
+				return
+			case ch <- keyEvent{key: key, err: err}:
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	return ch
 }
