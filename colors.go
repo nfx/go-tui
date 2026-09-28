@@ -80,6 +80,7 @@ var colorFns = template.FuncMap{
 	"italic":       ansciiFormatter(italic),
 	"underline":    ansciiFormatter(underline),
 	"strike":       ansciiFormatter(strikethrough),
+	"ago":          ago,
 }
 
 func ansciiFormatter(codes ...string) func(...any) string {
