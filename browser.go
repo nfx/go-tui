@@ -35,6 +35,5 @@ func Browserf(addr string, args ...any) error {
 	default:
 		return fmt.Errorf("%w: %s", ErrUnsupportedPlatform, browserGOOS)
 	}
-
 	return browserCommandStarter(cmd)
 }

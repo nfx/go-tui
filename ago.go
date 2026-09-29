@@ -51,7 +51,6 @@ func formatAgo(now, t time.Time) string {
 		if future {
 			return fmt.Sprintf("in %d%s", rounded, suffix)
 		}
-
 		return fmt.Sprintf("%d%s ago", rounded, suffix)
 	}
 
@@ -63,9 +62,7 @@ func formatAgo(now, t time.Time) string {
 		if math.Round(value) >= float64(u.limit)/float64(u.base) {
 			continue
 		}
-
 		return format(value, u.suffix)
 	}
-
 	return format(float64(duration)/float64(yearDuration), "yr")
 }

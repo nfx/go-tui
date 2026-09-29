@@ -70,7 +70,6 @@ func TestTableEmitsStructuredEvents(t *testing.T) {
 		tbl.eventSink = func(ev tableEvent) {
 			events = append(events, ev)
 		}
-
 		return nil
 	}))
 	assert.NoError(t, err)
@@ -118,7 +117,6 @@ func TestTableIterAppendError(t *testing.T) {
 	}
 	err := TableIter(errWriterTable{}, "{{.Name}}", iter, opT(func(t *table) error {
 		t.batchSize = 1
-
 		return nil
 	}))
 	assert.Error(t, err)

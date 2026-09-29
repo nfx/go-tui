@@ -112,7 +112,6 @@ func ansciiFormatter(codes ...string) func(...any) string {
 			}
 		}
 		result += reset
-
 		return result
 	}
 }

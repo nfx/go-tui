@@ -26,19 +26,16 @@ func width(chunk []byte) int {
 				escape = false
 			}
 			i += size
-
 			continue
 		}
 		if r <= utf8.RuneSelf && isEscapeStart(byte(r)) {
 			escape = true
 			i += size
-
 			continue
 		}
 		w += runeWidth(r)
 		i += size
 	}
-
 	return w
 }
 
@@ -71,7 +68,6 @@ func isWideRune(r rune) bool {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -100,7 +96,6 @@ func truncateVisible(chunk []byte, maxLen int, tailer byte) (out []byte) {
 	if len(out) > 0 && out[len(out)-1] != tailer {
 		out = append(out, tailer)
 	}
-
 	return
 }
 
@@ -111,7 +106,6 @@ func truncateAtNewline(chunk []byte) []byte {
 			return chunk[:i]
 		}
 	}
-
 	return chunk
 }
 
@@ -129,7 +123,6 @@ func truncateAscii(chunk string, maxLen int) (out string) {
 	for state.offset < len(state.input) {
 		if state.escape {
 			state.consumeEscape()
-
 			continue
 		}
 		if state.maybeStartEscape() {
@@ -139,7 +132,6 @@ func truncateAscii(chunk string, maxLen int) (out string) {
 			break
 		}
 	}
-
 	return state.finish()
 }
 
@@ -172,10 +164,8 @@ func (s *truncation) updateSGRCount(end int) int {
 		if s.openSGRCount > 0 {
 			return s.openSGRCount - 1
 		}
-
 		return s.openSGRCount
 	}
-
 	return s.openSGRCount + 1
 }
 
@@ -201,7 +191,6 @@ func (s *truncation) isResetSGR(end int) bool {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -214,7 +203,6 @@ func (s *truncation) trimEscapePrefix(segment []byte) []byte {
 	if begin >= 0 {
 		return segment[begin+1:]
 	}
-
 	return nil
 }
 
@@ -226,7 +214,6 @@ func (s *truncation) trimSuffix(segment []byte, suffix byte) []byte {
 	if segment[len(segment)-1] == suffix {
 		return segment[:len(segment)-1]
 	}
-
 	return segment
 }
 
@@ -240,7 +227,6 @@ func (s *truncation) maybeStartEscape() bool {
 	s.escapeStart = s.offset
 	s.output = append(s.output, s.input[s.offset:s.offset+size]...)
 	s.offset += size
-
 	return true
 }
 
@@ -254,7 +240,6 @@ func (s *truncation) consumeRune(maxLen int) bool {
 	s.width = nextWidth
 	s.output = append(s.output, s.input[s.offset:s.offset+size]...)
 	s.offset += size
-
 	return false
 }
 
@@ -267,6 +252,5 @@ func (s *truncation) finish() string {
 	for range s.openSGRCount {
 		s.output = append(s.output, '\x1b', '[', '0', 'm')
 	}
-
 	return string(s.output)
 }

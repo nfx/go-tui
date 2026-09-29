@@ -164,7 +164,6 @@ func (m *multichoice) render(io *termIO, buf *viewport) error {
 	if err != nil {
 		return fmt.Errorf("rewind: %w", err)
 	}
-
 	return nil
 }
 
@@ -210,7 +209,6 @@ func (m *multichoice) run() error {
 		case <-m.Ctx.Done():
 			io.clear(space, frame)
 			frame.WriteTo(io)
-
 			return m.Ctx.Err()
 		default:
 			key, _, err := io.ReadRune()
@@ -228,7 +226,6 @@ func (m *multichoice) run() error {
 			switch key {
 			case keyEnter:
 				frame.WriteTo(io)
-
 				return nil
 			case '↑':
 				if m.offset > 0 && m.active == 0 { // page up

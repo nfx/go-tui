@@ -29,7 +29,6 @@ func testIOforSpinners(t *testing.T, width, height int, o ...opt) (*chanIO, func
 		close(cio.In)
 		close(cio.Out)
 	})
-
 	return cio, func() {
 			go func() {
 				select {
@@ -52,7 +51,6 @@ func testIOforSpinners(t *testing.T, width, height int, o ...opt) (*chanIO, func
 						Restore: func() error { return nil },
 					}, nil
 				}
-
 				return nil
 			}),
 		}, o...,
@@ -64,7 +62,6 @@ func spinnersForTest(t *testing.T) (*Spinners, *chanIO, func()) {
 	cio, tick, opts := testIOforSpinners(t, 12, 4)
 	s, err := NewSpinners(opts)
 	assert.NoError(t, err)
-
 	return s, cio, tick
 }
 
@@ -76,7 +73,6 @@ func mustReceiveSpinnerEvent(t *testing.T, ch <-chan spinnerEvent) spinnerEvent 
 		return ev
 	case <-time.After(1 * time.Second):
 		t.Fatal("timed out waiting for spinner event")
-
 		return nil
 	}
 }
@@ -248,7 +244,6 @@ func TestSpinnersOpt(t *testing.T) {
 	called := false
 	opt := spinnersOpt(func(s *Spinners) error {
 		called = true
-
 		return nil
 	})
 
@@ -407,7 +402,6 @@ func TestSpinnersEmitStructuredEvents(t *testing.T) {
 		s.eventSink = func(ev spinnerEvent) {
 			events <- ev
 		}
-
 		return nil
 	}))
 	s, err := NewSpinners(opts)

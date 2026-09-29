@@ -23,7 +23,6 @@ func mustReceiveProgressEvent(t *testing.T, ch <-chan progressEvent) progressEve
 		return ev
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for progress event")
-
 		return nil
 	}
 }
@@ -58,7 +57,6 @@ func TestProgressbarTickRenders(t *testing.T) {
 					Restore: func() error { return nil },
 				}, nil
 			}
-
 			return nil
 		}),
 	)
@@ -140,7 +138,6 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 					Restore: func() error { return nil },
 				}, nil
 			}
-
 			return nil
 		}),
 	)
@@ -209,7 +206,6 @@ func TestProgressbarDoneEmitsClosed(t *testing.T) {
 					Restore: func() error { return nil },
 				}, nil
 			}
-
 			return nil
 		}),
 	)
@@ -271,7 +267,6 @@ func (r *statReader) Read(p []byte) (int, error) {
 	}
 	n := copy(p, r.data[r.pos:])
 	r.pos += n
-
 	return n, nil
 }
 
@@ -310,7 +305,6 @@ func TestNewFileProgressReader(t *testing.T) {
 					Restore: func() error { return nil },
 				}, nil
 			}
-
 			return nil
 		}),
 	)
@@ -397,7 +391,6 @@ func TestNewSliceProgressBar(t *testing.T) {
 					Restore: func() error { return nil },
 				}, nil
 			}
-
 			return nil
 		}),
 	)

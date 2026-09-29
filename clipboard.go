@@ -19,7 +19,6 @@ type clipboard struct{}
 
 func ShouldPasteFromClipboard() string {
 	content, _ := (&clipboard{}).Read() //nolint:errcheck // ignore clipboard errors
-
 	return content
 }
 
@@ -33,7 +32,6 @@ func (cr *clipboard) Read() (string, error) {
 		return "", fmt.Errorf("run: %w", err)
 	}
 	content := strings.TrimRight(string(output), "\n\r")
-
 	return content, nil
 }
 
@@ -61,9 +59,7 @@ func (cr *clipboard) pasteCommand() (*exec.Cmd, error) {
 		if err != nil {
 			continue
 		}
-
 		return clipboardExecCommand(args[0], args[1:]...), nil
 	}
-
 	return nil, fmt.Errorf("%w: no clipboard paste utility found", ErrUnsupportedPlatform)
 }

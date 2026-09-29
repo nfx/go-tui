@@ -44,7 +44,6 @@ func initViewport(ctx context.Context, notify chan viewportChanged, width, heigh
 		height:   height,
 	}
 	go v.loop()
-
 	return v
 }
 
@@ -81,13 +80,11 @@ func (v *viewport) WriteTo(w io.Writer) (int64, error) {
 			}
 		}
 	}
-
 	return total, nil
 }
 
 func (v *viewport) WriteByte(b byte) error {
 	_, err := v.Write([]byte{b})
-
 	return err
 }
 
@@ -110,7 +107,6 @@ func (v *viewport) combinedHeight() int {
 		n += curr.height
 		curr = curr.next
 	}
-
 	return n
 }
 
@@ -121,7 +117,6 @@ func (v *viewport) numLines() int {
 		n += len(curr.lines)
 		curr = curr.next
 	}
-
 	return n
 }
 
@@ -148,7 +143,6 @@ func (v *viewport) writeTo(w io.Writer) (int64, int, error) {
 		bytes += int64(b)
 		lines++
 	}
-
 	return bytes, lines, nil
 }
 
@@ -169,7 +163,6 @@ func (v *viewport) padded(chunk []byte, lo, mid int) (int, int) {
 	v.lines = append(v.lines, line)
 	mid++
 	lo = mid
-
 	return lo, mid
 }
 
@@ -192,7 +185,6 @@ func (v *viewport) appendToLinebuffer(chunk []byte) int {
 			lo, mid = v.padded(chunk, lo, mid)
 			addedLines++
 			printed = 0 // reset printed char count
-
 			continue
 		}
 		if !escape {
@@ -204,7 +196,6 @@ func (v *viewport) appendToLinebuffer(chunk []byte) int {
 		v.padded(chunk, lo, hi)
 		addedLines++
 	}
-
 	return addedLines
 }
 
@@ -217,7 +208,6 @@ func (v *viewport) addLine(chunk []byte, lo, mid int, addedLines int) (int, int)
 		addedLines++
 	}
 	lo = mid
-
 	return lo, addedLines
 }
 

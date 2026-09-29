@@ -28,7 +28,6 @@ func chainIOforTest(t *testing.T, width, height int) (*chanIO, *writeC) {
 		close(cio.Out)
 		close(realOut.C)
 	})
-
 	return cio, realOut
 }
 
@@ -68,7 +67,6 @@ func TestChanIO_Forward(t *testing.T) {
 		WithContext(cio.ctx),
 		spinnersOpt(func(s *Spinners) error {
 			s.ticks = ticks
-
 			return nil
 		}),
 	)

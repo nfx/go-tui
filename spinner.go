@@ -83,7 +83,6 @@ func spinnersOpt(o func(s *Spinners) error) opt {
 		if !ok {
 			return nil
 		}
-
 		return o(s)
 	}
 }
@@ -91,7 +90,6 @@ func spinnersOpt(o func(s *Spinners) error) opt {
 func newSpinners() *Spinners {
 	ctx, cancel := context.WithCancel(context.Background())
 	ticker := time.NewTicker(100 * time.Millisecond)
-
 	return &Spinners{
 		config: config{
 			ctx: ctx,
@@ -124,7 +122,6 @@ func NewSpinners(opt ...opt) (*Spinners, error) {
 	}
 	s.emit(spinnerGroupInit{})
 	go s.start(s.ctx)
-
 	return s, nil
 }
 
@@ -137,7 +134,6 @@ func (s *Spinners) MustAddBackground(opt ...opt) *Spinner {
 	if err != nil {
 		panic(err)
 	}
-
 	return spinner
 }
 
@@ -149,7 +145,6 @@ func WithPrefixf(prefix string, args ...any) opt {
 			return nil
 		}
 		cs.prefix = fmt.Sprintf(prefix, args...)
-
 		return nil
 	}
 }
@@ -162,7 +157,6 @@ func WithKeep() opt {
 			return nil
 		}
 		cs.keep = true
-
 		return nil
 	}
 }
@@ -174,7 +168,6 @@ func WithFrames(frames []string) opt {
 			return nil
 		}
 		cs.frames = frames
-
 		return nil
 	}
 }
@@ -213,7 +206,6 @@ func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 				offset: offset,
 			}
 			go spinner.monitor(ctx)
-
 			return spinner, nil
 		}
 	}
@@ -245,7 +237,6 @@ func (s *Spinners) start(ctx context.Context) {
 				s.markDone(offset)
 			}
 			s.stop()
-
 			return
 		case ns := <-s.creates:
 			// TODO: write serially in CI mode, as well as when number of spinners
@@ -320,7 +311,6 @@ func (s *Spinners) updateSpinner(update updateOffset) {
 			Index: update.offset,
 			Error: update.message,
 		})
-
 		return
 	}
 	s.state[update.offset].Message = update.message
@@ -406,7 +396,6 @@ func (s *Spinners) redraw(prevActive int) int {
 		currActive++
 	}
 	frame.WriteTo(s.io)
-
 	return currActive
 }
 

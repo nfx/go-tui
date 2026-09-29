@@ -58,6 +58,5 @@ func (r *chunkReader) Read(p []byte) (int, error) {
 	chunk := r.chunks[r.idx]
 	r.idx++
 	n := copy(p, chunk)
-
 	return n, nil
 }

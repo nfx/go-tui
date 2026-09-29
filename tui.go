@@ -24,7 +24,6 @@ func NewTUI(ctx context.Context, opts ...opt) (*Tui, error) {
 	if err != nil {
 		return nil, fmt.Errorf("term: %w", err)
 	}
-
 	return &Tui{
 		opts:   opts,
 		ctx:    ctx,
@@ -39,7 +38,6 @@ func (t *Tui) prependView() *viewport {
 	}
 	top := &viewport{next: cio.head, width: cio.width}
 	cio.head = top
-
 	return top
 }
 
@@ -48,6 +46,5 @@ func (t *Tui) view() *viewport {
 	if ok {
 		return cio.head
 	}
-
 	return nil
 }

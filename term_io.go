@@ -48,7 +48,6 @@ func makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
 		if err != nil {
 			return nil, fmt.Errorf("viewport: %w", err)
 		}
-
 		return &termIO{
 			in:     in,
 			out:    out,
@@ -69,7 +68,6 @@ func makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
 	if err != nil {
 		return nil, fmt.Errorf("raw: %w", err)
 	}
-
 	return &termIO{
 		in:     in,
 		out:    out,
@@ -89,7 +87,6 @@ func (t *termIO) Write(p []byte) (n int, err error) {
 	if t.vp != nil {
 		return t.vp.Write(p)
 	}
-
 	return t.out.Write(p)
 }
 
@@ -171,7 +168,6 @@ func (t *termIO) clear(space int, buf io.Writer) error {
 		if t.vp.fixedHeight {
 			return t.vp.WriteByte('\r')
 		}
-
 		return nil // screen clearing is handled by [chanIO.forwardTo]
 	}
 	// use buffer to write to io only once
@@ -189,7 +185,6 @@ func (t *termIO) clear(space int, buf io.Writer) error {
 	if space > 1 {
 		fmt.Fprintf(buf, "\x1b[%dA\r", space-1)
 	}
-
 	return nil
 }
 
@@ -204,6 +199,5 @@ func isTerminal() bool {
 // see https://stackoverflow.com/a/37014283/277035
 func isPrintable(r rune) bool {
 	isSurrogate := r >= 0xd800 && r <= 0xdbff
-
 	return r >= 32 && !isSurrogate
 }

@@ -38,7 +38,6 @@ func (f *filePicker) list(dir string) ([]os.DirEntry, error) {
 		}
 		out = append(out, e)
 	}
-
 	return out, nil
 }
 
@@ -56,7 +55,6 @@ func (f *filePicker) skip(e os.DirEntry) bool {
 	if f.ignoreDirs && e.IsDir() {
 		return true
 	}
-
 	return false
 }
 
@@ -65,7 +63,6 @@ func WithExtensions(exts ...string) opt {
 		for _, ext := range exts {
 			f.extensions[strings.ToLower(ext)] = true
 		}
-
 		return nil
 	})
 }
@@ -73,7 +70,6 @@ func WithExtensions(exts ...string) opt {
 func WithStartDir(dir string) opt {
 	return opT(func(f *filePicker) error {
 		f.start = dir
-
 		return nil
 	})
 }
@@ -81,7 +77,6 @@ func WithStartDir(dir string) opt {
 func WithIgnoreUp() opt {
 	return opT(func(f *filePicker) error {
 		f.ignoreUp = true
-
 		return nil
 	})
 }
@@ -89,7 +84,6 @@ func WithIgnoreUp() opt {
 func WithIgnoreDirs() opt {
 	return opT(func(f *filePicker) error {
 		f.ignoreDirs = true
-
 		return nil
 	})
 }
@@ -97,7 +91,6 @@ func WithIgnoreDirs() opt {
 func WithShowHidden() opt {
 	return opT(func(f *filePicker) error {
 		f.showHidden = true
-
 		return nil
 	})
 }
@@ -109,7 +102,6 @@ func opT[T any](o func(d *T) error) opt {
 		if !ok {
 			return fmt.Errorf("%w: need a %T, got %T", ErrWrongWidget, zero, raw)
 		}
-
 		return o(concrete)
 	}
 }
@@ -129,7 +121,6 @@ func newFilePicker(o ...opt) (*filePicker, error) {
 		}
 		f.start = wd
 	}
-
 	return f, nil
 }
 
@@ -162,17 +153,14 @@ func FilePicker(title string, o ...opt) (string, error) {
 			if len(stack) > 1 {
 				stack = stack[:len(stack)-1]
 			}
-
 			continue
 		}
 		if !entry.IsDir() {
 			parts = append(parts, entry.Name())
-
 			return filepath.Join(parts...), nil
 		}
 		stack = append(stack, entry)
 	}
-
 	return stack[len(stack)-1].Name(), nil
 }
 
@@ -188,7 +176,6 @@ func (d *dirEntry) String() string {
 	if d.isDir {
 		return "d " + d.name + string(os.PathSeparator)
 	}
-
 	return "- " + d.name + string(os.PathSeparator)
 }
 
@@ -204,7 +191,6 @@ func (d *dirEntry) Type() os.FileMode {
 	if d.isDir {
 		return os.ModeDir
 	}
-
 	return 0
 }
 

@@ -27,7 +27,6 @@ func (t *trie) Add(word string, i int) {
 	for _, b := range word {
 		if escape && isEscapeEnd(byte(b)) {
 			escape = false
-
 			continue
 		} else if isEscapeStart(byte(b)) {
 			escape = true
@@ -40,7 +39,6 @@ func (t *trie) Add(word string, i int) {
 				r.idx = append(r.idx, i)
 			}
 			r = t
-
 			continue
 		}
 		isLetter = unicode.IsLetter(b)
@@ -79,14 +77,12 @@ func (t *trie) Prefix(prefix string) []int {
 	}
 	out := r.Indexes()
 	slices.Sort(out)
-
 	return slices.Compact(out)
 }
 
 func (t *trie) Words() (out []string) {
 	words := t.dfs("")
 	sort.Strings(words)
-
 	return words
 }
 
@@ -102,7 +98,6 @@ func (t *trie) Indexes() (out []int) {
 	}
 	// keep output in the same order
 	sort.Ints(out)
-
 	return
 }
 
@@ -114,6 +109,5 @@ func (t *trie) dfs(s string) []string {
 	for k, v := range t.m {
 		out = append(out, v.dfs(s+string(k))...)
 	}
-
 	return out
 }

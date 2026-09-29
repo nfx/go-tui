@@ -47,13 +47,11 @@ func PrettyJSON(w io.Writer, src any) error {
 	}
 	if !isTerminal() {
 		_, err = identBuf.WriteTo(w)
-
 		return err
 	}
 	outBuf := bytes.NewBuffer(nil)
 	prettyJsonRecolor(identBuf, outBuf)
 	_, err = outBuf.WriteTo(w)
-
 	return err
 }
 
@@ -77,7 +75,6 @@ func jsonIndent(src any) (*bytes.Buffer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("indent: %w", err)
 	}
-
 	return identBuf, nil
 }
 
@@ -98,15 +95,12 @@ func prettyJsonLoop(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int
 	if curr == jsonEscape {
 		w.WriteByte(ch)
 		stack = stack[:len(stack)-1]
-
 		return depth, stack
 	}
 	if ch != '"' && curr == jsonQuoted {
 		w.WriteByte(ch)
-
 		return depth, stack
 	}
-
 	return prettyJsonChar(stack, w, ch, depth)
 }
 
@@ -129,7 +123,6 @@ func prettyJsonChar(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int
 	default:
 		w.WriteByte(ch)
 	}
-
 	return depth, stack
 }
 
@@ -139,7 +132,6 @@ func prettyJsonOpenObject(stack []jsonState, w *bytes.Buffer, ch byte, depth int
 	w.WriteString(bold)
 	w.WriteByte(ch)
 	w.WriteString(reset)
-
 	return depth, stack
 }
 
@@ -149,7 +141,6 @@ func prettyJsonOpenArray(stack []jsonState, w *bytes.Buffer, ch byte, depth int)
 	w.WriteString(bold)
 	w.WriteByte(ch)
 	w.WriteString(reset)
-
 	return depth, stack
 }
 
@@ -159,7 +150,6 @@ func prettyJsonClose(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (in
 	w.WriteString(bold)
 	w.WriteByte(ch)
 	w.WriteString(reset)
-
 	return depth, stack
 }
 
@@ -169,7 +159,6 @@ func prettyJsonColon(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
 		stack = append(stack, jsonValue)
 	}
 	w.WriteByte(ch)
-
 	return stack
 }
 
@@ -179,14 +168,12 @@ func prettyJsonComma(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
 		stack = stack[:len(stack)-1]
 	}
 	w.WriteByte(ch)
-
 	return stack
 }
 
 func pretttJsonBackslash(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
 	stack = append(stack, jsonEscape)
 	w.WriteByte(ch)
-
 	return stack
 }
 
@@ -214,7 +201,6 @@ func prettyJsonQuote(stack []jsonState, w *bytes.Buffer, ch byte, depth int) []j
 	default:
 		w.WriteByte(ch)
 	}
-
 	return stack
 }
 
@@ -222,6 +208,5 @@ func abs(n int) int {
 	if n < 0 {
 		return -n
 	}
-
 	return n
 }

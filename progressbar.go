@@ -48,7 +48,6 @@ func progressbarOpt(o func(s *Progressbar) error) opt {
 		if !ok {
 			return nil
 		}
-
 		return o(s)
 	}
 }
@@ -56,7 +55,6 @@ func progressbarOpt(o func(s *Progressbar) error) opt {
 func WithFormatRate(f func(float64) string) opt {
 	return progressbarOpt(func(p *Progressbar) error {
 		p.fmtRate = f
-
 		return nil
 	})
 }
@@ -64,7 +62,6 @@ func WithFormatRate(f func(float64) string) opt {
 func newProgressbar() *Progressbar {
 	ctx, cancel := context.WithCancel(context.Background())
 	ticker := time.NewTicker(100 * time.Millisecond)
-
 	return &Progressbar{
 		config: config{
 			ctx: ctx,
@@ -110,7 +107,6 @@ func newStartedProgressBar(label string, size int64, opts ...opt) (*Progressbar,
 		Max:   p.maxNum,
 	})
 	go p.start(p.ctx)
-
 	return p, nil
 }
 
@@ -142,7 +138,6 @@ func NewSliceProgressBar[T any](label string, slice []T, opts ...opt) iter.Seq2[
 		p, err := newStartedProgressBar(label, int64(len(slice)), opts...)
 		if err != nil {
 			yield(zero, err)
-
 			return
 		}
 		yieldable := true
@@ -155,7 +150,6 @@ func NewSliceProgressBar[T any](label string, slice []T, opts ...opt) iter.Seq2[
 		for _, v := range slice {
 			if !yield(v, nil) {
 				yieldable = false
-
 				return
 			}
 			p.Add(1)
@@ -179,7 +173,6 @@ func (p *Progressbar) Close() error {
 		return nil // most likely no TTY
 	}
 	p.cancel()
-
 	return p.err
 }
 
@@ -202,7 +195,6 @@ func (p *Progressbar) start(ctx context.Context) {
 			if err != nil && !errors.Is(err, context.Canceled) {
 				p.err = err
 			}
-
 			return
 		case num := <-p.increments:
 			p.currentNum += num
@@ -228,7 +220,6 @@ func (p *Progressbar) tick(frame *bytes.Buffer, labelWidth int) bool {
 	err := p.render(frame, p.io.Width-labelWidth, p.now())
 	if err != nil {
 		p.err = fmt.Errorf("redraw: %w", err)
-
 		return true
 	}
 	frame.WriteByte('\n')
@@ -236,12 +227,10 @@ func (p *Progressbar) tick(frame *bytes.Buffer, labelWidth int) bool {
 	_, err = frame.WriteTo(p.io)
 	if err != nil {
 		p.err = fmt.Errorf("redraw: %w", err)
-
 		return true
 	}
 	p.rendered = true
 	p.emit(p.metricsSnapshot())
-
 	return p.isDone()
 }
 
@@ -258,7 +247,6 @@ func (p *Progressbar) stop() error {
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
-
 	return nil
 }
 
@@ -280,7 +268,6 @@ func (p *progressState) isDone() bool {
 	if p.maxNum <= 0 {
 		return false
 	}
-
 	return p.currentNum >= p.maxNum
 }
 
@@ -327,7 +314,6 @@ func (p *progressState) render(frame *bytes.Buffer, width int, now time.Time) er
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -353,7 +339,6 @@ func (p *progressState) remainingTime(rollingRate float64) string {
 	if rollingRate > 0 {
 		return fmt.Sprintf("%s remaining", remainingTime)
 	}
-
 	return ""
 }
 
@@ -379,7 +364,6 @@ func (p *progressState) filledBarLine(width int, completion float64) string {
 		}
 	}
 	bar += "]"
-
 	return bar
 }
 
@@ -391,7 +375,6 @@ func (p *progressState) rollingRate() float64 {
 	for _, rate := range p.rollingRates {
 		sum += rate
 	}
-
 	return sum / float64(len(p.rollingRates))
 }
 
@@ -452,7 +435,6 @@ func NewFileProgressReader(r io.Reader, label string, opts ...opt) (*wrapReader,
 		Max:   p.maxNum,
 	})
 	go p.start(p.ctx)
-
 	return wrap, nil
 }
 
@@ -463,14 +445,12 @@ func (w *wrapReader) Size() (int64, error) {
 		if err != nil {
 			return 0, err
 		}
-
 		return fi.Size(), nil
 	}
 	s, ok := w.r.(sized)
 	if ok {
 		return s.Size(), nil
 	}
-
 	return 0, errNoSize
 }
 
@@ -482,7 +462,6 @@ func (w *wrapReader) Read(p []byte) (n int, err error) {
 	if err == io.EOF {
 		w.p.cancel()
 	}
-
 	return n, err
 }
 
@@ -495,6 +474,5 @@ func (w *wrapReader) Close() error {
 	if ok {
 		return closer.Close()
 	}
-
 	return nil
 }

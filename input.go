@@ -61,7 +61,6 @@ func WithDefault(d string) opt {
 	return inputOpt(func(p *input) error {
 		p.typed = d
 		p.cursor = len(d)
-
 		return nil
 	})
 }
@@ -72,7 +71,6 @@ func inputOpt(o func(d *input) error) opt {
 		if !ok {
 			return fmt.Errorf("%w: need a input, got %v", ErrInvalidState, a)
 		}
-
 		return o(d)
 	}
 }
@@ -115,14 +113,12 @@ func newInput(label string) *input {
 
 func Input(label string, option ...opt) (string, error) {
 	i := newInput(label)
-
 	return i.read(option...)
 }
 
 func Password(label string, option ...opt) (string, error) {
 	i := newInput(label)
 	i.Password = true
-
 	return i.read(option...)
 }
 
@@ -143,7 +139,6 @@ func (i *input) read(option ...opt) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
 	return out, nil
 }
 
@@ -164,7 +159,6 @@ func (i *input) showAnswer() error {
 	if err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
-
 	return nil
 }
 
@@ -188,27 +182,34 @@ func (p *input) run() (string, error) {
 		if err != nil {
 			return "", errors.Join(err, p.clear(io))
 		}
-		select {
-		case <-p.ctx.Done():
-			return "", errors.Join(p.ctx.Err(), p.clear(io))
-		case ev, ok := <-keys:
-			// key press handlers has to be limited to state updates, not writes to the buffer.
-			done, err := p.handleKeyEvent(ev, ok)
-			if err != nil { // e.g., Ctrl+C or Ctrl+D
-				return "", errors.Join(err, p.clear(io))
-			}
-			if done {
-				return p.typed, p.clear(io)
-			}
-		case ev, ok := <-p.input:
-			done, err := p.handleInputEvent(ev, ok)
-			if err != nil {
-				return "", errors.Join(err, p.clear(io))
-			}
-			if done {
-				return p.typed, p.clear(io)
-			}
+		done, err := p.handleNextEvent(io, keys)
+		if err != nil {
+			return "", err
 		}
+		if done {
+			return p.typed, p.clear(io)
+		}
+	}
+}
+
+// handleNextEvent waits for the next key or input event and applies it to the input state.
+func (p *input) handleNextEvent(tio *termIO, keys <-chan inputKeyEvent) (bool, error) {
+	select {
+	case <-p.ctx.Done():
+		return false, errors.Join(p.ctx.Err(), p.clear(tio))
+	case ev, ok := <-keys:
+		// key press handlers has to be limited to state updates, not writes to the buffer.
+		done, err := p.handleKeyEvent(ev, ok)
+		if err != nil { // e.g., Ctrl+C or Ctrl+D
+			return false, errors.Join(err, p.clear(tio))
+		}
+		return done, nil
+	case ev, ok := <-p.input:
+		done, err := p.handleInputEvent(ev, ok)
+		if err != nil {
+			return false, errors.Join(err, p.clear(tio))
+		}
+		return done, nil
 	}
 }
 
@@ -250,7 +251,6 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-
 	return nil
 }
 
@@ -264,7 +264,6 @@ func (*input) clear(io *termIO) error {
 	if err != nil {
 		errs = append(errs, fmt.Errorf("clear: %w", err))
 	}
-
 	return errors.Join(errs...)
 }
 
@@ -285,7 +284,6 @@ func (p *input) pressKey(io *termIO) (string, error) {
 	if done {
 		return p.typed, nil
 	}
-
 	return "", nil
 }
 
@@ -313,7 +311,6 @@ func (p *input) readEvents(ctx context.Context, io *termIO) <-chan inputKeyEvent
 			}
 		}
 	}()
-
 	return keys
 }
 
@@ -332,7 +329,6 @@ func (p *input) handleKeyEvent(ev inputKeyEvent, ok bool) (bool, error) {
 				return true, nil
 			}
 		}
-
 		return false, nil
 	} else if ev.err != nil {
 		// Ctrl+C or Ctrl+D will result in an error like io.EOF
@@ -348,7 +344,6 @@ func (p *input) handleKeyEvent(ev inputKeyEvent, ok bool) (bool, error) {
 	case '↑', '↓': // ignore up/down arrows
 		return false, nil
 	}
-
 	return p.applyInputEvent(p.decodeInputEvent(ev.key)), nil
 }
 
@@ -356,7 +351,6 @@ func (p *input) handleInputEvent(ev inputIncoming, ok bool) (bool, error) {
 	if !ok {
 		return false, fmt.Errorf("read: %w", io.EOF)
 	}
-
 	return p.applyInputEvent(ev), nil
 }
 
@@ -376,13 +370,11 @@ func (p *input) decodeInputEvent(key rune) inputIncoming {
 		if len(nextText) > 0 && p.cursor > 0 {
 			nextText = nextText[:p.cursor-1] + nextText[p.cursor:]
 		}
-
 		return inputChanged{
 			Text: nextText,
 		}
 	default:
 		nextText := p.typed[:p.cursor] + string(key) + p.typed[p.cursor:]
-
 		return inputChanged{
 			Text: nextText,
 		}
@@ -415,10 +407,8 @@ func (p *input) applyInputEvent(ev inputIncoming) bool {
 		}
 	case inputConfirmed:
 		p.emit(inputComplete{Value: p.typed})
-
 		return true
 	}
-
 	return false
 }
 
@@ -456,6 +446,5 @@ func (p *input) parseTemplates() (err error) {
 	if err != nil {
 		return fmt.Errorf("answer: %w", err)
 	}
-
 	return nil
 }

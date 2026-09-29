@@ -25,7 +25,6 @@ func (o opts) Apply(d any) error {
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -47,7 +46,6 @@ func WithInput(r io.Reader) opt {
 			return fmt.Errorf("%w: cannot set IO", ErrInvalidState)
 		}
 		io.setReader(r)
-
 		return nil
 	}
 }
@@ -59,7 +57,6 @@ func WithOutput(w io.Writer) opt {
 			return fmt.Errorf("%w: cannot set IO", ErrInvalidState)
 		}
 		io.setWriter(w)
-
 		return nil
 	}
 }
@@ -77,7 +74,6 @@ func WithContext(ctx context.Context) opt {
 			return fmt.Errorf("%w: cannot set context", ErrInvalidState)
 		}
 		x.setContext(ctx)
-
 		return nil
 	}
 }
@@ -93,7 +89,6 @@ func WithTimeout(timeout time.Duration) opt {
 		// but we may want to revisit this later.
 		ctx, _ = context.WithTimeout(ctx, timeout) //nolint:govet // ...
 		x.setContext(ctx)
-
 		return nil
 	}
 }

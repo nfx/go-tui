@@ -21,7 +21,6 @@ func (b *bbuf) String() string {
 
 func (b *bbuf) Write(p []byte) (n int, err error) {
 	*b = append(*b, p...)
-
 	return len(p), nil
 }
 
@@ -49,7 +48,6 @@ func newUnstartedIO(ctx context.Context, width, height int) *chanIO {
 	}
 	cio.head = initViewport(ctx, cio.notify, cio.width, cio.height)
 	cio.tail = cio.head
-
 	return cio
 }
 
@@ -87,7 +85,6 @@ func (i *chanIO) Read(p []byte) (n int, err error) {
 			return 0, io.EOF
 		}
 		copy(p, res)
-
 		return len(res), nil
 	}
 }
