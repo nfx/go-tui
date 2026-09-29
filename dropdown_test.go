@@ -6,6 +6,7 @@ package tui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"iter"
@@ -1303,67 +1304,58 @@ func TestDropdownLazySelectsItem(t *testing.T) {
 	assert.Contains(t, final, "Select: red")
 }
 
-func TestWithOneMatch_nonStructItemsReturnsError(t *testing.T) {
+func TestWithOneMatch_setsValue(t *testing.T) {
 	d := newDropdown()
-	d.Items = []any{"a", "b"}
-	err := WithOneMatch("Name", "a")(d)
-	assert.Error(t, err)
+	err := WithDefault("alpha")(d)
+	assert.NoError(t, err)
+	assert.Equal(t, "alpha", d.oneMatch)
 }
 
-func TestWithOneMatch_unknownFieldReturnsError(t *testing.T) {
-	d := newDropdown()
-	d.Items = []any{dropdownHeuristicLabelItem{ID: 1, Name: "x"}}
-	err := WithOneMatch("Missing", "x")(d)
-	assert.Error(t, err)
-}
-
-func TestWithOneMatch_noMatchDoesNothing(t *testing.T) {
+func TestWithOneMatch_singlePrefixMatchReturnsIndex(t *testing.T) {
 	d := newDropdown()
 	d.Items = []any{
 		dropdownHeuristicLabelItem{ID: 1, Name: "alpha"},
 		dropdownHeuristicLabelItem{ID: 2, Name: "beta"},
 	}
-	err := WithOneMatch("Name", "gamma")(d)
+	err := WithDefault("beta")(d)
 	assert.NoError(t, err)
-	assert.Equal(t, 2, len(d.Items))
-	assert.True(t, !d.OneReturn)
-	assert.True(t, !d.Hide)
+	assert.NoError(t, d.parseTemplates())
+	_, err = d.renderInit(newTestTermIO(20, 6))
+	var oneMatch oneHatch
+	ok := errors.As(err, &oneMatch)
+	assert.True(t, ok)
+	assert.Equal(t, 1, int(oneMatch))
+	assert.Equal(t, "", d.oneMatch)
 }
 
-func TestWithOneMatch_multipleMatchesDoNothing(t *testing.T) {
+func TestWithOneMatch_noMatchKeepsDropdown(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{
+		dropdownHeuristicLabelItem{ID: 1, Name: "alpha"},
+		dropdownHeuristicLabelItem{ID: 2, Name: "beta"},
+	}
+	err := WithDefault("gamma")(d)
+	assert.NoError(t, err)
+	assert.NoError(t, d.parseTemplates())
+	_, err = d.renderInit(newTestTermIO(20, 6))
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(d.Items))
+	assert.Equal(t, "", d.oneMatch)
+}
+
+func TestWithOneMatch_multipleMatchesKeepDropdown(t *testing.T) {
 	d := newDropdown()
 	d.Items = []any{
 		dropdownHeuristicLabelItem{ID: 1, Name: "same"},
 		dropdownHeuristicLabelItem{ID: 2, Name: "same"},
 	}
-	err := WithOneMatch("Name", "same")(d)
+	err := WithDefault("same")(d)
+	assert.NoError(t, err)
+	assert.NoError(t, d.parseTemplates())
+	_, err = d.renderInit(newTestTermIO(20, 6))
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(d.Items))
-	assert.True(t, !d.OneReturn)
-}
-
-func TestWithOneMatch_singleMatchSetsFlags(t *testing.T) {
-	d := newDropdown()
-	d.Items = []any{
-		dropdownHeuristicLabelItem{ID: 1, Name: "alpha"},
-		dropdownHeuristicLabelItem{ID: 2, Name: "beta"},
-		dropdownHeuristicLabelItem{ID: 3, Name: "gamma"},
-	}
-	var events []dropdownOutputEvent
-	d.eventSink = func(ev dropdownOutputEvent) {
-		events = append(events, ev)
-	}
-	err := WithOneMatch("Name", "beta")(d)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(d.Items))
-	assert.Equal(t, dropdownHeuristicLabelItem{ID: 2, Name: "beta"}, d.Items[0])
-	assert.True(t, d.OneReturn)
-	assert.True(t, d.Hide)
-	assert.Equal(t, 1, len(events))
-	filtered, ok := events[0].(dropdownFilterChanged)
-	assert.True(t, ok)
-	assert.Equal(t, 1, filtered.Matching)
-	assert.Equal(t, []int{0, 2}, filtered.Removed)
+	assert.Equal(t, "", d.oneMatch)
 }
 
 func TestDropdownLazyEmptySequence(t *testing.T) {

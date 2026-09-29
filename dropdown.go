@@ -108,6 +108,7 @@ type dropdown struct {
 	selected int
 	offset   int
 	typed    []rune
+	oneMatch string // see [WithDefault]
 
 	in  io.Reader
 	out io.Writer
@@ -350,67 +351,6 @@ func WithTemplate(main string, activeDetails ...string) opt {
 		d.AnswerTemplate = fmt.Sprintf(`{{ dim "✔ " .Label " …" }} {{ bold .Answer%s }}`, main)
 		return nil
 	})
-}
-
-// WithOneMatch pre-filters dropdown items to those where the named struct field equals value.
-// Returns an error if items are not structs or the field does not exist.
-// When exactly one item matches, it reduces Items to that single entry and sets OneReturn and Hide
-// to bypass the interactive prompt.
-//
-// EXPERIMENTAL: this may change the name.
-func WithOneMatch(field, value string) opt {
-	return opT(func(d *dropdown) error {
-		matched, removed, err := d.matchByField(field, value)
-		if err != nil {
-			return err
-		}
-		if len(matched) != 1 {
-			return nil
-		}
-		d.Items = matched
-		d.OneReturn = true
-		d.Hide = true
-		d.emit(dropdownFilterChanged{
-			Matching: 1,
-			Removed:  removed,
-		})
-		return nil
-	})
-}
-
-// matchByField returns items where the named struct field equals value and the indices of non-matching items.
-func (d *dropdown) matchByField(field, value string) (matched []any, removed []int, err error) {
-	if len(d.Items) == 0 {
-		return nil, nil, nil
-	}
-	first, ok := d.indirectValue(reflect.ValueOf(d.Items[0]))
-	if !ok || first.Kind() != reflect.Struct {
-		return nil, nil, fmt.Errorf("items must be structs, got %T", d.Items[0])
-	}
-	rt := first.Type()
-	_, ok = rt.FieldByName(field)
-	if !ok {
-		return nil, nil, fmt.Errorf("field %q not found in %s", field, rt.Name())
-	}
-	for i, item := range d.Items {
-		v, ok := d.indirectValue(reflect.ValueOf(item))
-		if !ok || v.Kind() != reflect.Struct {
-			removed = append(removed, i)
-			continue
-		}
-		f := v.FieldByName(field)
-		fv, ok := d.indirectValue(f)
-		if !ok {
-			continue
-		}
-		sv := fv.String()
-		if sv != value {
-			removed = append(removed, i)
-			continue
-		}
-		matched = append(matched, item)
-	}
-	return matched, removed, nil
 }
 
 func WithLabelTemplate(tmpl string) opt {
@@ -696,6 +636,12 @@ func (d *dropdown) getContext() context.Context {
 	return d.Ctx
 }
 
+type oneHatch int //nolint:errname // hack for [WithDefault]
+
+func (i oneHatch) Error() string {
+	return fmt.Sprintf("%d", i)
+}
+
 // render displays the dropdown.
 func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
 	// use buffer to write to io only once
@@ -754,6 +700,18 @@ func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 			return longest, fmt.Errorf("add item: %w", err)
 		}
 		longest = max(longest, d.widths[i])
+	}
+	if d.oneMatch != "" && len(d.Items) > 0 {
+		// this is a hack to make [WithDefault] + [WithOneReturn] equivalent
+		// work for dropdowns.
+		matched := d.trie.Prefix(d.oneMatch)
+		d.oneMatch = ""
+		if len(matched) == 1 {
+			// this may properly work only with all items known upfront,
+			// as lazily added items might yield more than one match at
+			// some undetermined point in the future.
+			return longest, oneHatch(matched[0])
+		}
 	}
 	d.displayed = d.relevant[:min(len(d.relevant), io.Height/2)]
 	return longest, nil
@@ -1175,6 +1133,11 @@ func (d *dropdown) handleLazyKey(
 func (d *dropdown) runRender(io *termIO, frame *bytes.Buffer) (int, error) {
 	err := d.render(io, frame)
 	if err != nil {
+		var oneMatch oneHatch
+		ok := errors.As(err, &oneMatch)
+		if ok {
+			return int(oneMatch), nil
+		}
 		return -1, fmt.Errorf("render: %w", err)
 	}
 	_, err = frame.WriteTo(io)

@@ -64,6 +64,10 @@ func (t *trie) Prefix(prefix string) []int {
 	for _, b := range prefix {
 		isLetter = unicode.IsLetter(b)
 		if !isLetter && !unicode.IsDigit(b) {
+			if len(r.m) == 0 && len(r.Indexes()) > 0 {
+				// if one full word matched, we're good
+				break
+			}
 			continue
 		}
 		if isLetter {

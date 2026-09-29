@@ -58,11 +58,19 @@ type inputKeyEvent struct {
 }
 
 func WithDefault(d string) opt {
-	return inputOpt(func(p *input) error {
-		p.typed = d
-		p.cursor = len(d)
-		return nil
-	})
+	return func(a any) error {
+		switch p := a.(type) {
+		case *input:
+			p.typed = d
+			p.cursor = len(d)
+			return nil
+		case *dropdown:
+			p.oneMatch = d
+			return nil
+		default:
+			return fmt.Errorf("%w: need a input, got %v", ErrInvalidState, a)
+		}
+	}
 }
 
 func inputOpt(o func(d *input) error) opt {
