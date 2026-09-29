@@ -17,6 +17,34 @@ import (
 	"text/template/parse"
 )
 
+type tableEvent interface {
+	isTableEvent()
+}
+
+type tableEventMarker struct{}
+
+func (tableEventMarker) isTableEvent() {}
+
+type tableBegin struct {
+	tableEventMarker
+	Columns []tableColumnInfo
+}
+
+type tableColumnInfo struct {
+	Header string
+	Kind   string
+}
+
+type tableRow struct {
+	tableEventMarker
+	Cells []string
+}
+
+type tableEnd struct {
+	tableEventMarker
+	Rows int
+}
+
 func TableIter[T any](w io.Writer, rowTmpl string, iterator iter.Seq2[T, error], o ...opt) error {
 	t, err := newTable[T](w, rowTmpl, o...)
 	if err != nil {
@@ -32,7 +60,7 @@ func TableIter[T any](w io.Writer, rowTmpl string, iterator iter.Seq2[T, error],
 		}
 	}
 
-	return t.flush()
+	return t.flush(true)
 }
 
 func Table[T any](w io.Writer, rowTmpl string, iterator []T, o ...opt) error {
@@ -47,7 +75,7 @@ func Table[T any](w io.Writer, rowTmpl string, iterator []T, o ...opt) error {
 		}
 	}
 
-	return t.flush()
+	return t.flush(true)
 }
 
 func TableX[T any](w io.Writer, iterator []T, o ...opt) error {
@@ -62,7 +90,7 @@ func TableX[T any](w io.Writer, iterator []T, o ...opt) error {
 		}
 	}
 
-	return t.flush()
+	return t.flush(true)
 }
 
 // table is an alternative to text/tabwriter that supports ANSI colors and
@@ -82,6 +110,8 @@ type table struct {
 	colMinWidth int
 	locked      bool
 	consumed    int
+	eventSink   func(tableEvent)
+	ended       bool
 }
 
 type tableColumn struct {
@@ -137,7 +167,7 @@ func (t *table) Append(v any) error {
 	}
 	t.consumed++
 	if t.consumed%t.batchSize == 0 {
-		err = t.flush()
+		err = t.flush(false)
 		if err != nil {
 			return fmt.Errorf("flush: %w", err)
 		}
@@ -152,6 +182,13 @@ func (t *table) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
+func (t *table) emit(ev tableEvent) {
+	if t.eventSink == nil {
+		return
+	}
+	t.eventSink(ev)
+}
+
 func (t *table) headers() error {
 	headers, err := t.extractFromNode(t.tmpl.Root)
 	if err != nil {
@@ -162,6 +199,7 @@ func (t *table) headers() error {
 		lookup[f.name] = f
 	}
 	t.columns = make([]tableColumn, len(headers))
+	columns := make([]tableColumnInfo, len(headers))
 	for i := range headers {
 		meta, ok := lookup[headers[i]]
 		if !ok {
@@ -172,15 +210,35 @@ func (t *table) headers() error {
 			}
 		}
 		t.columns[i].meta = meta
+		columns[i] = tableColumnInfo{
+			Header: meta.header,
+			Kind:   meta.kind.String(),
+		}
 		headers[i] = mkBold(meta.header)
 	}
-	t.buf = append(t.buf, []byte(strings.Join(headers, "\t")+"\n")...)
+	if t.eventSink != nil {
+		t.emit(tableBegin{Columns: columns})
+	} else {
+		t.buf = append(t.buf, []byte(strings.Join(headers, "\t")+"\n")...)
+	}
 
 	return nil
 }
 
-func (t *table) flush() error {
+func (t *table) flush(final bool) error {
 	t.currentBuffer()
+	if t.eventSink != nil {
+		for _, row := range t.rows {
+			t.emit(tableRow{Cells: append([]string(nil), row...)})
+		}
+		if final && !t.ended {
+			t.ended = true
+			t.emit(tableEnd{Rows: t.consumed})
+		}
+		t.rows = t.rows[:0]
+
+		return nil
+	}
 	buf := &bytes.Buffer{}
 	for i, row := range t.rows {
 		for j, cell := range row {

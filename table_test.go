@@ -55,6 +55,54 @@ func TestTableRender(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestTableEmitsStructuredEvents(t *testing.T) {
+	type row struct {
+		Name string
+		Age  int
+	}
+	data := []row{
+		{Name: "Alice", Age: 30},
+		{Name: "Bob", Age: 25},
+	}
+	buf := &bytes.Buffer{}
+	var events []tableEvent
+	err := Table(buf, "{{.Name}}\t{{.Age}}", data, opT(func(tbl *table) error {
+		tbl.eventSink = func(ev tableEvent) {
+			events = append(events, ev)
+		}
+
+		return nil
+	}))
+	assert.NoError(t, err)
+	assert.Equal(t, "", buf.String())
+	assert.Equal(t, 4, len(events))
+
+	begin, ok := events[0].(tableBegin)
+	assert.True(t, ok)
+	assert.Equal(t, []tableColumnInfo{
+		{Header: "NAME", Kind: "string"},
+		{Header: "AGE", Kind: "int"},
+	}, begin.Columns)
+
+	first, ok := events[1].(tableRow)
+	assert.True(t, ok)
+	assert.Equal(t, []string{"Alice", "30"}, []string{
+		strings.TrimSpace(first.Cells[0]),
+		strings.TrimSpace(first.Cells[1]),
+	})
+
+	second, ok := events[2].(tableRow)
+	assert.True(t, ok)
+	assert.Equal(t, []string{"Bob", "25"}, []string{
+		strings.TrimSpace(second.Cells[0]),
+		strings.TrimSpace(second.Cells[1]),
+	})
+
+	end, ok := events[3].(tableEnd)
+	assert.True(t, ok)
+	assert.Equal(t, 2, end.Rows)
+}
+
 func TestTableIterFetchError(t *testing.T) {
 	iter := func(yield func(Person, error) bool) {
 		var zero Person
