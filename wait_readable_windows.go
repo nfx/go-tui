@@ -53,7 +53,11 @@ func waitForReadableInput(ctx context.Context, in io.Reader) error {
 	}
 }
 
+const pipePollInterval = time.Millisecond
+
 func waitForPipeReadable(ctx context.Context, h windows.Handle) error {
+	ticker := time.NewTicker(pipePollInterval)
+	defer ticker.Stop()
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -69,7 +73,7 @@ func waitForPipeReadable(ctx context.Context, h windows.Handle) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(50 * time.Millisecond):
+		case <-ticker.C:
 		}
 	}
 }
