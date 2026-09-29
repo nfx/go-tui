@@ -133,6 +133,7 @@ type lazyResult struct {
 	index       int
 	done        bool
 	needsRender bool
+	readNextKey bool
 }
 
 var confirmRunner = defaultConfirmRunner
@@ -206,21 +207,12 @@ func DropdownLazy[V any](label string, itemFn iter.Seq2[V, error], o ...opt) (V,
 	var zero V
 	d := newDropdown()
 	d.Label = label
-	d.itItems = make(chan itPair, max(1, d.IterBatchSize))
-	go func() {
-		defer close(d.itItems)
-		for v, err := range itemFn {
-			select {
-			case <-d.Ctx.Done():
-				return
-			case d.itItems <- itPair{v, err}:
-				if err != nil {
-					return
-				}
-			}
-		}
-	}()
-	i, err := d.dropdownIndex(o...)
+	err := opts(o).Apply(d)
+	if err != nil {
+		return zero, err
+	}
+	startDropdownLazyProducer(d, itemFn)
+	i, err := d.dropdownIndex()
 	if err != nil {
 		return zero, err
 	}
@@ -234,6 +226,28 @@ func DropdownLazy[V any](label string, itemFn iter.Seq2[V, error], o ...opt) (V,
 		return zero, fmt.Errorf("%w: expected %T, got %T", ErrInvalidState, valid, item)
 	}
 	return valid, nil
+}
+
+func startDropdownLazyProducer[V any](d *dropdown, itemFn iter.Seq2[V, error]) {
+	d.itItems = make(chan itPair, max(1, d.IterBatchSize))
+	go func() {
+		defer close(d.itItems)
+		select {
+		case <-d.Ctx.Done():
+			return
+		default:
+		}
+		for v, err := range itemFn {
+			select {
+			case <-d.Ctx.Done():
+				return
+			case d.itItems <- itPair{v, err}:
+				if err != nil {
+					return
+				}
+			}
+		}
+	}()
 }
 
 func DropdownIndex(label string, items []any, o ...opt) (int, error) {
@@ -932,7 +946,7 @@ func (d *dropdown) run() (int, error) {
 func (d *dropdown) runLazy(tio *termIO, frame *bytes.Buffer) (int, error) {
 	ctx, cancel := context.WithCancel(d.Ctx)
 	defer cancel()
-	keys := d.readKeys(ctx, tio)
+	keys := d.readKey(ctx, tio)
 	space := 0
 	displayed := 0
 	needsRender := true
@@ -948,6 +962,9 @@ func (d *dropdown) runLazy(tio *termIO, frame *bytes.Buffer) (int, error) {
 		}
 		if res.done {
 			return res.index, nil
+		}
+		if res.readNextKey {
+			keys = d.readKey(ctx, tio)
 		}
 		needsRender = res.needsRender
 	}
@@ -988,11 +1005,7 @@ func (d *dropdown) nextLazyAction(
 		}
 		return lazyResult{needsRender: nextRender}, nil
 	case ev, ok := <-keys:
-		i, nextRender, err := d.handleLazyKey(tio, frame, space, displayed, ev, ok)
-		if err != nil {
-			return lazyResult{}, err
-		}
-		return lazyResult{index: i, done: i >= 0, needsRender: nextRender}, nil
+		return d.nextLazyKeyResult(tio, frame, space, displayed, ev, ok)
 	case ev, ok := <-d.input:
 		i, nextRender, err := d.handleLazyInput(tio, frame, space, displayed, ev, ok)
 		if err != nil {
@@ -1006,6 +1019,26 @@ func (d *dropdown) nextLazyAction(
 		}
 		return lazyResult{}, d.Ctx.Err()
 	}
+}
+
+func (d *dropdown) nextLazyKeyResult(
+	tio *termIO,
+	frame *bytes.Buffer,
+	space int,
+	displayed int,
+	ev keyEvent,
+	ok bool,
+) (lazyResult, error) {
+	i, nextRender, err := d.handleLazyKey(tio, frame, space, displayed, ev, ok)
+	if err != nil {
+		return lazyResult{}, err
+	}
+	return lazyResult{
+		index:       i,
+		done:        i >= 0,
+		needsRender: nextRender,
+		readNextKey: i < 0,
+	}, nil
 }
 
 // renderLazyFrame clears the previous output and renders the dropdown.
@@ -1414,22 +1447,24 @@ func (d *dropdown) pressAny(key rune, displayed, space int) bool {
 	return false
 }
 
-// readKeys listens for key presses so item loading can continue.
-func (d *dropdown) readKeys(ctx context.Context, io *termIO) <-chan keyEvent {
-	ch := make(chan keyEvent)
+// readKey reads one keypress so lazy mode can interleave input and streamed items.
+func (d *dropdown) readKey(ctx context.Context, tio *termIO) <-chan keyEvent {
+	ch := make(chan keyEvent, 1)
 	go func() {
 		defer close(ch)
-		for {
-			key, _, err := io.ReadRune()
-			select {
-			case <-ctx.Done():
-				return
-			case ch <- keyEvent{key: key, err: err}:
-			}
-			if err != nil {
+		err := waitForReadableInput(ctx, tio.in)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return
 			}
+			ch <- keyEvent{err: err}
+			return
 		}
+		key, _, err := tio.ReadRune()
+		if ctx.Err() != nil {
+			return
+		}
+		ch <- keyEvent{key: key, err: err}
 	}()
 	return ch
 }
