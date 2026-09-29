@@ -945,8 +945,12 @@ func (d *dropdown) run() (int, error) {
 // runLazy renders the dropdown while items are streamed in.
 func (d *dropdown) runLazy(tio *termIO, frame *bytes.Buffer) (int, error) {
 	ctx, cancel := context.WithCancel(d.Ctx)
-	defer cancel()
 	keys := d.readKey(ctx, tio)
+	defer func() {
+		cancel()         // signal consumer to stop
+		for range keys { // but drain until closed
+		}
+	}()
 	space := 0
 	displayed := 0
 	needsRender := true
