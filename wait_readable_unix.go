@@ -13,6 +13,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func canDrainOnCancel(in io.Reader) bool {
+	_, ok := in.(descriptor)
+	return ok
+}
+
 func waitForReadableInput(ctx context.Context, in io.Reader) error {
 	d, ok := in.(descriptor)
 	if !ok {

@@ -14,3 +14,7 @@ import (
 func waitForReadableInput(context.Context, io.Reader) error {
 	return nil
 }
+
+func canDrainOnCancel(io.Reader) bool {
+	return false
+}

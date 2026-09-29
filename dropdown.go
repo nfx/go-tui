@@ -946,8 +946,8 @@ func (d *dropdown) run() (int, error) {
 func (d *dropdown) runLazy(tio *termIO, frame *bytes.Buffer) (int, error) {
 	ctx, cancel := context.WithCancel(d.Ctx)
 	keys := d.readKey(ctx, tio)
-	// only drain what supports it - see [waitForReadableInput]
-	_, cancelable := tio.in.(descriptor)
+	// only drain what [waitForReadableInput] can actually interrupt
+	cancelable := canDrainOnCancel(tio.in)
 	defer func() {
 		cancel() // signal consumer to stop
 		if !cancelable {
