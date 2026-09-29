@@ -26,7 +26,7 @@ jobs:
         run: |
           go install github.com/boumenot/gocover-cobertura@latest
           gocover-cobertura < coverage.txt > coverage.xml
-      - uses: actions/upload-code-coverage@v1
+      - uses: actions/upload-code-coverage@bfa741d815a28cb064a8e3a0837e577457a017d5
         with:
           file: coverage.xml
           language: go
