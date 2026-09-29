@@ -17,6 +17,62 @@ import (
 	"text/template"
 )
 
+type dropdownOutputEvent interface {
+	isDropdownOutputEvent()
+}
+
+type dropdownOutputEventMarker struct{}
+
+func (dropdownOutputEventMarker) isDropdownOutputEvent() {}
+
+type dropdownInit struct {
+	dropdownOutputEventMarker
+	Label string
+}
+
+type dropdownAppendItem struct {
+	dropdownOutputEventMarker
+	Item  any
+	Index int
+	Text  string
+}
+
+type dropdownFilterChanged struct {
+	dropdownOutputEventMarker
+	Prefix   string
+	Matching int
+	Added    []int
+	Removed  []int
+}
+
+type dropdownConfirmed struct {
+	dropdownOutputEventMarker
+	Selected int
+}
+
+type dropdownState struct {
+	prefix   string
+	relevant []int
+}
+
+type dropdownInputEvent interface {
+	isDropdownInputEvent()
+}
+
+type dropdownInputEventMarker struct{}
+
+func (dropdownInputEventMarker) isDropdownInputEvent() {}
+
+type dropdownInputConfirmed struct {
+	dropdownInputEventMarker
+	Index int
+}
+
+type dropdownFilteredWith struct {
+	dropdownInputEventMarker
+	Prefix string
+}
+
 type dropdown struct {
 	Ctx          context.Context
 	Label        string
@@ -58,6 +114,8 @@ type dropdown struct {
 
 	// TODO: special case for testing?..
 	makeTermIO func(in io.Reader, out io.Writer) (*termIO, error)
+	eventSink  func(dropdownOutputEvent)
+	input      <-chan dropdownInputEvent
 }
 
 type itPair struct {
@@ -654,6 +712,7 @@ func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 	if len(d.displayed) > 0 {
 		return 0, nil // already initialized
 	}
+	d.emit(dropdownInit{Label: d.Label})
 	d.trie = newTrie()
 	d.inactive = make([]bbuf, len(d.Items))
 	d.widths = make([]int, len(d.Items))
@@ -675,9 +734,15 @@ func (d *dropdown) setItem(i int, item any) error {
 	if err != nil {
 		return fmt.Errorf("inactive: %w", err)
 	}
-	d.trie.Add(d.inactive[i].String(), i)
+	inactive := d.inactive[i].String()
+	d.trie.Add(inactive, i)
 	d.widths[i] = width(d.inactive[i])
 	d.relevant[i] = i
+	d.emit(dropdownAppendItem{
+		Item:  item,
+		Index: i,
+		Text:  inactive,
+	})
 
 	return nil
 }
@@ -755,6 +820,108 @@ func (d *dropdown) height() int {
 	}
 
 	return height
+}
+
+// snapshotState captures dropdown state so key handlers can emit semantic diffs.
+func (d *dropdown) snapshotState() dropdownState {
+	return dropdownState{
+		prefix:   string(d.typed),
+		relevant: append([]int(nil), d.relevant...),
+	}
+}
+
+// emitStateChanges publishes filter changes after a state transition.
+func (d *dropdown) emitStateChanges(prev dropdownState) {
+	curr := d.snapshotState()
+	if curr.Equal(prev) {
+		return
+	}
+	added, removed := curr.Diff(prev)
+	d.emit(dropdownFilterChanged{
+		Prefix:   curr.prefix,
+		Matching: len(curr.relevant),
+		Added:    added,
+		Removed:  removed,
+	})
+}
+
+// Equal compares two dropdown state snapshots.
+func (d dropdownState) Equal(other dropdownState) bool {
+	if d.prefix != other.prefix {
+		return false
+	}
+	if len(d.relevant) != len(other.relevant) {
+		return false
+	}
+	for i := range d.relevant {
+		if d.relevant[i] != other.relevant[i] {
+			return false
+		}
+	}
+
+	return true
+}
+
+// Diff returns added and removed relevant indexes between two sorted snapshots.
+func (d dropdownState) Diff(prev dropdownState) (added []int, removed []int) {
+	var i, j int
+	for i < len(prev.relevant) && j < len(d.relevant) {
+		a := prev.relevant[i]
+		b := d.relevant[j]
+		if a == b {
+			i++
+			j++
+
+			continue
+		}
+		if a < b {
+			removed = append(removed, a)
+			i++
+
+			continue
+		}
+		added = append(added, b)
+		j++
+	}
+	for ; i < len(prev.relevant); i++ {
+		removed = append(removed, prev.relevant[i])
+	}
+	for ; j < len(d.relevant); j++ {
+		added = append(added, d.relevant[j])
+	}
+
+	return added, removed
+}
+
+// emit sends a typed dropdown output event to the optional sink.
+func (d *dropdown) emit(ev dropdownOutputEvent) {
+	if d.eventSink == nil {
+		return
+	}
+	d.eventSink(ev)
+}
+
+// decodeInputEvent maps terminal keys into semantic dropdown input actions.
+func (d *dropdown) decodeInputEvent(key rune) dropdownInputEvent {
+	switch key {
+	case keyEnter:
+		i := -1
+		pos := d.offset + d.selected
+		if pos >= 0 && pos < len(d.relevant) {
+			i = d.relevant[pos]
+		}
+
+		return dropdownInputConfirmed{Index: i}
+	case 0x7f: // backspace
+		next := []rune(string(d.typed))
+		if len(next) > 0 {
+			next = next[:len(next)-1]
+		}
+
+		return dropdownFilteredWith{Prefix: string(next)}
+	default:
+		return dropdownFilteredWith{Prefix: string(d.typed) + string(key)}
+	}
 }
 
 var ErrNoSpace = errors.New("no space in terminal")
@@ -852,6 +1019,13 @@ func (d *dropdown) nextLazyAction(
 		}
 
 		return lazyResult{index: i, done: i >= 0, needsRender: nextRender}, nil
+	case ev, ok := <-d.input:
+		i, nextRender, err := d.handleLazyInput(tio, frame, space, displayed, ev, ok)
+		if err != nil {
+			return lazyResult{}, err
+		}
+
+		return lazyResult{index: i, done: i >= 0, needsRender: nextRender}, nil
 	case <-d.Ctx.Done():
 		err := d.clearFrame(tio, frame, space)
 		if err != nil {
@@ -922,6 +1096,36 @@ func (d *dropdown) handleLazyItem(tio *termIO, frame *bytes.Buffer, space int, i
 	}
 
 	return true, nil
+}
+
+// handleLazyInput updates the dropdown from a semantic input event.
+func (d *dropdown) handleLazyInput(
+	tio *termIO,
+	frame *bytes.Buffer,
+	space int,
+	displayed int,
+	ev dropdownInputEvent,
+	ok bool,
+) (int, bool, error) {
+	if !ok {
+		err := d.clearFrame(tio, frame, space)
+		if err != nil {
+			return -1, false, errors.Join(io.EOF, err)
+		}
+
+		return -1, false, io.EOF
+	}
+	i := d.applyInputEvent(tio, ev, displayed, space)
+	if i >= 0 {
+		err := d.clearFrame(tio, frame, space)
+		if err != nil {
+			return -1, false, err
+		}
+
+		return i, false, nil
+	}
+
+	return -1, true, nil
 }
 
 // handleLazyKey updates the dropdown for a key event.
@@ -1079,52 +1283,97 @@ func (d *dropdown) addItem(height int, item any) error {
 // pressKeyRune updates dropdown state for an already-read key.
 func (d *dropdown) pressKeyRune(io *termIO, key rune, displayed, space int) int {
 	switch key {
-	case keyEnter:
-		return d.offset + d.selected
 	case '↑':
 		d.pressUp(displayed)
+
+		return -1
 	case '↓':
 		d.pressDown(displayed)
-	case 0x7f: // backspace
-		d.pressBackspace(io)
-	default:
-		done := d.pressAny(key, displayed, space)
+
+		return -1
+	}
+	ev := d.decodeInputEvent(key)
+
+	return d.applyInputEvent(io, ev, displayed, space)
+}
+
+func (d *dropdown) applyInputEvent(io *termIO, ev dropdownInputEvent, displayed, space int) int {
+	prev := d.snapshotState()
+	switch typed := ev.(type) {
+	case dropdownInputConfirmed:
+		if typed.Index < 0 || typed.Index >= len(d.Items) {
+			return -1
+		}
+		pos := -1
+		for i, idx := range d.relevant {
+			if idx == typed.Index {
+				pos = i
+
+				break
+			}
+		}
+		if pos < 0 {
+			return -1
+		}
+		d.emit(dropdownConfirmed{Selected: typed.Index})
+
+		return pos
+	case dropdownFilteredWith:
+		done := d.filterWith(typed.Prefix, displayed, space, io.Height/2)
 		if done {
+			d.emitStateChanges(prev)
+			d.emit(dropdownConfirmed{Selected: d.relevant[0]})
+
 			return 0
 		}
+	default:
+		d.emitStateChanges(prev)
+
+		return -1
 	}
+	d.emitStateChanges(prev)
 
 	return -1
 }
 
-func (d *dropdown) pressKey(io *termIO, frame *bytes.Buffer, space, displayed int) (i int, err error) {
-	key, _, err := io.ReadRune()
+func (d *dropdown) pressKey(tio *termIO, frame *bytes.Buffer, space, displayed int) (i int, err error) {
+	if d.input != nil {
+		ev, ok := <-d.input
+		if !ok {
+			return -1, io.EOF
+		}
+		err = tio.clear(space, frame)
+		if err != nil {
+			return -1, err
+		}
+		i = d.applyInputEvent(tio, ev, displayed, space)
+		if i >= 0 {
+			_, err := frame.WriteTo(tio) // TODO: check if we can just defer it from beginning of the method
+			if err != nil {
+				return -1, fmt.Errorf("write: %w", err)
+			}
+
+			return i, nil
+		}
+
+		return -1, nil
+	}
+	key, _, readErr := tio.ReadRune()
+	if readErr != nil {
+		return -1, readErr
+	}
+	err = tio.clear(space, frame)
 	if err != nil {
 		return -1, err
 	}
-	err = io.clear(space, frame)
-	if err != nil {
-		return -1, err
-	}
-	switch key {
-	case keyEnter:
-		_, err := frame.WriteTo(io) // TODO: check if we can just defer it from beginning of the method
+	i = d.pressKeyRune(tio, key, displayed, space)
+	if i >= 0 {
+		_, err := frame.WriteTo(tio) // TODO: check if we can just defer it from beginning of the method
 		if err != nil {
 			return -1, fmt.Errorf("write: %w", err)
 		}
 
-		return d.offset + d.selected, nil
-	case '↑':
-		d.pressUp(displayed)
-	case '↓':
-		d.pressDown(displayed)
-	case 0x7f: // backspace
-		d.pressBackspace(io)
-	default:
-		done := d.pressAny(key, displayed, space)
-		if done {
-			return 0, nil
-		}
+		return i, nil
 	}
 
 	return -1, nil
@@ -1174,6 +1423,32 @@ func (d *dropdown) pressBackspace(io *termIO) {
 	d.displayed = d.relevant[:min(len(d.relevant), io.Height/2)]
 	d.selected = 0
 	d.offset = 0
+}
+
+// filterWith replaces the current filter text and refreshes matching rows.
+func (d *dropdown) filterWith(text string, displayed, space, height int) bool {
+	prevTyped := string(d.typed)
+	prevRelevant := d.relevant
+	d.typed = []rune(text)
+	d.relevant = d.trie.Prefix(text)
+	if d.OneReturn && len(d.relevant) == 1 {
+		return true
+	}
+	if len(d.relevant) == 0 {
+		d.typed = []rune(prevTyped)
+		d.relevant = prevRelevant
+
+		return false
+	}
+	limit := min(len(d.relevant), displayed, space)
+	if len(text) < len(prevTyped) {
+		limit = min(len(d.relevant), height)
+	}
+	d.displayed = d.relevant[:limit]
+	d.selected = 0
+	d.offset = 0
+
+	return false
 }
 
 func (d *dropdown) pressAny(key rune, displayed, space int) bool {

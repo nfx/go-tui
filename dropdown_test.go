@@ -376,6 +376,29 @@ func TestDropdownRunSelectsWithArrow(t *testing.T) {
 	assert.Equal(t, 1, idx)
 }
 
+func TestDropdownRunConsumesInputEvents(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"one", "two"}
+	d.in = bytes.NewBuffer(nil)
+	d.out = &bytes.Buffer{}
+	input := make(chan dropdownInputEvent, 1)
+	input <- dropdownInputConfirmed{Index: 1}
+	close(input)
+	d.input = input
+	d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{
+			in:      in,
+			out:     out,
+			Width:   20,
+			Height:  6,
+			Restore: func() error { return nil },
+		}, nil
+	}
+	idx, err := d.dropdownIndex()
+	assert.NoError(t, err)
+	assert.Equal(t, 1, idx)
+}
+
 func TestDropdownRunOneReturn(t *testing.T) {
 	reader := &chunkReader{chunks: [][]byte{
 		{'b'},
@@ -458,6 +481,27 @@ func TestDropdownRenderInitAndItems(t *testing.T) {
 	item, err := d.renderItem(io, 0, d.displayed[0])
 	assert.NoError(t, err)
 	assert.True(t, len(item) > 0)
+}
+
+func TestDropdownRenderInitEmitsEvents(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"alpha", "beta"}
+	assert.NoError(t, d.parseTemplates())
+	io := newTestTermIO(20, 6)
+	var events []dropdownOutputEvent
+	d.eventSink = func(ev dropdownOutputEvent) {
+		events = append(events, ev)
+	}
+	_, err := d.renderInit(io)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, len(events))
+	init, ok := events[0].(dropdownInit)
+	assert.True(t, ok)
+	assert.Equal(t, "Select from list", init.Label)
+	_, ok = events[1].(dropdownAppendItem)
+	assert.True(t, ok)
+	_, ok = events[2].(dropdownAppendItem)
+	assert.True(t, ok)
 }
 
 func TestDropdownRenderMoreAndHeight(t *testing.T) {
@@ -707,11 +751,20 @@ func TestDropdownSetWriterUsesTuiViewport(t *testing.T) {
 
 func TestDropdownPressKeyRuneEnter(t *testing.T) {
 	d := newDropdown()
+	d.Items = []any{"a", "b"}
 	d.relevant = []int{0, 1}
 	d.displayed = []int{0, 1}
 	d.selected = 1
+	var events []dropdownOutputEvent
+	d.eventSink = func(ev dropdownOutputEvent) {
+		events = append(events, ev)
+	}
 	io := newTestTermIO(10, 4)
 	assert.Equal(t, 1, d.pressKeyRune(io, keyEnter, len(d.displayed), 4))
+	assert.Equal(t, 1, len(events))
+	confirmed, ok := events[0].(dropdownConfirmed)
+	assert.True(t, ok)
+	assert.Equal(t, 1, confirmed.Selected)
 }
 
 func TestDropdownPressKeyRuneBackspace(t *testing.T) {
@@ -771,6 +824,38 @@ func TestDropdownPressKeyRuneArrows(t *testing.T) {
 	assert.Equal(t, 0, d.selected)
 }
 
+func TestDropdownRunMainConsumesInputChannel(t *testing.T) {
+	d := newDropdown()
+	d.trie = newTrie()
+	d.trie.Add("a", 0)
+	d.Items = []any{"a"}
+	d.relevant = []int{0}
+	d.displayed = []int{0}
+	input := make(chan dropdownInputEvent, 1)
+	input <- dropdownInputConfirmed{Index: 0}
+	d.input = input
+	io := newTestTermIO(10, 4)
+	frame := bytes.NewBuffer(nil)
+	i, err := d.runMain(io, frame, 1, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, i)
+}
+
+func TestDropdownRunMainRejectsInvalidConfirmedIndex(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"a"}
+	d.relevant = []int{0}
+	d.displayed = []int{0}
+	input := make(chan dropdownInputEvent, 1)
+	input <- dropdownInputConfirmed{Index: 5}
+	d.input = input
+	io := newTestTermIO(10, 4)
+	frame := bytes.NewBuffer(nil)
+	i, err := d.runMain(io, frame, 1, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, -1, i)
+}
+
 func TestDropdownPressKeyRuneDefault(t *testing.T) {
 	d := newDropdown()
 	d.trie = newTrie()
@@ -783,6 +868,31 @@ func TestDropdownPressKeyRuneDefault(t *testing.T) {
 	assert.Equal(t, "a", string(d.typed))
 }
 
+func TestDropdownPressKeyRuneEmitsStateEvents(t *testing.T) {
+	d := newDropdown()
+	d.trie = newTrie()
+	d.trie.Add("alpha", 0)
+	d.trie.Add("beta", 1)
+	d.Items = []any{"alpha", "beta"}
+	d.relevant = []int{0, 1}
+	d.displayed = []int{0, 1}
+	d.selected = 1
+	var events []dropdownOutputEvent
+	d.eventSink = func(ev dropdownOutputEvent) {
+		events = append(events, ev)
+	}
+	io := newTestTermIO(10, 4)
+	assert.Equal(t, -1, d.pressKeyRune(io, 'a', len(d.displayed), 4))
+	assert.Equal(t, 1, len(events))
+	filtered, ok := events[0].(dropdownFilterChanged)
+	assert.True(t, ok)
+	assert.Equal(t, "a", filtered.Prefix)
+	assert.Equal(t, 1, filtered.Matching)
+	assert.Equal(t, 0, len(filtered.Added))
+	assert.Equal(t, 1, len(filtered.Removed))
+	assert.Equal(t, 1, filtered.Removed[0])
+}
+
 func TestDropdownPressKeyRuneOneReturn(t *testing.T) {
 	d := newDropdown()
 	d.OneReturn = true
@@ -791,8 +901,18 @@ func TestDropdownPressKeyRuneOneReturn(t *testing.T) {
 	d.Items = []any{"a"}
 	d.relevant = []int{0}
 	d.displayed = []int{0}
+	var events []dropdownOutputEvent
+	d.eventSink = func(ev dropdownOutputEvent) {
+		events = append(events, ev)
+	}
 	io := newTestTermIO(10, 4)
 	assert.Equal(t, 0, d.pressKeyRune(io, 'a', len(d.displayed), 4))
+	assert.Equal(t, 2, len(events))
+	_, ok := events[0].(dropdownFilterChanged)
+	assert.True(t, ok)
+	confirmed, ok := events[1].(dropdownConfirmed)
+	assert.True(t, ok)
+	assert.Equal(t, 0, confirmed.Selected)
 }
 
 func TestDropdownHandleLazyItemEmpty(t *testing.T) {
@@ -874,6 +994,27 @@ func TestDropdownLoadItemDone(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, d.itItems == nil)
 	assert.True(t, d.iterDone)
+}
+
+func TestDropdownAddItemEmitsAppendEvent(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"seed"}
+	assert.NoError(t, d.parseTemplates())
+	tio := newTestTermIO(20, 2)
+	_, err := d.renderInit(tio)
+	assert.NoError(t, err)
+	var events []dropdownOutputEvent
+	d.eventSink = func(ev dropdownOutputEvent) {
+		events = append(events, ev)
+	}
+	err = d.addItem(tio.Height, "next")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(events))
+	appended, ok := events[0].(dropdownAppendItem)
+	assert.True(t, ok)
+	assert.Equal(t, "next", appended.Item)
+	assert.Equal(t, 1, appended.Index)
+	assert.Contains(t, appended.Text, "next")
 }
 
 func TestDropdownLoadItemError(t *testing.T) {
