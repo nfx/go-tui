@@ -532,10 +532,10 @@ func reflectFieldMetadata(ft reflect.Type, tag reflect.StructTag, name string) (
 			return nil, fmt.Errorf("%w %s without explicit header tag", errCannotUse, ft.Kind())
 		}
 	}
-	queue := strings.Split(tag.Get("header"), ",")
-	if len(queue) == 0 {
+	if tag.Get("header") == "" {
 		meta.header = strings.ToUpper(name)
 	} else {
+		queue := strings.Split(tag.Get("header"), ",")
 		meta.header = queue[0]
 		queue = queue[1:]
 		for len(queue) > 0 {
