@@ -68,6 +68,19 @@ func spinnersForTest(t *testing.T) (*Spinners, *chanIO, func()) {
 	return s, cio, tick
 }
 
+func mustReceiveSpinnerEvent(t *testing.T, ch <-chan spinnerEvent) spinnerEvent {
+	t.Helper()
+
+	select {
+	case ev := <-ch:
+		return ev
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for spinner event")
+
+		return nil
+	}
+}
+
 func TestNewSpinners(t *testing.T) {
 	s, cio, tick := spinnersForTest(t)
 	assert.NotNil(t, s)
@@ -386,4 +399,60 @@ func TestSpinnersMustAddBackgroundPanics(t *testing.T) {
 		}
 	}()
 	s.MustAddBackground()
+}
+
+func TestSpinnersEmitStructuredEvents(t *testing.T) {
+	events := make(chan spinnerEvent, 32)
+	_, _, opts := testIOforSpinners(t, 12, 4, spinnersOpt(func(s *Spinners) error {
+		s.eventSink = func(ev spinnerEvent) {
+			events <- ev
+		}
+
+		return nil
+	}))
+	s, err := NewSpinners(opts)
+	assert.NoError(t, err)
+	defer s.Close()
+
+	_, ok := mustReceiveSpinnerEvent(t, events).(spinnerGroupInit)
+	assert.True(t, ok)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	first, err := s.Add(ctx, WithPrefixf("task-1"))
+	assert.NoError(t, err)
+
+	added, ok := mustReceiveSpinnerEvent(t, events).(spinnerAdded)
+	assert.True(t, ok)
+	assert.Equal(t, "task-1", added.Name)
+	assert.Equal(t, 0, added.Index)
+
+	first.Update("running")
+	updated, ok := mustReceiveSpinnerEvent(t, events).(spinnerUpdated)
+	assert.True(t, ok)
+	assert.Equal(t, 0, updated.Index)
+	assert.Equal(t, "running", updated.Message)
+
+	err = first.Close()
+	assert.NoError(t, err)
+	removed, ok := mustReceiveSpinnerEvent(t, events).(spinnerRemoved)
+	assert.True(t, ok)
+	assert.Equal(t, 0, removed.Index)
+
+	second, err := s.Add(ctx, WithPrefixf("task-2"))
+	assert.NoError(t, err)
+	added, ok = mustReceiveSpinnerEvent(t, events).(spinnerAdded)
+	assert.True(t, ok)
+	assert.Equal(t, "task-2", added.Name)
+	assert.Equal(t, 1, added.Index)
+
+	second.Fail(errors.New("boom"))
+	failed, ok := mustReceiveSpinnerEvent(t, events).(spinnerFailed)
+	assert.True(t, ok)
+	assert.Equal(t, 1, failed.Index)
+	assert.Equal(t, "boom", failed.Error)
+
+	s.Close()
+	_, ok = mustReceiveSpinnerEvent(t, events).(spinnerGroupClosed)
+	assert.True(t, ok)
 }

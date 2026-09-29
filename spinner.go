@@ -20,6 +20,45 @@ import (
 var DefaultSpinnerStyle = []string{"⠉⠉", "⠈⠙", "⠀⠹", "⠀⢸", "⠀⣰", "⢀⣠", "⣀⣀", "⣄⡀", "⣆⠀", "⡇⠀", "⠏⠀", "⠋⠁"}
 var SpinnerStyleDocs = []string{".  ", ".. ", "...", " ..", "  .", "   "}
 
+type spinnerEvent interface {
+	isSpinnerOutgoing()
+}
+
+type spinnerEventMarker struct{}
+
+func (spinnerEventMarker) isSpinnerOutgoing() {}
+
+type spinnerGroupInit struct {
+	spinnerEventMarker
+}
+
+type spinnerAdded struct {
+	spinnerEventMarker
+	Name  string
+	Index int
+}
+
+type spinnerUpdated struct {
+	spinnerEventMarker
+	Index   int
+	Message string
+}
+
+type spinnerFailed struct {
+	spinnerEventMarker
+	Index int
+	Error string
+}
+
+type spinnerRemoved struct {
+	spinnerEventMarker
+	Index int
+}
+
+type spinnerGroupClosed struct {
+	spinnerEventMarker
+}
+
 type Spinners struct {
 	config
 	cancel context.CancelFunc
@@ -35,6 +74,7 @@ type Spinners struct {
 	state      []*spinnerState
 	displayed  int
 	makeTermIO func(io.Reader, io.Writer) (*termIO, error)
+	eventSink  func(spinnerEvent)
 }
 
 func spinnersOpt(o func(s *Spinners) error) opt {
@@ -82,6 +122,7 @@ func NewSpinners(opt ...opt) (*Spinners, error) {
 	if err != nil {
 		return nil, fmt.Errorf("restore: %w", err)
 	}
+	s.emit(spinnerGroupInit{})
 	go s.start(s.ctx)
 
 	return s, nil
@@ -182,6 +223,13 @@ func (s *Spinners) setContext(ctx context.Context) {
 	s.ctx, s.cancel = context.WithCancel(ctx)
 }
 
+func (s *Spinners) emit(ev spinnerEvent) {
+	if s.eventSink == nil {
+		return
+	}
+	s.eventSink(ev)
+}
+
 func (s *Spinners) start(ctx context.Context) {
 	// defer s.stop()
 	var prevActive int
@@ -267,8 +315,19 @@ func (s *Spinners) updateSpinner(update updateOffset) {
 	if update.err != nil {
 		update.message = update.err.Error()
 		s.state[update.offset].Failed = true
+		s.state[update.offset].Message = update.message
+		s.emit(spinnerFailed{
+			Index: update.offset,
+			Error: update.message,
+		})
+
+		return
 	}
 	s.state[update.offset].Message = update.message
+	s.emit(spinnerUpdated{
+		Index:   update.offset,
+		Message: update.message,
+	})
 }
 
 // concurrent client for [Spinners.stopSpinner].
@@ -304,6 +363,7 @@ func (s *Spinners) stopSpinner(offset int) {
 		// remove spinner at offset
 		s.state[offset] = nil
 		s.displayed--
+		s.emit(spinnerRemoved{Index: offset})
 	}
 }
 
@@ -353,6 +413,7 @@ func (s *Spinners) redraw(prevActive int) int {
 //nolint:errcheck // TODO: handle error
 func (s *Spinners) stop() {
 	// s.wg.Wait()
+	s.emit(spinnerGroupClosed{})
 	s.io.clear(s.displayed, s.io)
 	// s.io.Restore()
 	s.ticker.Stop()
@@ -380,6 +441,10 @@ func (s *Spinners) newSpinner(ns createSpinner) {
 		keep:   ns.keep,
 	})
 	s.displayed++
+	s.emit(spinnerAdded{
+		Name:  ns.prefix,
+		Index: offset,
+	})
 	select {
 	case <-s.ctx.Done():
 		return
