@@ -1338,7 +1338,7 @@ func (d *dropdown) addItem(height int, item any) error {
 	if len(d.typed) > 0 {
 		d.relevant = d.trie.Prefix(string(d.typed))
 	} else {
-		d.relevant = d.trie.Indexes()
+		d.relevant = d.trie.Prefix("")
 	}
 	d.displayed = d.relevant[:min(len(d.relevant), height/2)]
 	return nil

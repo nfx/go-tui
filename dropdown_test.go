@@ -1299,6 +1299,18 @@ func TestDropdownHandleLazyItemAddError(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestDropdownAddItemDeduplicatesLazyRelevantIndexes(t *testing.T) {
+	d := newDropdown()
+	assert.NoError(t, d.parseTemplates())
+	tio := newTestTermIO(20, 6)
+	_, err := d.renderInit(tio)
+	assert.NoError(t, err)
+	err = d.addItem(tio.Height, "alpha beta")
+	assert.NoError(t, err)
+	assert.Equal(t, []int{0}, d.relevant)
+	assert.Equal(t, []int{0}, d.displayed)
+}
+
 func captureOutput(cio *chanIO) <-chan string {
 	out := make(chan string, 32)
 	go func() {
