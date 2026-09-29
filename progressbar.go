@@ -11,7 +11,9 @@ import (
 	"io"
 	"iter"
 	"os"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -59,6 +61,19 @@ func WithFormatRate(f func(float64) string) opt {
 	})
 }
 
+// WithWorkers configures the amount of parallel workers for NewParallelProgressBar.
+func WithWorkers(workers int) opt {
+	return progressbarOpt(func(p *Progressbar) error {
+		if workers <= 0 {
+			return fmt.Errorf("%w: workers must be greater than 0", ErrInvalidState)
+		}
+		p.workers = workers
+		return nil
+	})
+}
+
+var runtimeNumCPU = runtime.NumCPU
+
 func newProgressbar() *Progressbar {
 	ctx, cancel := context.WithCancel(context.Background())
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -74,6 +89,7 @@ func newProgressbar() *Progressbar {
 		makeTermIO: makeTermIO,
 		increments: make(chan int64),
 		now:        time.Now,
+		workers:    runtimeNumCPU(),
 	}
 }
 
@@ -124,11 +140,12 @@ type Progressbar struct {
 	err        error
 	rendered   bool
 	eventSink  func(progressEvent)
+	workers    int
 }
 
 // NewMaxProgressBar returns progress bar towards the max number.
 func NewMaxProgressBar(label string, size int64, opts ...opt) (*Progressbar, error) {
-	return newStartedProgressBar(label, size)
+	return newStartedProgressBar(label, size, opts...)
 }
 
 // NewSliceProgressBar returns progress bar that updates as long as iterator consumed.
@@ -157,6 +174,104 @@ func NewSliceProgressBar[T any](label string, slice []T, opts ...opt) iter.Seq2[
 	}
 }
 
+// NewParallelProgressBar executes yield in parallel while updating progress.
+func NewParallelProgressBar[T any](label string, slice []T, yield func(T) error, opts ...opt) error {
+	p, err := newStartedProgressBar(label, int64(len(slice)), opts...)
+	if err != nil {
+		return err
+	}
+	if len(slice) == 0 {
+		return p.Close()
+	}
+	ctx, cancel := context.WithCancel(p.ctx)
+	defer cancel()
+	runner := &parallelProgressRunner[T]{
+		ctx:    ctx,
+		cancel: cancel,
+		p:      p,
+		slice:  slice,
+		yield:  yield,
+		jobs:   make(chan int),
+	}
+	runErr := runner.run()
+	return errors.Join(runErr, p.Close())
+}
+
+type parallelProgressRunner[T any] struct {
+	ctx      context.Context
+	cancel   context.CancelFunc
+	p        *Progressbar
+	slice    []T
+	yield    func(T) error
+	jobs     chan int
+	wg       sync.WaitGroup
+	errOnce  sync.Once
+	firstErr error
+}
+
+// run executes all work items and returns the first callback error if any.
+func (r *parallelProgressRunner[T]) run() error {
+	r.startWorkers()
+	r.enqueueJobs()
+	close(r.jobs)
+	r.wg.Wait()
+	if r.firstErr != nil {
+		return r.firstErr
+	}
+	return r.ctx.Err()
+}
+
+// startWorkers starts worker goroutines that consume job indexes.
+func (r *parallelProgressRunner[T]) startWorkers() {
+	for range r.p.effectiveWorkers(len(r.slice)) {
+		r.wg.Add(1)
+		go r.worker()
+	}
+}
+
+// worker processes jobs and reports only the first callback error.
+func (r *parallelProgressRunner[T]) worker() {
+	defer r.wg.Done()
+	for {
+		select {
+		case <-r.ctx.Done():
+			return
+		case idx, ok := <-r.jobs:
+			if !ok {
+				return
+			}
+			err := r.yield(r.slice[idx])
+			if err != nil {
+				r.setErr(err)
+				continue
+			}
+			r.p.Add(1)
+		}
+	}
+}
+
+// setErr records only the first callback error and cancels the remaining work.
+func (r *parallelProgressRunner[T]) setErr(err error) {
+	if err == nil {
+		return
+	}
+	r.errOnce.Do(func() {
+		r.firstErr = err
+		r.cancel()
+	})
+}
+
+// enqueueJobs sends item indexes to workers until context cancellation.
+func (r *parallelProgressRunner[T]) enqueueJobs() {
+	for idx := range len(r.slice) {
+		select {
+		case <-r.ctx.Done():
+			return
+		case r.jobs <- idx:
+		}
+	}
+}
+
 func (p *Progressbar) Add(num int64) {
 	if p.io == nil {
 		return // most likely no TTY
@@ -174,6 +289,21 @@ func (p *Progressbar) Close() error {
 	}
 	p.cancel()
 	return p.err
+}
+
+// effectiveWorkers returns a bounded worker count for the current task.
+func (p *Progressbar) effectiveWorkers(total int) int {
+	if total <= 0 {
+		return 0
+	}
+	workers := p.workers
+	if workers <= 0 {
+		workers = 1
+	}
+	if workers > total {
+		return total
+	}
+	return workers
 }
 
 func (p *Progressbar) emit(ev progressEvent) {

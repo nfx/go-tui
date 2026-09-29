@@ -9,6 +9,8 @@ import (
 	"errors"
 	"io"
 	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -245,6 +247,17 @@ func TestNewMaxProgressBar(t *testing.T) {
 	p.Add(3)
 }
 
+func TestNewMaxProgressBarAppliesOptions(t *testing.T) {
+	_, err := NewMaxProgressBar("max", 1, progressbarOpt(func(p *Progressbar) error {
+		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			return nil, errors.New("boom")
+		}
+		return nil
+	}))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "boom")
+}
+
 type fakeInfo struct {
 	size int64
 }
@@ -423,6 +436,180 @@ func TestWithFormatRate(t *testing.T) {
 	if p.fmtRate == nil {
 		t.Fatalf("expected format rate function")
 	}
+}
+
+func TestWithWorkersRejectsNonPositive(t *testing.T) {
+	p := newProgressbar()
+	err := WithWorkers(0)(p)
+	assert.ErrorIs(t, err, ErrInvalidState)
+}
+
+func TestWithWorkersSetsConfiguredValue(t *testing.T) {
+	p := newProgressbar()
+	err := WithWorkers(7)(p)
+	assert.NoError(t, err)
+	assert.Equal(t, 7, p.workers)
+}
+
+func TestNewParallelProgressBarRunsConcurrently(t *testing.T) {
+	var active int64
+	var maxActive int64
+	items := []int{1, 2, 3, 4, 5, 6}
+	ready := make(chan struct{})
+	var once sync.Once
+	err := NewParallelProgressBar("parallel", items, func(v int) error {
+		curr := atomic.AddInt64(&active, 1)
+		for {
+			prev := atomic.LoadInt64(&maxActive)
+			if curr <= prev || atomic.CompareAndSwapInt64(&maxActive, prev, curr) {
+				break
+			}
+		}
+		if curr >= 3 {
+			once.Do(func() {
+				close(ready)
+			})
+		}
+		select {
+		case <-ready:
+		case <-time.After(time.Second):
+			return errors.New("timeout waiting for parallel start")
+		}
+		atomic.AddInt64(&active, -1)
+		return nil
+	}, WithWorkers(3), progressbarOpt(func(p *Progressbar) error {
+		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			return nil, ErrNoTTY
+		}
+		return nil
+	}))
+	assert.NoError(t, err)
+	assert.True(t, maxActive > 1)
+}
+
+func TestNewParallelProgressBarUsesDefaultNumCPU(t *testing.T) {
+	orig := runtimeNumCPU
+	runtimeNumCPU = func() int { return 4 }
+	t.Cleanup(func() {
+		runtimeNumCPU = orig
+	})
+	p := newProgressbar()
+	assert.Equal(t, 4, p.workers)
+	items := []int{1, 2, 3, 4}
+	var active int64
+	var maxActive int64
+	ready := make(chan struct{})
+	var once sync.Once
+	err := NewParallelProgressBar("parallel", items, func(v int) error {
+		curr := atomic.AddInt64(&active, 1)
+		for {
+			prev := atomic.LoadInt64(&maxActive)
+			if curr <= prev || atomic.CompareAndSwapInt64(&maxActive, prev, curr) {
+				break
+			}
+		}
+		if curr >= 4 {
+			once.Do(func() {
+				close(ready)
+			})
+		}
+		select {
+		case <-ready:
+		case <-time.After(time.Second):
+			return errors.New("timeout waiting for parallel start")
+		}
+		atomic.AddInt64(&active, -1)
+		return nil
+	}, progressbarOpt(func(pb *Progressbar) error {
+		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			return nil, ErrNoTTY
+		}
+		return nil
+	}))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(4), maxActive)
+}
+
+func TestNewParallelProgressBarFailFastOnFirstError(t *testing.T) {
+	items := make([]int, 64)
+	for i := range items {
+		items[i] = i
+	}
+	fail := errors.New("fail")
+	var processed int64
+	err := NewParallelProgressBar("parallel", items, func(v int) error {
+		atomic.AddInt64(&processed, 1)
+		if v == 7 {
+			return fail
+		}
+		time.Sleep(10 * time.Millisecond)
+		return nil
+	}, WithWorkers(4), progressbarOpt(func(pb *Progressbar) error {
+		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			return nil, ErrNoTTY
+		}
+		return nil
+	}))
+	assert.ErrorIs(t, err, fail)
+	assert.True(t, processed < int64(len(items)))
+}
+
+func TestNewParallelProgressBarNoTTYStillParallel(t *testing.T) {
+	var active int64
+	var maxActive int64
+	ready := make(chan struct{})
+	var once sync.Once
+	items := []int{1, 2, 3}
+	err := NewParallelProgressBar("parallel", items, func(v int) error {
+		curr := atomic.AddInt64(&active, 1)
+		for {
+			prev := atomic.LoadInt64(&maxActive)
+			if curr <= prev || atomic.CompareAndSwapInt64(&maxActive, prev, curr) {
+				break
+			}
+		}
+		if curr >= 2 {
+			once.Do(func() {
+				close(ready)
+			})
+		}
+		select {
+		case <-ready:
+		case <-time.After(time.Second):
+			return errors.New("timeout waiting for parallel start")
+		}
+		atomic.AddInt64(&active, -1)
+		return nil
+	}, WithWorkers(2), progressbarOpt(func(pb *Progressbar) error {
+		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			return nil, ErrNoTTY
+		}
+		return nil
+	}))
+	assert.NoError(t, err)
+	assert.True(t, maxActive > 1)
+}
+
+func TestNewParallelProgressBarPropagatesCloseError(t *testing.T) {
+	closeErr := io.EOF
+	err := NewParallelProgressBar("parallel", []int{1}, func(v int) error {
+		return nil
+	}, progressbarOpt(func(pb *Progressbar) error {
+		pb.err = closeErr
+		pb.ticks = make(chan time.Time)
+		pb.ticker = time.NewTicker(time.Hour)
+		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			return &termIO{
+				in:      in,
+				out:     &bytes.Buffer{},
+				Width:   40,
+				Height:  1,
+				Restore: func() error { return nil },
+			}, nil
+		}
+		return nil
+	}))
+	assert.ErrorIs(t, err, closeErr)
 }
 
 func TestProgressStateHelpers(t *testing.T) {
