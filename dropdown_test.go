@@ -1607,6 +1607,23 @@ func TestWithOneMatch_noMatchKeepsDropdown(t *testing.T) {
 	assert.Equal(t, "", d.oneMatch)
 }
 
+func TestWithOneMatch_sortsByLevensteinDistance(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{
+		dropdownHeuristicLabelItem{ID: 1, Name: "zeta"},
+		dropdownHeuristicLabelItem{ID: 2, Name: "alpha"},
+		dropdownHeuristicLabelItem{ID: 3, Name: "omega"},
+	}
+	err := WithDefault("alpa")(d)
+	assert.NoError(t, err)
+	assert.NoError(t, d.parseTemplates())
+	_, err = d.renderInit(newTestTermIO(20, 6))
+	assert.NoError(t, err)
+	assert.Equal(t, []int{1, 0, 2}, d.relevant)
+	assert.Equal(t, []int{1, 0, 2}, d.displayed)
+	assert.Equal(t, "", d.oneMatch)
+}
+
 func TestWithOneMatch_multipleMatchesKeepDropdown(t *testing.T) {
 	d := newDropdown()
 	d.Items = []any{
@@ -1620,6 +1637,13 @@ func TestWithOneMatch_multipleMatchesKeepDropdown(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(d.Items))
 	assert.Equal(t, "", d.oneMatch)
+}
+
+func TestDropdownLevenstein(t *testing.T) {
+	d := newDropdown()
+	assert.Equal(t, 3, d.levenstein("kitten", "sitting"))
+	assert.Equal(t, 0, d.levenstein("alpha", "alpha"))
+	assert.Equal(t, 1, d.levenstein("alpa", "alpha"))
 }
 
 func TestDropdownLazyEmptySequence(t *testing.T) {

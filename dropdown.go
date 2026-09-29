@@ -716,6 +716,7 @@ func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 		longest = max(longest, d.widths[i])
 	}
 	if d.oneMatch != "" && len(d.Items) > 0 {
+		d.sortRelevantByLevenstein(d.oneMatch)
 		// this is a hack to make [WithDefault] + [WithOneReturn] equivalent
 		// work for dropdowns.
 		matched := d.trie.Prefix(d.oneMatch)
@@ -729,6 +730,48 @@ func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 	}
 	d.displayed = d.relevant[:min(len(d.relevant), io.Height/2)]
 	return longest, nil
+}
+
+func (d *dropdown) sortRelevantByLevenstein(match string) {
+	lookup := make(map[int]int, len(d.relevant))
+	match = strings.ToLower(match)
+	for _, i := range d.relevant {
+		label := strings.ToLower(d.itemLabel(d.Items[i]))
+		lookup[i] = d.levenstein(label, match)
+	}
+	sort.SliceStable(d.relevant, func(i, j int) bool {
+		left := d.relevant[i]
+		right := d.relevant[j]
+		if lookup[left] == lookup[right] {
+			return left < right
+		}
+		return lookup[left] < lookup[right]
+	})
+}
+
+func (*dropdown) levenstein(a, b string) int {
+	dist := make([][]int, len(a)+1)
+	for i := range dist {
+		dist[i] = make([]int, len(b)+1)
+		dist[i][0] = i // a is the first column
+	}
+	for j := range dist[0] {
+		dist[0][j] = j // b is the first row
+	}
+	for i := 1; i <= len(a); i++ {
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			dist[i][j] = min(
+				dist[i-1][j]+1,      // deletion
+				dist[i][j-1]+1,      // insertion
+				dist[i-1][j-1]+cost, // substitution
+			)
+		}
+	}
+	return dist[len(a)][len(b)]
 }
 
 func (d *dropdown) setItem(i int, item any) error {
