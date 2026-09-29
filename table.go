@@ -469,11 +469,16 @@ func structFieldsFor[T any]() (structFields, error) {
 		return nil, fmt.Errorf("expected struct or pointer to struct, got %s", rt.Kind())
 	}
 
-	return reflectStructFields(rt)
+	return reflectStructFields(rt, map[reflect.Type]struct{}{})
 }
 
 //nolint:cyclop // TODO: fix
-func reflectStructFields(rt reflect.Type) (structFields, error) {
+func reflectStructFields(rt reflect.Type, stack map[reflect.Type]struct{}) (structFields, error) {
+	if _, ok := stack[rt]; ok {
+		return nil, nil
+	}
+	stack[rt] = struct{}{}
+	defer delete(stack, rt)
 	var out structFields
 	for i := range rt.NumField() {
 		f := rt.Field(i)
@@ -486,7 +491,7 @@ func reflectStructFields(rt reflect.Type) (structFields, error) {
 		}
 		_, isStringer := ft.MethodByName("String")
 		if ft.Kind() == reflect.Struct && !isStringer {
-			nested, err := reflectStructFields(ft)
+			nested, err := reflectStructFields(ft, stack)
 			if err != nil {
 				return nil, fmt.Errorf("nested %s: %w", f.Name, err)
 			}

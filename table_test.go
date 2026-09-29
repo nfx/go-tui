@@ -28,6 +28,15 @@ type Person struct {
 	Age  int `header:"Owner Age,align-left"`
 }
 
+type recursiveLeft struct {
+	Value int
+	Right *recursiveRight
+}
+
+type recursiveRight struct {
+	Left *recursiveLeft
+}
+
 var dummyPets = []Pet{
 	{"John Doe", 99, "", Person{"Unknown", 9999}},
 	{"Fluffy", 3, "Cat", Person{"Alice", 30}},
@@ -247,6 +256,27 @@ func TestStructFieldsForNested(t *testing.T) {
 	fields, err := structFieldsFor[data]()
 	assert.NoError(t, err)
 	assert.True(t, len(fields) >= 3)
+}
+
+func TestStructFieldsForRecursiveType(t *testing.T) {
+	type node struct {
+		Name string
+		Next *node
+	}
+
+	fields, err := structFieldsFor[node]()
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(fields))
+	assert.Equal(t, "Name", fields[0].name)
+	assert.Equal(t, "NAME", fields[0].header)
+}
+
+func TestStructFieldsForIndirectRecursiveType(t *testing.T) {
+	fields, err := structFieldsFor[recursiveLeft]()
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(fields))
+	assert.Equal(t, "Value", fields[0].name)
+	assert.Equal(t, "VALUE", fields[0].header)
 }
 
 func TestExtractFromRangeNode(t *testing.T) {
