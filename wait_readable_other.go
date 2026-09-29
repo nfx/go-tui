@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-//go:build !unix
+//go:build !unix && !windows
 
 package tui
 
@@ -10,7 +10,8 @@ import (
 	"io"
 )
 
-// Non-unix fallback: keep existing behavior without fd readiness polling.
+// Fallback for platforms without a readiness-polling implementation:
+// keep existing behavior without fd readiness polling.
 func waitForReadableInput(context.Context, io.Reader) error {
 	return nil
 }
