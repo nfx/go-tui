@@ -76,7 +76,6 @@ func testIOforDropdown(t *testing.T, width, height int, o ...opt) (*chanIO, opt)
 		close(cio.In)
 		close(cio.Out)
 	})
-
 	return cio, WithOptions(append(opts{
 		WithInput(cio),
 		WithOutput(cio),
@@ -91,7 +90,6 @@ func testIOforDropdown(t *testing.T, width, height int, o ...opt) (*chanIO, opt)
 					Restore: func() error { return nil },
 				}, nil
 			}
-
 			return nil
 		}),
 		WithLabelTemplate("{{ . }}"),
@@ -111,7 +109,6 @@ func confirmForTest(t *testing.T) (in, out chan string, result chan bool) {
 		defer close(result)
 		result <- Confirm("Are you sure?", opts)
 	}()
-
 	return cio.In, cio.Out, result
 }
 
@@ -168,7 +165,6 @@ func overflowForTest(t *testing.T) (in, out chan string, result chan string) {
 		assert.NoError(t, err)
 		result <- v
 	}()
-
 	return cio.In, cio.Out, result
 }
 
@@ -238,7 +234,6 @@ func otherDropdownForTest(t *testing.T) (in, out chan string, result chan string
 		assert.NoError(t, err)
 		result <- v
 	}()
-
 	return cio.In, cio.Out, result
 }
 
@@ -288,7 +283,6 @@ func dropdownKVForTest(t *testing.T, items map[string]int) (in, out chan string,
 			err   error
 		}{key, value, err}
 	}()
-
 	return cio.In, cio.Out, result
 }
 
@@ -594,7 +588,6 @@ func TestConfirmfRunsWithFormattedAction(t *testing.T) {
 	defer func() { confirmRunner = orig }()
 	confirmRunner = func(action string, opts ...opt) bool {
 		assert.Equal(t, "Proceed with task?", action)
-
 		return true
 	}
 
@@ -614,7 +607,6 @@ func TestDefaultConfirmRunnerReturnsTrue(t *testing.T) {
 				Restore: func() error { return nil },
 			}, nil
 		}
-
 		return nil
 	})
 	assert.True(t, defaultConfirmRunner("Proceed?", WithInput(in), WithOutput(out), opt))
@@ -1235,7 +1227,6 @@ func captureOutput(cio *chanIO) <-chan string {
 		}
 		close(out)
 	}()
-
 	return out
 }
 
@@ -1310,6 +1301,69 @@ func TestDropdownLazySelectsItem(t *testing.T) {
 	assert.NoError(t, res.err)
 	assert.Equal(t, "red", res.value)
 	assert.Contains(t, final, "Select: red")
+}
+
+func TestWithOneMatch_nonStructItemsReturnsError(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"a", "b"}
+	err := WithOneMatch("Name", "a")(d)
+	assert.Error(t, err)
+}
+
+func TestWithOneMatch_unknownFieldReturnsError(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{dropdownHeuristicLabelItem{ID: 1, Name: "x"}}
+	err := WithOneMatch("Missing", "x")(d)
+	assert.Error(t, err)
+}
+
+func TestWithOneMatch_noMatchDoesNothing(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{
+		dropdownHeuristicLabelItem{ID: 1, Name: "alpha"},
+		dropdownHeuristicLabelItem{ID: 2, Name: "beta"},
+	}
+	err := WithOneMatch("Name", "gamma")(d)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(d.Items))
+	assert.True(t, !d.OneReturn)
+	assert.True(t, !d.Hide)
+}
+
+func TestWithOneMatch_multipleMatchesDoNothing(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{
+		dropdownHeuristicLabelItem{ID: 1, Name: "same"},
+		dropdownHeuristicLabelItem{ID: 2, Name: "same"},
+	}
+	err := WithOneMatch("Name", "same")(d)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(d.Items))
+	assert.True(t, !d.OneReturn)
+}
+
+func TestWithOneMatch_singleMatchSetsFlags(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{
+		dropdownHeuristicLabelItem{ID: 1, Name: "alpha"},
+		dropdownHeuristicLabelItem{ID: 2, Name: "beta"},
+		dropdownHeuristicLabelItem{ID: 3, Name: "gamma"},
+	}
+	var events []dropdownOutputEvent
+	d.eventSink = func(ev dropdownOutputEvent) {
+		events = append(events, ev)
+	}
+	err := WithOneMatch("Name", "beta")(d)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(d.Items))
+	assert.Equal(t, dropdownHeuristicLabelItem{ID: 2, Name: "beta"}, d.Items[0])
+	assert.True(t, d.OneReturn)
+	assert.True(t, d.Hide)
+	assert.Equal(t, 1, len(events))
+	filtered, ok := events[0].(dropdownFilterChanged)
+	assert.True(t, ok)
+	assert.Equal(t, 1, filtered.Matching)
+	assert.Equal(t, []int{0, 2}, filtered.Removed)
 }
 
 func TestDropdownLazyEmptySequence(t *testing.T) {

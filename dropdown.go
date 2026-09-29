@@ -149,7 +149,6 @@ func defaultConfirmRunner(action string, opts ...opt) bool {
 	if err != nil {
 		return false
 	}
-
 	return strings.EqualFold(res, "yes")
 }
 
@@ -181,7 +180,6 @@ func DropdownKV[K comparable, V any](label string, items map[K]V, opts ...opt) (
 	if err != nil {
 		return zeroK, zeroV, err
 	}
-
 	return item.Key, item.Value, nil
 }
 
@@ -234,7 +232,6 @@ func DropdownLazy[V any](label string, itemFn iter.Seq2[V, error], o ...opt) (V,
 	if !ok { // should never happen
 		return zero, fmt.Errorf("%w: expected %T, got %T", ErrInvalidState, valid, item)
 	}
-
 	return valid, nil
 }
 
@@ -250,7 +247,6 @@ func DropdownIndex(label string, items []any, o ...opt) (int, error) {
 	if err != nil {
 		return -1, fmt.Errorf("answer: %w", err)
 	}
-
 	return i, nil
 }
 
@@ -270,7 +266,6 @@ func (d *dropdown) showAnswer(label string, item any) error {
 	if err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
-
 	return nil
 }
 
@@ -292,7 +287,6 @@ func (d *dropdown) dropdownIndex(o ...opt) (int, error) {
 	if err != nil {
 		return -1, err
 	}
-
 	return d.relevant[j], nil
 }
 
@@ -311,7 +305,6 @@ type dropdownAnswer struct {
 func WithOneReturn() opt {
 	return opT(func(d *dropdown) error {
 		d.OneReturn = true
-
 		return nil
 	})
 }
@@ -319,7 +312,6 @@ func WithOneReturn() opt {
 func WithHide() opt {
 	return opT(func(d *dropdown) error {
 		d.Hide = true
-
 		return nil
 	})
 }
@@ -338,7 +330,6 @@ func WithFieldTemplate(fieldName ...string) opt {
 		d.ActiveItemTemplate = fmt.Sprintf(`{{ cyan "→ " %s }}`, a)
 		d.InactiveItemTemplate = fmt.Sprintf(`{{ dim "→ " %s }}`, a)
 		d.AnswerTemplate = fmt.Sprintf(`{{ dim "✔ " .Label " …" }} {{ bold %s }}`, b)
-
 		return nil
 	})
 }
@@ -357,15 +348,74 @@ func WithTemplate(main string, activeDetails ...string) opt {
 		d.ActiveItemTemplate = fmt.Sprintf(`{{ cyan "→ " %s }}%s`, main, details)
 		d.InactiveItemTemplate = fmt.Sprintf(`{{ dim "→ " %s }}`, main)
 		d.AnswerTemplate = fmt.Sprintf(`{{ dim "✔ " .Label " …" }} {{ bold .Answer%s }}`, main)
-
 		return nil
 	})
+}
+
+// WithOneMatch pre-filters dropdown items to those where the named struct field equals value.
+// Returns an error if items are not structs or the field does not exist.
+// When exactly one item matches, it reduces Items to that single entry and sets OneReturn and Hide
+// to bypass the interactive prompt.
+//
+// EXPERIMENTAL: this may change the name.
+func WithOneMatch(field, value string) opt {
+	return opT(func(d *dropdown) error {
+		matched, removed, err := d.matchByField(field, value)
+		if err != nil {
+			return err
+		}
+		if len(matched) != 1 {
+			return nil
+		}
+		d.Items = matched
+		d.OneReturn = true
+		d.Hide = true
+		d.emit(dropdownFilterChanged{
+			Matching: 1,
+			Removed:  removed,
+		})
+		return nil
+	})
+}
+
+// matchByField returns items where the named struct field equals value and the indices of non-matching items.
+func (d *dropdown) matchByField(field, value string) (matched []any, removed []int, err error) {
+	if len(d.Items) == 0 {
+		return nil, nil, nil
+	}
+	first, ok := d.indirectValue(reflect.ValueOf(d.Items[0]))
+	if !ok || first.Kind() != reflect.Struct {
+		return nil, nil, fmt.Errorf("items must be structs, got %T", d.Items[0])
+	}
+	rt := first.Type()
+	_, ok = rt.FieldByName(field)
+	if !ok {
+		return nil, nil, fmt.Errorf("field %q not found in %s", field, rt.Name())
+	}
+	for i, item := range d.Items {
+		v, ok := d.indirectValue(reflect.ValueOf(item))
+		if !ok || v.Kind() != reflect.Struct {
+			removed = append(removed, i)
+			continue
+		}
+		f := v.FieldByName(field)
+		fv, ok := d.indirectValue(f)
+		if !ok {
+			continue
+		}
+		sv := fv.String()
+		if sv != value {
+			removed = append(removed, i)
+			continue
+		}
+		matched = append(matched, item)
+	}
+	return matched, removed, nil
 }
 
 func WithLabelTemplate(tmpl string) opt {
 	return opT(func(d *dropdown) error {
 		d.LabelTemplate = tmpl
-
 		return nil
 	})
 }
@@ -373,7 +423,6 @@ func WithLabelTemplate(tmpl string) opt {
 func WithActiveItemTemplate(tmpl string) opt {
 	return opT(func(d *dropdown) error {
 		d.ActiveItemTemplate = tmpl
-
 		return nil
 	})
 }
@@ -381,7 +430,6 @@ func WithActiveItemTemplate(tmpl string) opt {
 func WithInactiveItemTemplate(tmpl string) opt {
 	return opT(func(d *dropdown) error {
 		d.InactiveItemTemplate = tmpl
-
 		return nil
 	})
 }
@@ -389,7 +437,6 @@ func WithInactiveItemTemplate(tmpl string) opt {
 func WithMoreItemsTemplate(tmpl string) opt {
 	return opT(func(d *dropdown) error {
 		d.MoreItemsTemplate = tmpl
-
 		return nil
 	})
 }
@@ -397,7 +444,6 @@ func WithMoreItemsTemplate(tmpl string) opt {
 func WithAnswerTemplate(tmpl string) opt {
 	return opT(func(d *dropdown) error {
 		d.AnswerTemplate = tmpl
-
 		return nil
 	})
 }
@@ -426,7 +472,6 @@ func (d *dropdown) templateFuncs() template.FuncMap {
 		funcs[name] = fn
 	}
 	funcs["label"] = d.itemLabel
-
 	return funcs
 }
 
@@ -440,7 +485,6 @@ func (d *dropdown) itemLabel(item any) string {
 	if ok {
 		return label
 	}
-
 	return fmt.Sprint(item)
 }
 
@@ -454,7 +498,6 @@ func (d *dropdown) structLabel(item any) (string, bool) {
 	if ok {
 		return label, true
 	}
-
 	return d.heuristicStructLabel(value)
 }
 
@@ -474,7 +517,6 @@ func (d *dropdown) stringerLabel(item any) (string, bool) {
 	if !ok {
 		return "", false
 	}
-
 	return x.String(), true
 }
 
@@ -491,7 +533,6 @@ func (d *dropdown) annotatedStructLabel(value reflect.Value) (string, bool) {
 			return label, true
 		}
 	}
-
 	return "", false
 }
 
@@ -520,7 +561,6 @@ func (d *dropdown) heuristicStructLabel(value reflect.Value) (string, bool) {
 			}
 		}
 	}
-
 	return "", false
 }
 
@@ -535,7 +575,6 @@ func (d *dropdown) valueLabel(value reflect.Value) (string, bool) {
 		if out != "" {
 			return out, true
 		}
-
 		return "", false
 	}
 	if value.CanInterface() {
@@ -545,7 +584,6 @@ func (d *dropdown) valueLabel(value reflect.Value) (string, bool) {
 			if out != "" {
 				return out, true
 			}
-
 			return "", false
 		}
 	}
@@ -558,11 +596,9 @@ func (d *dropdown) valueLabel(value reflect.Value) (string, bool) {
 			if out != "" {
 				return out, true
 			}
-
 			return "", false
 		}
 	}
-
 	return "", false
 }
 
@@ -580,7 +616,6 @@ func (d *dropdown) hasLabelOption(tag string) bool {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -595,7 +630,6 @@ func (d *dropdown) indirectValue(value reflect.Value) (reflect.Value, bool) {
 		}
 		value = value.Elem()
 	}
-
 	return value, true
 }
 
@@ -625,7 +659,6 @@ func (d *dropdown) parseTemplates() error {
 	if err != nil {
 		return fmt.Errorf("answer: %w", err)
 	}
-
 	return nil
 }
 
@@ -633,7 +666,6 @@ func mustEndWith(base string, r byte) string {
 	if base[len(base)-1] != r {
 		base += string(r)
 	}
-
 	return base
 }
 
@@ -704,7 +736,6 @@ func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
 		buf.WriteByte('\n')
 	}
 	buf.WriteByte('\r')
-
 	return nil
 }
 
@@ -725,7 +756,6 @@ func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 		longest = max(longest, d.widths[i])
 	}
 	d.displayed = d.relevant[:min(len(d.relevant), io.Height/2)]
-
 	return longest, nil
 }
 
@@ -743,7 +773,6 @@ func (d *dropdown) setItem(i int, item any) error {
 		Index: i,
 		Text:  inactive,
 	})
-
 	return nil
 }
 
@@ -762,7 +791,6 @@ func (d *dropdown) renderLabel(buf *bytes.Buffer, io *termIO, longest int) int {
 		d.LabelNewLine = true
 		prefix = 0
 	}
-
 	return prefix
 }
 
@@ -783,7 +811,6 @@ func (d *dropdown) renderItem(io *termIO, i, j int) (item bbuf, err error) {
 		// this may fail if active item is wider than the terminal, but we can solve this later
 		item = truncateVisible(item, io.Width-1, '\n')
 	}
-
 	return item, nil
 }
 
@@ -800,7 +827,6 @@ func (d *dropdown) renderMore(total int, height int, longest int) (bbuf, int, er
 		return nil, 0, fmt.Errorf("more: %w", err)
 	}
 	longest = max(longest, width(bufMore))
-
 	return bufMore, longest, nil
 }
 
@@ -818,7 +844,6 @@ func (d *dropdown) height() int {
 	if d.LabelNewLine {
 		height++ // label wrapped
 	}
-
 	return height
 }
 
@@ -858,7 +883,6 @@ func (d dropdownState) Equal(other dropdownState) bool {
 			return false
 		}
 	}
-
 	return true
 }
 
@@ -871,13 +895,11 @@ func (d dropdownState) Diff(prev dropdownState) (added []int, removed []int) {
 		if a == b {
 			i++
 			j++
-
 			continue
 		}
 		if a < b {
 			removed = append(removed, a)
 			i++
-
 			continue
 		}
 		added = append(added, b)
@@ -889,7 +911,6 @@ func (d dropdownState) Diff(prev dropdownState) (added []int, removed []int) {
 	for ; j < len(d.relevant); j++ {
 		added = append(added, d.relevant[j])
 	}
-
 	return added, removed
 }
 
@@ -910,14 +931,12 @@ func (d *dropdown) decodeInputEvent(key rune) dropdownInputEvent {
 		if pos >= 0 && pos < len(d.relevant) {
 			i = d.relevant[pos]
 		}
-
 		return dropdownInputConfirmed{Index: i}
 	case 0x7f: // backspace
 		next := []rune(string(d.typed))
 		if len(next) > 0 {
 			next = next[:len(next)-1]
 		}
-
 		return dropdownFilteredWith{Prefix: string(next)}
 	default:
 		return dropdownFilteredWith{Prefix: string(d.typed) + string(key)}
@@ -992,7 +1011,6 @@ func (d *dropdown) ensureLazyRender(
 		return err
 	}
 	*needsRender = false
-
 	return nil
 }
 
@@ -1010,28 +1028,24 @@ func (d *dropdown) nextLazyAction(
 		if err != nil {
 			return lazyResult{}, err
 		}
-
 		return lazyResult{needsRender: nextRender}, nil
 	case ev, ok := <-keys:
 		i, nextRender, err := d.handleLazyKey(tio, frame, space, displayed, ev, ok)
 		if err != nil {
 			return lazyResult{}, err
 		}
-
 		return lazyResult{index: i, done: i >= 0, needsRender: nextRender}, nil
 	case ev, ok := <-d.input:
 		i, nextRender, err := d.handleLazyInput(tio, frame, space, displayed, ev, ok)
 		if err != nil {
 			return lazyResult{}, err
 		}
-
 		return lazyResult{index: i, done: i >= 0, needsRender: nextRender}, nil
 	case <-d.Ctx.Done():
 		err := d.clearFrame(tio, frame, space)
 		if err != nil {
 			return lazyResult{}, err
 		}
-
 		return lazyResult{}, d.Ctx.Err()
 	}
 }
@@ -1054,7 +1068,6 @@ func (d *dropdown) renderLazyFrame(tio *termIO, frame *bytes.Buffer, space *int,
 	}
 	*space = d.height()
 	*displayed = len(d.displayed)
-
 	return nil
 }
 
@@ -1071,10 +1084,8 @@ func (d *dropdown) handleLazyItem(tio *termIO, frame *bytes.Buffer, space int, i
 			if clearErr != nil {
 				return false, errors.Join(io.EOF, clearErr)
 			}
-
 			return false, ErrEmptyLazyResult
 		}
-
 		return false, nil
 	}
 	if it.err != nil {
@@ -1082,7 +1093,6 @@ func (d *dropdown) handleLazyItem(tio *termIO, frame *bytes.Buffer, space int, i
 		if clearErr != nil {
 			return false, errors.Join(it.err, clearErr)
 		}
-
 		return false, it.err
 	}
 	err := d.addItem(tio.Height, it.item)
@@ -1091,10 +1101,8 @@ func (d *dropdown) handleLazyItem(tio *termIO, frame *bytes.Buffer, space int, i
 		if clearErr != nil {
 			return false, errors.Join(err, clearErr)
 		}
-
 		return false, err
 	}
-
 	return true, nil
 }
 
@@ -1112,7 +1120,6 @@ func (d *dropdown) handleLazyInput(
 		if err != nil {
 			return -1, false, errors.Join(io.EOF, err)
 		}
-
 		return -1, false, io.EOF
 	}
 	i := d.applyInputEvent(tio, ev, displayed, space)
@@ -1121,10 +1128,8 @@ func (d *dropdown) handleLazyInput(
 		if err != nil {
 			return -1, false, err
 		}
-
 		return i, false, nil
 	}
-
 	return -1, true, nil
 }
 
@@ -1142,7 +1147,6 @@ func (d *dropdown) handleLazyKey(
 		if err != nil {
 			return -1, false, errors.Join(io.EOF, err)
 		}
-
 		return -1, false, io.EOF
 	}
 	if ev.err != nil {
@@ -1155,7 +1159,6 @@ func (d *dropdown) handleLazyKey(
 		if clearErr != nil {
 			return -1, false, errors.Join(readErr, clearErr)
 		}
-
 		return -1, false, readErr
 	}
 	i := d.pressKeyRune(tio, ev.key, displayed, space)
@@ -1164,10 +1167,8 @@ func (d *dropdown) handleLazyKey(
 		if err != nil {
 			return -1, false, err
 		}
-
 		return i, false, nil
 	}
-
 	return -1, true, nil
 }
 
@@ -1185,7 +1186,6 @@ func (d *dropdown) runRender(io *termIO, frame *bytes.Buffer) (int, error) {
 	select {
 	case it, more := <-d.itItems:
 		err := d.loadItem(io, frame, it, more, space)
-
 		return -1, err
 	case <-d.Ctx.Done():
 		err = io.clear(space, frame)
@@ -1196,7 +1196,6 @@ func (d *dropdown) runRender(io *termIO, frame *bytes.Buffer) (int, error) {
 		if err != nil {
 			return -1, fmt.Errorf("write: %w", err)
 		}
-
 		return -1, d.Ctx.Err()
 	default:
 		return d.runMain(io, frame, space, displayed)
@@ -1211,7 +1210,6 @@ func (d *dropdown) runMain(io *termIO, frame *bytes.Buffer, space, displayed int
 		return -1, nil
 	} else if err != nil {
 		frame.WriteTo(io) //nolint:errcheck // we can't do much about it here
-
 		return -1, err
 	}
 	if i < 0 {
@@ -1221,7 +1219,6 @@ func (d *dropdown) runMain(io *termIO, frame *bytes.Buffer, space, displayed int
 	if err != nil {
 		return -1, fmt.Errorf("write: %w", err)
 	}
-
 	return i, nil
 }
 
@@ -1229,7 +1226,6 @@ func (d *dropdown) loadItem(io *termIO, frame *bytes.Buffer, it itPair, more boo
 	if !more {
 		d.iterDone = true
 		d.itItems = nil
-
 		return nil
 	}
 	if it.err != nil {
@@ -1242,7 +1238,6 @@ func (d *dropdown) loadItem(io *termIO, frame *bytes.Buffer, it itPair, more boo
 		if err != nil {
 			errs = append(errs, fmt.Errorf("write: %w", err))
 		}
-
 		return errors.Join(errs...)
 	}
 	err := d.addItem(io.Height, it.item)
@@ -1261,7 +1256,6 @@ func (d *dropdown) loadItem(io *termIO, frame *bytes.Buffer, it itPair, more boo
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-
 	return nil
 }
 
@@ -1276,7 +1270,6 @@ func (d *dropdown) addItem(height int, item any) error {
 		return fmt.Errorf("set item: %w", err)
 	}
 	d.displayed = d.relevant[:min(len(d.relevant), height/2)]
-
 	return nil
 }
 
@@ -1285,15 +1278,12 @@ func (d *dropdown) pressKeyRune(io *termIO, key rune, displayed, space int) int 
 	switch key {
 	case '↑':
 		d.pressUp(displayed)
-
 		return -1
 	case '↓':
 		d.pressDown(displayed)
-
 		return -1
 	}
 	ev := d.decodeInputEvent(key)
-
 	return d.applyInputEvent(io, ev, displayed, space)
 }
 
@@ -1308,7 +1298,6 @@ func (d *dropdown) applyInputEvent(io *termIO, ev dropdownInputEvent, displayed,
 		for i, idx := range d.relevant {
 			if idx == typed.Index {
 				pos = i
-
 				break
 			}
 		}
@@ -1316,47 +1305,46 @@ func (d *dropdown) applyInputEvent(io *termIO, ev dropdownInputEvent, displayed,
 			return -1
 		}
 		d.emit(dropdownConfirmed{Selected: typed.Index})
-
 		return pos
 	case dropdownFilteredWith:
 		done := d.filterWith(typed.Prefix, displayed, space, io.Height/2)
 		if done {
 			d.emitStateChanges(prev)
 			d.emit(dropdownConfirmed{Selected: d.relevant[0]})
-
 			return 0
 		}
 	default:
 		d.emitStateChanges(prev)
-
 		return -1
 	}
 	d.emitStateChanges(prev)
-
 	return -1
+}
+
+// pressKeyFromInput reads the next event from the pre-supplied input channel and applies it.
+func (d *dropdown) pressKeyFromInput(tio *termIO, frame *bytes.Buffer, space, displayed int) (int, error) {
+	ev, ok := <-d.input
+	if !ok {
+		return -1, io.EOF
+	}
+	err := tio.clear(space, frame)
+	if err != nil {
+		return -1, err
+	}
+	i := d.applyInputEvent(tio, ev, displayed, space)
+	if i >= 0 {
+		_, err := frame.WriteTo(tio) // TODO: check if we can just defer it from beginning of the method
+		if err != nil {
+			return -1, fmt.Errorf("write: %w", err)
+		}
+		return i, nil
+	}
+	return -1, nil
 }
 
 func (d *dropdown) pressKey(tio *termIO, frame *bytes.Buffer, space, displayed int) (i int, err error) {
 	if d.input != nil {
-		ev, ok := <-d.input
-		if !ok {
-			return -1, io.EOF
-		}
-		err = tio.clear(space, frame)
-		if err != nil {
-			return -1, err
-		}
-		i = d.applyInputEvent(tio, ev, displayed, space)
-		if i >= 0 {
-			_, err := frame.WriteTo(tio) // TODO: check if we can just defer it from beginning of the method
-			if err != nil {
-				return -1, fmt.Errorf("write: %w", err)
-			}
-
-			return i, nil
-		}
-
-		return -1, nil
+		return d.pressKeyFromInput(tio, frame, space, displayed)
 	}
 	key, _, readErr := tio.ReadRune()
 	if readErr != nil {
@@ -1372,10 +1360,8 @@ func (d *dropdown) pressKey(tio *termIO, frame *bytes.Buffer, space, displayed i
 		if err != nil {
 			return -1, fmt.Errorf("write: %w", err)
 		}
-
 		return i, nil
 	}
-
 	return -1, nil
 }
 
@@ -1392,7 +1378,6 @@ func (d *dropdown) clearFrame(io *termIO, frame *bytes.Buffer, space int) error 
 	if err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
-
 	return nil
 }
 
@@ -1437,7 +1422,6 @@ func (d *dropdown) filterWith(text string, displayed, space, height int) bool {
 	if len(d.relevant) == 0 {
 		d.typed = []rune(prevTyped)
 		d.relevant = prevRelevant
-
 		return false
 	}
 	limit := min(len(d.relevant), displayed, space)
@@ -1447,7 +1431,6 @@ func (d *dropdown) filterWith(text string, displayed, space, height int) bool {
 	d.displayed = d.relevant[:limit]
 	d.selected = 0
 	d.offset = 0
-
 	return false
 }
 
@@ -1460,13 +1443,11 @@ func (d *dropdown) pressAny(key rune, displayed, space int) bool {
 	if len(d.relevant) == 0 {
 		d.typed = d.typed[:len(d.typed)-1]
 		d.relevant = d.trie.Prefix(string(d.typed))
-
 		return false
 	}
 	d.displayed = d.relevant[:min(len(d.relevant), displayed, space)]
 	d.selected = 0
 	d.offset = 0
-
 	return false
 }
 
@@ -1487,6 +1468,5 @@ func (d *dropdown) readKeys(ctx context.Context, io *termIO) <-chan keyEvent {
 			}
 		}
 	}()
-
 	return ch
 }
