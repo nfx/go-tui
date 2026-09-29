@@ -88,6 +88,7 @@ func newProgressbar() *Progressbar {
 		cancel:     cancel,
 		makeTermIO: makeTermIO,
 		increments: make(chan int64),
+		stopped:    make(chan struct{}),
 		now:        time.Now,
 		workers:    runtimeNumCPU(),
 	}
@@ -131,6 +132,7 @@ type Progressbar struct {
 	progressState
 	label      string
 	increments chan int64
+	stopped    chan struct{}
 	cancel     context.CancelFunc
 	io         *termIO
 	makeTermIO func(io.Reader, io.Writer) (*termIO, error)
@@ -288,6 +290,9 @@ func (p *Progressbar) Close() error {
 		return nil // most likely no TTY
 	}
 	p.cancel()
+	if p.stopped != nil {
+		<-p.stopped
+	}
 	return p.err
 }
 
@@ -314,7 +319,12 @@ func (p *Progressbar) emit(ev progressEvent) {
 }
 
 func (p *Progressbar) start(ctx context.Context) {
-	defer p.stop() //nolint:errcheck // best effort
+	defer func() {
+		_ = p.stop() //nolint:errcheck // best effort
+		if p.stopped != nil {
+			close(p.stopped)
+		}
+	}()
 	frame := bytes.NewBuffer(make([]byte, 2*p.io.Width))
 	frame.Reset()
 	labelWidth := width([]byte(p.label)) + 1

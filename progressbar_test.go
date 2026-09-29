@@ -684,6 +684,45 @@ func TestProgressbarCloseWithIO(t *testing.T) {
 	}
 }
 
+func TestProgressbarCloseWaitsForBackgroundStop(t *testing.T) {
+	restoreDelay := 50 * time.Millisecond
+	p, err := newStartedProgressBar("sync", 1, progressbarOpt(func(pb *Progressbar) error {
+		pb.ticks = make(chan time.Time)
+		pb.ticker = time.NewTicker(time.Hour)
+		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			return &termIO{
+				in:      in,
+				out:     &bytes.Buffer{},
+				Width:   30,
+				Height:  1,
+				Restore: func() error {
+					time.Sleep(restoreDelay)
+					return nil
+				},
+			}, nil
+		}
+		return nil
+	}))
+	assert.NoError(t, err)
+	start := time.Now()
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- p.Close()
+	}()
+	select {
+	case err = <-closeDone:
+		t.Fatalf("expected close to block for cleanup, got %v", err)
+	case <-time.After(restoreDelay / 4):
+	}
+	select {
+	case err = <-closeDone:
+		assert.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for close")
+	}
+	assert.True(t, time.Since(start) >= restoreDelay)
+}
+
 func TestProgressbarAddContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
