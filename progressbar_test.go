@@ -15,6 +15,19 @@ import (
 	"github.com/nfx/go-tui/internal/assert"
 )
 
+func mustReceiveProgressEvent(t *testing.T, ch <-chan progressEvent) progressEvent {
+	t.Helper()
+
+	select {
+	case ev := <-ch:
+		return ev
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for progress event")
+
+		return nil
+	}
+}
+
 func TestProgressbarTickRenders(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
@@ -91,6 +104,138 @@ func TestProgressbarTickRenders(t *testing.T) {
 
 	assert.Contains(t, second, "\x1b[1A\r\x1b[K\r")
 	assert.Contains(t, second, "download 75%")
+}
+
+func TestProgressbarEmitsStructuredEvents(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+
+	cio := &chanIO{
+		ctx: ctx,
+		In:  make(chan string),
+		Out: make(chan string, 4),
+	}
+	ticks := make(chan time.Time)
+	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
+	now := start
+	events := make(chan progressEvent, 16)
+
+	p, err := newStartedProgressBar("download", 20,
+		WithInput(cio),
+		WithOutput(cio),
+		progressbarOpt(func(pb *Progressbar) error {
+			pb.eventSink = func(ev progressEvent) {
+				events <- ev
+			}
+			pb.now = func() time.Time { return now }
+			pb.redrawAt = start
+			pb.ticks = ticks
+			pb.ticker = time.NewTicker(time.Hour)
+			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+				return &termIO{
+					in:      in,
+					out:     out,
+					Width:   40,
+					Height:  1,
+					Restore: func() error { return nil },
+				}, nil
+			}
+
+			return nil
+		}),
+	)
+	assert.NoError(t, err)
+
+	initEv, ok := mustReceiveProgressEvent(t, events).(progressInit)
+	assert.True(t, ok)
+	assert.Equal(t, "download", initEv.Label)
+	assert.Equal(t, int64(20), initEv.Max)
+
+	p.Add(10)
+
+	now = start.Add(time.Second)
+	select {
+	case ticks <- now:
+	case <-time.After(time.Second):
+		t.Fatalf("tick not delivered")
+	}
+	select {
+	case <-cio.Out:
+	case <-time.After(time.Second):
+		t.Fatalf("no progress output")
+	}
+	metrics, ok := mustReceiveProgressEvent(t, events).(progressUpdate)
+	assert.True(t, ok)
+	assert.Equal(t, int64(time.Second), metrics.Remaining)
+	assert.Equal(t, int64(0), metrics.Elapsed)
+
+	assert.NoError(t, p.Close())
+	closed, ok := mustReceiveProgressEvent(t, events).(progressClosed)
+	assert.True(t, ok)
+	assert.Equal(t, "download", closed.Label)
+}
+
+func TestProgressbarDoneEmitsClosed(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+
+	cio := &chanIO{
+		ctx: ctx,
+		In:  make(chan string),
+		Out: make(chan string, 4),
+	}
+	ticks := make(chan time.Time)
+	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
+	now := start
+	events := make(chan progressEvent, 16)
+
+	p, err := newStartedProgressBar("sync", 2,
+		WithInput(cio),
+		WithOutput(cio),
+		progressbarOpt(func(pb *Progressbar) error {
+			pb.eventSink = func(ev progressEvent) {
+				events <- ev
+			}
+			pb.now = func() time.Time { return now }
+			pb.redrawAt = start
+			pb.ticks = ticks
+			pb.ticker = time.NewTicker(time.Hour)
+			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+				return &termIO{
+					in:      in,
+					out:     out,
+					Width:   40,
+					Height:  1,
+					Restore: func() error { return nil },
+				}, nil
+			}
+
+			return nil
+		}),
+	)
+	assert.NoError(t, err)
+
+	_, ok := mustReceiveProgressEvent(t, events).(progressInit)
+	assert.True(t, ok)
+
+	p.Add(2)
+
+	now = start.Add(time.Second)
+	select {
+	case ticks <- now:
+	case <-time.After(time.Second):
+		t.Fatalf("tick not delivered")
+	}
+	select {
+	case <-cio.Out:
+	case <-time.After(time.Second):
+		t.Fatalf("no progress output")
+	}
+	_, ok = mustReceiveProgressEvent(t, events).(progressUpdate)
+	assert.True(t, ok)
+	closed, ok := mustReceiveProgressEvent(t, events).(progressClosed)
+	assert.True(t, ok)
+	assert.Equal(t, "sync", closed.Label)
 }
 
 func TestNewMaxProgressBar(t *testing.T) {

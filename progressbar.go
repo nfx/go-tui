@@ -15,6 +15,33 @@ import (
 	"time"
 )
 
+type progressEvent interface {
+	isProgressOutgoing()
+}
+
+type progressEventMarker struct{}
+
+func (progressEventMarker) isProgressOutgoing() {}
+
+type progressInit struct {
+	progressEventMarker
+	Label string
+	Max   int64
+}
+
+type progressUpdate struct {
+	progressEventMarker
+	Complete  float64 // 0..1
+	Rate      float64 // per second
+	Remaining int64   // seconds
+	Elapsed   int64   // seconds
+}
+
+type progressClosed struct {
+	progressEventMarker
+	Label string
+}
+
 func progressbarOpt(o func(s *Progressbar) error) opt {
 	return func(a any) error {
 		s, ok := a.(*Progressbar)
@@ -77,6 +104,11 @@ func newStartedProgressBar(label string, size int64, opts ...opt) (*Progressbar,
 	}
 	p.label = label
 	p.startedAt = p.now()
+	p.redrawAt = p.startedAt
+	p.emit(progressInit{
+		Label: p.label,
+		Max:   p.maxNum,
+	})
 	go p.start(p.ctx)
 
 	return p, nil
@@ -95,6 +127,7 @@ type Progressbar struct {
 	now        func() time.Time
 	err        error
 	rendered   bool
+	eventSink  func(progressEvent)
 }
 
 // NewMaxProgressBar returns progress bar towards the max number.
@@ -150,6 +183,13 @@ func (p *Progressbar) Close() error {
 	return p.err
 }
 
+func (p *Progressbar) emit(ev progressEvent) {
+	if p.eventSink == nil {
+		return
+	}
+	p.eventSink(ev)
+}
+
 func (p *Progressbar) start(ctx context.Context) {
 	defer p.stop() //nolint:errcheck // best effort
 	frame := bytes.NewBuffer(make([]byte, 2*p.io.Width))
@@ -200,11 +240,13 @@ func (p *Progressbar) tick(frame *bytes.Buffer, labelWidth int) bool {
 		return true
 	}
 	p.rendered = true
+	p.emit(p.metricsSnapshot())
 
 	return p.isDone()
 }
 
 func (p *Progressbar) stop() error {
+	p.emit(progressClosed{Label: p.label})
 	if p.rendered {
 		err := p.io.clear(1, p.io)
 		if err != nil {
@@ -307,13 +349,18 @@ func (p *progressState) increment(now time.Time) {
 }
 
 func (p *progressState) remainingTime(rollingRate float64) string {
-	remainingNum := p.maxNum - p.currentNum
-	remainingTime := time.Duration(float64(remainingNum)/rollingRate*1) * time.Second
+	remainingTime := p.remainingSeconds(rollingRate)
 	if rollingRate > 0 {
 		return fmt.Sprintf("%s remaining", remainingTime)
 	}
 
 	return ""
+}
+
+func (p *progressState) remainingSeconds(rollingRate float64) time.Duration {
+	remainingNum := p.maxNum - p.currentNum
+	remainingTime := time.Duration(float64(remainingNum)/rollingRate*1) * time.Second
+	return remainingTime
 }
 
 func (p *progressState) filledBarLine(width int, completion float64) string {
@@ -346,6 +393,16 @@ func (p *progressState) rollingRate() float64 {
 	}
 
 	return sum / float64(len(p.rollingRates))
+}
+
+func (p *progressState) metricsSnapshot() progressUpdate {
+	rate := p.rollingRate()
+	return progressUpdate{
+		Complete:  float64(p.currentNum) / float64(p.maxNum),
+		Rate:      rate,
+		Remaining: int64(p.remainingSeconds(rate)),
+		Elapsed:   int64(p.elapsed.Seconds()),
+	}
 }
 
 type fileStat interface {
@@ -389,6 +446,11 @@ func NewFileProgressReader(r io.Reader, label string, opts ...opt) (*wrapReader,
 	}
 	p.label = label
 	p.startedAt = p.now()
+	p.redrawAt = p.startedAt
+	p.emit(progressInit{
+		Label: p.label,
+		Max:   p.maxNum,
+	})
 	go p.start(p.ctx)
 
 	return wrap, nil
