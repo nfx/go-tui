@@ -1008,11 +1008,11 @@ func (d *dropdown) nextLazyAction(
 ) (lazyResult, error) {
 	select {
 	case it, more := <-d.itItems:
-		nextRender, err := d.handleLazyItem(tio, frame, space, it, more)
+		i, nextRender, err := d.handleLazyItem(tio, frame, space, it, more)
 		if err != nil {
 			return lazyResult{}, err
 		}
-		return lazyResult{needsRender: nextRender}, nil
+		return lazyResult{index: i, done: i >= 0, needsRender: nextRender}, nil
 	case ev, ok := <-keys:
 		return d.nextLazyKeyResult(tio, frame, space, displayed, ev, ok)
 	case ev, ok := <-d.input:
@@ -1074,36 +1074,54 @@ func (d *dropdown) renderLazyFrame(tio *termIO, frame *bytes.Buffer, space *int,
 // ErrEmptyLazyResult is empty lazy result.
 var ErrEmptyLazyResult = errors.New("empty lazy result")
 
-// handleLazyItem updates the dropdown for a streamed item.
-func (d *dropdown) handleLazyItem(tio *termIO, frame *bytes.Buffer, space int, it itPair, more bool) (bool, error) {
-	if !more {
-		d.iterDone = true
-		d.itItems = nil
-		if len(d.Items) == 0 {
-			clearErr := d.clearFrame(tio, frame, space)
-			if clearErr != nil {
-				return false, errors.Join(io.EOF, clearErr)
-			}
-			return false, ErrEmptyLazyResult
+func (d *dropdown) finishLazyItems(tio *termIO, frame *bytes.Buffer, space int) (int, bool, error) {
+	d.iterDone = true
+	d.itItems = nil
+	if len(d.Items) == 0 {
+		clearErr := d.clearFrame(tio, frame, space)
+		if clearErr != nil {
+			return -1, false, errors.Join(io.EOF, clearErr)
 		}
-		return false, nil
+		return -1, false, ErrEmptyLazyResult
+	}
+	if d.OneReturn && len(d.relevant) == 1 {
+		d.emit(dropdownConfirmed{Selected: d.relevant[0]})
+		err := d.clearFrame(tio, frame, space)
+		if err != nil {
+			return -1, false, err
+		}
+		return 0, false, nil
+	}
+	return -1, false, nil
+}
+
+// handleLazyItem updates the dropdown for a streamed item.
+func (d *dropdown) handleLazyItem(
+	tio *termIO,
+	frame *bytes.Buffer,
+	space int,
+	it itPair,
+	more bool,
+) (int, bool, error) {
+	if !more {
+		return d.finishLazyItems(tio, frame, space)
 	}
 	if it.err != nil {
 		clearErr := d.clearFrame(tio, frame, space)
 		if clearErr != nil {
-			return false, errors.Join(it.err, clearErr)
+			return -1, false, errors.Join(it.err, clearErr)
 		}
-		return false, it.err
+		return -1, false, it.err
 	}
 	err := d.addItem(tio.Height, it.item)
 	if err != nil {
 		clearErr := d.clearFrame(tio, frame, space)
 		if clearErr != nil {
-			return false, errors.Join(err, clearErr)
+			return -1, false, errors.Join(err, clearErr)
 		}
-		return false, err
+		return -1, false, err
 	}
-	return true, nil
+	return -1, true, nil
 }
 
 // handleLazyInput updates the dropdown from a semantic input event.
@@ -1273,6 +1291,11 @@ func (d *dropdown) addItem(height int, item any) error {
 	err := d.setItem(len(d.Items)-1, item)
 	if err != nil {
 		return fmt.Errorf("set item: %w", err)
+	}
+	if len(d.typed) > 0 {
+		d.relevant = d.trie.Prefix(string(d.typed))
+	} else {
+		d.relevant = d.trie.Indexes()
 	}
 	d.displayed = d.relevant[:min(len(d.relevant), height/2)]
 	return nil

@@ -11,8 +11,8 @@ import (
 	"io"
 	"iter"
 	"os"
-	"sync/atomic"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"text/template"
 	"time"
@@ -109,7 +109,7 @@ func (r *blockingByteReader) Close() {
 	close(r.ch)
 }
 
-func testIOforDropdown(t *testing.T, width, height int, o ...opt) (*chanIO, opt) { //nolint:unparam // ...
+func testIOforDropdown(t *testing.T, width, height int, o ...opt) (*chanIO, opt) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	cio := &chanIO{
@@ -958,7 +958,7 @@ func TestDropdownHandleLazyItemEmpty(t *testing.T) {
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 6)
 	frame := &bytes.Buffer{}
-	_, err := d.handleLazyItem(tio, frame, 1, itPair{}, false)
+	_, _, err := d.handleLazyItem(tio, frame, 1, itPair{}, false)
 	assert.ErrorIs(t, err, ErrEmptyLazyResult)
 }
 
@@ -967,7 +967,7 @@ func TestDropdownHandleLazyItemError(t *testing.T) {
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 6)
 	frame := &bytes.Buffer{}
-	_, err := d.handleLazyItem(tio, frame, 1, itPair{err: io.EOF}, true)
+	_, _, err := d.handleLazyItem(tio, frame, 1, itPair{err: io.EOF}, true)
 	assert.ErrorIs(t, err, io.EOF)
 }
 
@@ -976,9 +976,43 @@ func TestDropdownHandleLazyItemAdds(t *testing.T) {
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 6)
 	frame := &bytes.Buffer{}
-	needsRender, err := d.handleLazyItem(tio, frame, 1, itPair{item: "item"}, true)
+	_, needsRender, err := d.handleLazyItem(tio, frame, 1, itPair{item: "item"}, true)
 	assert.NoError(t, err)
 	assert.True(t, needsRender)
+}
+
+func TestDropdownHandleLazyItemOneReturnWhenDone(t *testing.T) {
+	d := newDropdown()
+	d.OneReturn = true
+	d.Items = []any{"one"}
+	d.relevant = []int{0}
+	assert.NoError(t, d.parseTemplates())
+	tio := newTestTermIO(20, 6)
+	frame := &bytes.Buffer{}
+	var events []dropdownOutputEvent
+	d.eventSink = func(ev dropdownOutputEvent) {
+		events = append(events, ev)
+	}
+	i, needsRender, err := d.handleLazyItem(tio, frame, 1, itPair{}, false)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, i)
+	assert.True(t, !needsRender)
+	assert.Equal(t, 1, len(events))
+	confirmed, ok := events[0].(dropdownConfirmed)
+	assert.True(t, ok)
+	assert.Equal(t, 0, confirmed.Selected)
+}
+
+func TestDropdownAddItemPreservesFilter(t *testing.T) {
+	d := newDropdown()
+	d.trie = newTrie()
+	assert.NoError(t, d.parseTemplates())
+	assert.NoError(t, d.addItem(6, "alpha"))
+	assert.True(t, !d.filterWith("a", len(d.displayed), 6, 3))
+	assert.Equal(t, []int{0}, d.relevant)
+	assert.NoError(t, d.addItem(6, "beta"))
+	assert.Equal(t, []int{0}, d.relevant)
+	assert.Equal(t, []int{0}, d.displayed)
 }
 
 func TestDropdownHandleLazyKeyEOF(t *testing.T) {
@@ -1250,7 +1284,7 @@ func TestDropdownHandleLazyItemDoneWithItems(t *testing.T) {
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 6)
 	frame := &bytes.Buffer{}
-	_, err := d.handleLazyItem(tio, frame, 1, itPair{}, false)
+	_, _, err := d.handleLazyItem(tio, frame, 1, itPair{}, false)
 	assert.NoError(t, err)
 	assert.True(t, d.iterDone)
 }
@@ -1261,7 +1295,7 @@ func TestDropdownHandleLazyItemAddError(t *testing.T) {
 	d.trie = newTrie()
 	tio := newTestTermIO(20, 6)
 	frame := &bytes.Buffer{}
-	_, err := d.handleLazyItem(tio, frame, 1, itPair{item: "x"}, true)
+	_, _, err := d.handleLazyItem(tio, frame, 1, itPair{item: "x"}, true)
 	assert.Error(t, err)
 }
 
@@ -1639,4 +1673,27 @@ func TestDropdownLazyEmptySequence(t *testing.T) {
 	res := <-resCh
 	assert.ErrorIs(t, res.err, ErrEmptyLazyResult)
 	assert.Equal(t, "", res.value)
+}
+
+func TestDropdownLazyOneReturnSingleItem(t *testing.T) {
+	cio, opts := testIOforDropdown(t, 20, 6, WithOneReturn())
+	captureOutput(cio)
+	resCh := make(chan struct {
+		value string
+		err   error
+	}, 1)
+	go func() {
+		value, err := DropdownLazy("Single", lazySeq("only"), opts)
+		resCh <- struct {
+			value string
+			err   error
+		}{value, err}
+	}()
+	select {
+	case res := <-resCh:
+		assert.NoError(t, res.err)
+		assert.Equal(t, "only", res.value)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for single-item lazy OneReturn")
+	}
 }
