@@ -15,22 +15,40 @@ import (
 	"unicode/utf8"
 )
 
-type inputEventType string
+type inputOutgoing interface {
+	isInputOutgoing()
+}
 
-const (
-	inputInitEvent        inputEventType = "input.init"
-	inputTextChangedEvent inputEventType = "input.text_changed"
-	inputCursorMovedEvent inputEventType = "input.cursor_moved"
-	inputCompletedEvent   inputEventType = "input.completed"
-)
+type inputOutgoingMarker struct{}
 
-type inputEvent struct {
-	Type     inputEventType
+func (inputOutgoingMarker) isInputOutgoing() {}
+
+type inputInit struct {
+	inputOutgoingMarker
 	Label    string
-	Typed    string
-	Cursor   int
-	Hide     bool
 	Password bool
+}
+
+type inputComplete struct {
+	inputOutgoingMarker
+	Value string
+}
+
+type inputIncoming interface {
+	isInputIncoming()
+}
+
+type inputIncomingMarker struct{}
+
+func (inputIncomingMarker) isInputIncoming() {}
+
+type inputChanged struct {
+	inputIncomingMarker
+	Text string
+}
+
+type inputConfirmed struct {
+	inputIncomingMarker
 }
 
 type inputKeyEvent struct {
@@ -77,7 +95,8 @@ type input struct {
 
 	// TODO: special case for testing?..
 	makeTermIO func(in io.Reader, out io.Writer) (*termIO, error)
-	eventSink  func(inputEvent)
+	eventSink  func(inputOutgoing)
+	input      <-chan inputIncoming
 }
 
 func newInput(label string) *input {
@@ -156,8 +175,14 @@ func (p *input) run() (string, error) {
 	}
 	defer io.Restore() //nolint:errcheck
 	frame := &bytes.Buffer{}
-	keys := p.readEvents(p.ctx, io)
-	p.emit(inputInitEvent)
+	var keys <-chan inputKeyEvent
+	if p.input == nil {
+		keys = p.readEvents(p.ctx, io)
+	}
+	p.emit(inputInit{
+		Label:    p.Label,
+		Password: p.Password,
+	})
 	for {
 		err = p.render(io, frame)
 		if err != nil {
@@ -170,6 +195,14 @@ func (p *input) run() (string, error) {
 			// key press handlers has to be limited to state updates, not writes to the buffer.
 			done, err := p.handleKeyEvent(ev, ok)
 			if err != nil { // e.g., Ctrl+C or Ctrl+D
+				return "", errors.Join(err, p.clear(io))
+			}
+			if done {
+				return p.typed, p.clear(io)
+			}
+		case ev, ok := <-p.input:
+			done, err := p.handleInputEvent(ev, ok)
+			if err != nil {
 				return "", errors.Join(err, p.clear(io))
 			}
 			if done {
@@ -293,60 +326,100 @@ func (p *input) handleKeyEvent(ev inputKeyEvent, ok bool) (bool, error) {
 		// Ctrl+V or CMD+V will just send more bytes. So we emulate typing.
 		// This currently works with empty input only. Or appending to the end.
 		// There's a bug when you paste in the middle of the text.
-		typed, cursor := p.typed, p.cursor
 		for _, b := range ev.paste {
-			p.pressAny(rune(b))
+			done := p.applyInputEvent(p.decodeInputEvent(rune(b)))
+			if done {
+				return true, nil
+			}
 		}
-		p.emitState(typed, cursor)
 
 		return false, nil
 	} else if ev.err != nil {
 		// Ctrl+C or Ctrl+D will result in an error like io.EOF
 		return false, fmt.Errorf("read: %w", ev.err)
 	}
-	typed, cursor := p.typed, p.cursor
 	switch ev.key {
-	case keyEnter:
-		p.emit(inputCompletedEvent)
-
-		return true, nil
-	case 0x7f: // backspace
-		p.pressBackspace()
 	case '←':
 		p.pressLeft()
+		return false, nil
 	case '→':
 		p.pressRight()
+		return false, nil
 	case '↑', '↓': // ignore up/down arrows
 		return false, nil
-	default:
-		p.pressAny(ev.key)
 	}
-	p.emitState(typed, cursor)
 
-	return false, nil
+	return p.applyInputEvent(p.decodeInputEvent(ev.key)), nil
 }
 
-func (p *input) emit(kind inputEventType) {
+func (p *input) handleInputEvent(ev inputIncoming, ok bool) (bool, error) {
+	if !ok {
+		return false, fmt.Errorf("read: %w", io.EOF)
+	}
+
+	return p.applyInputEvent(ev), nil
+}
+
+func (p *input) emit(ev inputOutgoing) {
 	if p.eventSink == nil {
 		return
 	}
-	p.eventSink(inputEvent{
-		Type:     kind,
-		Label:    p.Label,
-		Typed:    p.typed,
-		Cursor:   p.cursor,
-		Hide:     p.Hide,
-		Password: p.Password,
-	})
+	p.eventSink(ev)
 }
 
-func (p *input) emitState(prevTyped string, prevCursor int) {
-	if p.typed != prevTyped {
-		p.emit(inputTextChangedEvent)
+func (p *input) decodeInputEvent(key rune) inputIncoming {
+	switch key {
+	case keyEnter:
+		return inputConfirmed{}
+	case 0x7f: // backspace
+		nextText := p.typed
+		if len(nextText) > 0 && p.cursor > 0 {
+			nextText = nextText[:p.cursor-1] + nextText[p.cursor:]
+		}
+
+		return inputChanged{
+			Text: nextText,
+		}
+	default:
+		nextText := p.typed[:p.cursor] + string(key) + p.typed[p.cursor:]
+
+		return inputChanged{
+			Text: nextText,
+		}
 	}
-	if p.cursor != prevCursor {
-		p.emit(inputCursorMovedEvent)
+}
+
+func (p *input) applyInputEvent(ev inputIncoming) bool {
+	switch typed := ev.(type) {
+	case inputChanged:
+		prevLen := len(p.typed)
+		prevCursor := p.cursor
+		p.typed = typed.Text
+		switch {
+		case prevLen+1 == len(p.typed):
+			if prevCursor < len(p.typed) {
+				p.cursor = prevCursor + 1
+			} else {
+				p.cursor = len(p.typed)
+			}
+		case prevLen == len(p.typed)+1:
+			if prevCursor > 0 {
+				p.cursor = prevCursor - 1
+			} else {
+				p.cursor = 0
+			}
+		case prevCursor > len(p.typed):
+			p.cursor = len(p.typed)
+		default:
+			p.cursor = len(p.typed)
+		}
+	case inputConfirmed:
+		p.emit(inputComplete{Value: p.typed})
+
+		return true
 	}
+
+	return false
 }
 
 func (p *input) pressBackspace() {
