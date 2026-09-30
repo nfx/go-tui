@@ -321,6 +321,10 @@ func (t *table) currentBuffer() {
 }
 
 func (t *table) currentCell(cell []byte, col, maxLen int) []byte {
+	if col >= len(t.columns) {
+		// extra tabs from field values containing tab characters; discard
+		return []byte{}
+	}
 	if len(cell) == 0 {
 		// value is not available, but we need to insert something
 		// to keep the table structure intact.

@@ -313,6 +313,17 @@ func TestTableXWrites(t *testing.T) {
 	assert.NoError(t, TableX(buf, data, WithLabelTemplate("{{.Name}} ")))
 }
 
+func TestTableFieldValueWithTabDoesNotPanic(t *testing.T) {
+	buf := &bytes.Buffer{}
+	type item struct {
+		Name string
+		ID   string
+	}
+	// a tab inside a field value must not panic with index out of range
+	data := []item{{Name: "foo\tbar", ID: "123"}, {Name: "baz", ID: "456"}}
+	assert.NoError(t, TableX(buf, data))
+}
+
 func TestTableIterHandlesIteratorError(t *testing.T) {
 	buf := &bytes.Buffer{}
 	iter := func(yield func(int, error) bool) {
