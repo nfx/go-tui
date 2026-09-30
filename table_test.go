@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"text/template"
+	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
@@ -358,12 +359,42 @@ func collectEvents[T any](t *testing.T, rowTmpl string, data []T, o ...opt) []ta
 	return events
 }
 
+func collectIterEvents[T any](t *testing.T, rowTmpl string, data []T, o ...opt) []tableEvent {
+	t.Helper()
+	var events []tableEvent
+	o = append(o, opT(func(tbl *table) error {
+		tbl.eventSink = func(ev tableEvent) {
+			events = append(events, ev)
+		}
+		return nil
+	}))
+	err := TableIter(bytes.NewBuffer(nil), rowTmpl, iterate(data), o...)
+	assert.NoError(t, err)
+	return events
+}
+
 // mustTableRow converts an event to a tableRow and fails the test when the type is unexpected.
 func mustTableRow(t *testing.T, ev tableEvent) tableRow {
 	t.Helper()
 	row, ok := ev.(tableRow)
 	assert.True(t, ok)
 	return row
+}
+
+func assertNoGreenRedScaleColor(t *testing.T, cell string) {
+	t.Helper()
+	assert.NotContains(t, cell, brightRed)
+	assert.NotContains(t, cell, red)
+	assert.NotContains(t, cell, yellow)
+	assert.NotContains(t, cell, green)
+	assert.NotContains(t, cell, brightGreen)
+}
+
+func assertScaledCellContains(t *testing.T, cell, color, text string) {
+	t.Helper()
+	assert.Contains(t, cell, color)
+	assert.Contains(t, cell, text)
+	assert.Contains(t, cell, reset)
 }
 
 func TestWithColumnTypeFormat(t *testing.T) {
@@ -469,6 +500,14 @@ func TestColumnOptionsUnknownColumn(t *testing.T) {
 			name: "skip",
 			opt:  WithSkipColumns("Missing"),
 		},
+		{
+			name: "green red scale",
+			opt:  WithColumnGreenRedScale("Missing"),
+		},
+		{
+			name: "red green scale",
+			opt:  WithColumnRedGreenScale("Missing"),
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -515,6 +554,175 @@ func TestWithFloat64AsPercentPositiveColored(t *testing.T) {
 	assert.Contains(t, zero.Cells[1], "0%")
 	assert.NotContains(t, zero.Cells[1], green)
 	assert.NotContains(t, zero.Cells[1], red)
+}
+
+func TestWithColumnGreenRedScaleNumeric(t *testing.T) {
+	type row struct {
+		Value float64
+	}
+	data := []row{
+		{Value: 0},
+		{Value: 100},
+		{Value: 25},
+		{Value: 50},
+		{Value: 75},
+		{Value: 0},
+	}
+	events := collectEvents(t, "", data, WithColumnGreenRedScale("Value"))
+	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
+	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[0], brightRed, "100")
+	assertScaledCellContains(t, mustTableRow(t, events[3]).Cells[0], yellow, "25")
+	assertScaledCellContains(t, mustTableRow(t, events[4]).Cells[0], red, "50")
+	assertScaledCellContains(t, mustTableRow(t, events[5]).Cells[0], red, "75")
+	assertScaledCellContains(t, mustTableRow(t, events[6]).Cells[0], brightGreen, "0")
+}
+
+func TestWithColumnGreenRedScaleTime(t *testing.T) {
+	type row struct {
+		When time.Time `header:"When"`
+	}
+	base := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	data := []row{
+		{When: base},
+		{When: base.Add(4 * time.Hour)},
+		{When: base.Add(2 * time.Hour)},
+		{When: base.Add(1 * time.Hour)},
+		{When: base.Add(3 * time.Hour)},
+	}
+	events := collectEvents(t, "", data, WithColumnGreenRedScale("When"))
+	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
+	assert.Contains(t, mustTableRow(t, events[2]).Cells[0], brightRed)
+	assert.Contains(t, mustTableRow(t, events[3]).Cells[0], yellow)
+	assert.Contains(t, mustTableRow(t, events[4]).Cells[0], green)
+	assert.Contains(t, mustTableRow(t, events[5]).Cells[0], red)
+}
+
+func TestWithColumnGreenRedScaleDuration(t *testing.T) {
+	type row struct {
+		Elapsed time.Duration
+	}
+	data := []row{
+		{Elapsed: 0},
+		{Elapsed: 4 * time.Second},
+		{Elapsed: 2 * time.Second},
+		{Elapsed: 1 * time.Second},
+		{Elapsed: 3 * time.Second},
+	}
+	events := collectEvents(t, "", data, WithColumnGreenRedScale("Elapsed"))
+	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
+	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[0], brightRed, "4s")
+	assertScaledCellContains(t, mustTableRow(t, events[3]).Cells[0], yellow, "2s")
+	assertScaledCellContains(t, mustTableRow(t, events[4]).Cells[0], green, "1s")
+	assertScaledCellContains(t, mustTableRow(t, events[5]).Cells[0], red, "3s")
+}
+
+func TestWithColumnRedGreenScaleNumeric(t *testing.T) {
+	type row struct {
+		Value int
+	}
+	data := []row{
+		{Value: 0},
+		{Value: 100},
+		{Value: 75},
+		{Value: 0},
+	}
+	events := collectEvents(t, "", data, WithColumnRedGreenScale("Value"))
+	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
+	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[0], brightGreen, "100")
+	assertScaledCellContains(t, mustTableRow(t, events[3]).Cells[0], yellow, "75")
+	assertScaledCellContains(t, mustTableRow(t, events[4]).Cells[0], brightRed, "0")
+}
+
+func TestWithColumnRedGreenScaleOutlierDoesNotSkewAllNegativesToGreen(t *testing.T) {
+	type row struct {
+		Value float64
+	}
+	data := []row{
+		{Value: -0.20},
+		{Value: 0.70},
+		{Value: -20.60},
+		{Value: -0.30},
+	}
+	events := collectEvents(t, "", data, WithColumnRedGreenScale("Value"))
+	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
+	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[0], brightGreen, "0.70")
+	assertScaledCellContains(t, mustTableRow(t, events[3]).Cells[0], brightRed, "-20.60")
+	assertScaledCellContains(t, mustTableRow(t, events[4]).Cells[0], red, "-0.30")
+}
+
+func TestWithColumnGreenRedScaleFlatRangeHasNoColor(t *testing.T) {
+	type row struct {
+		Value int
+	}
+	data := []row{
+		{Value: 7},
+		{Value: 7},
+		{Value: 7},
+	}
+	events := collectEvents(t, "", data, WithColumnGreenRedScale("Value"))
+	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
+	assertNoGreenRedScaleColor(t, mustTableRow(t, events[2]).Cells[0])
+	assertNoGreenRedScaleColor(t, mustTableRow(t, events[3]).Cells[0])
+}
+
+func TestWithColumnGreenRedScaleUnsupportedType(t *testing.T) {
+	type row struct {
+		Name string
+	}
+	err := TableAuto(&bytes.Buffer{}, []row{{Name: "A"}}, WithColumnGreenRedScale("Name"))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), `column "Name": unsupported type string for green-red scale`)
+}
+
+func TestWithColumnGreenRedScaleIgnoredForExplicitTemplate(t *testing.T) {
+	type row struct {
+		Value float64
+	}
+	data := []row{{Value: 0}, {Value: 100}}
+	events := collectEvents(t, "{{.Value}}", data, WithColumnGreenRedScale("Value"))
+	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
+	assertNoGreenRedScaleColor(t, mustTableRow(t, events[2]).Cells[0])
+}
+
+func TestWithColumnRedGreenScaleIgnoredForExplicitTemplate(t *testing.T) {
+	type row struct {
+		Value float64
+	}
+	data := []row{{Value: 0}, {Value: 100}}
+	events := collectEvents(t, "{{.Value}}", data, WithColumnRedGreenScale("Value"))
+	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
+	assertNoGreenRedScaleColor(t, mustTableRow(t, events[2]).Cells[0])
+}
+
+func TestWithColumnGreenRedScaleTableIterStreaming(t *testing.T) {
+	type row struct {
+		Value int
+	}
+	data := []row{
+		{Value: 10},
+		{Value: 20},
+		{Value: 15},
+		{Value: 100},
+	}
+	events := collectIterEvents(t, "", data, WithColumnGreenRedScale("Value"))
+	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
+	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[0], brightRed, "20")
+	assertScaledCellContains(t, mustTableRow(t, events[3]).Cells[0], yellow, "15")
+	assertScaledCellContains(t, mustTableRow(t, events[4]).Cells[0], brightRed, "100")
+}
+
+func TestWithColumnGreenRedScalePreservesTypeFormatting(t *testing.T) {
+	data := []tableFormatRow{
+		{Name: "A", Rate: 0.05},
+		{Name: "B", Rate: 0.20},
+	}
+	events := collectEvents(t, "", data, WithFloat64AsPercent(), WithColumnGreenRedScale("Rate"))
+	assert.Equal(t, "5%", strings.TrimSpace(mustTableRow(t, events[1]).Cells[1]))
+	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[1], brightRed, "20%")
+
+	events = collectEvents(t, "", data, WithColumnGreenRedScale("Rate"), WithFloat64AsPercent())
+	assert.Equal(t, "5%", strings.TrimSpace(mustTableRow(t, events[1]).Cells[1]))
+	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[1], brightRed, "20%")
 }
 
 func TestColumnOptionsIgnoredForExplicitTemplate(t *testing.T) {

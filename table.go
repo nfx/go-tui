@@ -13,9 +13,11 @@ import (
 	"log/slog"
 	"math"
 	"reflect"
+	"sort"
 	"strings"
 	"text/template"
 	"text/template/parse"
+	"time"
 )
 
 type tableEvent interface {
@@ -212,6 +214,26 @@ func WithFloat64AsPercentPositiveColored() opt {
 	})
 }
 
+// WithColumnGreenRedScale colors an auto-template column using a 5-step
+// scale from green (lowest ranked values) to red (highest ranked values),
+// based on unique seen-so-far values. For TableIter, previously rendered
+// rows are not recalculated.
+func WithColumnGreenRedScale(name string) opt {
+	return opT(func(t *table) error {
+		return t.setColumnScale(name, greenRedScalePalette[:])
+	})
+}
+
+// WithColumnRedGreenScale colors an auto-template column using a 5-step
+// scale from red (lowest ranked values) to green (highest ranked values),
+// based on unique seen-so-far values. For TableIter, previously rendered
+// rows are not recalculated.
+func WithColumnRedGreenScale(name string) opt {
+	return opT(func(t *table) error {
+		return t.setColumnScale(name, redGreenScalePalette[:])
+	})
+}
+
 // percentString scales values to percentages and truncates toward zero.
 func percentString(v float64) string {
 	value := math.Trunc(v*10000) / 100
@@ -223,6 +245,88 @@ func percentString(v float64) string {
 	}
 	out := fmt.Sprintf("%.2f%%", value)
 	return strings.Replace(out, ".00%", "%", 1)
+}
+
+var (
+	timeType         = reflect.TypeOf(time.Time{})
+	timeDurationType = reflect.TypeOf(time.Duration(0))
+)
+
+var greenRedScalePalette = [...]string{brightGreen, green, yellow, red, brightRed}
+
+var redGreenScalePalette = [...]string{brightRed, red, yellow, green, brightGreen}
+
+type greenRedScalarFn func(v any) (float64, bool)
+
+type columnScale struct {
+	toScalar    greenRedScalarFn
+	palette     []string
+	roundFloats bool
+	unique      []float64
+}
+
+func (s *columnScale) color(v any) string {
+	scalar, ok := s.scalar(v)
+	if !ok {
+		return ""
+	}
+	scalar = s.normalize(scalar)
+	rank, total := s.observeRank(scalar)
+	if total < 2 {
+		return ""
+	}
+	if len(s.palette) == 0 {
+		return ""
+	}
+	return s.palette[s.bucketIndex(rank, total)]
+}
+
+func (s *columnScale) scalar(v any) (float64, bool) {
+	if s.toScalar == nil {
+		return 0, false
+	}
+	scalar, ok := s.toScalar(v)
+	if !ok || math.IsNaN(scalar) || math.IsInf(scalar, 0) {
+		return 0, false
+	}
+	return scalar, true
+}
+
+func (s *columnScale) normalize(scalar float64) float64 {
+	if !s.roundFloats {
+		return scalar
+	}
+	const factor = 10000.0
+	return math.Round(scalar*factor) / factor
+}
+
+func (s *columnScale) observeRank(scalar float64) (rank, total int) {
+	idx := sort.SearchFloat64s(s.unique, scalar)
+	if idx >= len(s.unique) || s.unique[idx] != scalar {
+		s.unique = append(s.unique, 0)
+		copy(s.unique[idx+1:], s.unique[idx:])
+		s.unique[idx] = scalar
+	}
+	return idx, len(s.unique)
+}
+
+func (s *columnScale) bucketIndex(rank, total int) int {
+	if total < 2 {
+		return 0
+	}
+	if len(s.palette) < 2 {
+		return 0
+	}
+	numerator := rank * (len(s.palette) - 1)
+	denominator := total - 1
+	idx := int(math.Round(float64(numerator) / float64(denominator)))
+	if idx < 0 {
+		return 0
+	}
+	if idx >= len(s.palette) {
+		return len(s.palette) - 1
+	}
+	return idx
 }
 
 // table is an alternative to text/tabwriter that supports ANSI colors and
@@ -254,6 +358,8 @@ type table struct {
 	columnTemplates   map[string]string
 	includeColumns    map[string]bool
 	skipColumns       map[string]bool
+	columnScales      map[string]*columnScale
+	rowScaleColors    [][]string
 }
 
 type tableColumn struct {
@@ -308,6 +414,7 @@ func (t *table) Append(v any) error {
 	if err != nil {
 		return fmt.Errorf("newline: %w", err)
 	}
+	t.captureRowScaleColors(v)
 	t.consumed++
 	if t.consumed%t.batchSize == 0 {
 		err = t.flush(false)
@@ -323,6 +430,139 @@ func (t *table) Write(p []byte) (n int, err error) {
 	t.buf = append(t.buf, p...)
 
 	return len(p), nil
+}
+
+func (t *table) setColumnScale(name string, palette []string) error {
+	if !t.autoTemplate {
+		return nil
+	}
+	meta, err := t.columnMetadata(name)
+	if err != nil {
+		return err
+	}
+	toScalar, err := t.scaleScalar(meta.typ, meta.kind)
+	if err != nil {
+		return fmt.Errorf("column %q: %w", name, err)
+	}
+	t.ensureAutoTemplateMaps()
+	t.columnScales[name] = &columnScale{
+		toScalar:    toScalar,
+		palette:     append([]string(nil), palette...),
+		roundFloats: t.isFloatKind(meta.kind),
+	}
+	return nil
+}
+
+func (t *table) scaleScalar(typ reflect.Type, kind reflect.Kind) (greenRedScalarFn, error) {
+	if typ == timeType {
+		return t.scaleTimeScalar, nil
+	}
+	if typ == timeDurationType {
+		return t.scaleDurationScalar, nil
+	}
+	return t.scaleNumericScalar(kind, typ)
+}
+
+func (t *table) scaleNumericScalar(kind reflect.Kind, typ reflect.Type) (greenRedScalarFn, error) {
+	if t.isIntKind(kind) {
+		return t.scaleIntScalar, nil
+	}
+	if t.isUintKind(kind) {
+		return t.scaleUintScalar, nil
+	}
+	if t.isFloatKind(kind) {
+		return t.scaleFloatScalar, nil
+	}
+	return nil, fmt.Errorf("unsupported type %s for green-red scale", typ)
+}
+
+func (t *table) scaleTimeScalar(v any) (float64, bool) {
+	raw, ok := t.scalarValue(v)
+	if !ok {
+		return 0, false
+	}
+	ts, ok := raw.Interface().(time.Time)
+	if !ok {
+		return 0, false
+	}
+	return float64(ts.UnixNano()), true
+}
+
+func (t *table) scaleDurationScalar(v any) (float64, bool) {
+	raw, ok := t.scalarValue(v)
+	if !ok {
+		return 0, false
+	}
+	d, ok := raw.Interface().(time.Duration)
+	if !ok {
+		return 0, false
+	}
+	return float64(d), true
+}
+
+func (t *table) scaleIntScalar(v any) (float64, bool) {
+	raw, ok := t.scalarValue(v)
+	if !ok || !t.isIntKind(raw.Kind()) {
+		return 0, false
+	}
+	return float64(raw.Int()), true
+}
+
+func (t *table) scaleUintScalar(v any) (float64, bool) {
+	raw, ok := t.scalarValue(v)
+	if !ok || !t.isUintKind(raw.Kind()) {
+		return 0, false
+	}
+	return float64(raw.Uint()), true
+}
+
+func (t *table) scaleFloatScalar(v any) (float64, bool) {
+	raw, ok := t.scalarValue(v)
+	if !ok || !t.isFloatKind(raw.Kind()) {
+		return 0, false
+	}
+	return raw.Float(), true
+}
+
+func (t *table) scalarValue(v any) (reflect.Value, bool) {
+	if v == nil {
+		return reflect.Value{}, false
+	}
+	raw := reflect.ValueOf(v)
+	for raw.Kind() == reflect.Pointer {
+		if raw.IsNil() {
+			return reflect.Value{}, false
+		}
+		raw = raw.Elem()
+	}
+	return raw, true
+}
+
+func (*table) isFloatKind(kind reflect.Kind) bool {
+	switch kind {
+	case reflect.Float32, reflect.Float64:
+		return true
+	default:
+		return false
+	}
+}
+
+func (*table) isIntKind(kind reflect.Kind) bool {
+	switch kind {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return true
+	default:
+		return false
+	}
+}
+
+func (*table) isUintKind(kind reflect.Kind) bool {
+	switch kind {
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return true
+	default:
+		return false
+	}
 }
 
 func (t *table) emit(ev tableEvent) {
@@ -483,6 +723,9 @@ func (t *table) ensureAutoTemplateMaps() {
 	if t.skipColumns == nil {
 		t.skipColumns = map[string]bool{}
 	}
+	if t.columnScales == nil {
+		t.columnScales = map[string]*columnScale{}
+	}
 }
 
 // columnMetadata resolves and validates a struct field path used by column options.
@@ -513,18 +756,31 @@ func (t *table) columnSet(names []string) (map[string]bool, error) {
 
 func (t *table) flush(final bool) error {
 	t.currentBuffer()
+	err := t.applyRowScaleColors()
+	if err != nil {
+		return fmt.Errorf("scale colors: %w", err)
+	}
 	if t.eventSink != nil {
-		for _, row := range t.rows {
-			t.emit(tableRow{Cells: append([]string(nil), row...)})
-		}
-		if final && !t.ended {
-			t.ended = true
-			t.emit(tableEnd{Rows: t.consumed})
-		}
-		t.rows = t.rows[:0]
+		t.flushEvents(final)
 
 		return nil
 	}
+
+	return t.flushRows()
+}
+
+func (t *table) flushEvents(final bool) {
+	for _, row := range t.rows {
+		t.emit(tableRow{Cells: append([]string(nil), row...)})
+	}
+	if final && !t.ended {
+		t.ended = true
+		t.emit(tableEnd{Rows: t.consumed})
+	}
+	t.rows = t.rows[:0]
+}
+
+func (t *table) flushRows() error {
 	buf := &bytes.Buffer{}
 	for i, row := range t.rows {
 		for j, cell := range row {
@@ -545,6 +801,74 @@ func (t *table) flush(final bool) error {
 	t.rows = t.rows[:0]
 
 	return nil
+}
+
+func (t *table) captureRowScaleColors(v any) {
+	if len(t.columnScales) == 0 {
+		return
+	}
+	colors := make([]string, len(t.columns))
+	for i := range t.columns {
+		meta := t.columns[i].meta
+		scale, ok := t.columnScales[meta.name]
+		if !ok || scale == nil {
+			continue
+		}
+		raw, ok := t.fieldValueByPath(v, meta.name)
+		if !ok {
+			continue
+		}
+		colors[i] = scale.color(raw)
+	}
+	t.rowScaleColors = append(t.rowScaleColors, colors)
+}
+
+func (t *table) applyRowScaleColors() error {
+	if len(t.rowScaleColors) == 0 {
+		return nil
+	}
+	if len(t.rowScaleColors) > len(t.rows) {
+		return fmt.Errorf("row-color mismatch: colors=%d rows=%d", len(t.rowScaleColors), len(t.rows))
+	}
+	offset := len(t.rows) - len(t.rowScaleColors)
+	for i, colors := range t.rowScaleColors {
+		row := t.rows[offset+i]
+		for col, color := range colors {
+			if color == "" || col >= len(row) {
+				continue
+			}
+			row[col] = color + row[col] + reset
+		}
+	}
+	t.rowScaleColors = t.rowScaleColors[:0]
+	return nil
+}
+
+func (t *table) fieldValueByPath(v any, path string) (any, bool) {
+	raw, ok := t.scalarValue(v)
+	if !ok {
+		return nil, false
+	}
+	for _, name := range strings.Split(path, ".") {
+		if raw.Kind() != reflect.Struct {
+			return nil, false
+		}
+		field := raw.FieldByName(name)
+		if !field.IsValid() {
+			return nil, false
+		}
+		for field.Kind() == reflect.Pointer {
+			if field.IsNil() {
+				return nil, false
+			}
+			field = field.Elem()
+		}
+		raw = field
+	}
+	if !raw.IsValid() || !raw.CanInterface() {
+		return nil, false
+	}
+	return raw.Interface(), true
 }
 
 func (t *table) padded(buf *bytes.Buffer, cell string, col int) error {
