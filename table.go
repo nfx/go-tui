@@ -79,7 +79,7 @@ func Table[T any](w io.Writer, rowTmpl string, iterator []T, o ...opt) error {
 	return t.flush(true)
 }
 
-func TableX[T any](w io.Writer, iterator []T, o ...opt) error {
+func TableAuto[T any](w io.Writer, iterator []T, o ...opt) error {
 	t, err := newTable[T](w, "", o...)
 	if err != nil {
 		return fmt.Errorf("table: %w", err)

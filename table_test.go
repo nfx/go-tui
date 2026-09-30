@@ -220,7 +220,7 @@ func TestNewTableInvalidTemplate(t *testing.T) {
 
 func TestTableXInvalidType(t *testing.T) {
 	buf := &bytes.Buffer{}
-	err := TableX(buf, []int{1, 2})
+	err := TableAuto(buf, []int{1, 2})
 	assert.Error(t, err)
 }
 
@@ -311,7 +311,7 @@ func TestTableXWrites(t *testing.T) {
 		Name string
 	}
 	data := []item{{Name: "a"}, {Name: "b"}}
-	assert.NoError(t, TableX(buf, data, WithLabelTemplate("{{.Name}} ")))
+	assert.NoError(t, TableAuto(buf, data, WithLabelTemplate("{{.Name}} ")))
 }
 
 func TestTableFieldValueWithTabDoesNotPanic(t *testing.T) {
@@ -322,7 +322,7 @@ func TestTableFieldValueWithTabDoesNotPanic(t *testing.T) {
 	}
 	// a tab inside a field value must not panic with index out of range
 	data := []item{{Name: "foo\tbar", ID: "123"}, {Name: "baz", ID: "456"}}
-	assert.NoError(t, TableX(buf, data))
+	assert.NoError(t, TableAuto(buf, data))
 }
 
 func TestTableIterHandlesIteratorError(t *testing.T) {
@@ -439,7 +439,7 @@ func TestWithIncludeAndSkipColumns(t *testing.T) {
 
 func TestWithIncludeSkipConflict(t *testing.T) {
 	buf := &bytes.Buffer{}
-	err := TableX(buf, []tableFormatRow{{Name: "A"}}, WithIncludeColumns("Name"), WithSkipColumns("Name"))
+	err := TableAuto(buf, []tableFormatRow{{Name: "A"}}, WithIncludeColumns("Name"), WithSkipColumns("Name"))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot be included and skipped")
 }
@@ -472,7 +472,7 @@ func TestColumnOptionsUnknownColumn(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := TableX(buf, []row{{Name: "A"}}, tc.opt)
+			err := TableAuto(buf, []row{{Name: "A"}}, tc.opt)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), `unknown column "Missing"`)
 		})
