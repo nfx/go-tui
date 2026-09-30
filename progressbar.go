@@ -12,6 +12,7 @@ import (
 	"iter"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -211,6 +212,28 @@ type parallelProgressRunner[T any] struct {
 	firstErr error
 }
 
+type panicError struct {
+	err   error
+	stack []byte
+}
+
+const (
+	panicSkipFrames    = 4
+	stackLinesPerFrame = 2
+)
+
+func (p *panicError) Error() string {
+	stack := strings.TrimSuffix(string(p.stack), "\n")
+	if stack == "" {
+		return p.err.Error()
+	}
+	return p.err.Error() + "\n\n" + stack
+}
+
+func (p *panicError) Unwrap() error {
+	return p.err
+}
+
 // run executes all work items and returns the first callback error if any.
 func (r *parallelProgressRunner[T]) run() error {
 	r.startWorkers()
@@ -242,7 +265,7 @@ func (r *parallelProgressRunner[T]) worker() {
 			if !ok {
 				return
 			}
-			err := r.yield(r.slice[idx])
+			err := r.runYield(r.slice[idx])
 			if err != nil {
 				r.setErr(err)
 				continue
@@ -250,6 +273,37 @@ func (r *parallelProgressRunner[T]) worker() {
 			r.p.Add(1)
 		}
 	}
+}
+
+func (r *parallelProgressRunner[T]) runYield(v T) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = &panicError{
+				err:   fmt.Errorf("%w: panic: %v", ErrBug, recovered),
+				stack: r.stackTrace(panicSkipFrames),
+			}
+		}
+	}()
+	return r.yield(v)
+}
+
+func (r *parallelProgressRunner[T]) stackTrace(skip int) []byte {
+	raw := debug.Stack()
+	if skip <= 0 {
+		return raw
+	}
+	lines := strings.Split(string(raw), "\n")
+	if len(lines) == 0 {
+		return raw
+	}
+	header := lines[0]
+	body := lines[1:]
+	toDrop := skip * stackLinesPerFrame
+	if toDrop > len(body) {
+		toDrop = len(body)
+	}
+	body = body[toDrop:]
+	return []byte(strings.Join(append([]string{header}, body...), "\n"))
 }
 
 // setErr records only the first callback error and cancels the remaining work.

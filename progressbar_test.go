@@ -554,6 +554,25 @@ func TestNewParallelProgressBarFailFastOnFirstError(t *testing.T) {
 	assert.True(t, processed < int64(len(items)))
 }
 
+func TestNewParallelProgressBarRecoversPanicsAsBug(t *testing.T) {
+	err := NewParallelProgressBar("parallel", []int{1, 2, 3}, func(v int) error {
+		if v == 2 {
+			panic("boom")
+		}
+		return nil
+	}, WithWorkers(2), progressbarOpt(func(pb *Progressbar) error {
+		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			return nil, ErrNoTTY
+		}
+		return nil
+	}))
+
+	assert.ErrorIs(t, err, ErrBug)
+	assert.Contains(t, err.Error(), "panic: boom")
+	var pe *panicError
+	assert.True(t, errors.As(err, &pe))
+}
+
 func TestNewParallelProgressBarNoTTYStillParallel(t *testing.T) {
 	var active int64
 	var maxActive int64

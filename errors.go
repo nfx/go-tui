@@ -6,6 +6,7 @@ package tui
 import "errors"
 
 var (
+	ErrBug                 = errors.New("bug")
 	ErrNoItems             = errors.New("no items")
 	ErrInvalidState        = errors.New("invalid state")
 	ErrUnsupportedPlatform = errors.New("unsupported platform")
