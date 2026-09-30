@@ -11,6 +11,7 @@ import (
 	"io"
 	"iter"
 	"log/slog"
+	"math"
 	"reflect"
 	"strings"
 	"text/template"
@@ -93,25 +94,166 @@ func TableX[T any](w io.Writer, iterator []T, o ...opt) error {
 	return t.flush(true)
 }
 
+func WithColumnTypeFormat[T any](fn func(v T) string) opt {
+	return opT(func(t *table) error {
+		if !t.autoTemplate {
+			return nil
+		}
+		if fn == nil {
+			return errors.New("column type formatter cannot be nil")
+		}
+		valueType := reflect.TypeOf((*T)(nil)).Elem()
+		funcName := t.registerTemplateFunc("tableColumnTypeFormat", fn)
+		t.ensureAutoTemplateMaps()
+		t.columnTypeFormats[valueType] = funcName
+		return nil
+	})
+}
+
+func WithColumnFormat[T any](name string, fn func(v T) string) opt {
+	return opT(func(t *table) error {
+		if !t.autoTemplate {
+			return nil
+		}
+		if fn == nil {
+			return errors.New("column formatter cannot be nil")
+		}
+		meta, err := t.columnMetadata(name)
+		if err != nil {
+			return err
+		}
+		valueType := reflect.TypeOf((*T)(nil)).Elem()
+		if meta.typ != valueType {
+			return fmt.Errorf("column %q has type %s, formatter expects %s", name, meta.typ, valueType)
+		}
+		funcName := t.registerTemplateFunc("tableColumnNameFormat", fn)
+		t.ensureAutoTemplateMaps()
+		t.columnNameFormats[name] = funcName
+		return nil
+	})
+}
+
+func WithColumnTemplate(name, columnTmpl string) opt {
+	return opT(func(t *table) error {
+		if !t.autoTemplate {
+			return nil
+		}
+		_, err := t.columnMetadata(name)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(columnTmpl) == "" {
+			return fmt.Errorf("column %q template cannot be empty", name)
+		}
+		t.ensureAutoTemplateMaps()
+		t.columnTemplates[name] = columnTmpl
+		return nil
+	})
+}
+
+func WithIncludeColumns(names ...string) opt {
+	return opT(func(t *table) error {
+		if !t.autoTemplate {
+			return nil
+		}
+		set, err := t.columnSet(names)
+		if err != nil {
+			return err
+		}
+		for name := range set {
+			skipped, exists := t.skipColumns[name]
+			if exists && skipped {
+				return fmt.Errorf("column %q cannot be included and skipped", name)
+			}
+		}
+		t.ensureAutoTemplateMaps()
+		t.includeColumns = set
+		return nil
+	})
+}
+
+func WithSkipColumns(names ...string) opt {
+	return opT(func(t *table) error {
+		if !t.autoTemplate {
+			return nil
+		}
+		set, err := t.columnSet(names)
+		if err != nil {
+			return err
+		}
+		for name := range set {
+			included, exists := t.includeColumns[name]
+			if exists && included {
+				return fmt.Errorf("column %q cannot be included and skipped", name)
+			}
+		}
+		t.ensureAutoTemplateMaps()
+		t.skipColumns = set
+		return nil
+	})
+}
+
+func WithFloat64AsPercent() opt {
+	return WithColumnTypeFormat(func(v float64) string {
+		return percentString(v)
+	})
+}
+
+func WithFloat64AsPercentPositiveColored() opt {
+	return WithColumnTypeFormat(func(v float64) string {
+		out := percentString(v)
+		if v > 0 {
+			return green + out + reset
+		}
+		if v < 0 {
+			return red + out + reset
+		}
+		return out
+	})
+}
+
+// percentString scales values to percentages and truncates toward zero.
+func percentString(v float64) string {
+	value := math.Trunc(v*10000) / 100
+	if value == 0 {
+		return "0%"
+	}
+	if math.Abs(value) >= 10 {
+		return fmt.Sprintf("%.0f%%", math.Trunc(value))
+	}
+	out := fmt.Sprintf("%.2f%%", value)
+	return strings.Replace(out, ".00%", "%", 1)
+}
+
 // table is an alternative to text/tabwriter that supports ANSI colors and
 // truncation of wide cells. It uses text/template to render each row.
 // The first row is used to extract the headers from the template.
 type table struct {
-	w           io.Writer
-	buf         []byte
-	tmpl        *template.Template
-	columns     []tableColumn
-	metadata    structFields
-	rows        [][]string
-	curr        []string
-	cellPad     int
-	batchSize   int
-	maxWidth    int
-	colMinWidth int
-	locked      bool
-	consumed    int
-	eventSink   func(tableEvent)
-	ended       bool
+	w            io.Writer
+	buf          []byte
+	tmpl         *template.Template
+	columns      []tableColumn
+	metadata     structFields
+	rows         [][]string
+	curr         []string
+	cellPad      int
+	batchSize    int
+	maxWidth     int
+	colMinWidth  int
+	locked       bool
+	consumed     int
+	eventSink    func(tableEvent)
+	ended        bool
+	autoTemplate bool
+
+	customTemplateFuncs template.FuncMap
+	templateFuncSeq     int
+
+	columnTypeFormats map[reflect.Type]string
+	columnNameFormats map[string]string
+	columnTemplates   map[string]string
+	includeColumns    map[string]bool
+	skipColumns       map[string]bool
 }
 
 type tableColumn struct {
@@ -124,29 +266,30 @@ func newTable[T any](w io.Writer, rowTmpl string, o ...opt) (*table, error) {
 	if err != nil {
 		return nil, fmt.Errorf("metadata: %w", err)
 	}
-	if rowTmpl == "" {
-		rowTmpl = metadata.Template()
-		if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
-			slog.Debug("table: generated template", "template", rowTmpl)
-		}
-	}
-	tmpl, err := template.New("row").Funcs(colorFns).Parse(rowTmpl)
-	if err != nil {
-		return nil, fmt.Errorf("template: %w", err)
-	}
 	t := &table{
-		w:           w,
-		tmpl:        tmpl,
-		metadata:    metadata,
-		buf:         []byte{},
-		maxWidth:    80,
-		batchSize:   10,
-		cellPad:     1,
-		colMinWidth: 1,
+		w:               w,
+		metadata:        metadata,
+		buf:             []byte{},
+		maxWidth:        80,
+		batchSize:       10,
+		cellPad:         1,
+		colMinWidth:     1,
+		autoTemplate:    rowTmpl == "",
+		templateFuncSeq: 0,
 	}
 	err = opts(o).Apply(t)
 	if err != nil {
 		return nil, err
+	}
+	if t.autoTemplate {
+		rowTmpl = t.autoRowTemplate()
+		if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+			slog.Debug("table: generated template", "template", rowTmpl)
+		}
+	}
+	t.tmpl, err = template.New("row").Funcs(t.templateFuncs()).Parse(rowTmpl)
+	if err != nil {
+		return nil, fmt.Errorf("template: %w", err)
 	}
 	err = t.headers()
 	if err != nil {
@@ -190,6 +333,9 @@ func (t *table) emit(ev tableEvent) {
 }
 
 func (t *table) headers() error {
+	if t.autoTemplate {
+		return t.autoHeaders()
+	}
 	headers, err := t.extractFromNode(t.tmpl.Root)
 	if err != nil {
 		return fmt.Errorf("extract: %w", err)
@@ -223,6 +369,146 @@ func (t *table) headers() error {
 	}
 
 	return nil
+}
+
+// autoHeaders emits headers directly from reflected metadata in auto-template mode.
+func (t *table) autoHeaders() error {
+	t.columns = make([]tableColumn, len(t.metadata))
+	columns := make([]tableColumnInfo, len(t.metadata))
+	headers := make([]string, len(t.metadata))
+	for i, meta := range t.metadata {
+		t.columns[i].meta = meta
+		columns[i] = tableColumnInfo{
+			Header: meta.header,
+			Kind:   meta.kind.String(),
+		}
+		headers[i] = mkBold(meta.header)
+	}
+	if t.eventSink != nil {
+		t.emit(tableBegin{Columns: columns})
+		return nil
+	}
+	t.buf = append(t.buf, []byte(strings.Join(headers, "\t")+"\n")...)
+	return nil
+}
+
+// autoRowTemplate applies include/skip filters and format rules to reflected fields.
+func (t *table) autoRowTemplate() string {
+	fields := t.filteredFields()
+	t.metadata = fields
+	parts := make([]string, len(fields))
+	for i, field := range fields {
+		parts[i] = t.columnRenderTemplate(field)
+	}
+	return strings.Join(parts, "\t")
+}
+
+// filteredFields applies include/skip selectors while preserving struct field order.
+func (t *table) filteredFields() structFields {
+	if len(t.includeColumns) == 0 && len(t.skipColumns) == 0 {
+		return t.metadata
+	}
+	out := make(structFields, 0, len(t.metadata))
+	for _, field := range t.metadata {
+		if len(t.includeColumns) > 0 {
+			included, ok := t.includeColumns[field.name]
+			if !ok || !included {
+				continue
+			}
+		}
+		skip, ok := t.skipColumns[field.name]
+		if ok && skip {
+			continue
+		}
+		out = append(out, field)
+	}
+	return out
+}
+
+// columnRenderTemplate resolves per-column template, name formatter, type formatter, then default.
+func (t *table) columnRenderTemplate(meta *fieldMetadata) string {
+	tmpl, ok := t.columnTemplates[meta.name]
+	if ok {
+		return tmpl
+	}
+	fnName, ok := t.columnNameFormats[meta.name]
+	if ok {
+		return "{{" + fnName + " ." + meta.name + "}}"
+	}
+	fnName, ok = t.columnTypeFormats[meta.typ]
+	if ok {
+		return "{{" + fnName + " ." + meta.name + "}}"
+	}
+	return meta.Template()
+}
+
+// templateFuncs merges shared color functions with per-table formatter functions.
+func (t *table) templateFuncs() template.FuncMap {
+	funcs := make(template.FuncMap, len(colorFns)+len(t.customTemplateFuncs))
+	for name, fn := range colorFns {
+		funcs[name] = fn
+	}
+	for name, fn := range t.customTemplateFuncs {
+		funcs[name] = fn
+	}
+	return funcs
+}
+
+// registerTemplateFunc stores a formatter under a unique name.
+func (t *table) registerTemplateFunc(prefix string, fn any) string {
+	t.ensureAutoTemplateMaps()
+	name := fmt.Sprintf("%s%d", prefix, t.templateFuncSeq)
+	t.templateFuncSeq++
+	t.customTemplateFuncs[name] = fn
+	return name
+}
+
+// ensureAutoTemplateMaps initializes lazy maps used by auto-template options.
+func (t *table) ensureAutoTemplateMaps() {
+	if t.customTemplateFuncs == nil {
+		t.customTemplateFuncs = template.FuncMap{}
+	}
+	if t.columnTypeFormats == nil {
+		t.columnTypeFormats = map[reflect.Type]string{}
+	}
+	if t.columnNameFormats == nil {
+		t.columnNameFormats = map[string]string{}
+	}
+	if t.columnTemplates == nil {
+		t.columnTemplates = map[string]string{}
+	}
+	if t.includeColumns == nil {
+		t.includeColumns = map[string]bool{}
+	}
+	if t.skipColumns == nil {
+		t.skipColumns = map[string]bool{}
+	}
+}
+
+// columnMetadata resolves and validates a struct field path used by column options.
+func (t *table) columnMetadata(name string) (*fieldMetadata, error) {
+	if strings.TrimSpace(name) == "" {
+		return nil, errors.New("column name cannot be empty")
+	}
+	for _, meta := range t.metadata {
+		if meta.name == name {
+			return meta, nil
+		}
+	}
+	return nil, fmt.Errorf("unknown column %q", name)
+}
+
+// columnSet validates column names and returns a set.
+func (t *table) columnSet(names []string) (map[string]bool, error) {
+	set := make(map[string]bool, len(names))
+	for _, name := range names {
+		_, err := t.columnMetadata(name)
+		if err != nil {
+			return nil, err
+		}
+		set[name] = true
+	}
+	return set, nil
 }
 
 func (t *table) flush(final bool) error {
@@ -439,6 +725,7 @@ type fieldMetadata struct {
 	autoHeader bool
 	alignRight bool
 	kind       reflect.Kind
+	typ        reflect.Type
 }
 
 func (f *fieldMetadata) Template() string {
@@ -478,7 +765,8 @@ func structFieldsFor[T any]() (structFields, error) {
 
 //nolint:cyclop // TODO: fix
 func reflectStructFields(rt reflect.Type, stack map[reflect.Type]struct{}) (structFields, error) {
-	if _, ok := stack[rt]; ok {
+	_, ok := stack[rt]
+	if ok {
 		return nil, nil
 	}
 	stack[rt] = struct{}{}
@@ -528,6 +816,7 @@ func reflectFieldMetadata(ft reflect.Type, tag reflect.StructTag, name string) (
 		autoHeader: tag.Get("header") == "",
 		kind:       ft.Kind(),
 		name:       name,
+		typ:        ft,
 	}
 	switch ft.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,

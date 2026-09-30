@@ -6,6 +6,7 @@ package tui
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"iter"
 	"reflect"
@@ -334,4 +335,190 @@ func TestTableIterHandlesIteratorError(t *testing.T) {
 	}
 
 	assert.Error(t, TableIter(buf, "{{.}}", iter))
+}
+
+type tableFormatRow struct {
+	Name   string
+	Rate   float64
+	Amount int
+}
+
+// collectEvents runs a table render and returns emitted table events.
+func collectEvents[T any](t *testing.T, rowTmpl string, data []T, o ...opt) []tableEvent {
+	t.Helper()
+	var events []tableEvent
+	o = append(o, opT(func(tbl *table) error {
+		tbl.eventSink = func(ev tableEvent) {
+			events = append(events, ev)
+		}
+		return nil
+	}))
+	err := Table(bytes.NewBuffer(nil), rowTmpl, data, o...)
+	assert.NoError(t, err)
+	return events
+}
+
+// mustTableRow converts an event to a tableRow and fails the test when the type is unexpected.
+func mustTableRow(t *testing.T, ev tableEvent) tableRow {
+	t.Helper()
+	row, ok := ev.(tableRow)
+	assert.True(t, ok)
+	return row
+}
+
+func TestWithColumnTypeFormat(t *testing.T) {
+	data := []tableFormatRow{{Name: "A", Rate: 0.05873242}}
+	events := collectEvents(t, "", data, WithColumnTypeFormat(func(v float64) string {
+		return fmt.Sprintf("rate=%.4f", v)
+	}))
+	row := mustTableRow(t, events[1])
+	assert.Equal(t, "rate=0.0587", strings.TrimSpace(row.Cells[1]))
+}
+
+func TestWithColumnNameFormatWinsOverType(t *testing.T) {
+	data := []tableFormatRow{{Name: "A", Rate: 0.05873242}}
+	events := collectEvents(t, "", data,
+		WithColumnTypeFormat(func(v float64) string { return "TYPE" }),
+		WithColumnFormat("Rate", func(v float64) string { return "NAME" }),
+	)
+	row := mustTableRow(t, events[1])
+	assert.Equal(t, "NAME", strings.TrimSpace(row.Cells[1]))
+}
+
+func TestWithColumnTemplateWinsOverNameAndType(t *testing.T) {
+	data := []tableFormatRow{{Name: "A", Rate: 0.05873242}}
+	events := collectEvents(t, "", data,
+		WithColumnTypeFormat(func(v float64) string { return "TYPE" }),
+		WithColumnFormat("Rate", func(v float64) string { return "NAME" }),
+		WithColumnTemplate("Rate", `{{printf "TMPL(%.1f)" .Rate}}`),
+	)
+	row := mustTableRow(t, events[1])
+	assert.Equal(t, "TMPL(0.1)", strings.TrimSpace(row.Cells[1]))
+}
+
+func TestWithIncludeColumns(t *testing.T) {
+	data := []tableFormatRow{{Name: "A", Rate: 0.1, Amount: 2}}
+	events := collectEvents(t, "", data, WithIncludeColumns("Name", "Amount"))
+	begin, ok := events[0].(tableBegin)
+	assert.True(t, ok)
+	assert.Equal(t, []tableColumnInfo{
+		{Header: "NAME", Kind: "string"},
+		{Header: "AMOUNT", Kind: "int"},
+	}, begin.Columns)
+	row, ok := events[1].(tableRow)
+	assert.True(t, ok)
+	assert.Equal(t, 2, len(row.Cells))
+	assert.Equal(t, "A", strings.TrimSpace(row.Cells[0]))
+	assert.Equal(t, "2", strings.TrimSpace(row.Cells[1]))
+}
+
+func TestWithSkipColumns(t *testing.T) {
+	data := []tableFormatRow{{Name: "A", Rate: 0.1, Amount: 2}}
+	events := collectEvents(t, "", data, WithSkipColumns("Rate"))
+	begin, ok := events[0].(tableBegin)
+	assert.True(t, ok)
+	assert.Equal(t, []tableColumnInfo{
+		{Header: "NAME", Kind: "string"},
+		{Header: "AMOUNT", Kind: "int"},
+	}, begin.Columns)
+}
+
+func TestWithIncludeAndSkipColumns(t *testing.T) {
+	data := []tableFormatRow{{Name: "A", Rate: 0.1, Amount: 2}}
+	events := collectEvents(t, "", data,
+		WithIncludeColumns("Name", "Rate"),
+		WithSkipColumns("Amount"),
+	)
+	begin, ok := events[0].(tableBegin)
+	assert.True(t, ok)
+	assert.Equal(t, []tableColumnInfo{
+		{Header: "NAME", Kind: "string"},
+		{Header: "RATE", Kind: "float64"},
+	}, begin.Columns)
+}
+
+func TestWithIncludeSkipConflict(t *testing.T) {
+	buf := &bytes.Buffer{}
+	err := TableX(buf, []tableFormatRow{{Name: "A"}}, WithIncludeColumns("Name"), WithSkipColumns("Name"))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot be included and skipped")
+}
+
+func TestColumnOptionsUnknownColumn(t *testing.T) {
+	buf := &bytes.Buffer{}
+	type row struct {
+		Name string
+	}
+	tests := []struct {
+		name string
+		opt  opt
+	}{
+		{
+			name: "name format",
+			opt:  WithColumnFormat("Missing", func(v string) string { return v }),
+		},
+		{
+			name: "template",
+			opt:  WithColumnTemplate("Missing", "{{.Name}}"),
+		},
+		{
+			name: "include",
+			opt:  WithIncludeColumns("Missing"),
+		},
+		{
+			name: "skip",
+			opt:  WithSkipColumns("Missing"),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := TableX(buf, []row{{Name: "A"}}, tc.opt)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), `unknown column "Missing"`)
+		})
+	}
+}
+
+func TestWithFloat64AsPercent(t *testing.T) {
+	data := []tableFormatRow{
+		{Name: "A", Rate: 0.05873242},
+		{Name: "B", Rate: -0.999999},
+		{Name: "C", Rate: 0},
+		{Name: "D", Rate: 0.049199},
+		{Name: "E", Rate: 0.01},
+	}
+	events := collectEvents(t, "", data, WithFloat64AsPercent())
+	assert.Equal(t, "5.87%", strings.TrimSpace(mustTableRow(t, events[1]).Cells[1]))
+	assert.Equal(t, "-99%", strings.TrimSpace(mustTableRow(t, events[2]).Cells[1]))
+	assert.Equal(t, "0%", strings.TrimSpace(mustTableRow(t, events[3]).Cells[1]))
+	assert.Equal(t, "4.91%", strings.TrimSpace(mustTableRow(t, events[4]).Cells[1]))
+	assert.Equal(t, "1%", strings.TrimSpace(mustTableRow(t, events[5]).Cells[1]))
+}
+
+func TestWithFloat64AsPercentPositiveColored(t *testing.T) {
+	data := []tableFormatRow{
+		{Name: "A", Rate: 0.05873242},
+		{Name: "B", Rate: -0.999999},
+		{Name: "C", Rate: 0},
+	}
+	events := collectEvents(t, "", data, WithFloat64AsPercentPositiveColored())
+
+	pos, ok := events[1].(tableRow)
+	assert.True(t, ok)
+	neg, ok := events[2].(tableRow)
+	assert.True(t, ok)
+	zero, ok := events[3].(tableRow)
+	assert.True(t, ok)
+
+	assert.Contains(t, pos.Cells[1], green+"5.87%"+reset)
+	assert.Contains(t, neg.Cells[1], red+"-99%"+reset)
+	assert.Contains(t, zero.Cells[1], "0%")
+	assert.NotContains(t, zero.Cells[1], green)
+	assert.NotContains(t, zero.Cells[1], red)
+}
+
+func TestColumnOptionsIgnoredForExplicitTemplate(t *testing.T) {
+	data := []tableFormatRow{{Name: "A", Rate: 0.05873242}}
+	events := collectEvents(t, "{{.Name}}\t{{.Rate}}", data, WithFloat64AsPercent())
+	assert.Equal(t, "0.05873242", strings.TrimSpace(mustTableRow(t, events[1]).Cells[1]))
 }
