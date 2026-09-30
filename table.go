@@ -12,6 +12,7 @@ import (
 	"iter"
 	"log/slog"
 	"math"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -94,6 +95,27 @@ func TableAuto[T any](w io.Writer, iterator []T, o ...opt) error {
 	}
 
 	return t.flush(true)
+}
+
+func Facts[T any](w io.Writer, data T, o ...opt) error {
+	options := make([]opt, 0, len(o)+1)
+	options = append(options, opT(func(t *table) error {
+		t.suppressHeaders = true
+		return nil
+	}))
+	options = append(options, o...)
+
+	t, err := newTable[T](w, "", options...)
+	if err != nil {
+		return fmt.Errorf("facts: %w", err)
+	}
+	f := &facts{table: t}
+	maxWidth := f.factsMaxWidth(w)
+	err = f.renderFacts(data, maxWidth)
+	if err != nil {
+		return fmt.Errorf("facts: %w", err)
+	}
+	return nil
 }
 
 func WithColumnTypeFormat[T any](fn func(v T) string) opt {
@@ -191,6 +213,17 @@ func WithSkipColumns(names ...string) opt {
 		}
 		t.ensureAutoTemplateMaps()
 		t.skipColumns = set
+		return nil
+	})
+}
+
+func WithMaxWidth(chars int) opt {
+	return opT(func(t *table) error {
+		if chars <= 0 {
+			return fmt.Errorf("%w: max width must be greater than 0", ErrInvalidState)
+		}
+		t.maxWidth = chars
+		t.maxWidthExplicit = true
 		return nil
 	})
 }
@@ -343,12 +376,14 @@ type table struct {
 	cellPad      int
 	batchSize    int
 	maxWidth     int
+	maxWidthExplicit bool
 	colMinWidth  int
 	locked       bool
 	consumed     int
 	eventSink    func(tableEvent)
 	ended        bool
 	autoTemplate bool
+	suppressHeaders bool
 
 	customTemplateFuncs template.FuncMap
 	templateFuncSeq     int
@@ -403,6 +438,180 @@ func newTable[T any](w io.Writer, rowTmpl string, o ...opt) (*table, error) {
 	}
 
 	return t, nil
+}
+
+type factCell struct {
+	title      string
+	value      string
+	width      int
+	alignRight bool
+}
+
+type facts struct {
+	*table
+}
+
+func (f *facts) factsMaxWidth(w io.Writer) int {
+	maxWidth := f.maxWidth
+	ttyWidth, ok := f.readTTYWidth(w)
+	if ok {
+		maxWidth = ttyWidth
+		if f.maxWidthExplicit && f.maxWidth < maxWidth {
+			maxWidth = f.maxWidth
+		}
+	}
+	if maxWidth < f.colMinWidth+f.cellPad {
+		maxWidth = f.colMinWidth + f.cellPad
+	}
+	return maxWidth
+}
+
+func (*facts) readTTYWidth(w io.Writer) (int, bool) {
+	if out, ok := w.(descriptor); ok {
+		width, _, err := termGetSize(int(out.Fd()))
+		if err == nil && width > 0 {
+			return width, true
+		}
+	}
+	width, _, err := termGetSize(int(os.Stderr.Fd()))
+	if err == nil && width > 0 {
+		return width, true
+	}
+	return 0, false
+}
+
+func (f *facts) renderFacts(facts any, maxWidth int) error {
+	cells, err := f.renderFactCells(facts)
+	if err != nil {
+		return err
+	}
+	if len(cells) == 0 {
+		return nil
+	}
+	cols := f.maxFactsColumns(cells, maxWidth)
+	rows, colWidths := f.packFactRows(cells, cols, maxWidth)
+	for i, row := range rows {
+		err = f.renderFactRow(row, colWidths)
+		if err != nil {
+			return err
+		}
+		if i < len(rows)-1 {
+			err = f.writeRowGap()
+			if err != nil {
+				return err
+			}
+		}
+	}
+	err = f.writeRowGap()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (f *facts) writeRowGap() error {
+	_, err := f.w.Write([]byte("\n"))
+	if err != nil {
+		return fmt.Errorf("row gap: %w", err)
+	}
+	return nil
+}
+
+func (f *facts) renderFactCells(facts any) ([]factCell, error) {
+	cells := make([]factCell, len(f.metadata))
+	funcs := f.templateFuncs()
+	for i, meta := range f.metadata {
+		columnTmpl := f.columnRenderTemplate(meta)
+		tmpl, err := template.New("fact").Funcs(funcs).Parse(columnTmpl)
+		if err != nil {
+			return nil, fmt.Errorf("column %q template: %w", meta.name, err)
+		}
+		buf := bytes.NewBuffer(nil)
+		err = tmpl.Execute(buf, facts)
+		if err != nil {
+			return nil, fmt.Errorf("column %q render: %w", meta.name, err)
+		}
+		header := mkBold(meta.header)
+		value := strings.TrimRight(buf.String(), "\r\n")
+		cellWidth := max(width([]byte(header)), width([]byte(value))) + f.cellPad + 1
+		if cellWidth < f.colMinWidth+f.cellPad {
+			cellWidth = f.colMinWidth + f.cellPad
+		}
+		cells[i] = factCell{
+			title:      header,
+			value:      value,
+			width:      cellWidth,
+			alignRight: meta.alignRight,
+		}
+	}
+	return cells, nil
+}
+
+func (f *facts) maxFactsColumns(cells []factCell, maxWidth int) int {
+	maxCell := f.colMinWidth + f.cellPad
+	for _, cell := range cells {
+		w := cell.width
+		if w > maxWidth {
+			w = maxWidth
+		}
+		if w > maxCell {
+			maxCell = w
+		}
+	}
+	cols := maxWidth / maxCell
+	if cols < 1 {
+		cols = 1
+	}
+	if cols > len(cells) {
+		cols = len(cells)
+	}
+	return cols
+}
+
+func (f *facts) packFactRows(cells []factCell, cols, maxWidth int) ([][]factCell, []int) {
+	rows := make([][]factCell, 0, len(cells))
+	colWidths := make([]int, cols)
+	for i, cell := range cells {
+		if cell.width > maxWidth {
+			cell.width = maxWidth
+		}
+		col := i % cols
+		if i%cols == 0 {
+			rows = append(rows, []factCell{})
+		}
+		rows[len(rows)-1] = append(rows[len(rows)-1], cell)
+		if cell.width > colWidths[col] {
+			colWidths[col] = cell.width
+		}
+	}
+	for i := range colWidths {
+		if colWidths[i] < f.colMinWidth+f.cellPad {
+			colWidths[i] = f.colMinWidth + f.cellPad
+		}
+	}
+	return rows, colWidths
+}
+
+func (f *facts) renderFactRow(row []factCell, colWidths []int) error {
+	headers := make([]string, len(row))
+	values := make([]string, len(row))
+	f.columns = make([]tableColumn, len(row))
+	for i, cell := range row {
+		maxLen := colWidths[i] - f.cellPad
+		if maxLen < f.colMinWidth {
+			maxLen = f.colMinWidth
+		}
+		header := string(truncateVisible([]byte(cell.title), maxLen, ' '))
+		value := string(truncateVisible([]byte(cell.value), maxLen, ' '))
+		headers[i] = header
+		values[i] = value
+		f.columns[i] = tableColumn{
+			width: colWidths[i],
+			meta:  &fieldMetadata{alignRight: cell.alignRight},
+		}
+	}
+	f.rows = append(f.rows, headers, values)
+	return f.flush(false)
 }
 
 func (t *table) Append(v any) error {
@@ -602,6 +811,9 @@ func (t *table) headers() error {
 		}
 		headers[i] = mkBold(meta.header)
 	}
+	if t.suppressHeaders {
+		return nil
+	}
 	if t.eventSink != nil {
 		t.emit(tableBegin{Columns: columns})
 	} else {
@@ -623,6 +835,9 @@ func (t *table) autoHeaders() error {
 			Kind:   meta.kind.String(),
 		}
 		headers[i] = mkBold(meta.header)
+	}
+	if t.suppressHeaders {
+		return nil
 	}
 	if t.eventSink != nil {
 		t.emit(tableBegin{Columns: columns})

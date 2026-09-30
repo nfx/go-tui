@@ -397,6 +397,20 @@ func assertScaledCellContains(t *testing.T, cell, color, text string) {
 	assert.Contains(t, cell, reset)
 }
 
+func factLines(out string) []string {
+	plain := strings.NewReplacer("\x1b[1m", "", "\x1b[0m", "").Replace(out)
+	raw := strings.Split(plain, "\n")
+	lines := make([]string, 0, len(raw))
+	for _, line := range raw {
+		line = strings.TrimRight(line, " ")
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
 func TestWithColumnTypeFormat(t *testing.T) {
 	data := []tableFormatRow{{Name: "A", Rate: 0.05873242}}
 	events := collectEvents(t, "", data, WithColumnTypeFormat(func(v float64) string {
@@ -729,4 +743,191 @@ func TestColumnOptionsIgnoredForExplicitTemplate(t *testing.T) {
 	data := []tableFormatRow{{Name: "A", Rate: 0.05873242}}
 	events := collectEvents(t, "{{.Name}}\t{{.Rate}}", data, WithFloat64AsPercent())
 	assert.Equal(t, "0.05873242", strings.TrimSpace(mustTableRow(t, events[1]).Cells[1]))
+}
+
+func TestFactsBasicRender(t *testing.T) {
+	orig := termGetSize
+	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { termGetSize = orig })
+
+	type row struct {
+		Name string
+		Age  int
+	}
+	buf := &bytes.Buffer{}
+	err := Facts(buf, row{Name: "Alice", Age: 30})
+	assert.NoError(t, err)
+
+	lines := factLines(buf.String())
+	assert.Equal(t, 2, len(lines))
+	assert.Contains(t, lines[0], "NAME")
+	assert.Contains(t, lines[0], "AGE")
+	assert.Contains(t, lines[1], "Alice")
+	assert.Contains(t, lines[1], "30")
+}
+
+func TestFactsWrapsOnNarrowTTY(t *testing.T) {
+	orig := termGetSize
+	termGetSize = func(int) (int, int, error) { return 14, 40, nil }
+	t.Cleanup(func() { termGetSize = orig })
+
+	type row struct {
+		Alpha string
+		Beta  string
+		Gamma string
+		Delta string
+	}
+	buf := &bytes.Buffer{}
+	err := Facts(buf, row{Alpha: "a", Beta: "b", Gamma: "c", Delta: "d"})
+	assert.NoError(t, err)
+
+	lines := factLines(buf.String())
+	assert.Equal(t, 4, len(lines))
+	assert.Contains(t, buf.String(), "\n\n")
+	assert.Contains(t, lines[0], "ALPHA")
+	assert.Contains(t, lines[0], "BETA")
+	assert.NotContains(t, lines[0], "GAMMA")
+	assert.Contains(t, lines[1], "a")
+	assert.Contains(t, lines[1], "b")
+	assert.Contains(t, lines[2], "GAMMA")
+	assert.Contains(t, lines[2], "DELTA")
+	assert.Contains(t, lines[3], "c")
+	assert.Contains(t, lines[3], "d")
+}
+
+func TestFactsWithMaxWidthCapsWideTTY(t *testing.T) {
+	orig := termGetSize
+	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { termGetSize = orig })
+
+	type row struct {
+		Alpha string
+		Beta  string
+		Gamma string
+		Delta string
+	}
+	buf := &bytes.Buffer{}
+	err := Facts(buf, row{Alpha: "a", Beta: "b", Gamma: "c", Delta: "d"}, WithMaxWidth(14))
+	assert.NoError(t, err)
+
+	lines := factLines(buf.String())
+	assert.Equal(t, 4, len(lines))
+	assert.Contains(t, lines[2], "GAMMA")
+}
+
+func TestFactsWithMaxWidthDoesNotWidenNarrowTTY(t *testing.T) {
+	orig := termGetSize
+	termGetSize = func(int) (int, int, error) { return 14, 40, nil }
+	t.Cleanup(func() { termGetSize = orig })
+
+	type row struct {
+		Alpha string
+		Beta  string
+		Gamma string
+		Delta string
+	}
+	buf := &bytes.Buffer{}
+	err := Facts(buf, row{Alpha: "a", Beta: "b", Gamma: "c", Delta: "d"}, WithMaxWidth(80))
+	assert.NoError(t, err)
+
+	lines := factLines(buf.String())
+	assert.Equal(t, 4, len(lines))
+}
+
+func TestFactsHonorsColumnOptions(t *testing.T) {
+	orig := termGetSize
+	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { termGetSize = orig })
+
+	data := tableFormatRow{Name: "A", Rate: 0.1, Amount: 9}
+	buf := &bytes.Buffer{}
+	err := Facts(buf, data,
+		WithIncludeColumns("Name", "Rate"),
+		WithColumnFormat("Rate", func(v float64) string { return fmt.Sprintf("rate=%.1f", v) }),
+	)
+	assert.NoError(t, err)
+
+	lines := factLines(buf.String())
+	assert.Equal(t, 2, len(lines))
+	assert.Contains(t, lines[0], "NAME")
+	assert.Contains(t, lines[0], "RATE")
+	assert.NotContains(t, lines[0], "AMOUNT")
+	assert.Contains(t, lines[1], "A")
+	assert.Contains(t, lines[1], "rate=0.1")
+}
+
+func TestFactsAlignsColumnStartsAcrossGroups(t *testing.T) {
+	orig := termGetSize
+	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { termGetSize = orig })
+
+	type row struct {
+		Alpha string
+		Beta  string
+		Gamma string
+		Delta string
+	}
+	buf := &bytes.Buffer{}
+	err := Facts(buf, row{
+		Alpha: "1234567",
+		Beta:  "B",
+		Gamma: "g",
+		Delta: "d",
+	}, WithMaxWidth(24))
+	assert.NoError(t, err)
+
+	lines := factLines(buf.String())
+	assert.Equal(t, 4, len(lines))
+	betaStart := strings.Index(lines[0], "BETA")
+	deltaStart := strings.Index(lines[2], "DELTA")
+	assert.True(t, betaStart >= 0)
+	assert.Equal(t, betaStart, deltaStart)
+}
+
+func TestFactsAddsTrailingBlankLine(t *testing.T) {
+	orig := termGetSize
+	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { termGetSize = orig })
+
+	type row struct {
+		Name string
+		Age  int
+	}
+	buf := &bytes.Buffer{}
+	err := Facts(buf, row{Name: "Alice", Age: 30})
+	assert.NoError(t, err)
+	assert.True(t, strings.HasSuffix(buf.String(), "\n\n"))
+}
+
+func TestFactsHonorsAlignRightMetadata(t *testing.T) {
+	orig := termGetSize
+	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { termGetSize = orig })
+
+	type row struct {
+		Left  string
+		Right string `header:"RIGHT,align-right"`
+	}
+	buf := &bytes.Buffer{}
+	err := Facts(buf, row{Left: "left", Right: "x"})
+	assert.NoError(t, err)
+
+	lines := factLines(buf.String())
+	assert.Equal(t, 2, len(lines))
+	rightHeaderStart := strings.Index(lines[0], "RIGHT")
+	rightValueStart := strings.Index(lines[1], "x")
+	assert.True(t, rightHeaderStart >= 0)
+	assert.True(t, rightValueStart > rightHeaderStart)
+}
+
+func TestWithMaxWidthRejectsNonPositive(t *testing.T) {
+	buf := &bytes.Buffer{}
+	type row struct {
+		Name string
+	}
+	err := Facts(buf, row{Name: "A"}, WithMaxWidth(0))
+	assert.ErrorIs(t, err, ErrInvalidState)
+
+	err = Facts(buf, row{Name: "A"}, WithMaxWidth(-1))
+	assert.ErrorIs(t, err, ErrInvalidState)
 }
