@@ -269,7 +269,7 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 			errs = append(errs, err)
 		}
 	}
-	_, err = frame.WriteTo(io.out)
+	_, err = frame.WriteTo(io)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -281,11 +281,11 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 
 func (*input) clear(io *termIO) error {
 	var errs []error
-	_, err := fmt.Fprintln(io.out)
+	_, err := fmt.Fprintln(io)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("newline: %w", err))
 	}
-	err = io.clear(1, io.out)
+	err = io.clear(1, io)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("clear: %w", err))
 	}
