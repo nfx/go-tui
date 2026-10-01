@@ -25,6 +25,7 @@ type termIO struct {
 	cio *chanIO
 	vp  *viewport
 
+	pending  []byte
 	bm1, bm2 byte
 }
 
@@ -32,7 +33,12 @@ var ErrNoTTY = errors.New("no tty")
 
 var termMakeRaw = term.MakeRaw
 var termRestore = term.Restore
+var terminalInputChecker = func(fd int) bool {
+	return term.IsTerminal(fd)
+}
 
+// makeTermIO sets up raw terminal mode and creates
+// a termIO for interactive widget rendering.
 func makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
 	stderr, isOutFD := out.(descriptor)
 	cio, isOutChanIO := out.(*chanIO)
@@ -44,42 +50,64 @@ func makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
 		return nil, fmt.Errorf("stdin: %w", ErrNoTTY)
 	}
 	if cio != nil {
+		restore, err := rawRestore(stdin)
+		if err != nil {
+			return nil, fmt.Errorf("raw: %w", err)
+		}
 		vp, err := cio.pushViewport()
 		if err != nil {
 			return nil, fmt.Errorf("viewport: %w", err)
 		}
 		return &termIO{
-			in:     in,
-			out:    out,
-			Width:  cio.width,
-			Height: vp.height, // first render will set the height
-			vp:     vp,
-			cio:    cio,
-			Restore: func() error {
-				return nil
-			},
+			in:      in,
+			out:     out,
+			Width:   cio.width,
+			Height:  vp.height, // first render will set the height
+			vp:      vp,
+			cio:     cio,
+			Restore: restore,
 		}, nil
 	}
 	width, height, err := termGetSize(int(stderr.Fd()))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrNoTTY, err)
 	}
-	oldState, err := termMakeRaw(int(stdin.Fd()))
+	restore, err := rawRestore(stdin)
 	if err != nil {
 		return nil, fmt.Errorf("raw: %w", err)
 	}
 	return &termIO{
-		in:     in,
-		out:    out,
-		Width:  width,
-		Height: height,
-		Restore: func() error {
-			return termRestore(int(stdin.Fd()), oldState)
-		},
+		in:      in,
+		out:     out,
+		Width:   width,
+		Height:  height,
+		Restore: restore,
 	}, nil
 }
 
+// rawRestore puts stdin into raw mode and returns
+// a function that restores the original state.
+func rawRestore(stdin descriptor) (func() error, error) {
+	if !terminalInputChecker(int(stdin.Fd())) {
+		return func() error { return nil }, nil
+	}
+	oldState, err := termMakeRaw(int(stdin.Fd()))
+	if err != nil {
+		return nil, err
+	}
+	return func() error {
+		return termRestore(int(stdin.Fd()), oldState)
+	}, nil
+}
+
+// Read drains any buffered pending bytes before
+// falling through to the underlying reader.
 func (t *termIO) Read(p []byte) (n int, err error) {
+	if len(t.pending) > 0 {
+		n = copy(p, t.pending)
+		t.pending = t.pending[n:]
+		return n, nil
+	}
 	return t.in.Read(p)
 }
 
@@ -104,6 +132,8 @@ func (e *pasteTextError) Error() string {
 	return fmt.Sprintf("bigger input (%d bytes)", len(e.buf))
 }
 
+// ReadKey reads a single byte and returns it as a rune,
+// treating Ctrl-C/D as EOF.
 func (t *termIO) ReadKey() (rune, error) {
 	buf := make([]byte, 1)
 	_, err := t.Read(buf)
@@ -120,18 +150,45 @@ func (t *termIO) ReadKey() (rune, error) {
 	}
 }
 
+// ReadRune reads and decodes a full rune, including
+// multi-byte escape sequences for arrow keys.
 func (t *termIO) ReadRune() (rune, int, error) {
-	buf := make([]byte, 4)
-	n, err := t.Read(buf) // todo: fixme
-	if errors.Is(err, io.EOF) {
-		return keyCtrlD, n, io.EOF
+	buf, n, err := t.readRuneBytes()
+	if err != nil {
+		return 0, n, err
 	}
-	r, ok := t.maybeKnownRune(buf[:n])
+	return t.decodeRuneBytes(buf, n)
+}
+
+// readRuneBytes reads raw bytes and continues reading
+// through escape sequences until a complete sequence is buffered.
+func (t *termIO) readRuneBytes() ([]byte, int, error) {
+	buf := make([]byte, 16)
+	n, err := t.Read(buf)
+	if errors.Is(err, io.EOF) && n == 0 {
+		return nil, n, io.EOF
+	}
+	if n > 0 && buf[0] == 0x1b {
+		n, err = t.readEscape(buf, n, err)
+		if errors.Is(err, io.EOF) && n == 0 {
+			return nil, n, io.EOF
+		}
+	}
+	return buf, n, nil
+}
+
+// decodeRuneBytes interprets a byte buffer as a known escape
+// rune, a paste event, or a single-byte character.
+func (t *termIO) decodeRuneBytes(buf []byte, n int) (rune, int, error) {
+	r, consumed, ok := t.maybeKnownRune(buf[:n])
 	if ok {
-		return r, n, nil
+		t.pushPending(buf, consumed, n)
+		return r, consumed, nil
 	}
 	if n > 1 {
-		return 0, n, &pasteTextError{buf}
+		cp := make([]byte, n)
+		copy(cp, buf[:n])
+		return 0, n, &pasteTextError{buf: cp}
 	}
 	switch buf[0] {
 	case keyCtrlC, keyCtrlD:
@@ -141,32 +198,88 @@ func (t *termIO) ReadRune() (rune, int, error) {
 	}
 }
 
-func (t *termIO) maybeKnownRune(buf []byte) (rune, bool) {
-	if len(buf) < 3 {
-		return 0, false
+// readEscape reads additional bytes one at a time until
+// a known escape sequence is recognized or the buffer fills.
+func (t *termIO) readEscape(buf []byte, n int, readErr error) (int, error) {
+	for n < len(buf) {
+		if _, _, ok := t.maybeKnownRune(buf[:n]); ok {
+			return n, readErr
+		}
+		m, err := t.Read(buf[n : n+1])
+		n += m
+		if err != nil {
+			return n, err
+		}
+		if m == 0 {
+			return n, readErr
+		}
 	}
-	if buf[0] != 0x1b && buf[1] != 0x5b {
-		return 0, false
+	return n, readErr
+}
+
+// maybeKnownRune checks whether buf starts with
+// a recognized SS3 or CSI arrow-key escape sequence.
+func (t *termIO) maybeKnownRune(buf []byte) (rune, int, bool) {
+	if len(buf) < 3 || buf[0] != 0x1b {
+		return 0, 0, false
 	}
-	switch buf[2] {
-	case 0x41: // Up arrow.
-		return '↑', true
-	case 0x42: // Down arrow.
-		return '↓', true
-	case 0x43: // Right arrow.
-		return '→', true
-	case 0x44: // Left arrow.
-		return '←', true
+	switch buf[1] {
+	case 0x4f: // SS3
+		return t.decodeArrow(buf[2], 3)
+	case 0x5b: // CSI
+		return t.decodeCSIArrow(buf)
 	default:
-		return 0, false
+		return 0, 0, false
 	}
 }
 
+// decodeArrow maps a final escape byte to an
+// arrow-key rune (up/down/left/right).
+func (*termIO) decodeArrow(b byte, consumed int) (rune, int, bool) {
+	switch b {
+	case 0x41:
+		return '↑', consumed, true
+	case 0x42:
+		return '↓', consumed, true
+	case 0x43:
+		return '→', consumed, true
+	case 0x44:
+		return '←', consumed, true
+	default:
+		return 0, 0, false
+	}
+}
+
+// decodeCSIArrow scans a CSI sequence for an arrow-key
+// final byte, skipping numeric and semicolon parameters.
+func (t *termIO) decodeCSIArrow(buf []byte) (rune, int, bool) {
+	for i := 2; i < len(buf); i++ {
+		r, consumed, ok := t.decodeArrow(buf[i], i+1)
+		if ok {
+			return r, consumed, true
+		}
+		if (buf[i] < '0' || buf[i] > '9') && buf[i] != ';' {
+			return 0, 0, false
+		}
+	}
+	return 0, 0, false
+}
+
+func (t *termIO) pushPending(buf []byte, consumed, n int) {
+	if consumed >= n {
+		return
+	}
+	t.pending = append(t.pending[:0], buf[consumed:n]...)
+}
+
+// clear erases the given number of terminal lines using
+// ANSI cursor movement and line-clear sequences.
+//
 //nolint:errcheck // TODO: improve error handling
 func (t *termIO) clear(space int, buf io.Writer) error {
 	if t.vp != nil {
 		if t.vp.fixedHeight {
-			return t.vp.WriteByte('\r')
+			return t.clearFixedViewport(buf)
 		}
 		return nil // screen clearing is handled by [chanIO.forwardTo]
 	}
@@ -186,6 +299,18 @@ func (t *termIO) clear(space int, buf io.Writer) error {
 		fmt.Fprintf(buf, "\x1b[%dA\r", space-1)
 	}
 	return nil
+}
+
+// clearFixedViewport clears a fixed-height overlay through its managed viewport.
+func (t *termIO) clearFixedViewport(buf io.Writer) error {
+	if buf != t {
+		return nil
+	}
+	if t.cio != nil {
+		return t.vp.writeAndWait(nil)
+	}
+	_, err := t.vp.Write(nil)
+	return err
 }
 
 var terminalChecker = func() bool {

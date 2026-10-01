@@ -80,6 +80,51 @@ func TestMakeTermIO_WithChanIO(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestMakeTermIO_WithChanIO_RawTTYInput(t *testing.T) {
+	cio, _ := chainIOforTest(t, 40, 5)
+	origCheck := terminalInputChecker
+	origRaw := termMakeRaw
+	origRestore := termRestore
+	terminalInputChecker = func(int) bool { return true }
+	termMakeRaw = func(int) (*term.State, error) { return &term.State{}, nil }
+	termRestore = func(int, *term.State) error { return nil }
+	t.Cleanup(func() {
+		terminalInputChecker = origCheck
+		termMakeRaw = origRaw
+		termRestore = origRestore
+	})
+	in := &mockDescriptor{
+		Reader: bytes.NewBuffer(nil),
+		Writer: bytes.NewBuffer(nil),
+		fd:     0,
+	}
+
+	termio, err := makeTermIO(in, cio)
+	assert.NoError(t, err)
+	assert.NotNil(t, termio)
+	assert.NoError(t, termio.Restore())
+}
+
+func TestMakeTermIO_WithChanIO_RawError(t *testing.T) {
+	cio, _ := chainIOforTest(t, 40, 5)
+	origCheck := terminalInputChecker
+	origRaw := termMakeRaw
+	terminalInputChecker = func(int) bool { return true }
+	termMakeRaw = func(int) (*term.State, error) { return nil, io.EOF }
+	t.Cleanup(func() {
+		terminalInputChecker = origCheck
+		termMakeRaw = origRaw
+	})
+	in := &mockDescriptor{
+		Reader: bytes.NewBuffer(nil),
+		Writer: bytes.NewBuffer(nil),
+		fd:     0,
+	}
+
+	_, err := makeTermIO(in, cio)
+	assert.Error(t, err)
+}
+
 func TestMakeTermIO_WithDescriptor(t *testing.T) {
 	if !isTerminal() {
 		t.Skip("not a terminal")
@@ -140,11 +185,14 @@ func TestMakeTermIO_WithDescriptorStubbed(t *testing.T) {
 func TestMakeTermIO_RawError(t *testing.T) {
 	origGet := termGetSize
 	origRaw := termMakeRaw
+	origCheck := terminalInputChecker
 	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
 	termMakeRaw = func(int) (*term.State, error) { return nil, io.EOF }
+	terminalInputChecker = func(int) bool { return true }
 	t.Cleanup(func() {
 		termGetSize = origGet
 		termMakeRaw = origRaw
+		terminalInputChecker = origCheck
 	})
 	in := &mockDescriptor{
 		Reader: bytes.NewBuffer(nil),
@@ -192,6 +240,33 @@ func TestTermIO_Write_WithoutViewport(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, len(data), n)
 	assert.Equal(t, "test", buf.String())
+}
+
+func TestTermIOClearFixedViewportRemovesLines(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	notify := make(chan viewportChanged, 10)
+	vp := initViewport(ctx, notify, 10, 2)
+	vp.fixedHeight = true
+	termio := &termIO{vp: vp}
+
+	_, err := termio.Write([]byte("hello\n"))
+	assert.NoError(t, err)
+	<-notify
+
+	var buf bytes.Buffer
+	_, err = vp.WriteTo(&buf)
+	assert.NoError(t, err)
+	assert.Equal(t, "\rhello\n", buf.String())
+
+	err = termio.clear(1, termio)
+	assert.NoError(t, err)
+	<-notify
+
+	buf.Reset()
+	_, err = vp.WriteTo(&buf)
+	assert.NoError(t, err)
+	assert.Equal(t, "", buf.String())
 }
 
 func TestTermIO_ReadKey(t *testing.T) {
