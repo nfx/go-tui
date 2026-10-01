@@ -77,6 +77,56 @@ func mustReceiveSpinnerEvent(t *testing.T, ch <-chan spinnerEvent) spinnerEvent 
 	}
 }
 
+func testLongRunningWithNewSpinners(t *testing.T, cb func(...opt) (*Spinners, error)) {
+	t.Helper()
+	prev := longRunningNewSpinners
+	longRunningNewSpinners = cb
+	t.Cleanup(func() {
+		longRunningNewSpinners = prev
+	})
+}
+
+func TestLongRunningShowsMessageWhileCbRuns(t *testing.T) {
+	cio, tick, spinnerOpts := testIOforSpinners(t, 24, 5)
+	testLongRunningWithNewSpinners(t, func(opt ...opt) (*Spinners, error) {
+		return NewSpinners(append(opts{spinnerOpts}, opt...)...)
+	})
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- LongRunning(t.Context(), "refreshing SWS scores", func(ctx context.Context) error {
+			close(started)
+			<-release
+			return nil
+		})
+	}()
+	<-started
+	select {
+	case err := <-done:
+		t.Fatalf("LongRunning returned early: %v", err)
+	default:
+	}
+	tick()
+	assert.Contains(t, <-cio.Out, "refreshing SWS scores")
+	close(release)
+	assert.NoError(t, <-done)
+}
+
+func TestLongRunningFallsBackWhenSpinnerSetupFails(t *testing.T) {
+	testLongRunningWithNewSpinners(t, func(...opt) (*Spinners, error) {
+		return nil, errors.New("spinner setup failed")
+	})
+	expected := errors.New("callback failed")
+	called := false
+	err := LongRunning(t.Context(), "ignored", func(context.Context) error {
+		called = true
+		return expected
+	})
+	assert.True(t, called)
+	assert.ErrorIs(t, err, expected)
+}
+
 func TestNewSpinners(t *testing.T) {
 	s, cio, tick := spinnersForTest(t)
 	assert.NotNil(t, s)

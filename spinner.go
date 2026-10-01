@@ -20,6 +20,23 @@ import (
 var DefaultSpinnerStyle = []string{"⠉⠉", "⠈⠙", "⠀⠹", "⠀⢸", "⠀⣰", "⢀⣠", "⣀⣀", "⣄⡀", "⣆⠀", "⡇⠀", "⠏⠀", "⠋⠁"}
 var SpinnerStyleDocs = []string{".  ", ".. ", "...", " ..", "  .", "   "}
 
+var longRunningNewSpinners = NewSpinners
+
+// LongRunning shows a spinner with the provided message while cb executes.
+func LongRunning(ctx context.Context, message string, cb func(context.Context) error) error {
+	spinners, err := longRunningNewSpinners(WithContext(ctx))
+	if err != nil {
+		return cb(ctx)
+	}
+	defer spinners.Close()
+	spinner, err := spinners.Add(ctx)
+	if err != nil {
+		return cb(ctx)
+	}
+	spinner.Update(message)
+	return cb(ctx)
+}
+
 type spinnerEvent interface {
 	isSpinnerOutgoing()
 }
