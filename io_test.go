@@ -20,7 +20,7 @@ func chainIOforTest(t *testing.T, width, height int) (*chanIO, *writeC) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	realOut := newWriteC(ctx)
-	cio := newUnstartedIO(ctx, width, height)
+	cio := newUnstartedIO(ctx, width, height, 0)
 	go cio.handleViewports(ctx)
 	go cio.forwardTo(ctx, realOut)
 	t.Cleanup(func() {
@@ -177,7 +177,7 @@ func TestChanIOReadWrite(t *testing.T) {
 func TestChanIOForwardToWrites(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := newUnstartedIO(ctx, 10, 3)
+	cio := newUnstartedIO(ctx, 10, 3, 0)
 	var out bytes.Buffer
 	go cio.forwardTo(ctx, &out)
 	_, err := cio.head.Write([]byte("hi\n"))
@@ -200,7 +200,7 @@ func TestChanIOForwardToWrites(t *testing.T) {
 func TestChanIOPushViewportCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	cio := newUnstartedIO(ctx, 10, 3)
+	cio := newUnstartedIO(ctx, 10, 3, 0)
 	_, err := cio.pushViewport()
 	assert.Error(t, err)
 }
@@ -241,7 +241,7 @@ func TestChanIOWriteCanceled(t *testing.T) {
 func TestChanIOPushViewportSuccess(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := newUnstartedIO(ctx, 10, 3)
+	cio := newUnstartedIO(ctx, 10, 3, 0)
 	go cio.handleViewports(ctx)
 	vp, err := cio.pushViewport()
 	assert.NoError(t, err)
@@ -251,7 +251,7 @@ func TestChanIOPushViewportSuccess(t *testing.T) {
 func TestChanIOPushViewportAppendsAfterExistingManagedViewport(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := newUnstartedIO(ctx, 10, 3)
+	cio := newUnstartedIO(ctx, 10, 3, 0)
 	base := cio.head
 	go cio.handleViewports(ctx)
 

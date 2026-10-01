@@ -27,6 +27,9 @@ type termIO struct {
 
 	pending  []byte
 	bm1, bm2 byte
+
+	fd       int             // output file descriptor for resize refresh
+	onResize <-chan struct{} // fires on terminal resize (SIGWINCH)
 }
 
 var ErrNoTTY = errors.New("no tty")
@@ -59,16 +62,18 @@ func makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, fmt.Errorf("viewport: %w", err)
 		}
 		return &termIO{
-			in:      in,
-			out:     out,
-			Width:   cio.width,
-			Height:  vp.height, // first render will set the height
-			vp:      vp,
-			cio:     cio,
-			Restore: restore,
+			in:       in,
+			out:      out,
+			Width:    cio.width,
+			Height:   vp.height, // first render will set the height
+			vp:       vp,
+			cio:      cio,
+			Restore:  restore,
+			onResize: resizeNotify(),
 		}, nil
 	}
-	width, height, err := termGetSize(int(stderr.Fd()))
+	fd := int(stderr.Fd())
+	width, height, err := termGetSize(fd)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrNoTTY, err)
 	}
@@ -77,11 +82,13 @@ func makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
 		return nil, fmt.Errorf("raw: %w", err)
 	}
 	return &termIO{
-		in:      in,
-		out:     out,
-		Width:   width,
-		Height:  height,
-		Restore: restore,
+		in:       in,
+		out:      out,
+		Width:    width,
+		Height:   height,
+		Restore:  restore,
+		fd:       fd,
+		onResize: resizeNotify(),
 	}, nil
 }
 
@@ -113,7 +120,8 @@ func (t *termIO) Read(p []byte) (n int, err error) {
 
 func (t *termIO) Write(p []byte) (n int, err error) {
 	if t.vp != nil {
-		return t.vp.Write(p)
+		// propagate current width so the viewport wraps correctly after resize
+		return t.vp.writeWithWidth(p, t.Width)
 	}
 	return t.out.Write(p)
 }
@@ -158,6 +166,30 @@ func (t *termIO) ReadRune() (rune, int, error) {
 		return 0, n, err
 	}
 	return t.decodeRuneBytes(buf, n)
+}
+
+// refreshSize re-queries the terminal dimensions and updates
+// Width/Height so the next render uses the current geometry.
+func (t *termIO) refreshSize() {
+	if t.cio != nil {
+		t.cio.refreshSize()
+		if t.cio.width > 0 {
+			t.Width = t.cio.width
+		}
+		if t.cio.height > 0 {
+			t.Height = t.cio.height
+		}
+		return
+	}
+	if t.fd < 1 {
+		return
+	}
+	w, h, err := termGetSize(t.fd)
+	if err != nil {
+		return
+	}
+	t.Width = w
+	t.Height = h
 }
 
 // readRuneBytes reads raw bytes and continues reading

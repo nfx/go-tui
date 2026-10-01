@@ -16,9 +16,10 @@ type viewportChanged struct {
 }
 
 type writeToResponse struct {
-	bytes int64
-	lines int
-	err   error
+	bytes  int64
+	lines  int
+	widths []int
+	err    error
 }
 
 type writeTo struct {
@@ -41,6 +42,7 @@ type viewport struct {
 type viewportWrite struct {
 	chunk []byte
 	done  chan struct{}
+	width int // if positive, update viewport width before processing
 }
 
 // initViewport allocates a viewport with the given
@@ -119,6 +121,17 @@ func (v *viewport) write(chunk []byte, done chan struct{}) (n int, err error) {
 	}
 }
 
+// writeWithWidth sends a chunk and updates the viewport width
+// atomically before line wrapping, used by widget renders.
+func (v *viewport) writeWithWidth(chunk []byte, width int) (n int, err error) {
+	select {
+	case <-v.ctx.Done():
+		return 0, io.EOF
+	case v.inner <- viewportWrite{chunk: chunk, width: width}:
+		return len(chunk), nil
+	}
+}
+
 // writeAndWait blocks until the arbiter has applied this viewport update.
 func (v *viewport) writeAndWait(chunk []byte) error {
 	done := make(chan struct{})
@@ -159,7 +172,7 @@ func (v *viewport) numLines() int {
 
 // writeTo writes the viewport to the given writer, called from [viewport.loop], which
 // confines all mutability to a single goroutine.
-func (v *viewport) writeTo(w io.Writer) (int64, int, error) {
+func (v *viewport) writeTo(w io.Writer) (int64, []int, error) {
 	if v.fixedHeight {
 		if v.lastLines == 0 {
 			v.lines = [][]byte{}
@@ -170,17 +183,17 @@ func (v *viewport) writeTo(w io.Writer) (int64, int, error) {
 		// TODO: definitely need two offsets, as the top fixed viewport will be the first to be trimmed
 		v.lines = v.lines[len(v.lines)-v.height:]
 	}
-	var lines int
 	var bytes int64
+	widths := make([]int, 0, len(v.lines))
 	for _, l := range v.lines {
 		b, err := fmt.Fprintf(w, "\r%s", l)
 		if err != nil {
-			return bytes, lines, err
+			return bytes, widths, err
 		}
 		bytes += int64(b)
-		lines++
+		widths = append(widths, width(l))
 	}
-	return bytes, lines, nil
+	return bytes, widths, nil
 }
 
 // padded extracts a line from chunk[lo:mid], pads it to
@@ -302,6 +315,9 @@ func (v *viewport) loop() {
 			return
 		// from [viewport.Write]
 		case req := <-v.inner:
+			if req.width > 0 {
+				v.width = req.width
+			}
 			v.lastLines = v.appendToLinebuffer(req.chunk)
 			select {
 			case <-v.ctx.Done():
@@ -311,12 +327,17 @@ func (v *viewport) loop() {
 			}
 		// handled by [viewport.WriteTo]
 		case w := <-v.writeTos:
-			bytes, lines, err := v.writeTo(w)
+			bytes, widths, err := v.writeTo(w)
 			select {
 			case <-v.ctx.Done():
 				return
 			// handled by [viewport.WriteTo]
-			case w.res <- writeToResponse{bytes, lines, err}:
+			case w.res <- writeToResponse{
+				bytes:  bytes,
+				lines:  len(widths),
+				widths: widths,
+				err:    err,
+			}:
 			}
 		}
 	}

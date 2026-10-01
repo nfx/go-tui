@@ -250,11 +250,12 @@ func startIO(ctx context.Context, out io.Writer) (*chanIO, error) {
 	if !ok {
 		return nil, fmt.Errorf("stderr: %w", ErrNoTTY)
 	}
-	w, h, err := termGetSize(int(fdw.Fd()))
+	fd := int(fdw.Fd())
+	w, h, err := termGetSize(fd)
 	if err != nil {
 		return nil, fmt.Errorf("get size: %w", err)
 	}
-	cio := newUnstartedIO(ctx, w, h)
+	cio := newUnstartedIO(ctx, w, h, fd)
 	go cio.handleViewports(ctx)
 	go cio.forwardTo(ctx, out)
 	return cio, nil
@@ -262,7 +263,7 @@ func startIO(ctx context.Context, out io.Writer) (*chanIO, error) {
 
 // newUnstartedIO allocates a chanIO with an initial viewport but
 // no render goroutines.
-func newUnstartedIO(ctx context.Context, width, height int) *chanIO {
+func newUnstartedIO(ctx context.Context, width, height, fd int) *chanIO {
 	cio := &chanIO{
 		ctx:    ctx,
 		In:     make(chan string),
@@ -271,6 +272,7 @@ func newUnstartedIO(ctx context.Context, width, height int) *chanIO {
 		notify: make(chan viewportChanged, 1024), // buffered to avoid blocking
 		width:  width,
 		height: height,
+		fd:     fd,
 	}
 	cio.head = initViewport(ctx, cio.notify, cio.width, cio.height)
 	cio.tail = cio.head
@@ -288,6 +290,8 @@ type chanIO struct {
 	head, tail    *viewport
 	vreply        chan chan *viewport
 	notify        chan viewportChanged
+	fd            int // terminal fd for resize refresh, 0 if unavailable
+	rendered      []int
 }
 
 // Deprecated: use [Stderr].
@@ -354,6 +358,19 @@ func (i *chanIO) pushViewport() (*viewport, error) {
 	}
 }
 
+// refreshSize re-queries the terminal size for the shared arbiter.
+func (i *chanIO) refreshSize() {
+	if i.fd < 1 {
+		return
+	}
+	w, h, err := termGetSize(i.fd)
+	if err != nil {
+		return
+	}
+	i.width = w
+	i.height = h
+}
+
 // handleViewports listens for viewport push requests
 // and inserts them into the managed chain.
 func (i *chanIO) handleViewports(ctx context.Context) {
@@ -362,6 +379,7 @@ func (i *chanIO) handleViewports(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case reply := <-i.vreply:
+			i.refreshSize()
 			vp := initViewport(ctx, i.notify, i.width, i.height)
 			vp.fixedHeight = true
 			i.insertManagedViewport(vp)
@@ -423,6 +441,7 @@ func (i *chanIO) handleOverlayChange(
 	pending *bytes.Buffer,
 	nl *externalNewlineState,
 ) int {
+	i.refreshSize()
 	currH, err := i.redrawManaged(w, prevH)
 	if err != nil {
 		return prevH
@@ -447,13 +466,14 @@ func (i *chanIO) handleExternalWrite(
 	if prevH == 0 {
 		return i.flushWithoutOverlay(w, pending, nl, chunk, prevH)
 	}
+	i.refreshSize()
 	pending.WriteString(chunk)
 	flush, rest := i.splitCompletedLines(pending.Bytes())
 	pending.Reset()
 	_, _ = pending.Write(rest)
 
 	var buf bytes.Buffer
-	i.clearManaged(&buf, prevH)
+	i.clearManaged(&buf)
 	if len(flush) > 0 {
 		_, _ = buf.Write(nl.normalize(flush))
 	}
@@ -529,7 +549,8 @@ func (*chanIO) splitCompletedLines(p []byte) (flush []byte, rest []byte) {
 
 // clearManaged emits ANSI escape sequences to erase
 // previously rendered managed lines.
-func (*chanIO) clearManaged(buf *bytes.Buffer, lines int) {
+func (i *chanIO) clearManaged(buf *bytes.Buffer) {
+	lines := i.wrappedRows(i.rendered, i.width)
 	if lines <= 0 {
 		return
 	}
@@ -546,7 +567,7 @@ func (*chanIO) clearManaged(buf *bytes.Buffer, lines int) {
 // managed viewports.
 func (i *chanIO) redrawManaged(w io.Writer, prevH int) (int, error) {
 	var buf bytes.Buffer
-	i.clearManaged(&buf, prevH)
+	i.clearManaged(&buf)
 	lines, err := i.writeManaged(&buf)
 	if err != nil {
 		return prevH, err
@@ -561,6 +582,7 @@ func (i *chanIO) redrawManaged(w io.Writer, prevH int) (int, error) {
 // writeManaged renders all managed viewports into
 // the writer within the terminal height budget.
 func (i *chanIO) writeManaged(w io.Writer) (int, error) {
+	i.rendered = i.rendered[:0]
 	if i.head == nil {
 		return 0, nil
 	}
@@ -576,6 +598,7 @@ func (i *chanIO) writeManaged(w io.Writer) (int, error) {
 			return totalLines, err
 		}
 		totalLines += res.lines
+		i.rendered = append(i.rendered, res.widths...)
 		budget -= res.lines
 		if budget <= 0 {
 			break
@@ -584,6 +607,24 @@ func (i *chanIO) writeManaged(w io.Writer) (int, error) {
 	}
 	i.trimTrailingNewline(w)
 	return totalLines, nil
+}
+
+func (i *chanIO) wrappedRows(widths []int, termWidth int) int {
+	if len(widths) == 0 {
+		return 0
+	}
+	if termWidth <= 0 {
+		return len(widths)
+	}
+	rows := 0
+	for _, lineWidth := range widths {
+		if lineWidth <= 0 {
+			rows++
+			continue
+		}
+		rows += (lineWidth + termWidth - 1) / termWidth
+	}
+	return rows
 }
 
 func (i *chanIO) isManagedViewport(curr *viewport) bool {
