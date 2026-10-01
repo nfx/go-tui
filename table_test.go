@@ -39,6 +39,14 @@ type recursiveRight struct {
 	Left *recursiveLeft
 }
 
+type pointerStringerStruct struct {
+	Value string
+}
+
+func (s *pointerStringerStruct) String() string {
+	return "stringer:" + s.Value
+}
+
 var dummyPets = []Pet{
 	{"John Doe", 99, "", Person{"Unknown", 9999}},
 	{"Fluffy", 3, "Cat", Person{"Alice", 30}},
@@ -279,6 +287,17 @@ func TestStructFieldsForIndirectRecursiveType(t *testing.T) {
 	assert.Equal(t, 1, len(fields))
 	assert.Equal(t, "Value", fields[0].name)
 	assert.Equal(t, "VALUE", fields[0].header)
+}
+
+func TestStructFieldsForStringerStruct(t *testing.T) {
+	type row struct {
+		Status pointerStringerStruct
+	}
+	fields, err := structFieldsFor[row]()
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(fields))
+	assert.Equal(t, "Status", fields[0].name)
+	assert.Equal(t, "STATUS", fields[0].header)
 }
 
 func TestExtractFromRangeNode(t *testing.T) {
@@ -743,6 +762,14 @@ func TestColumnOptionsIgnoredForExplicitTemplate(t *testing.T) {
 	data := []tableFormatRow{{Name: "A", Rate: 0.05873242}}
 	events := collectEvents(t, "{{.Name}}\t{{.Rate}}", data, WithFloat64AsPercent())
 	assert.Equal(t, "0.05873242", strings.TrimSpace(mustTableRow(t, events[1]).Cells[1]))
+}
+
+func TestTableAutoRendersPointerReceiverStringer(t *testing.T) {
+	type row struct {
+		Status pointerStringerStruct
+	}
+	events := collectEvents(t, "", []row{{Status: pointerStringerStruct{Value: "ok"}}})
+	assert.Equal(t, "stringer:ok", strings.TrimSpace(mustTableRow(t, events[1]).Cells[0]))
 }
 
 func TestFactsBasicRender(t *testing.T) {

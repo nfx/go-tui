@@ -283,6 +283,7 @@ func percentString(v float64) string {
 var (
 	timeType         = reflect.TypeOf(time.Time{})
 	timeDurationType = reflect.TypeOf(time.Duration(0))
+	fmtStringerType  = reflect.TypeOf((*fmt.Stringer)(nil)).Elem()
 )
 
 var greenRedScalePalette = [...]string{brightGreen, green, yellow, red, brightRed}
@@ -899,10 +900,11 @@ func (t *table) columnRenderTemplate(meta *fieldMetadata) string {
 
 // templateFuncs merges shared color functions with per-table formatter functions.
 func (t *table) templateFuncs() template.FuncMap {
-	funcs := make(template.FuncMap, len(colorFns)+len(t.customTemplateFuncs))
+	funcs := make(template.FuncMap, len(colorFns)+len(t.customTemplateFuncs)+1)
 	for name, fn := range colorFns {
 		funcs[name] = fn
 	}
+	funcs["tableString"] = tableString
 	for name, fn := range t.customTemplateFuncs {
 		funcs[name] = fn
 	}
@@ -1263,11 +1265,15 @@ type fieldMetadata struct {
 	name       string
 	autoHeader bool
 	alignRight bool
+	stringer   bool
 	kind       reflect.Kind
 	typ        reflect.Type
 }
 
 func (f *fieldMetadata) Template() string {
+	if f.stringer {
+		return "{{tableString ." + f.name + "}}"
+	}
 	switch f.kind {
 	case reflect.Bool:
 		return "{{if ." + f.name + "}}yes{{else}}no{{end}}"
@@ -1320,7 +1326,7 @@ func reflectStructFields(rt reflect.Type, stack map[reflect.Type]struct{}) (stru
 		if ft.Kind() == reflect.Pointer {
 			ft = f.Type.Elem()
 		}
-		_, isStringer := ft.MethodByName("String")
+		isStringer := typeImplementsStringer(ft)
 		if ft.Kind() == reflect.Struct && !isStringer {
 			nested, err := reflectStructFields(ft, stack)
 			if err != nil {
@@ -1355,6 +1361,7 @@ func reflectFieldMetadata(ft reflect.Type, tag reflect.StructTag, name string) (
 		autoHeader: tag.Get("header") == "",
 		kind:       ft.Kind(),
 		name:       name,
+		stringer:   typeImplementsStringer(ft),
 		typ:        ft,
 	}
 	switch ft.Kind() {
@@ -1365,7 +1372,7 @@ func reflectFieldMetadata(ft reflect.Type, tag reflect.StructTag, name string) (
 	case reflect.Bool, reflect.String:
 		meta.kind = ft.Kind()
 	default:
-		if meta.autoHeader {
+		if meta.autoHeader && !meta.stringer {
 			return nil, fmt.Errorf("%w %s without explicit header tag", errCannotUse, ft.Kind())
 		}
 	}
@@ -1390,4 +1397,39 @@ func reflectFieldMetadata(ft reflect.Type, tag reflect.StructTag, name string) (
 	}
 
 	return &meta, nil
+}
+
+// tableString stringifies values and supports pointer-receiver String methods.
+func tableString(v any) string {
+	if v == nil {
+		return fmt.Sprint(v)
+	}
+	x, ok := v.(fmt.Stringer)
+	if ok {
+		return x.String()
+	}
+	value := reflect.ValueOf(v)
+	for value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface {
+		if value.IsNil() {
+			return fmt.Sprint(v)
+		}
+		value = value.Elem()
+	}
+	ptr := reflect.New(value.Type())
+	ptr.Elem().Set(value)
+	x, ok = ptr.Interface().(fmt.Stringer)
+	if ok {
+		return x.String()
+	}
+	return fmt.Sprint(v)
+}
+
+func typeImplementsStringer(typ reflect.Type) bool {
+	if typ == nil {
+		return false
+	}
+	if typ.Implements(fmtStringerType) {
+		return true
+	}
+	return typ.Kind() != reflect.Pointer && reflect.PointerTo(typ).Implements(fmtStringerType)
 }
