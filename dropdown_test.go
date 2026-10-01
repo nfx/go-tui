@@ -814,7 +814,7 @@ func TestDropdownContextAndIOSetters(t *testing.T) {
 
 func TestDropdownSetWriterUsesTuiViewport(t *testing.T) {
 	ctx := t.Context()
-	cio := newUnstartedIO(ctx, 10, 2)
+	cio := newUnstartedIO(ctx, 10, 2, 0)
 	tui := &Tui{ctx: ctx, termIO: &termIO{out: cio}}
 	d := newDropdown()
 	d.setWriter(tui)

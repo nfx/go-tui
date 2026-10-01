@@ -13,7 +13,7 @@ import (
 func TestTuiViewAndPrepend(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := newUnstartedIO(ctx, 10, 2)
+	cio := newUnstartedIO(ctx, 10, 2, 0)
 	tui := &Tui{ctx: ctx, termIO: &termIO{out: cio}}
 	if tui.view() != cio.head {
 		t.Fatalf("expected head viewport")
