@@ -17,6 +17,78 @@ import (
 	"github.com/nfx/go-tui/internal/assert"
 )
 
+func TestProgressStateRenderFitsWidth(t *testing.T) {
+	var frame bytes.Buffer
+	state := &progressState{
+		maxNum:       100,
+		currentNum:   50,
+		showRate:     true,
+		fmtRate:      func(float64) string { return "10.00" },
+		rollingRates: []float64{10},
+	}
+
+	err := state.render(&frame, 30, time.Date(2024, time.January, 1, 0, 0, 5, 0, time.UTC))
+	assert.NoError(t, err)
+	assert.Equal(t, 30, width(frame.Bytes()))
+}
+
+func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+
+	cio := &chanIO{
+		ctx: ctx,
+		In:  make(chan string),
+		Out: make(chan string, 4),
+	}
+	ticks := make(chan time.Time)
+	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
+	now := start
+
+	p, err := newStartedProgressBar("download", 20,
+		WithInput(cio),
+		WithOutput(cio),
+		progressbarOpt(func(pb *Progressbar) error {
+			pb.now = func() time.Time { return now }
+			pb.redrawAt = start
+			pb.ticks = ticks
+			pb.ticker = time.NewTicker(time.Hour)
+			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+				return &termIO{
+					in:      in,
+					out:     out,
+					Width:   40,
+					Height:  1,
+					Restore: func() error { return nil },
+				}, nil
+			}
+			return nil
+		}),
+	)
+	assert.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, p.Close())
+	})
+
+	p.Add(10)
+	now = start.Add(time.Second)
+
+	select {
+	case ticks <- now:
+	case <-time.After(time.Second):
+		t.Fatalf("tick not delivered")
+	}
+
+	var output string
+	select {
+	case output = <-cio.Out:
+	case <-time.After(time.Second):
+		t.Fatalf("no progress output")
+	}
+
+	assert.Equal(t, 39, width([]byte(output)))
+}
+
 func mustReceiveProgressEvent(t *testing.T, ch <-chan progressEvent) progressEvent {
 	t.Helper()
 
@@ -84,7 +156,7 @@ func TestProgressbarTickRenders(t *testing.T) {
 	}
 
 	assert.NotContains(t, output, "\x1b[1A\r\x1b[K\r")
-	assert.Contains(t, output, "download 50% [>] (10.00/s, 1s remaining)")
+	assert.Contains(t, output, "download 50% [>](10.00/s, 1s remaining)")
 
 	p.Add(5)
 	now = start.Add(2 * time.Second)
@@ -710,10 +782,10 @@ func TestProgressbarCloseWaitsForBackgroundStop(t *testing.T) {
 		pb.ticker = time.NewTicker(time.Hour)
 		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return &termIO{
-				in:      in,
-				out:     &bytes.Buffer{},
-				Width:   30,
-				Height:  1,
+				in:     in,
+				out:    &bytes.Buffer{},
+				Width:  30,
+				Height: 1,
 				Restore: func() error {
 					time.Sleep(restoreDelay)
 					return nil

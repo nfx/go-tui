@@ -411,7 +411,8 @@ func (p *Progressbar) tick(frame *bytes.Buffer, labelWidth int) bool {
 	frame.WriteByte('\r')
 	frame.WriteString(p.label)
 	frame.WriteString(" ")
-	err := p.render(frame, p.io.Width-labelWidth, p.now())
+	availWidth := max(p.io.Width-labelWidth-1, 0) // avoid writing into the terminal's autowrap column
+	err := p.render(frame, availWidth, p.now())
 	if err != nil {
 		p.err = fmt.Errorf("redraw: %w", err)
 		return true
@@ -465,50 +466,79 @@ func (p *progressState) isDone() bool {
 	return p.currentNum >= p.maxNum
 }
 
-func (p *progressState) render(frame *bytes.Buffer, width int, now time.Time) error {
+func (p *progressState) render(frame *bytes.Buffer, availWidth int, now time.Time) error {
 	p.increment(now)
 	rollingRate := p.rollingRate()
 	completion := 0.0
 	if p.maxNum > 0 {
 		completion = float64(p.currentNum) / float64(p.maxNum)
 	}
-	tmp := frame.Len()
-	_, err := fmt.Fprintf(frame, "%d%% ", int(completion*100))
+	prefix := fmt.Sprintf("%d%% ", int(completion*100))
+	_, err := frame.WriteString(prefix)
 	if err != nil {
 		return err
 	}
-	rightPad := frame.Len() - tmp
-	right := []string{}
+	suffix, barWidth := p.layout(rollingRate, availWidth, prefix)
+	bar := p.filledBarLine(barWidth, completion)
+	_, err = fmt.Fprint(frame, bar)
+	if err != nil {
+		return err
+	}
+	_, err = frame.WriteString(suffix)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *progressState) layout(rollingRate float64, availWidth int, prefix string) (string, int) {
+	details := p.renderDetails(rollingRate)
+	suffix := p.renderSuffix(details, true)
+	barWidth := p.barWidth(availWidth, prefix, suffix)
+	if barWidth > 0 || len(details) == 0 {
+		return suffix, max(barWidth, 0)
+	}
+	compact := p.renderSuffix(details, false)
+	barWidth = p.barWidth(availWidth, prefix, compact)
+	return compact, max(barWidth, 0)
+}
+
+func (p *progressState) renderSuffix(details []string, leadingSpace bool) string {
+	if len(details) == 0 {
+		return ""
+	}
+	if leadingSpace {
+		return fmt.Sprintf(" (%s)", strings.Join(details, ", "))
+	}
+	return fmt.Sprintf("(%s)", strings.Join(details, ", "))
+}
+
+func (p *progressState) barWidth(availWidth int, prefix, suffix string) int {
+	return availWidth - width([]byte(prefix)) - width([]byte(suffix)) - 2
+}
+
+func (p *progressState) renderDetails(rollingRate float64) []string {
+	var right []string
 	if p.showRate {
-		if p.fmtRate == nil {
-			p.fmtRate = func(f float64) string { return fmt.Sprintf("%.2f", f) }
-		}
-		part := p.fmtRate(rollingRate) + "/s"
-		right = append(right, part)
-		rightPad += len(part) + 2 // `, `
+		right = append(right, p.renderRate(rollingRate))
 	}
 	if p.showEstimate {
 		part := p.remainingTime(rollingRate)
 		if part != "" {
 			right = append(right, part)
-			rightPad += len(part) + 2 // `, `
 		}
 	}
 	if p.showElapsed {
-		part := fmt.Sprintf("%s elapsed", p.elapsed.Truncate(time.Second))
-		right = append(right, part)
-		rightPad += len(part) + 2 // `, `
+		right = append(right, fmt.Sprintf("%s elapsed", p.elapsed.Truncate(time.Second)))
 	}
-	bar := p.filledBarLine(width-rightPad-3, completion)
-	_, err = fmt.Fprint(frame, bar)
-	if err != nil {
-		return err
+	return right
+}
+
+func (p *progressState) renderRate(rollingRate float64) string {
+	if p.fmtRate == nil {
+		p.fmtRate = func(f float64) string { return fmt.Sprintf("%.2f", f) }
 	}
-	_, err = fmt.Fprintf(frame, " (%s)", strings.Join(right, ", "))
-	if err != nil {
-		return err
-	}
-	return nil
+	return p.fmtRate(rollingRate) + "/s"
 }
 
 func (p *progressState) increment(now time.Time) {
