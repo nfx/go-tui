@@ -18,7 +18,6 @@ import (
 )
 
 func TestProgressStateRenderFitsWidth(t *testing.T) {
-	var frame bytes.Buffer
 	state := &progressState{
 		maxNum:       100,
 		currentNum:   50,
@@ -27,9 +26,22 @@ func TestProgressStateRenderFitsWidth(t *testing.T) {
 		rollingRates: []float64{10},
 	}
 
-	err := state.render(&frame, 30, time.Date(2024, time.January, 1, 0, 0, 5, 0, time.UTC))
-	assert.NoError(t, err)
-	assert.Equal(t, 30, width(frame.Bytes()))
+	now := time.Date(2024, time.January, 1, 0, 0, 5, 0, time.UTC)
+
+	for _, availWidth := range []int{30, 20, 12, 8, 4, 1} {
+		var frame bytes.Buffer
+		err := state.render(&frame, availWidth, now)
+		assert.NoError(t, err)
+		assert.True(t, width(frame.Bytes()) <= availWidth)
+	}
+}
+
+func TestProgressbarLinesToClearShrinks(t *testing.T) {
+	p := &Progressbar{
+		lastFrameWidth: 80,
+	}
+	assert.Equal(t, 2, p.linesToClear(40))
+	assert.Equal(t, 1, p.linesToClear(0))
 }
 
 func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
@@ -882,7 +894,7 @@ func TestProgressbarTickShowsElapsed(t *testing.T) {
 		now: func() time.Time { return time.Now() },
 	}
 	frame := &bytes.Buffer{}
-	if p.tick(frame, 0) {
+	if p.tick(frame) {
 		t.Fatalf("unexpected done")
 	}
 }
@@ -911,7 +923,7 @@ func TestProgressbarTickWriteError(t *testing.T) {
 		now: func() time.Time { return time.Now() },
 	}
 	frame := &bytes.Buffer{}
-	if !p.tick(frame, 0) {
+	if !p.tick(frame) {
 		t.Fatalf("expected done")
 	}
 	if p.err == nil {

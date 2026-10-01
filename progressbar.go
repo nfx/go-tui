@@ -131,19 +131,20 @@ func newStartedProgressBar(label string, size int64, opts ...opt) (*Progressbar,
 type Progressbar struct {
 	config
 	progressState
-	label      string
-	increments chan int64
-	stopped    chan struct{}
-	cancel     context.CancelFunc
-	io         *termIO
-	makeTermIO func(io.Reader, io.Writer) (*termIO, error)
-	ticker     *time.Ticker
-	ticks      <-chan time.Time
-	now        func() time.Time
-	err        error
-	rendered   bool
-	eventSink  func(progressEvent)
-	workers    int
+	label          string
+	increments     chan int64
+	stopped        chan struct{}
+	cancel         context.CancelFunc
+	io             *termIO
+	makeTermIO     func(io.Reader, io.Writer) (*termIO, error)
+	ticker         *time.Ticker
+	ticks          <-chan time.Time
+	now            func() time.Time
+	err            error
+	rendered       bool
+	lastFrameWidth int
+	eventSink      func(progressEvent)
+	workers        int
 }
 
 // NewMaxProgressBar returns progress bar towards the max number.
@@ -381,7 +382,6 @@ func (p *Progressbar) start(ctx context.Context) {
 	}()
 	frame := bytes.NewBuffer(make([]byte, 2*p.io.Width))
 	frame.Reset()
-	labelWidth := width([]byte(p.label)) + 1
 	for {
 		select {
 		case <-ctx.Done():
@@ -393,40 +393,76 @@ func (p *Progressbar) start(ctx context.Context) {
 		case num := <-p.increments:
 			p.currentNum += num
 		case <-p.ticks:
-			done := p.tick(frame, labelWidth)
+			done := p.tick(frame)
 			if done {
 				return
 			}
+		case <-p.io.onResize:
+			p.tick(frame)
 		}
 	}
 }
 
-func (p *Progressbar) tick(frame *bytes.Buffer, labelWidth int) bool {
+// tick refreshes geometry and renders a single-row progress frame.
+func (p *Progressbar) tick(frame *bytes.Buffer) bool {
+	p.io.refreshSize()
+	now := p.now()
 	if p.rendered {
-		err := p.io.clear(1, frame)
-		if err != nil {
+		lines := p.linesToClear(p.io.Width)
+		if err := p.io.clear(lines, frame); err != nil {
 			p.err = fmt.Errorf("clear: %w", err)
 		}
 	}
-	frame.WriteByte('\r')
-	frame.WriteString(p.label)
-	frame.WriteString(" ")
-	availWidth := max(p.io.Width-labelWidth-1, 0) // avoid writing into the terminal's autowrap column
-	err := p.render(frame, availWidth, p.now())
-	if err != nil {
-		p.err = fmt.Errorf("redraw: %w", err)
-		return true
+	line := bytes.NewBuffer(make([]byte, 0, max(p.io.Width, 4)))
+	line.WriteByte('\r')
+	// reserve one column to avoid the terminal's autowrap column
+	usable := p.io.Width - 1
+	contentWidth := 0
+	labelBytes := []byte(p.label)
+	labelW := width(labelBytes) + 1 // label + trailing space
+	switch {
+	case usable <= 0:
+	case labelW > usable:
+		// truncate label to fit, no room for bar/details
+		line.Write(truncateVisible(labelBytes, usable, ' '))
+	default:
+		line.Write(labelBytes)
+		line.WriteByte(' ')
+		if availWidth := usable - labelW; availWidth > 0 {
+			if err := p.render(line, availWidth, now); err != nil {
+				p.err = fmt.Errorf("redraw: %w", err)
+				return true
+			}
+		}
 	}
-	frame.WriteByte('\n')
-	frame.WriteByte('\r')
-	_, err = frame.WriteTo(p.io)
-	if err != nil {
+	if usable > 0 {
+		contentWidth = width(line.Bytes()[1:])
+	}
+	line.WriteByte('\n')
+	line.WriteByte('\r')
+	if err := p.flushLine(frame, line); err != nil {
 		p.err = fmt.Errorf("redraw: %w", err)
 		return true
 	}
 	p.rendered = true
+	p.lastFrameWidth = contentWidth
 	p.emit(p.metricsSnapshot())
 	return p.isDone()
+}
+
+func (p *Progressbar) linesToClear(width int) int {
+	if width <= 0 || p.lastFrameWidth <= 0 {
+		return 1
+	}
+	return max((p.lastFrameWidth+width-1)/width, 1)
+}
+
+func (p *Progressbar) flushLine(frame, line *bytes.Buffer) error {
+	if _, err := frame.Write(line.Bytes()); err != nil {
+		return err
+	}
+	_, err := frame.WriteTo(p.io)
+	return err
 }
 
 func (p *Progressbar) stop() error {
@@ -474,33 +510,36 @@ func (p *progressState) render(frame *bytes.Buffer, availWidth int, now time.Tim
 		completion = float64(p.currentNum) / float64(p.maxNum)
 	}
 	prefix := fmt.Sprintf("%d%% ", int(completion*100))
-	_, err := frame.WriteString(prefix)
-	if err != nil {
-		return err
-	}
-	suffix, barWidth := p.layout(rollingRate, availWidth, prefix)
-	bar := p.filledBarLine(barWidth, completion)
-	_, err = fmt.Fprint(frame, bar)
-	if err != nil {
-		return err
-	}
-	_, err = frame.WriteString(suffix)
-	if err != nil {
-		return err
-	}
-	return nil
+	_, err := frame.WriteString(p.layout(rollingRate, availWidth, prefix, completion))
+	return err
 }
 
-func (p *progressState) layout(rollingRate float64, availWidth int, prefix string) (string, int) {
-	details := p.renderDetails(rollingRate)
-	suffix := p.renderSuffix(details, true)
-	barWidth := p.barWidth(availWidth, prefix, suffix)
-	if barWidth > 0 || len(details) == 0 {
-		return suffix, max(barWidth, 0)
+func (p *progressState) layout(rollingRate float64, availWidth int, prefix string, completion float64) string {
+	if availWidth <= 0 {
+		return ""
 	}
-	compact := p.renderSuffix(details, false)
-	barWidth = p.barWidth(availWidth, prefix, compact)
-	return compact, max(barWidth, 0)
+	if width([]byte(prefix)) >= availWidth {
+		return string(truncateVisible([]byte(prefix), availWidth, ' '))
+	}
+	details := p.renderDetails(rollingRate)
+	for n := len(details); n >= 0; n-- {
+		suffix := p.renderSuffix(details[:n], true)
+		barWidth := p.barWidth(availWidth, prefix, suffix)
+		if barWidth > 0 || n == 0 {
+			if barWidth >= 0 {
+				return prefix + p.filledBarLine(barWidth, completion) + suffix
+			}
+		}
+		if n == 0 {
+			continue
+		}
+		compact := p.renderSuffix(details[:n], false)
+		barWidth = p.barWidth(availWidth, prefix, compact)
+		if barWidth >= 0 {
+			return prefix + p.filledBarLine(barWidth, completion) + compact
+		}
+	}
+	return string(truncateVisible([]byte(prefix), availWidth, ' '))
 }
 
 func (p *progressState) renderSuffix(details []string, leadingSpace bool) string {
