@@ -697,6 +697,38 @@ func TestStderrWritesUseNativeHistoryWhilePromptActive(t *testing.T) {
 	assert.True(t, <-done)
 }
 
+func TestStderrNormalizesLoneLFWithoutOverlay(t *testing.T) {
+	prevIn := defaultIO.input()
+	prevOut := defaultIO.rawOutput()
+	t.Cleanup(func() {
+		SetDefaultIO(prevIn, prevOut)
+	})
+	cio, stdout := chainIOforTest(t, 60, 8)
+	SetDefaultIO(prevIn, cio)
+
+	_, err := Stderr().Write([]byte("one\ntwo\n"))
+	assert.NoError(t, err)
+	assert.Equal(t, "one\r\ntwo\r\n", <-stdout.C)
+}
+
+func TestStderrPreservesCRLFAcrossChunkBoundary(t *testing.T) {
+	prevIn := defaultIO.input()
+	prevOut := defaultIO.rawOutput()
+	t.Cleanup(func() {
+		SetDefaultIO(prevIn, prevOut)
+	})
+	cio, stdout := chainIOforTest(t, 60, 8)
+	SetDefaultIO(prevIn, cio)
+
+	_, err := Stderr().Write([]byte("one\r"))
+	assert.NoError(t, err)
+	assert.Equal(t, "one\r", <-stdout.C)
+
+	_, err = Stderr().Write([]byte("\ntwo\n"))
+	assert.NoError(t, err)
+	assert.Equal(t, "\ntwo\r\n", <-stdout.C)
+}
+
 func waitOutputContains(t *testing.T, out <-chan string, parts ...string) string {
 	t.Helper()
 	deadline := time.After(2 * time.Second)

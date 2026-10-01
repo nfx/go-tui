@@ -400,23 +400,29 @@ func (i *chanIO) insertManagedViewport(vp *viewport) {
 func (i *chanIO) forwardTo(ctx context.Context, w io.Writer) {
 	var prevH int
 	var pending bytes.Buffer
+	var nl externalNewlineState
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case ev := <-i.notify:
-			prevH = i.handleOverlayChange(w, prevH, &pending)
+			prevH = i.handleOverlayChange(w, prevH, &pending, &nl)
 			if ev.done != nil {
 				close(ev.done)
 			}
 		case chunk := <-i.Out:
-			prevH = i.handleExternalWrite(w, prevH, &pending, chunk)
+			prevH = i.handleExternalWrite(w, prevH, &pending, &nl, chunk)
 		}
 	}
 }
 
 // handleOverlayChange redraws managed viewports and flushes pending output when overlays clear.
-func (i *chanIO) handleOverlayChange(w io.Writer, prevH int, pending *bytes.Buffer) int {
+func (i *chanIO) handleOverlayChange(
+	w io.Writer,
+	prevH int,
+	pending *bytes.Buffer,
+	nl *externalNewlineState,
+) int {
 	currH, err := i.redrawManaged(w, prevH)
 	if err != nil {
 		return prevH
@@ -424,16 +430,22 @@ func (i *chanIO) handleOverlayChange(w io.Writer, prevH int, pending *bytes.Buff
 	if currH != 0 || pending.Len() == 0 {
 		return currH
 	}
-	if _, err = w.Write(pending.Bytes()); err == nil {
+	if _, err = w.Write(nl.normalize(pending.Bytes())); err == nil {
 		pending.Reset()
 	}
 	return currH
 }
 
 // handleExternalWrite interleaves external output with managed viewport redraws.
-func (i *chanIO) handleExternalWrite(w io.Writer, prevH int, pending *bytes.Buffer, chunk string) int {
+func (i *chanIO) handleExternalWrite(
+	w io.Writer,
+	prevH int,
+	pending *bytes.Buffer,
+	nl *externalNewlineState,
+	chunk string,
+) int {
 	if prevH == 0 {
-		return i.flushWithoutOverlay(w, pending, chunk, prevH)
+		return i.flushWithoutOverlay(w, pending, nl, chunk, prevH)
 	}
 	pending.WriteString(chunk)
 	flush, rest := i.splitCompletedLines(pending.Bytes())
@@ -443,7 +455,7 @@ func (i *chanIO) handleExternalWrite(w io.Writer, prevH int, pending *bytes.Buff
 	var buf bytes.Buffer
 	i.clearManaged(&buf, prevH)
 	if len(flush) > 0 {
-		_, _ = buf.Write(flush)
+		_, _ = buf.Write(nl.normalize(flush))
 	}
 	currH, err := i.writeManaged(&buf)
 	if err != nil {
@@ -459,18 +471,48 @@ func (i *chanIO) handleExternalWrite(w io.Writer, prevH int, pending *bytes.Buff
 }
 
 // flushWithoutOverlay writes external output directly when no managed viewports are active.
-func (i *chanIO) flushWithoutOverlay(w io.Writer, pending *bytes.Buffer, chunk string, prevH int) int {
+func (i *chanIO) flushWithoutOverlay(
+	w io.Writer,
+	pending *bytes.Buffer,
+	nl *externalNewlineState,
+	chunk string,
+	prevH int,
+) int {
 	if pending.Len() > 0 {
 		pending.WriteString(chunk)
-		if _, err := w.Write(pending.Bytes()); err == nil {
+		if _, err := w.Write(nl.normalize(pending.Bytes())); err == nil {
 			pending.Reset()
 		}
 		return prevH
 	}
-	if _, err := io.WriteString(w, chunk); err != nil {
+	if _, err := w.Write(nl.normalizeString(chunk)); err != nil {
 		return prevH
 	}
 	return prevH
+}
+
+type externalNewlineState struct {
+	prevCR bool
+}
+
+// normalize rewrites lone LF bytes to CRLF for raw terminal output.
+func (s *externalNewlineState) normalize(p []byte) []byte {
+	if len(p) == 0 {
+		return nil
+	}
+	out := make([]byte, 0, len(p))
+	for _, b := range p {
+		if b == '\n' && !s.prevCR {
+			out = append(out, '\r')
+		}
+		out = append(out, b)
+		s.prevCR = b == '\r'
+	}
+	return out
+}
+
+func (s *externalNewlineState) normalizeString(x string) []byte {
+	return s.normalize([]byte(x))
 }
 
 // splitCompletedLines separates fully newline-terminated lines from
