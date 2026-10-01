@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"text/template"
 )
 
@@ -47,8 +46,8 @@ var DefaultMultichoiceItemTemplate = `[{{if .Selected}}x{{else}} {{end}}] {{.Val
 
 func newMultichoice() *multichoice {
 	return &multichoice{
-		in:                os.Stdin,
-		out:               os.Stderr,
+		in:                defaultInput(),
+		out:               defaultOutput(),
 		Ctx:               context.Background(),
 		Label:             "Select an item",
 		LabelTemplate:     DefaultLabelTemplate,

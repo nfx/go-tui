@@ -263,6 +263,39 @@ func TestChanIOWriteCanceledDuringSend(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestSetDefaultIO(t *testing.T) {
+	prevIn := defaultInput()
+	prevOut := defaultOutput()
+	t.Cleanup(func() {
+		SetDefaultIO(prevIn, prevOut)
+	})
+	in := bytes.NewBufferString("in")
+	out := &bytes.Buffer{}
+	SetDefaultIO(in, out)
+
+	d := newDropdown()
+	assert.Equal(t, in, d.in)
+	assert.Equal(t, out, d.out)
+
+	input := newInput("label")
+	assert.Equal(t, in, input.in)
+	assert.Equal(t, out, input.out)
+
+	multichoice := newMultichoice()
+	assert.Equal(t, in, multichoice.in)
+	assert.Equal(t, out, multichoice.out)
+
+	s := newSpinners()
+	assert.Equal(t, in, s.in)
+	assert.Equal(t, out, s.out)
+	s.ticker.Stop()
+
+	p := newProgressbar()
+	assert.Equal(t, in, p.in)
+	assert.Equal(t, out, p.out)
+	p.ticker.Stop()
+}
+
 func TestBBufWrite(t *testing.T) {
 	var b bbuf
 	n, err := b.Write([]byte("abc"))

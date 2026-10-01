@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	"golang.org/x/term"
 )
@@ -32,6 +33,33 @@ type tio struct {
 var defaultIO = &tio{
 	Reader: os.Stdin,
 	Writer: os.Stderr,
+}
+
+var defaultIOMu sync.RWMutex
+
+// SetDefaultIO overrides package-wide default input/output used by widgets that
+// were not explicitly configured with [WithInput] or [WithOutput].
+func SetDefaultIO(in io.Reader, out io.Writer) {
+	defaultIOMu.Lock()
+	defer defaultIOMu.Unlock()
+	if in != nil {
+		defaultIO.Reader = in
+	}
+	if out != nil {
+		defaultIO.Writer = out
+	}
+}
+
+func defaultInput() io.Reader {
+	defaultIOMu.RLock()
+	defer defaultIOMu.RUnlock()
+	return defaultIO.Reader
+}
+
+func defaultOutput() io.Writer {
+	defaultIOMu.RLock()
+	defer defaultIOMu.RUnlock()
+	return defaultIO.Writer
 }
 
 var termGetSize = term.GetSize

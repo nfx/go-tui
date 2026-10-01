@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -404,8 +403,8 @@ func WithAnswerTemplate(tmpl string) opt {
 
 func newDropdown() *dropdown {
 	return &dropdown{
-		in:                   os.Stdin,
-		out:                  os.Stderr,
+		in:                   defaultInput(),
+		out:                  defaultOutput(),
 		Ctx:                  context.Background(),
 		Label:                "Select from list",
 		makeTermIO:           makeTermIO,

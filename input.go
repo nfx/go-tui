@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"text/template"
 	"unicode/utf8"
@@ -127,8 +126,8 @@ func newInput(label string) *input {
 	return &input{
 		config: config{
 			ctx: context.Background(),
-			out: os.Stderr,
-			in:  os.Stdin,
+			out: defaultOutput(),
+			in:  defaultInput(),
 		},
 		Label:          label,
 		LabelTemplate:  DefaultLabelTemplate,

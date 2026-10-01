@@ -81,8 +81,8 @@ func newProgressbar() *Progressbar {
 	return &Progressbar{
 		config: config{
 			ctx: ctx,
-			in:  os.Stdin,
-			out: os.Stdout,
+			in:  defaultInput(),
+			out: defaultOutput(),
 		},
 		ticker:     ticker,
 		ticks:      ticker.C,

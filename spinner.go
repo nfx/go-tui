@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"sync"
 	"time"
 
@@ -110,8 +109,8 @@ func newSpinners() *Spinners {
 	return &Spinners{
 		config: config{
 			ctx: ctx,
-			in:  os.Stdin,
-			out: os.Stdout,
+			in:  defaultInput(),
+			out: defaultOutput(),
 		},
 		ticker:     ticker,
 		ticks:      ticker.C,
