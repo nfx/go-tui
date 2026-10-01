@@ -77,8 +77,9 @@ type spinnerGroupClosed struct {
 
 type Spinners struct {
 	config
-	cancel context.CancelFunc
-	io     *termIO
+	cancel  context.CancelFunc
+	io      *termIO
+	stopped chan struct{}
 
 	creates chan createSpinner
 	updates chan updateOffset
@@ -115,6 +116,7 @@ func newSpinners() *Spinners {
 		ticker:     ticker,
 		ticks:      ticker.C,
 		cancel:     cancel,
+		stopped:    make(chan struct{}),
 		makeTermIO: makeTermIO,
 		creates:    make(chan createSpinner),
 		updates:    make(chan updateOffset),
@@ -143,6 +145,9 @@ func NewSpinners(opt ...opt) (*Spinners, error) {
 
 func (s *Spinners) Close() {
 	s.cancel()
+	if s.stopped != nil {
+		<-s.stopped
+	}
 }
 
 func (s *Spinners) MustAddBackground(opt ...opt) *Spinner {
@@ -239,6 +244,7 @@ func (s *Spinners) emit(ev spinnerEvent) {
 }
 
 func (s *Spinners) start(ctx context.Context) {
+	defer close(s.stopped)
 	// defer s.stop()
 	var prevActive int
 	for {
@@ -415,16 +421,29 @@ func (s *Spinners) redraw(prevActive int) int {
 	return currActive
 }
 
-//nolint:errcheck // TODO: handle error
 func (s *Spinners) stop() {
 	// s.wg.Wait()
 	s.emit(spinnerGroupClosed{})
-	s.io.clear(s.displayed, s.io)
+	s.clearOnStop()
 	// s.io.Restore()
 	s.ticker.Stop()
 	close(s.creates)
 	close(s.updates)
 	close(s.stops)
+}
+
+func (s *Spinners) clearOnStop() {
+	if s.io == nil {
+		return
+	}
+	_, ok := s.io.out.(*chanIO)
+	if ok && s.io.vp == nil {
+		return
+	}
+	err := s.io.clear(s.displayed, s.io)
+	if err != nil {
+		slog.Debug("clear spinners", "err", err)
+	}
 }
 
 type createSpinner struct {
