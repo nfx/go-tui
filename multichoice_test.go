@@ -23,7 +23,7 @@ func TestMultichoiceRenderInitializes(t *testing.T) {
 
 	frame := &viewport{
 		ctx:      t.Context(),
-		inner:    make(chan []byte, 16),
+		inner:    make(chan viewportWrite, 16),
 		writeTos: make(chan *writeTo, 1),
 		notify:   make(chan viewportChanged, 1),
 		width:    io.Width,
@@ -43,7 +43,7 @@ func TestMultichoiceRenderMoreItems(t *testing.T) {
 	io := newTestTermIO(5, 4)
 	frame := &viewport{
 		ctx:      t.Context(),
-		inner:    make(chan []byte, 16),
+		inner:    make(chan viewportWrite, 16),
 		writeTos: make(chan *writeTo, 1),
 		notify:   make(chan viewportChanged, 16),
 		width:    io.Width,
