@@ -332,7 +332,7 @@ func (p *input) readEvents(ctx context.Context, io *termIO) <-chan inputKeyEvent
 				return
 			case keys <- ev:
 			}
-			if err != nil {
+			if err != nil && more == nil {
 				return
 			}
 		}
