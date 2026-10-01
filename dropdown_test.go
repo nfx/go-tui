@@ -20,6 +20,21 @@ import (
 	"github.com/nfx/go-tui/internal/assert"
 )
 
+func waitForDropdownOutput(t *testing.T, out <-chan string, want string) string {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case got := <-out:
+			if got == want {
+				return got
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for dropdown output %q", want)
+		}
+	}
+}
+
 type dropdownHeuristicLabelItem struct {
 	ID   int
 	Name string
@@ -165,7 +180,7 @@ func TestSimpleCase(t *testing.T) {
 		<-out)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r", <-out)
-	assert.Equal(t, "Are you sure?: Yes\n", <-out)
+	assert.Equal(t, "Are you sure?: Yes\n", waitForDropdownOutput(t, out, "Are you sure?: Yes\n"))
 	assert.Equal(t, true, <-res)
 }
 
@@ -180,7 +195,7 @@ func TestDenyCase(t *testing.T) {
 		<-out)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r", <-out)
-	assert.Equal(t, "Are you sure?: No\n", <-out)
+	assert.Equal(t, "Are you sure?: No\n", waitForDropdownOutput(t, out, "Are you sure?: No\n"))
 	assert.Equal(t, false, <-res)
 }
 
@@ -195,7 +210,7 @@ func TestDownAndUpCase(t *testing.T) {
 	<-out                // frame render
 	in <- "\x0d"         // enter
 	<-out                // clear
-	assert.Equal(t, "Are you sure?: Yes\n", <-out)
+	assert.Equal(t, "Are you sure?: Yes\n", waitForDropdownOutput(t, out, "Are you sure?: Yes\n"))
 	assert.Equal(t, true, <-res)
 }
 
@@ -243,7 +258,7 @@ func TestMoreItems(t *testing.T) {
 		<-out)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r", <-out)
-	assert.Equal(t, "Pick letter: D\n", <-out)
+	assert.Equal(t, "Pick letter: D\n", waitForDropdownOutput(t, out, "Pick letter: D\n"))
 	assert.Equal(t, "D", <-res)
 }
 
@@ -260,7 +275,7 @@ func TestMoreItemsUp(t *testing.T) {
 		<-out)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r", <-out)
-	assert.Equal(t, "Pick letter: A\n", <-out)
+	assert.Equal(t, "Pick letter: A\n", waitForDropdownOutput(t, out, "Pick letter: A\n"))
 	assert.Equal(t, "A", <-res)
 }
 
@@ -304,7 +319,7 @@ func TestDropdownFiltering(t *testing.T) {
 		<-out)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r", <-out)
-	assert.Equal(t, "Neque porro: condimentum libero\n", <-out)
+	assert.Equal(t, "Neque porro: condimentum libero\n", waitForDropdownOutput(t, out, "Neque porro: condimentum libero\n"))
 	assert.Equal(t, "condimentum libero", <-res)
 }
 
@@ -345,7 +360,7 @@ func TestDropdownKVSingleItem(t *testing.T) {
 	assert.Equal(t, "\rSelect item + {apple 42}\n\r", <-out)
 	in <- "\x0d" // enter
 	<-out
-	assert.Equal(t, "Select item: {apple 42}\n", <-out)
+	assert.Equal(t, "Select item: {apple 42}\n", waitForDropdownOutput(t, out, "Select item: {apple 42}\n"))
 	result := <-res
 	assert.Equal(t, "apple", result.key)
 	assert.Equal(t, 42, result.value)
@@ -361,7 +376,7 @@ func TestDropdownKVMultipleItems(t *testing.T) {
 		<-out)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r", <-out)
-	assert.Equal(t, "Select item: {banana 3}\n", <-out)
+	assert.Equal(t, "Select item: {banana 3}\n", waitForDropdownOutput(t, out, "Select item: {banana 3}\n"))
 	result := <-res
 	assert.Equal(t, "banana", result.key)
 	assert.Equal(t, 3, result.value)

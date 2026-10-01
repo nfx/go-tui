@@ -1281,9 +1281,9 @@ func (d *dropdown) runMain(io *termIO, frame *bytes.Buffer, space, displayed int
 	if i < 0 {
 		return -1, nil
 	}
-	_, err = frame.WriteTo(io) // clear the screen
+	err = d.clearFrame(io, frame, space)
 	if err != nil {
-		return -1, fmt.Errorf("write: %w", err)
+		return -1, err
 	}
 	return i, nil
 }
@@ -1441,6 +1441,13 @@ func (d *dropdown) pressKey(tio *termIO, frame *bytes.Buffer, space, displayed i
 // clearFrame removes the last render without drawing a new frame.
 func (d *dropdown) clearFrame(io *termIO, frame *bytes.Buffer, space int) error {
 	if space < 1 {
+		return nil
+	}
+	if io.vp != nil && io.vp.fixedHeight {
+		err := io.clear(space, io)
+		if err != nil {
+			return fmt.Errorf("clear: %w", err)
+		}
 		return nil
 	}
 	err := io.clear(space, frame)
