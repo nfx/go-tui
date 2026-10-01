@@ -205,6 +205,37 @@ func TestViewportPadded(t *testing.T) {
 	assert.Equal(t, "hello     \n", string(v.lines[0]))
 }
 
+func TestViewportPaddedFixedHeightDoesNotAppendSpaces(t *testing.T) {
+	ctx := t.Context()
+	notify := make(chan viewportChanged)
+	v := initViewport(ctx, notify, 10, 5)
+	v.fixedHeight = true
+
+	chunk := []byte("hello\x1b[3D")
+	lo, mid := v.padded(chunk, 0, len(chunk))
+
+	assert.Equal(t, len(chunk)+1, lo)
+	assert.Equal(t, len(chunk)+1, mid)
+	assert.Equal(t, 1, len(v.lines))
+	assert.Equal(t, "hello\x1b[3D\n", string(v.lines[0]))
+}
+
+func TestViewportSkipsCarriageReturns(t *testing.T) {
+	ctx := t.Context()
+	notify := make(chan viewportChanged, 10)
+	v := initViewport(ctx, notify, 10, 5)
+
+	n, err := v.Write([]byte("\rhello\n\r"))
+	assert.NoError(t, err)
+	assert.Equal(t, 8, n)
+	<-notify
+
+	var buf bytes.Buffer
+	_, err = v.WriteTo(&buf)
+	assert.NoError(t, err)
+	assert.Equal(t, "\rhello     \n", buf.String())
+}
+
 func TestViewportWriteToWithBudgetExceeded(t *testing.T) {
 	ctx := t.Context()
 	notify := make(chan viewportChanged, 10)

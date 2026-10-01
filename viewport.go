@@ -4,12 +4,16 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 )
 
-type viewportChanged int
+type viewportChanged struct {
+	lines int
+	done  chan struct{}
+}
 
 type writeToResponse struct {
 	bytes int64
@@ -26,7 +30,7 @@ type viewport struct {
 	width, height int
 	lines         [][]byte
 	next          *viewport
-	inner         chan []byte
+	inner         chan viewportWrite
 	notify        chan viewportChanged
 	writeTos      chan *writeTo
 	ctx           context.Context
@@ -34,10 +38,17 @@ type viewport struct {
 	lastLines     int
 }
 
+type viewportWrite struct {
+	chunk []byte
+	done  chan struct{}
+}
+
+// initViewport allocates a viewport with the given
+// dimensions and starts its event loop goroutine.
 func initViewport(ctx context.Context, notify chan viewportChanged, width, height int) *viewport {
 	v := &viewport{
 		ctx:      ctx,
-		inner:    make(chan []byte),
+		inner:    make(chan viewportWrite),
 		writeTos: make(chan *writeTo),
 		notify:   notify,
 		width:    width,
@@ -47,6 +58,8 @@ func initViewport(ctx context.Context, notify chan viewportChanged, width, heigh
 	return v
 }
 
+// WriteTo walks the viewport chain and renders each
+// viewport into w within the height budget.
 func (v *viewport) WriteTo(w io.Writer) (int64, error) {
 	var total int64
 	curr := v
@@ -91,15 +104,37 @@ func (v *viewport) WriteByte(b byte) error {
 // see https://notes.burke.libbey.me/ansi-escape-codes/
 // see https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
 func (v *viewport) Write(chunk []byte) (n int, err error) {
+	return v.write(chunk, nil)
+}
+
+// write sends a chunk to the viewport's event loop,
+// optionally signaling done after the arbiter applies it.
+func (v *viewport) write(chunk []byte, done chan struct{}) (n int, err error) {
 	select {
 	case <-v.ctx.Done():
 		return 0, io.EOF
 	// [viewport.loop] will handle the write
-	case v.inner <- chunk:
+	case v.inner <- viewportWrite{chunk: chunk, done: done}:
 		return len(chunk), nil
 	}
 }
 
+// writeAndWait blocks until the arbiter has applied this viewport update.
+func (v *viewport) writeAndWait(chunk []byte) error {
+	done := make(chan struct{})
+	if _, err := v.write(chunk, done); err != nil {
+		return err
+	}
+	select {
+	case <-v.ctx.Done():
+		return io.EOF
+	case <-done:
+		return nil
+	}
+}
+
+// combinedHeight sums the height of this viewport
+// and all linked viewports in the chain.
 func (v *viewport) combinedHeight() int {
 	var n int
 	curr := v
@@ -110,6 +145,8 @@ func (v *viewport) combinedHeight() int {
 	return n
 }
 
+// numLines counts the total buffered lines across
+// this viewport and all linked viewports.
 func (v *viewport) numLines() int {
 	var n int
 	curr := v
@@ -146,18 +183,18 @@ func (v *viewport) writeTo(w io.Writer) (int64, int, error) {
 	return bytes, lines, nil
 }
 
+// padded extracts a line from chunk[lo:mid], pads it to
+// the terminal width, and appends it to the line buffer.
 func (v *viewport) padded(chunk []byte, lo, mid int) (int, int) {
-	pos, line := lo, []byte{}
-	for pos < mid {
-		line = append(line, chunk[pos])
-		pos++
-	}
-	pl := v.width - width(chunk[lo:mid])
-	if pl < 0 {
-		pl = 0
-	}
-	for range pl {
-		line = append(line, ' ')
+	line := v.stripCarriageReturns(chunk[lo:mid])
+	if !v.fixedHeight {
+		pl := v.width - width(line)
+		if pl < 0 {
+			pl = 0
+		}
+		for range pl {
+			line = append(line, ' ')
+		}
 	}
 	line = append(line, '\n') // FIXME: windows is \r\n ?..
 	v.lines = append(v.lines, line)
@@ -166,18 +203,19 @@ func (v *viewport) padded(chunk []byte, lo, mid int) (int, int) {
 	return lo, mid
 }
 
+// appendToLinebuffer parses a raw chunk into display lines,
+// handling escape sequences, line wrapping, and carriage returns.
 func (v *viewport) appendToLinebuffer(chunk []byte) int {
 	lo, mid, hi := 0, 0, len(chunk)
 	var printed, addedLines int
 	var escape bool
 	for mid < hi {
-		if escape && isEscapeEnd(chunk[mid]) {
-			escape = false
-		} else if isEscapeStart(chunk[mid]) {
-			escape = true
-			printed--
+		escape, printed = v.updateEscapeState(chunk[mid], escape, printed)
+		var skipped bool
+		lo, mid, skipped = v.skipCarriageReturn(chunk[mid], lo, mid)
+		if skipped {
+			continue
 		}
-		// TODO: skip \r as well
 		if printed > 0 && printed%v.width == 0 {
 			lo, addedLines = v.addLine(chunk, lo, mid, addedLines)
 		}
@@ -199,10 +237,37 @@ func (v *viewport) appendToLinebuffer(chunk []byte) int {
 	return addedLines
 }
 
+// updateEscapeState tracks whether the current byte is
+// inside an ANSI escape sequence and adjusts the print count.
+func (*viewport) updateEscapeState(b byte, escape bool, printed int) (bool, int) {
+	if escape && isEscapeEnd(b) {
+		return false, printed
+	}
+	if isEscapeStart(b) {
+		return true, printed - 1
+	}
+	return escape, printed
+}
+
+// skipCarriageReturn advances past a carriage return byte,
+// adjusting the low and mid cursors accordingly.
+func (*viewport) skipCarriageReturn(b byte, lo, mid int) (int, int, bool) {
+	if b != '\r' {
+		return lo, mid, false
+	}
+	if lo == mid {
+		lo++
+	}
+	return lo, mid + 1, true
+}
+
+// addLine flushes the bytes between lo and mid as a
+// complete line when a width-based wrap boundary is hit.
 func (v *viewport) addLine(chunk []byte, lo, mid int, addedLines int) (int, int) {
 	if lo < mid {
-		tmp := make([]byte, mid-lo+1)
-		copy(tmp, chunk[lo:mid])
+		raw := v.stripCarriageReturns(chunk[lo:mid])
+		tmp := make([]byte, len(raw)+1)
+		copy(tmp, raw)
 		tmp[len(tmp)-1] = '\n'
 		v.lines = append(v.lines, tmp)
 		addedLines++
@@ -211,6 +276,23 @@ func (v *viewport) addLine(chunk []byte, lo, mid int, addedLines int) (int, int)
 	return lo, addedLines
 }
 
+// stripCarriageReturns returns a copy of chunk
+// with all carriage return bytes removed.
+func (*viewport) stripCarriageReturns(chunk []byte) []byte {
+	if bytes.IndexByte(chunk, '\r') < 0 {
+		return append([]byte(nil), chunk...)
+	}
+	out := make([]byte, 0, len(chunk))
+	for _, b := range chunk {
+		if b != '\r' {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// loop is the viewport's single-goroutine event loop that
+// serializes writes and writeTo requests to avoid data races.
 func (v *viewport) loop() {
 	for {
 		// technically, we can cleanup the old lines here on a time interval,
@@ -219,13 +301,13 @@ func (v *viewport) loop() {
 		case <-v.ctx.Done():
 			return
 		// from [viewport.Write]
-		case chunk := <-v.inner:
-			v.lastLines = v.appendToLinebuffer(chunk)
+		case req := <-v.inner:
+			v.lastLines = v.appendToLinebuffer(req.chunk)
 			select {
 			case <-v.ctx.Done():
 				return
 			// notify is handled by [chanIO.forwardTo]
-			case v.notify <- viewportChanged(v.lastLines):
+			case v.notify <- viewportChanged{lines: v.lastLines, done: req.done}:
 			}
 		// handled by [viewport.WriteTo]
 		case w := <-v.writeTos:
