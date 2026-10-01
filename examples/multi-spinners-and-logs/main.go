@@ -16,7 +16,7 @@ import (
 //nolint:funlen,gocognit,cyclop // example
 func main() {
 	ctx := context.Background()
-	w, err := tui.NewIO(ctx)
+	w, err := tui.NewIO(ctx) //nolint:all // ...
 	if err != nil {
 		panic(err)
 	}

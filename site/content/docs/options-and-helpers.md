@@ -50,6 +50,26 @@ _, err := tui.Input("Name", tui.WithOutput(&out))
 
 Useful for tests and custom terminal routing.
 
+## Stderr
+
+Returns `go-tui`'s package-default append-only terminal writer.
+
+```go
+slog.SetDefault(slog.New(
+	tint.NewHandler(tui.Stderr(), nil),
+))
+```
+
+Use this when logs or other external terminal output should coexist with default
+`go-tui` widgets on the same TTY.
+
+- On a TTY, `Stderr()` routes writes through the shared terminal arbiter so log
+  lines and widgets are redrawn in a stable order.
+- On a non-TTY, `Stderr()` returns the configured raw writer directly, so daemon
+  and batch logging stay simple.
+- Only cooperating writers routed through `tui.Stderr()` participate in that
+  coordination. Direct writes to raw `os.Stderr` bypass it.
+
 ## WithOptions
 
 Composes multiple options into a reusable option.

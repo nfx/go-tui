@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,7 +27,6 @@ func chainIOforTest(t *testing.T, width, height int) (*chanIO, *writeC) {
 		cancel()
 		close(cio.In)
 		close(cio.Out)
-		close(realOut.C)
 	})
 	return cio, realOut
 }
@@ -248,6 +248,23 @@ func TestChanIOPushViewportSuccess(t *testing.T) {
 	assert.NotNil(t, vp)
 }
 
+func TestChanIOPushViewportAppendsAfterExistingManagedViewport(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	cio := newUnstartedIO(ctx, 10, 3)
+	base := cio.head
+	go cio.handleViewports(ctx)
+
+	first, err := cio.pushViewport()
+	assert.NoError(t, err)
+	second, err := cio.pushViewport()
+	assert.NoError(t, err)
+
+	assert.Equal(t, first, cio.head)
+	assert.Equal(t, second, first.next)
+	assert.Equal(t, base, second.next)
+}
+
 func TestChanIOWriteCanceledDuringSend(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cio := &chanIO{
@@ -264,8 +281,8 @@ func TestChanIOWriteCanceledDuringSend(t *testing.T) {
 }
 
 func TestSetDefaultIO(t *testing.T) {
-	prevIn := defaultInput()
-	prevOut := defaultOutput()
+	prevIn := defaultIO.input()
+	prevOut := defaultIO.rawOutput()
 	t.Cleanup(func() {
 		SetDefaultIO(prevIn, prevOut)
 	})
@@ -296,6 +313,98 @@ func TestSetDefaultIO(t *testing.T) {
 	p.ticker.Stop()
 }
 
+func TestStderrReturnsRawWriterWithoutTTY(t *testing.T) {
+	prevIn := defaultIO.input()
+	prevOut := defaultIO.rawOutput()
+	prevTTY := terminalWriterChecker
+	prevSize := termGetSize
+	t.Cleanup(func() {
+		terminalWriterChecker = prevTTY
+		termGetSize = prevSize
+		SetDefaultIO(prevIn, prevOut)
+	})
+	in := bytes.NewBufferString("in")
+	out := &bytes.Buffer{}
+	terminalWriterChecker = func(int) bool { return false }
+	SetDefaultIO(in, out)
+
+	assert.Equal(t, out, Stderr())
+	assert.Equal(t, out, defaultOutput())
+}
+
+func TestStderrReturnsCoordinatedWriterOnTTY(t *testing.T) {
+	prevIn := defaultIO.input()
+	prevOut := defaultIO.rawOutput()
+	prevTTY := terminalWriterChecker
+	prevSize := termGetSize
+	t.Cleanup(func() {
+		terminalWriterChecker = prevTTY
+		termGetSize = prevSize
+		SetDefaultIO(prevIn, prevOut)
+	})
+	in := bytes.NewBufferString("in")
+	out := &mockDescriptor{Writer: &bytes.Buffer{}, fd: 42}
+	terminalWriterChecker = func(int) bool { return true }
+	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
+	SetDefaultIO(in, out)
+
+	stderr := Stderr()
+	fdw, ok := stderr.(interface{ Fd() uintptr })
+	assert.True(t, ok)
+	assert.Equal(t, uintptr(42), fdw.Fd())
+	cio, ok := defaultOutput().(*chanIO)
+	assert.True(t, ok)
+	assert.NotNil(t, cio)
+	ew, ok := stderr.(*terminalStderr)
+	assert.True(t, ok)
+	assert.Equal(t, defaultIO, ew.parent)
+	assert.Equal(t, cio, defaultIO.arbiter)
+}
+
+func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
+	prevIn := defaultIO.input()
+	prevOut := defaultIO.rawOutput()
+	prevTTY := terminalWriterChecker
+	prevSize := termGetSize
+	t.Cleanup(func() {
+		terminalWriterChecker = prevTTY
+		termGetSize = prevSize
+		SetDefaultIO(prevIn, prevOut)
+	})
+	in := bytes.NewBufferString("in")
+	out := &mockDescriptor{Writer: &bytes.Buffer{}, fd: 7}
+	terminalWriterChecker = func(int) bool { return true }
+	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
+	SetDefaultIO(in, out)
+	_ = Stderr()
+
+	cio, ok := defaultOutput().(*chanIO)
+	assert.True(t, ok)
+	assert.NotNil(t, cio)
+
+	d := newDropdown()
+	assert.Equal(t, in, d.in)
+	assert.Equal(t, cio, d.out)
+
+	input := newInput("label")
+	assert.Equal(t, in, input.in)
+	assert.Equal(t, cio, input.out)
+
+	multichoice := newMultichoice()
+	assert.Equal(t, in, multichoice.in)
+	assert.Equal(t, cio, multichoice.out)
+
+	s := newSpinners()
+	assert.Equal(t, in, s.in)
+	assert.Equal(t, cio, s.out)
+	s.ticker.Stop()
+
+	p := newProgressbar()
+	assert.Equal(t, in, p.in)
+	assert.Equal(t, cio, p.out)
+	p.ticker.Stop()
+}
+
 func TestBBufWrite(t *testing.T) {
 	var b bbuf
 	n, err := b.Write([]byte("abc"))
@@ -318,5 +427,294 @@ func TestWriteCWritesToChannel(t *testing.T) {
 		assert.Equal(t, message, got)
 	case <-ctx.Done():
 		t.Fatalf("context canceled unexpectedly")
+	}
+}
+
+func TestConfirmAndStderrShareDefaultTerminal(t *testing.T) {
+	prevIn := defaultIO.input()
+	prevOut := defaultIO.rawOutput()
+	t.Cleanup(func() {
+		SetDefaultIO(prevIn, prevOut)
+	})
+	cio, stdout := chainIOforTest(t, 40, 6)
+	inputR, inputW, err := os.Pipe()
+	assert.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, inputR.Close())
+		assert.NoError(t, inputW.Close())
+	})
+	SetDefaultIO(&fdByteReader{f: inputR}, cio)
+
+	result := make(chan bool, 1)
+	go func() {
+		result <- Confirm("Are you sure?")
+	}()
+
+	waitOutputContains(t, stdout.C, "Are you sure?")
+	_, err = Stderr().Write([]byte("INF foo bar=baz\n"))
+	assert.NoError(t, err)
+	waitOutputContains(t, stdout.C, "INF foo bar=baz", "Are you sure?")
+	_, err = inputW.Write([]byte{keyEnter})
+	assert.NoError(t, err)
+	assert.True(t, <-result)
+	answer := waitOutputContains(t, stdout.C, "✔", "Are you sure?")
+	assert.Equal(t, 0, strings.Count(answer, "→"))
+}
+
+func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {
+	prevIn := defaultIO.input()
+	prevOut := defaultIO.rawOutput()
+	t.Cleanup(func() {
+		SetDefaultIO(prevIn, prevOut)
+	})
+	cio, stdout := chainIOforTest(t, 40, 6)
+	reader := &blockingByteReader{ch: make(chan []byte, 2)}
+	t.Cleanup(reader.Close)
+	input := &mockDescriptor{
+		Reader: reader,
+		fd:     0,
+	}
+	SetDefaultIO(input, cio)
+
+	result := make(chan bool, 1)
+	go func() {
+		result <- Confirm("Are you sure?")
+	}()
+
+	initial := waitOutputContains(t, stdout.C, "Are you sure?", "Yes", "No")
+	reader.SendBytes([]byte{0x1b, 0x5b, 0x42})
+	updated := waitOutputContains(t, stdout.C, "Are you sure?", "Yes", "No")
+	assert.True(t, initial != updated)
+	reader.SendByte(keyEnter)
+	assert.True(t, !<-result)
+}
+
+func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
+	prevIn := defaultIO.input()
+	prevOut := defaultIO.rawOutput()
+	t.Cleanup(func() {
+		SetDefaultIO(prevIn, prevOut)
+	})
+	cio, stdout := chainIOforTest(t, 40, 6)
+	input := &mockDescriptor{
+		Reader: &chunkReader{chunks: [][]byte{
+			{'h'},
+			{'i'},
+			{keyEnter},
+		}},
+		fd: 0,
+	}
+	SetDefaultIO(input, cio)
+
+	result := make(chan string, 1)
+	errs := make(chan error, 1)
+	go func() {
+		value, err := Input("Label")
+		if err != nil {
+			errs <- err
+			return
+		}
+		result <- value
+	}()
+
+	initial := waitOutputContains(t, stdout.C, "Label")
+	updated := waitOutputContains(t, stdout.C, "Label", "hi")
+	assert.True(t, initial != updated)
+	select {
+	case err := <-errs:
+		assert.NoError(t, err)
+	case value := <-result:
+		assert.Equal(t, "hi", value)
+	}
+}
+
+func TestInputAndStderrShareDefaultTerminal(t *testing.T) {
+	prevIn := defaultIO.input()
+	prevOut := defaultIO.rawOutput()
+	t.Cleanup(func() {
+		SetDefaultIO(prevIn, prevOut)
+	})
+	cio, stdout := chainIOforTest(t, 60, 8)
+	reader := &blockingByteReader{ch: make(chan []byte, 3)}
+	t.Cleanup(reader.Close)
+	input := &mockDescriptor{Reader: reader, fd: 0}
+	SetDefaultIO(input, cio)
+
+	result := make(chan string, 1)
+	errs := make(chan error, 1)
+	go func() {
+		value, err := Input("PROMPT")
+		if err != nil {
+			errs <- err
+			return
+		}
+		result <- value
+	}()
+
+	waitOutputContains(t, stdout.C, "PROMPT")
+	_, err := Stderr().Write([]byte("INF background\n"))
+	assert.NoError(t, err)
+	logged := waitOutputContains(t, stdout.C, "PROMPT", "INF background")
+	assert.Equal(t, 1, strings.Count(logged, "PROMPT"))
+	reader.SendByte('a')
+	reader.SendByte('b')
+	updated := waitOutputContains(t, stdout.C, "PROMPT", "ab")
+	assert.Equal(t, 1, strings.Count(updated, "PROMPT"))
+	reader.SendByte(keyEnter)
+	select {
+	case err := <-errs:
+		assert.NoError(t, err)
+	case value := <-result:
+		assert.Equal(t, "ab", value)
+	}
+}
+
+func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
+	prevIn := defaultIO.input()
+	prevOut := defaultIO.rawOutput()
+	t.Cleanup(func() {
+		SetDefaultIO(prevIn, prevOut)
+	})
+	cio, stdout := chainIOforTest(t, 60, 8)
+	reader := &blockingByteReader{ch: make(chan []byte, 8)}
+	t.Cleanup(reader.Close)
+	input := &mockDescriptor{Reader: reader, fd: 0}
+	SetDefaultIO(input, cio)
+
+	result := make(chan string, 1)
+	errs := make(chan error, 1)
+	go func() {
+		value, err := Input("PROMPT")
+		if err != nil {
+			errs <- err
+			return
+		}
+		result <- value
+	}()
+
+	waitOutputContains(t, stdout.C, "PROMPT")
+	reader.SendByte('a')
+	reader.SendByte('b')
+	reader.SendByte('c')
+	waitOutputContains(t, stdout.C, "PROMPT", "abc")
+	reader.SendByte(0x1b)
+	reader.SendByte(0x5b)
+	reader.SendByte(0x44)
+	reader.SendByte('X')
+	reader.SendByte(keyEnter)
+
+	select {
+	case err := <-errs:
+		assert.NoError(t, err)
+	case value := <-result:
+		assert.Equal(t, "abXc", value)
+	}
+}
+
+func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
+	prevIn := defaultIO.input()
+	prevOut := defaultIO.rawOutput()
+	t.Cleanup(func() {
+		SetDefaultIO(prevIn, prevOut)
+	})
+	cio, stdout := chainIOforTest(t, 60, 8)
+	reader := &blockingByteReader{ch: make(chan []byte, 32)}
+	t.Cleanup(reader.Close)
+	input := &mockDescriptor{Reader: reader, fd: 0}
+	SetDefaultIO(input, cio)
+
+	result := make(chan string, 1)
+	errs := make(chan error, 1)
+	go func() {
+		value, err := Input("PROMPT", WithDefault("apple"))
+		if err != nil {
+			errs <- err
+			return
+		}
+		result <- value
+	}()
+
+	waitOutputContains(t, stdout.C, "PROMPT", "apple")
+	reader.SendByte(0x1b)
+	reader.SendByte(0x5b)
+	reader.SendByte(0x44)
+	reader.SendByte(0x1b)
+	reader.SendByte(0x5b)
+	reader.SendByte(0x44)
+	_, err := Stderr().Write([]byte("INF background\n"))
+	assert.NoError(t, err)
+	waitOutputContains(t, stdout.C, "INF background", "PROMPT", "apple")
+	reader.SendByte(0x1b)
+	reader.SendByte(0x5b)
+	reader.SendByte(0x44)
+	reader.SendByte('q')
+	reader.SendByte('q')
+	reader.SendByte('q')
+	reader.SendByte(keyEnter)
+
+	select {
+	case err := <-errs:
+		assert.NoError(t, err)
+	case value := <-result:
+		assert.Equal(t, "apqqqple", value)
+	}
+}
+
+func TestStderrWritesUseNativeHistoryWhilePromptActive(t *testing.T) {
+	prevIn := defaultIO.input()
+	prevOut := defaultIO.rawOutput()
+	t.Cleanup(func() {
+		SetDefaultIO(prevIn, prevOut)
+	})
+	cio, stdout := chainIOforTest(t, 60, 8)
+	inputR, inputW, err := os.Pipe()
+	assert.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, inputR.Close())
+		assert.NoError(t, inputW.Close())
+	})
+	SetDefaultIO(&fdByteReader{f: inputR}, cio)
+
+	done := make(chan bool, 1)
+	go func() {
+		done <- Confirm("scrollback")
+	}()
+
+	waitOutputContains(t, stdout.C, "scrollback")
+	_, err = Stderr().Write([]byte("INF first\n"))
+	assert.NoError(t, err)
+	first := waitOutputContains(t, stdout.C, "INF first", "scrollback")
+	assert.Equal(t, 1, strings.Count(first, "INF first"))
+
+	_, err = Stderr().Write([]byte("INF second\n"))
+	assert.NoError(t, err)
+	second := waitOutputContains(t, stdout.C, "INF second", "scrollback")
+	assert.Equal(t, 0, strings.Count(second, "INF first"))
+	assert.Equal(t, 1, strings.Count(second, "INF second"))
+
+	_, err = inputW.Write([]byte{keyEnter})
+	assert.NoError(t, err)
+	assert.True(t, <-done)
+}
+
+func waitOutputContains(t *testing.T, out <-chan string, parts ...string) string {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case got := <-out:
+			matched := true
+			for _, part := range parts {
+				if !strings.Contains(got, part) {
+					matched = false
+					break
+				}
+			}
+			if matched {
+				return got
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for output containing %q", parts)
+		}
 	}
 }

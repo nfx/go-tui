@@ -25,50 +25,248 @@ func (b *bbuf) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
+// tio owns package-default terminal IO and lazily upgrades stderr to a shared
+// arbiter when the configured output is an interactive TTY.
 type tio struct {
-	io.Reader
-	io.Writer
+	reader   io.Reader
+	writer   io.Writer
+	external io.Writer
+	mu       sync.RWMutex
+	arbiter  *chanIO
+	cancel   context.CancelFunc
+}
+
+type terminalStderr struct {
+	parent *tio
+}
+
+func (w *terminalStderr) Write(p []byte) (n int, err error) {
+	if w == nil || w.parent == nil {
+		return 0, io.ErrClosedPipe
+	}
+	return w.parent.writeExternal(p)
+}
+
+// Fd returns the file descriptor of
+// the underlying terminal writer.
+func (w *terminalStderr) Fd() uintptr {
+	if w == nil || w.parent == nil {
+		return 0
+	}
+	fdw, ok := w.parent.rawOutput().(descriptor)
+	if !ok {
+		return 0
+	}
+	return fdw.Fd()
 }
 
 var defaultIO = &tio{
-	Reader: os.Stdin,
-	Writer: os.Stderr,
+	reader: os.Stdin,
+	writer: os.Stderr,
 }
 
-var defaultIOMu sync.RWMutex
+// Stderr returns the package-default append-only terminal writer.
+//
+// On interactive TTYs this routes writes through go-tui's shared terminal
+// arbiter so prompts and external output are ordered by one renderer. On
+// non-TTY outputs it returns the configured raw writer directly.
+func Stderr() io.Writer {
+	return defaultIO.stderrWriter()
+}
 
 // SetDefaultIO overrides package-wide default input/output used by widgets that
 // were not explicitly configured with [WithInput] or [WithOutput].
+//
+// Deprecated: prefer the package defaults plus [Stderr] for normal CLI + TUI
+// integration. This remains for tests and explicit advanced overrides.
 func SetDefaultIO(in io.Reader, out io.Writer) {
-	defaultIOMu.Lock()
-	defer defaultIOMu.Unlock()
-	if in != nil {
-		defaultIO.Reader = in
-	}
-	if out != nil {
-		defaultIO.Writer = out
-	}
+	defaultIO.setIO(in, out)
 }
 
 func defaultInput() io.Reader {
-	defaultIOMu.RLock()
-	defer defaultIOMu.RUnlock()
-	return defaultIO.Reader
+	return defaultIO.input()
 }
 
 func defaultOutput() io.Writer {
-	defaultIOMu.RLock()
-	defer defaultIOMu.RUnlock()
-	return defaultIO.Writer
+	return defaultIO.output()
+}
+
+func (t *tio) input() io.Reader {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.reader
+}
+
+func (t *tio) rawOutput() io.Writer {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.writer
+}
+
+func (t *tio) output() io.Writer {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.outputLocked()
+}
+
+// outputLocked resolves the effective writer,
+// upgrading to arbiter for TTY outputs.
+func (t *tio) outputLocked() io.Writer {
+	if cio, ok := t.writer.(*chanIO); ok {
+		return cio
+	}
+	if !t.isTerminalWriter(t.writer) {
+		return t.writer
+	}
+	cio := t.ensureArbiterLocked()
+	if cio == nil {
+		return t.writer
+	}
+	return cio
+}
+
+// stderrWriter returns a writer for external
+// stderr, routed through the arbiter on TTYs.
+func (t *tio) stderrWriter() io.Writer {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	cio, ok := t.writer.(*chanIO)
+	if ok {
+		return cio
+	}
+	if !t.isTerminalWriter(t.writer) {
+		return t.writer
+	}
+	cio = t.ensureArbiterLocked()
+	if cio == nil {
+		return t.writer
+	}
+	if t.external == nil {
+		t.external = &terminalStderr{parent: t}
+	}
+	return t.external
+}
+
+// writeExternal sends output through the arbiter or
+// falls back to the raw writer.
+func (t *tio) writeExternal(p []byte) (int, error) {
+	t.mu.Lock()
+	cio := t.ensureArbiterLocked()
+	raw := t.writer
+	t.mu.Unlock()
+	if cio != nil {
+		return cio.Write(p)
+	}
+	if raw == nil {
+		return 0, io.ErrClosedPipe
+	}
+	return raw.Write(p)
+}
+
+// setIO replaces the default reader and/or writer,
+// resetting the arbiter on writer change.
+func (t *tio) setIO(in io.Reader, out io.Writer) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if in != nil {
+		t.reader = in
+	}
+	if out == nil {
+		return
+	}
+	t.writer = t.unwrapWriterLocked(out)
+	t.resetArbiterLocked()
+}
+
+// unwrapWriterLocked resolves self-referential writers
+// to avoid circular write chains.
+func (t *tio) unwrapWriterLocked(out io.Writer) io.Writer {
+	switch w := out.(type) {
+	case *terminalStderr:
+		if w.parent == t {
+			return t.writer
+		}
+		return w.parent.rawOutput()
+	case *chanIO:
+		if w == t.arbiter {
+			return t.writer
+		}
+	}
+	return out
+}
+
+// resetArbiterLocked tears down
+// the arbiter goroutine and clears
+// related state.
+func (t *tio) resetArbiterLocked() {
+	if t.cancel != nil {
+		t.cancel()
+	}
+	t.cancel = nil
+	t.arbiter = nil
+	t.external = nil
+}
+
+// ensureArbiterLocked lazily creates
+// the channel-based IO arbiter for TTY outputs.
+func (t *tio) ensureArbiterLocked() *chanIO {
+	if cio, ok := t.writer.(*chanIO); ok {
+		return cio
+	}
+	if t.arbiter != nil {
+		return t.arbiter
+	}
+	if !t.isTerminalWriter(t.writer) {
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cio, err := startIO(ctx, t.writer)
+	if err != nil {
+		cancel()
+		return nil
+	}
+	t.arbiter = cio
+	t.cancel = cancel
+	return cio
 }
 
 var termGetSize = term.GetSize
+var terminalWriterChecker = func(fd int) bool {
+	return term.IsTerminal(fd)
+}
 
+func (*tio) isTerminalWriter(w io.Writer) bool {
+	fdw, ok := w.(descriptor)
+	if !ok {
+		return false
+	}
+	return terminalWriterChecker(int(fdw.Fd()))
+}
+
+// startIO boots the arbiter goroutines that multiplex viewport
+// and external writes.
+func startIO(ctx context.Context, out io.Writer) (*chanIO, error) {
+	fdw, ok := out.(descriptor)
+	if !ok {
+		return nil, fmt.Errorf("stderr: %w", ErrNoTTY)
+	}
+	w, h, err := termGetSize(int(fdw.Fd()))
+	if err != nil {
+		return nil, fmt.Errorf("get size: %w", err)
+	}
+	cio := newUnstartedIO(ctx, w, h)
+	go cio.handleViewports(ctx)
+	go cio.forwardTo(ctx, out)
+	return cio, nil
+}
+
+// newUnstartedIO allocates a chanIO with an initial viewport but
+// no render goroutines.
 func newUnstartedIO(ctx context.Context, width, height int) *chanIO {
 	cio := &chanIO{
 		ctx:    ctx,
 		In:     make(chan string),
-		Out:    make(chan string),
+		Out:    make(chan string, 1024),
 		vreply: make(chan chan *viewport),
 		notify: make(chan viewportChanged, 1024), // buffered to avoid blocking
 		width:  width,
@@ -92,18 +290,13 @@ type chanIO struct {
 	notify        chan viewportChanged
 }
 
+// Deprecated: use [Stderr].
 func NewIO(ctx context.Context) (*chanIO, error) {
-	w, h, err := termGetSize(int(os.Stderr.Fd()))
-	if err != nil {
-		return nil, fmt.Errorf("get size: %w", err)
-	}
-	cio := newUnstartedIO(ctx, w, h)
-	go cio.handleViewports(ctx)
-	go cio.forwardTo(ctx, os.Stderr)
-	// go io.Copy(cio, os.Stdin) // FIXME: stdin forwarding is not working
-	return cio, nil
+	return startIO(ctx, os.Stderr)
 }
 
+// Read blocks until the next input string arrives
+// on the In channel.
 func (i *chanIO) Read(p []byte) (n int, err error) {
 	select {
 	case <-i.ctx.Done():
@@ -117,6 +310,8 @@ func (i *chanIO) Read(p []byte) (n int, err error) {
 	}
 }
 
+// Write sends output bytes to the Out channel for
+// the render loop to flush.
 func (i *chanIO) Write(p []byte) (n int, err error) {
 	select { // don't send on a closed channel
 	case <-i.ctx.Done():
@@ -131,6 +326,8 @@ func (i *chanIO) Write(p []byte) (n int, err error) {
 	}
 }
 
+// pushViewport requests a new managed viewport from
+// the arbiter's handleViewports loop.
 func (i *chanIO) pushViewport() (*viewport, error) {
 	select {
 	case <-i.ctx.Done():
@@ -157,69 +354,245 @@ func (i *chanIO) pushViewport() (*viewport, error) {
 	}
 }
 
+// handleViewports listens for viewport push requests
+// and inserts them into the managed chain.
 func (i *chanIO) handleViewports(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case reply := <-i.vreply:
-			prev := i.head
-			// TODO: height is not really relevant anymore?..
-			i.head = initViewport(ctx, i.notify, i.width, i.height)
-			i.head.fixedHeight = true
-			i.head.next = prev
+			vp := initViewport(ctx, i.notify, i.width, i.height)
+			vp.fixedHeight = true
+			i.insertManagedViewport(vp)
 			select {
 			case <-ctx.Done():
 				return
-			case reply <- i.head:
+			case reply <- vp:
 			}
-		case line := <-i.Out:
-			// [chainIO.forwardTo] will flush the actual writer
-			i.tail.Write([]byte(line)) //nolint:errcheck // TODO: handle error
 		}
 	}
 }
 
+// insertManagedViewport keeps background overlays
+// above later interactive prompts.
+func (i *chanIO) insertManagedViewport(vp *viewport) {
+	if i.head == nil || !i.head.fixedHeight {
+		vp.next = i.head
+		i.head = vp
+		if i.tail == nil {
+			i.tail = vp
+		}
+		return
+	}
+	curr := i.head
+	for curr.next != nil && curr.next.fixedHeight {
+		curr = curr.next
+	}
+	vp.next = curr.next
+	curr.next = vp
+	if vp.next == nil {
+		i.tail = vp
+	}
+}
+
+// forwardTo is the main render loop that flushes overlay changes and external writes to the terminal.
 func (i *chanIO) forwardTo(ctx context.Context, w io.Writer) {
-	var prevH, currH int
+	var prevH int
+	var pending bytes.Buffer
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-i.notify:
-			var buf bytes.Buffer
-			if prevH > 0 { // todo: separate thread for flushing all viewports and viewports have to notify it
-				space := prevH
-				// Move cursor up to the beginning of the dropdown
-				fmt.Fprintf(&buf, "\x1b[%dA", space)
-				// Clear each line
-				for i := range space {
-					fmt.Fprint(&buf, "\r")     // return to start of line
-					fmt.Fprint(&buf, "\x1b[K") // clear current line
-					if i < space-1 {
-						fmt.Fprint(&buf, "\x1b[1B") // move cursor down if not last line
-					}
-				}
-				// Move cursor back up to the beginning and to the start of the line
-				if space > 1 {
-					// space-1 words well for mid scroll, but space-1 is good for screen redraw
-					fmt.Fprintf(&buf, "\x1b[%dA\r", space)
-				}
+		case ev := <-i.notify:
+			prevH = i.handleOverlayChange(w, prevH, &pending)
+			if ev.done != nil {
+				close(ev.done)
 			}
-			currH = i.head.combinedHeight()
-			prevH = currH
-			i.head.WriteTo(&buf) //nolint:errcheck // TODO: handle error
-			x := buf.Bytes()
-			w.Write(x[:len(x)-1]) //nolint:errcheck // trim last newline
-			// _, _ = buf.WriteTo(w)
+		case chunk := <-i.Out:
+			prevH = i.handleExternalWrite(w, prevH, &pending, chunk)
 		}
+	}
+}
+
+// handleOverlayChange redraws managed viewports and flushes pending output when overlays clear.
+func (i *chanIO) handleOverlayChange(w io.Writer, prevH int, pending *bytes.Buffer) int {
+	currH, err := i.redrawManaged(w, prevH)
+	if err != nil {
+		return prevH
+	}
+	if currH != 0 || pending.Len() == 0 {
+		return currH
+	}
+	if _, err = w.Write(pending.Bytes()); err == nil {
+		pending.Reset()
+	}
+	return currH
+}
+
+// handleExternalWrite interleaves external output with managed viewport redraws.
+func (i *chanIO) handleExternalWrite(w io.Writer, prevH int, pending *bytes.Buffer, chunk string) int {
+	if prevH == 0 {
+		return i.flushWithoutOverlay(w, pending, chunk, prevH)
+	}
+	pending.WriteString(chunk)
+	flush, rest := i.splitCompletedLines(pending.Bytes())
+	pending.Reset()
+	_, _ = pending.Write(rest)
+
+	var buf bytes.Buffer
+	i.clearManaged(&buf, prevH)
+	if len(flush) > 0 {
+		_, _ = buf.Write(flush)
+	}
+	currH, err := i.writeManaged(&buf)
+	if err != nil {
+		return prevH
+	}
+	if buf.Len() == 0 {
+		return currH
+	}
+	if _, err = w.Write(buf.Bytes()); err != nil {
+		return prevH
+	}
+	return currH
+}
+
+// flushWithoutOverlay writes external output directly when no managed viewports are active.
+func (i *chanIO) flushWithoutOverlay(w io.Writer, pending *bytes.Buffer, chunk string, prevH int) int {
+	if pending.Len() > 0 {
+		pending.WriteString(chunk)
+		if _, err := w.Write(pending.Bytes()); err == nil {
+			pending.Reset()
+		}
+		return prevH
+	}
+	if _, err := io.WriteString(w, chunk); err != nil {
+		return prevH
+	}
+	return prevH
+}
+
+// splitCompletedLines separates fully newline-terminated lines from
+// a trailing partial line.
+func (*chanIO) splitCompletedLines(p []byte) (flush []byte, rest []byte) {
+	idx := bytes.LastIndexByte(p, '\n')
+	if idx < 0 {
+		return nil, append([]byte(nil), p...)
+	}
+	flush = append([]byte(nil), p[:idx+1]...)
+	rest = append([]byte(nil), p[idx+1:]...)
+	return flush, rest
+}
+
+// clearManaged emits ANSI escape sequences to erase
+// previously rendered managed lines.
+func (*chanIO) clearManaged(buf *bytes.Buffer, lines int) {
+	if lines <= 0 {
+		return
+	}
+	for i := range lines {
+		fmt.Fprint(buf, "\r")
+		fmt.Fprint(buf, "\x1b[K")
+		if i < lines-1 {
+			fmt.Fprint(buf, "\x1b[1A")
+		}
+	}
+}
+
+// redrawManaged clears old managed output and rewrites all active
+// managed viewports.
+func (i *chanIO) redrawManaged(w io.Writer, prevH int) (int, error) {
+	var buf bytes.Buffer
+	i.clearManaged(&buf, prevH)
+	lines, err := i.writeManaged(&buf)
+	if err != nil {
+		return prevH, err
+	}
+	if buf.Len() == 0 {
+		return lines, nil
+	}
+	_, err = w.Write(buf.Bytes())
+	return lines, err
+}
+
+// writeManaged renders all managed viewports into
+// the writer within the terminal height budget.
+func (i *chanIO) writeManaged(w io.Writer) (int, error) {
+	if i.head == nil {
+		return 0, nil
+	}
+	var totalLines int
+	curr := i.head
+	budget := i.height
+	for curr != nil {
+		if !i.isManagedViewport(curr) {
+			break
+		}
+		res, err := i.writeViewport(curr, w)
+		if err != nil {
+			return totalLines, err
+		}
+		totalLines += res.lines
+		budget -= res.lines
+		if budget <= 0 {
+			break
+		}
+		curr = i.nextManagedViewport(curr, budget)
+	}
+	i.trimTrailingNewline(w)
+	return totalLines, nil
+}
+
+func (i *chanIO) isManagedViewport(curr *viewport) bool {
+	return curr == i.head || curr.fixedHeight
+}
+
+func (*chanIO) nextManagedViewport(curr *viewport, budget int) *viewport {
+	curr = curr.next
+	if curr != nil {
+		curr.height = budget
+	}
+	return curr
+}
+
+// trimTrailingNewline removes a trailing newline
+// from the buffer to avoid extra blank lines.
+func (*chanIO) trimTrailingNewline(w io.Writer) {
+	buf, ok := w.(*bytes.Buffer)
+	if !ok {
+		return
+	}
+	x := buf.Bytes()
+	if len(x) > 0 && x[len(x)-1] == '\n' {
+		buf.Truncate(len(x) - 1)
+	}
+}
+
+// writeViewport sends a writeTo request to a viewport and waits for its rendered response.
+func (*chanIO) writeViewport(curr *viewport, w io.Writer) (writeToResponse, error) {
+	respond := make(chan writeToResponse)
+	select {
+	case <-curr.ctx.Done():
+		return writeToResponse{}, io.EOF
+	case curr.writeTos <- &writeTo{Writer: w, res: respond}:
+	}
+	select {
+	case <-curr.ctx.Done():
+		return writeToResponse{}, io.EOF
+	case res := <-respond:
+		close(respond)
+		if res.err != nil {
+			return writeToResponse{}, res.err
+		}
+		return res, nil
 	}
 }
 
 func newWriteC(ctx context.Context) *writeC {
 	return &writeC{
 		Context: ctx,
-		C:       make(chan string),
+		C:       make(chan string, 128),
 	}
 }
 
