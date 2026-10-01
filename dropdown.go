@@ -78,6 +78,8 @@ type dropdown struct {
 	Label        string
 	Items        []any
 	trie         *trie
+	active       []bbuf
+	activeWidths []int
 	inactive     []bbuf
 	widths       []int
 	relevant     []int
@@ -679,11 +681,7 @@ func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
 				buf.WriteByte(' ')
 			}
 		}
-		item, err := d.renderItem(io, i, j)
-		if err != nil {
-			return fmt.Errorf("item[i%d,j%d]: %w", i, j, err)
-		}
-		buf.Write(item)
+		buf.Write(d.renderItem(io, i, j))
 	}
 	if total > len(d.displayed) {
 		buf.WriteByte('\r') // always display a line to avoid flickering
@@ -705,6 +703,8 @@ func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 	}
 	d.emit(dropdownInit{Label: d.Label})
 	d.trie = newTrie()
+	d.active = make([]bbuf, len(d.Items))
+	d.activeWidths = make([]int, len(d.Items))
 	d.inactive = make([]bbuf, len(d.Items))
 	d.widths = make([]int, len(d.Items))
 	d.relevant = make([]int, len(d.Items))
@@ -713,7 +713,7 @@ func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 		if err != nil {
 			return longest, fmt.Errorf("add item: %w", err)
 		}
-		longest = max(longest, d.widths[i])
+		longest = max(longest, d.widths[i], d.activeWidths[i])
 	}
 	if d.oneMatch != "" && len(d.Items) > 0 {
 		d.sortRelevantByLevenstein(d.oneMatch)
@@ -775,7 +775,12 @@ func (*dropdown) levenstein(a, b string) int {
 }
 
 func (d *dropdown) setItem(i int, item any) error {
-	err := d.inactiveItemTemplate.Execute(&d.inactive[i], item)
+	err := d.activeItemTemplate.Execute(&d.active[i], item)
+	if err != nil {
+		return fmt.Errorf("active: %w", err)
+	}
+	d.activeWidths[i] = width(d.active[i])
+	err = d.inactiveItemTemplate.Execute(&d.inactive[i], item)
 	if err != nil {
 		return fmt.Errorf("inactive: %w", err)
 	}
@@ -809,24 +814,20 @@ func (d *dropdown) renderLabel(buf *bytes.Buffer, io *termIO, longest int) int {
 	return prefix
 }
 
-func (d *dropdown) renderItem(io *termIO, i, j int) (item bbuf, err error) {
+func (d *dropdown) renderItem(io *termIO, i, j int) bbuf {
+	var item bbuf
 	var itemW int
 	if i == d.selected {
-		// only active item is re-rendered
-		err := d.activeItemTemplate.Execute(&item, d.Items[j])
-		if err != nil {
-			return nil, fmt.Errorf("active: %w", err)
-		}
-		itemW = width(item)
+		item = d.active[j]
+		itemW = d.activeWidths[j]
 	} else {
 		item = d.inactive[j]
 		itemW = d.widths[j]
 	}
 	if itemW > io.Width {
-		// this may fail if active item is wider than the terminal, but we can solve this later
 		item = truncateVisible(item, io.Width-1, '\n')
 	}
-	return item, nil
+	return item
 }
 
 func (d *dropdown) renderMore(total int, height int, longest int) (bbuf, int, error) {
@@ -1328,6 +1329,8 @@ func (d *dropdown) loadItem(io *termIO, frame *bytes.Buffer, it itPair, more boo
 // addItem appends an item and refreshes derived state.
 func (d *dropdown) addItem(height int, item any) error {
 	d.Items = append(d.Items, item)
+	d.active = append(d.active, nil)
+	d.activeWidths = append(d.activeWidths, 0)
 	d.inactive = append(d.inactive, nil)
 	d.widths = append(d.widths, 0)
 	d.relevant = append(d.relevant, 0)

@@ -518,9 +518,27 @@ func TestDropdownRenderInitAndItems(t *testing.T) {
 	assert.True(t, longest > 0)
 	assert.True(t, len(d.displayed) > 0)
 
-	item, err := d.renderItem(io, 0, d.displayed[0])
-	assert.NoError(t, err)
+	item := d.renderItem(io, 0, d.displayed[0])
 	assert.True(t, len(item) > 0)
+}
+
+func TestDropdownRenderInit_activeItemOverflowTriggersLabelNewLine(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"ab", "cd"}
+	// active template is much wider than inactive
+	d.ActiveItemTemplate = `{{ cyan "→ selected: " (label .) " (details)" }}`
+	d.InactiveItemTemplate = `{{ dim (label .) }}`
+	// terminal is wide enough for label + inactive, but not for label + active
+	tio := newTestTermIO(20, 6)
+	assert.NoError(t, d.parseTemplates())
+	longest, err := d.renderInit(tio)
+	assert.NoError(t, err)
+	// active rendering of "→ selected: ab (details)" is ~25 chars, wider than inactive "ab" (~2 chars)
+	assert.True(t, longest > 10)
+	var buf bytes.Buffer
+	prefix := d.renderLabel(&buf, tio, longest)
+	assert.Equal(t, 0, prefix)
+	assert.True(t, d.LabelNewLine)
 }
 
 func TestDropdownRenderInitEmitsEvents(t *testing.T) {
@@ -744,6 +762,8 @@ func TestDropdownItemLabelFallsBackToPointerStringer(t *testing.T) {
 func TestDropdownSetItemUsesResolvedLabelForTrie(t *testing.T) {
 	d := newDropdown()
 	item := dropdownHeuristicLabelItem{ID: 3, Name: "omega"}
+	d.active = make([]bbuf, 1)
+	d.activeWidths = make([]int, 1)
 	d.inactive = make([]bbuf, 1)
 	d.widths = make([]int, 1)
 	d.relevant = make([]int, 1)
@@ -1291,6 +1311,7 @@ func TestDropdownHandleLazyItemDoneWithItems(t *testing.T) {
 
 func TestDropdownHandleLazyItemAddError(t *testing.T) {
 	d := newDropdown()
+	d.activeItemTemplate = template.Must(template.New("active").Parse("{{ . }}"))
 	d.inactiveItemTemplate = template.Must(template.New("inactive").Parse("{{call .}}"))
 	d.trie = newTrie()
 	tio := newTestTermIO(20, 6)
