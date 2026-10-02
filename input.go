@@ -235,48 +235,79 @@ func (p *input) handleNextEvent(tio *termIO, keys <-chan inputKeyEvent) (bool, e
 			return false, errors.Join(err, p.clear(tio))
 		}
 		return done, nil
+	case <-tio.onResize:
+		// resize triggers a re-render with updated geometry
+		return false, nil
 	}
 }
 
+// visibleWindow returns the start and end rune indexes for
+// the visible portion of text, anchored around the cursor.
+func (i *input) visibleWindow(runes []rune, availW int) (int, int) {
+	total := len(runes)
+	if availW <= 0 || total <= availW {
+		return 0, total
+	}
+	if i.cursor <= availW/2 {
+		return 0, availW
+	}
+	if i.cursor >= total-availW/2 {
+		return total - availW, total
+	}
+	start := i.cursor - availW/2
+	return start, start + availW
+}
+
 func (i *input) render(io *termIO, frame *bytes.Buffer) error {
+	io.refreshSize()
 	frame.Reset()
 	var errs []error
-	err := frame.WriteByte('\r')
-	if err != nil {
-		errs = append(errs, err)
-	}
-	err = i.labelTemplate.Execute(frame, i.Label)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	var displayed string
-	if i.Password {
-		displayed = strings.Repeat("*", utf8.RuneCountInString(i.typed))
-	} else {
-		displayed = i.typed
-	}
-	// write displayed text and clear to the end of the line
-	_, err = fmt.Fprintf(frame, "%s\x1b[K", displayed)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	moveLeft := utf8.RuneCountInString(displayed) - i.cursor
-	if moveLeft > 0 {
-		// move the cursor left by the difference between
-		// the end and the desired position
-		_, err = fmt.Fprintf(frame, "\x1b[%dD", moveLeft)
+	collect := func(err error) {
 		if err != nil {
 			errs = append(errs, err)
 		}
 	}
+	collect(frame.WriteByte('\r'))
+	// render label into a scratch buffer to measure its width
+	var labelBuf bytes.Buffer
+	collect(i.labelTemplate.Execute(&labelBuf, i.Label))
+	labelW := width(labelBuf.Bytes())
+	_, err := frame.Write(labelBuf.Bytes())
+	collect(err)
+	displayed := i.typed
+	if i.Password {
+		displayed = strings.Repeat("*", utf8.RuneCountInString(i.typed))
+	}
+	// clip text to a visible window that fits on one row
+	runes := []rune(displayed)
+	var visStart, visEnd int
+	var visibleText string
+	var visCursor int
+	if io.Width > 0 {
+		availW := io.Width - labelW
+		if availW < 1 {
+			availW = 1
+		}
+		visStart, visEnd = i.visibleWindow(runes, availW)
+		visibleText = string(runes[visStart:visEnd])
+		visCursor = i.cursor - visStart
+	} else {
+		visibleText = displayed
+		visCursor = i.cursor
+	}
+	// write displayed text and clear to the end of the line
+	_, err = fmt.Fprintf(frame, "%s\x1b[K", visibleText)
+	collect(err)
+	moveLeft := utf8.RuneCountInString(visibleText) - visCursor
+	if moveLeft > 0 {
+		// move the cursor left by the difference between
+		// the end and the desired position
+		_, err = fmt.Fprintf(frame, "\x1b[%dD", moveLeft)
+		collect(err)
+	}
 	_, err = frame.WriteTo(io)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	if len(errs) > 0 {
-		return errors.Join(errs...)
-	}
-	return nil
+	collect(err)
+	return errors.Join(errs...)
 }
 
 func (*input) clear(io *termIO) error {

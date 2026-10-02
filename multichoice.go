@@ -57,10 +57,30 @@ func newMultichoice() *multichoice {
 	}
 }
 
+// clampDisplay derives visible rows from current terminal
+// height and clamps offset/active after a resize.
+func (m *multichoice) clampDisplay(height int) {
+	if len(m.displayed) == 0 || len(m.relevant) == 0 {
+		return
+	}
+	capacity := min(len(m.relevant), height/2)
+	if capacity < 1 {
+		capacity = 1
+	}
+	if m.offset+capacity > len(m.relevant) {
+		m.offset = max(0, len(m.relevant)-capacity)
+	}
+	m.displayed = m.relevant[m.offset : m.offset+min(capacity, len(m.relevant)-m.offset)]
+	if m.active >= len(m.displayed) {
+		m.active = max(0, len(m.displayed)-1)
+	}
+}
+
 // render displays the dropdown.
 //
 //nolint:cyclop,funlen,gocognit,ineffassign,nestif,staticcheck // TODO: unfinished
 func (m *multichoice) render(io *termIO, buf *viewport) error {
+	io.refreshSize()
 	// use buffer to write to io only once
 	var prefix int
 	var err error
@@ -83,6 +103,8 @@ func (m *multichoice) render(io *termIO, buf *viewport) error {
 		}
 		m.displayed = m.relevant[:min(len(m.relevant), io.Height/2)]
 	}
+	// re-derive visible rows from current height
+	m.clampDisplay(io.Height)
 	var bufMore bbuf
 	total := len(m.relevant)
 	height := min(total, io.Height/2)
