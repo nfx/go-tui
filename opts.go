@@ -94,7 +94,7 @@ func WithTimeout(timeout time.Duration) opt {
 }
 
 type config struct {
-	ctx context.Context
+	ctx context.Context // TODO: wrap with context.WithCancelClause
 	in  io.Reader
 	out io.Writer
 }

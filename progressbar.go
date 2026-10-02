@@ -76,7 +76,7 @@ func WithWorkers(workers int) opt {
 var runtimeNumCPU = runtime.NumCPU
 
 func newProgressbar() *Progressbar {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	ticker := time.NewTicker(100 * time.Millisecond)
 	return &Progressbar{
 		config: config{
@@ -134,7 +134,7 @@ type Progressbar struct {
 	label          string
 	increments     chan int64
 	stopped        chan struct{}
-	cancel         context.CancelFunc
+	cancel         context.CancelCauseFunc
 	io             *termIO
 	makeTermIO     func(io.Reader, io.Writer) (*termIO, error)
 	ticker         *time.Ticker
@@ -187,8 +187,7 @@ func NewParallelProgressBar[T any](label string, slice []T, yield func(T) error,
 	if len(slice) == 0 {
 		return p.Close()
 	}
-	ctx, cancel := context.WithCancel(p.ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(p.ctx)
 	runner := &parallelProgressRunner[T]{
 		ctx:    ctx,
 		cancel: cancel,
@@ -198,12 +197,14 @@ func NewParallelProgressBar[T any](label string, slice []T, yield func(T) error,
 		jobs:   make(chan int),
 	}
 	runErr := runner.run()
-	return errors.Join(runErr, p.Close())
+	err = errors.Join(runErr, p.Close())
+	cancel(err)
+	return err
 }
 
 type parallelProgressRunner[T any] struct {
 	ctx      context.Context
-	cancel   context.CancelFunc
+	cancel   context.CancelCauseFunc
 	p        *Progressbar
 	slice    []T
 	yield    func(T) error
@@ -314,7 +315,7 @@ func (r *parallelProgressRunner[T]) setErr(err error) {
 	}
 	r.errOnce.Do(func() {
 		r.firstErr = err
-		r.cancel()
+		r.cancel(err)
 	})
 }
 
@@ -344,7 +345,7 @@ func (p *Progressbar) Close() error {
 	if p.io == nil {
 		return nil // most likely no TTY
 	}
-	p.cancel()
+	p.cancel(p.err)
 	if p.stopped != nil {
 		<-p.stopped
 	}
@@ -723,7 +724,7 @@ func (w *wrapReader) Read(p []byte) (n int, err error) {
 		w.p.Add(int64(n))
 	}
 	if err == io.EOF {
-		w.p.cancel()
+		w.p.cancel(nil)
 	}
 	return n, err
 }

@@ -780,7 +780,7 @@ func TestProgressStateIsDone(t *testing.T) {
 }
 
 func TestProgressbarCloseWithIO(t *testing.T) {
-	p := &Progressbar{io: &termIO{}, cancel: func() {}, err: io.EOF}
+	p := &Progressbar{io: &termIO{}, cancel: func(error) {}, err: io.EOF}
 	err := p.Close()
 	if !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF, got %v", err)
@@ -864,7 +864,7 @@ func TestWrapReaderCloseCallsUnderlying(t *testing.T) {
 
 func TestWrapReaderCloseProgressError(t *testing.T) {
 	cr := &closeReader{}
-	p := &Progressbar{io: &termIO{}, cancel: func() {}, err: io.EOF}
+	p := &Progressbar{io: &termIO{}, cancel: func(error) {}, err: io.EOF}
 	w := &wrapReader{r: cr, p: p}
 	err := w.Close()
 	if !errors.Is(err, io.EOF) {

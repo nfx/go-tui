@@ -33,7 +33,7 @@ type tio struct {
 	external io.Writer
 	mu       sync.RWMutex
 	arbiter  *chanIO
-	cancel   context.CancelFunc
+	cancel   context.CancelCauseFunc
 }
 
 type terminalStderr struct {
@@ -128,7 +128,7 @@ func (t *tio) Close() error {
 	cancel := t.cancel
 	t.mu.Unlock()
 	if cancel != nil {
-		cancel()
+		cancel(nil)
 	}
 	if arbiter != nil {
 		<-arbiter.done
@@ -245,7 +245,7 @@ func (t *tio) unwrapWriterLocked(out io.Writer) io.Writer {
 // related state.
 func (t *tio) resetArbiterLocked() {
 	if t.cancel != nil {
-		t.cancel()
+		t.cancel(nil)
 	}
 	t.cancel = nil
 	t.arbiter = nil
@@ -264,10 +264,10 @@ func (t *tio) ensureArbiterLocked() *chanIO {
 	if !t.isTerminalWriter(t.writer) {
 		return nil
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	cio, err := startIO(ctx, t.writer)
 	if err != nil {
-		cancel()
+		cancel(err)
 		return nil
 	}
 	t.arbiter = cio
