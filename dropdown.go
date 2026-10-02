@@ -657,13 +657,35 @@ func (i oneHatch) Error() string {
 	return fmt.Sprintf("%d", i)
 }
 
+// clampDisplay derives the visible rows from current terminal
+// height and clamps offset/selected after a resize.
+func (d *dropdown) clampDisplay(height int) {
+	if len(d.displayed) == 0 || len(d.relevant) == 0 {
+		return
+	}
+	capacity := min(len(d.relevant), height/2)
+	if capacity < 1 {
+		capacity = 1
+	}
+	if d.offset+capacity > len(d.relevant) {
+		d.offset = max(0, len(d.relevant)-capacity)
+	}
+	d.displayed = d.relevant[d.offset : d.offset+min(capacity, len(d.relevant)-d.offset)]
+	if d.selected >= len(d.displayed) {
+		d.selected = max(0, len(d.displayed)-1)
+	}
+}
+
 // render displays the dropdown.
 func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
+	io.refreshSize()
 	// use buffer to write to io only once
 	longest, err := d.renderInit(io)
 	if err != nil {
 		return fmt.Errorf("init: %w", err)
 	}
+	// re-derive visible rows from current height after init
+	d.clampDisplay(io.Height)
 	var prefix int
 	total := len(d.relevant)
 	height := min(total, io.Height/2)
@@ -797,17 +819,17 @@ func (d *dropdown) setItem(i int, item any) error {
 
 func (d *dropdown) renderLabel(buf *bytes.Buffer, io *termIO, longest int) int {
 	label := d.labelBuf.Bytes()
-	// TODO: we still have issues when label overflows the terminal width - some terminals wrap it, some don't.
-	// proper solution would be to use viewports and scroll the label as well
 	prefix := width(label)
 	if prefix > io.Width {
 		label = truncateVisible(label, io.Width-1, ' ')
+		prefix = io.Width - 1
 	}
 	buf.Write(label)
-	if d.LabelNewLine || prefix+longest >= io.Width {
+	// recompute each render instead of latching
+	d.LabelNewLine = prefix+longest >= io.Width
+	if d.LabelNewLine {
 		buf.WriteByte('\n')
 		buf.WriteByte('\r')
-		d.LabelNewLine = true
 		prefix = 0
 	}
 	return prefix
@@ -1070,6 +1092,8 @@ func (d *dropdown) nextLazyAction(
 			return lazyResult{}, err
 		}
 		return lazyResult{}, d.Ctx.Err()
+	case <-tio.onResize:
+		return lazyResult{needsRender: true}, nil
 	}
 }
 
