@@ -47,6 +47,24 @@ func (w *terminalStderr) Write(p []byte) (n int, err error) {
 	return w.parent.writeExternal(p)
 }
 
+// Close flushes and shuts down the terminal arbiter by delegating to the parent tio.
+func (w *terminalStderr) Close() error {
+	if w == nil || w.parent == nil {
+		return nil
+	}
+	return w.parent.Close()
+}
+
+// Sync flushes all buffered terminal output to the underlying writer without closing.
+// Satisfies the same interface as os.File.Sync so callers can drain TUI
+// output without closing the descriptor.
+func (w *terminalStderr) Sync() error {
+	if w == nil || w.parent == nil {
+		return nil
+	}
+	return w.parent.Flush()
+}
+
 // Fd returns the file descriptor of
 // the underlying terminal writer.
 func (w *terminalStderr) Fd() uintptr {
@@ -89,6 +107,33 @@ func defaultInput() io.Reader {
 
 func defaultOutput() io.Writer {
 	return defaultIO.output()
+}
+
+// Flush drains all buffered terminal output without shutting down the arbiter.
+func (t *tio) Flush() error {
+	t.mu.RLock()
+	arbiter := t.arbiter
+	t.mu.RUnlock()
+	if arbiter == nil {
+		return nil
+	}
+	return arbiter.Flush()
+}
+
+// Close cancels the terminal arbiter and blocks until forwardTo has drained
+// all buffered output to the underlying writer. Safe to call more than once.
+func (t *tio) Close() error {
+	t.mu.Lock()
+	arbiter := t.arbiter
+	cancel := t.cancel
+	t.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if arbiter != nil {
+		<-arbiter.done
+	}
+	return nil
 }
 
 func (t *tio) input() io.Reader {
@@ -268,6 +313,8 @@ func newUnstartedIO(ctx context.Context, width, height, fd int) *chanIO {
 		ctx:    ctx,
 		In:     make(chan string),
 		Out:    make(chan string, 1024),
+		done:   make(chan struct{}),
+		syncCh: make(chan chan struct{}),
 		vreply: make(chan chan *viewport),
 		notify: make(chan viewportChanged, 1024), // buffered to avoid blocking
 		width:  width,
@@ -281,8 +328,10 @@ func newUnstartedIO(ctx context.Context, width, height, fd int) *chanIO {
 
 // implements [io.ReadWriter].
 type chanIO struct {
-	In  chan string
-	Out chan string
+	In     chan string
+	Out    chan string
+	done   chan struct{}      // closed by forwardTo after draining all pending output
+	syncCh chan chan struct{} // used by Flush to synchronize with forwardTo
 
 	ctx context.Context
 
@@ -297,6 +346,23 @@ type chanIO struct {
 // Deprecated: use [Stderr].
 func NewIO(ctx context.Context) (*chanIO, error) {
 	return startIO(ctx, os.Stderr)
+}
+
+// Flush blocks until all output buffered in Out has been written to the
+// terminal, without shutting down the arbiter.
+func (i *chanIO) Flush() error {
+	reply := make(chan struct{})
+	select {
+	case <-i.ctx.Done():
+		return i.ctx.Err()
+	case i.syncCh <- reply:
+	}
+	select {
+	case <-i.ctx.Done():
+		return i.ctx.Err()
+	case <-reply:
+		return nil
+	}
 }
 
 // Read blocks until the next input string arrives
@@ -327,6 +393,21 @@ func (i *chanIO) Write(p []byte) (n int, err error) {
 		return 0, io.EOF
 	case i.Out <- string(p):
 		return len(p), nil
+	}
+}
+
+// flushOut non-blockingly drains all currently buffered Out messages.
+func (i *chanIO) flushOut(w io.Writer, prevH int, pending *bytes.Buffer, nl *externalNewlineState) int {
+	for {
+		select {
+		case chunk, ok := <-i.Out:
+			if !ok {
+				return prevH
+			}
+			prevH = i.handleExternalWrite(w, prevH, pending, nl, chunk)
+		default:
+			return prevH
+		}
 	}
 }
 
@@ -415,13 +496,16 @@ func (i *chanIO) insertManagedViewport(vp *viewport) {
 }
 
 // forwardTo is the main render loop that flushes overlay changes and external writes to the terminal.
+// On context cancellation it drains any remaining Out messages before returning, then closes done.
 func (i *chanIO) forwardTo(ctx context.Context, w io.Writer) {
+	defer close(i.done)
 	var prevH int
 	var pending bytes.Buffer
 	var nl externalNewlineState
 	for {
 		select {
 		case <-ctx.Done():
+			i.drainTo(w, prevH, &pending, &nl)
 			return
 		case ev := <-i.notify:
 			prevH = i.handleOverlayChange(w, prevH, &pending, &nl)
@@ -430,6 +514,28 @@ func (i *chanIO) forwardTo(ctx context.Context, w io.Writer) {
 			}
 		case chunk := <-i.Out:
 			prevH = i.handleExternalWrite(w, prevH, &pending, &nl, chunk)
+		case reply := <-i.syncCh:
+			prevH = i.flushOut(w, prevH, &pending, &nl)
+			close(reply)
+		}
+	}
+}
+
+// drainTo flushes any messages already buffered in Out after context cancellation,
+// so that output written just before shutdown is not silently dropped.
+func (i *chanIO) drainTo(w io.Writer, prevH int, pending *bytes.Buffer, nl *externalNewlineState) {
+	for {
+		select {
+		case chunk, ok := <-i.Out:
+			if !ok {
+				return
+			}
+			i.handleExternalWrite(w, prevH, pending, nl, chunk)
+		default:
+			if pending.Len() > 0 {
+				_, _ = w.Write(nl.normalize(pending.Bytes())) //nolint:errcheck // best-effort drain
+			}
+			return
 		}
 	}
 }

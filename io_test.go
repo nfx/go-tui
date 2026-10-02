@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -727,6 +728,125 @@ func TestStderrPreservesCRLFAcrossChunkBoundary(t *testing.T) {
 	_, err = Stderr().Write([]byte("\ntwo\n"))
 	assert.NoError(t, err)
 	assert.Equal(t, "\ntwo\r\n", <-stdout.C)
+}
+
+func TestChanIOForwardToDrainsPendingOnCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	var out bytes.Buffer
+	cio := newUnstartedIO(ctx, 80, 24, 0)
+	go cio.forwardTo(ctx, &out)
+
+	// send messages directly to the buffered channel before cancelling,
+	// so the drain path must handle them rather than the main loop.
+	cio.Out <- "first\n"
+	cio.Out <- "second\n"
+	cancel()
+	<-cio.done // block until forwardTo has finished draining
+
+	assert.True(t, strings.Contains(out.String(), "first"))
+	assert.True(t, strings.Contains(out.String(), "second"))
+}
+
+func TestTioCloseFlushesOutput(t *testing.T) {
+	prevTTY := terminalWriterChecker
+	prevSize := termGetSize
+	t.Cleanup(func() {
+		terminalWriterChecker = prevTTY
+		termGetSize = prevSize
+	})
+
+	var out bytes.Buffer
+	outW := &mockDescriptor{Writer: &out, fd: 42}
+	terminalWriterChecker = func(int) bool { return true }
+	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
+
+	tioInst := &tio{reader: bytes.NewBufferString(""), writer: outW}
+	w := tioInst.stderrWriter()
+
+	_, err := w.Write([]byte("pending output\n"))
+	assert.NoError(t, err)
+
+	assert.NoError(t, tioInst.Close())
+	assert.True(t, strings.Contains(out.String(), "pending output"))
+}
+
+func TestTerminalStderrImplementsCloser(t *testing.T) {
+	prevTTY := terminalWriterChecker
+	prevSize := termGetSize
+	t.Cleanup(func() {
+		terminalWriterChecker = prevTTY
+		termGetSize = prevSize
+	})
+
+	var out bytes.Buffer
+	outW := &mockDescriptor{Writer: &out, fd: 7}
+	terminalWriterChecker = func(int) bool { return true }
+	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
+
+	tioInst := &tio{reader: bytes.NewBufferString(""), writer: outW}
+	stderr := tioInst.stderrWriter()
+
+	closer, ok := stderr.(io.Closer)
+	assert.True(t, ok)
+
+	_, err := stderr.Write([]byte("flushed\n"))
+	assert.NoError(t, err)
+
+	assert.NoError(t, closer.Close())
+	assert.True(t, strings.Contains(out.String(), "flushed"))
+}
+
+func TestChanIOFlushDrainsBufferedOutput(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	cio := newUnstartedIO(ctx, 80, 24, 0)
+	var out bytes.Buffer
+	go cio.handleViewports(ctx)
+	go cio.forwardTo(ctx, &out)
+
+	_, err := cio.Write([]byte("flushed\n"))
+	assert.NoError(t, err)
+	assert.NoError(t, cio.Flush())
+	assert.True(t, strings.Contains(out.String(), "flushed"))
+
+	// arbiter still running — second write must succeed after flush.
+	_, err = cio.Write([]byte("after flush\n"))
+	assert.NoError(t, err)
+	assert.NoError(t, cio.Flush())
+	assert.True(t, strings.Contains(out.String(), "after flush"))
+}
+
+func TestTerminalStderrSyncFlushesWithoutClosing(t *testing.T) {
+	prevTTY := terminalWriterChecker
+	prevSize := termGetSize
+	t.Cleanup(func() {
+		terminalWriterChecker = prevTTY
+		termGetSize = prevSize
+	})
+
+	var out bytes.Buffer
+	outW := &mockDescriptor{Writer: &out, fd: 7}
+	terminalWriterChecker = func(int) bool { return true }
+	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
+
+	tioInst := &tio{reader: bytes.NewBufferString(""), writer: outW}
+	stderr := tioInst.stderrWriter()
+
+	syncer, ok := stderr.(interface{ Sync() error })
+	assert.True(t, ok)
+
+	_, err := stderr.Write([]byte("first\n"))
+	assert.NoError(t, err)
+	assert.NoError(t, syncer.Sync())
+	assert.True(t, strings.Contains(out.String(), "first"))
+
+	// arbiter must still be alive: a second write should succeed.
+	_, err = stderr.Write([]byte("second\n"))
+	assert.NoError(t, err)
+	assert.NoError(t, syncer.Sync())
+	assert.True(t, strings.Contains(out.String(), "second"))
+
+	assert.NoError(t, tioInst.Close())
 }
 
 func waitOutputContains(t *testing.T, out <-chan string, parts ...string) string {
