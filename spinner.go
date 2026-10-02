@@ -272,6 +272,9 @@ func (s *Spinners) start(ctx context.Context) {
 		case <-s.ticks:
 			s.drainQueues()
 			prevActive = s.redraw(prevActive)
+		case <-s.io.onResize:
+			s.drainQueues()
+			prevActive = s.redraw(prevActive)
 		}
 	}
 }
@@ -393,26 +396,30 @@ func (s *Spinners) markDone(offset int) {
 
 //nolint:errcheck // TODO: add error handling in Spinners state
 func (s *Spinners) redraw(prevActive int) int {
+	s.io.refreshSize()
 	frame := bytes.NewBuffer(make([]byte, 2*s.io.Width))
 	frame.Reset()
 	if prevActive > 0 {
 		s.io.clear(prevActive, frame)
 	}
 	currActive := 0
-	// TODO: technically, we can also add a tree of spinners
 	for _, spinner := range s.state {
 		if spinner == nil {
 			continue
 		}
 		spinner.next()
 		frame.WriteByte('\r')
-		frame.WriteString(spinner.frames[spinner.tick])
-		frame.WriteString(" ")
+		line := spinner.frames[spinner.tick] + " "
 		if spinner.Prefix != "" {
-			frame.WriteString(spinner.Prefix)
-			frame.WriteString(": ")
+			line += spinner.Prefix + ": "
 		}
-		frame.WriteString(spinner.Message)
+		line += spinner.Message
+		// truncate to terminal width so each spinner stays on one row
+		if s.io.Width > 0 && width([]byte(line)) > s.io.Width {
+			frame.Write(truncateVisible([]byte(line), s.io.Width-1, ' '))
+		} else {
+			frame.WriteString(line)
+		}
 		frame.WriteByte('\n')
 		frame.WriteByte('\r')
 		currActive++
