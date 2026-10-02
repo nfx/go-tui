@@ -194,9 +194,14 @@ func (p *input) run() (string, error) {
 	}
 	defer io.Restore() //nolint:errcheck
 	frame := &bytes.Buffer{}
+	// cancel the reader when run() returns so it cannot steal stdin bytes
+	// from a subsequent prompt (see readEvents for the permit pattern).
+	runCtx, cancel := context.WithCancel(p.ctx)
+	defer cancel()
 	var keys <-chan inputKeyEvent
+	var permit chan<- struct{}
 	if p.input == nil {
-		keys = p.readEvents(p.ctx, io)
+		keys, permit = p.readEvents(runCtx, io)
 	}
 	p.emit(inputInit{
 		Label:    p.Label,
@@ -206,6 +211,14 @@ func (p *input) run() (string, error) {
 		err = p.render(io, frame)
 		if err != nil {
 			return "", errors.Join(err, p.clear(io))
+		}
+		// authorize the reader to fetch the next chunk; a 1-slot buffer with
+		// non-blocking send caps outstanding reads at one.
+		if permit != nil {
+			select {
+			case permit <- struct{}{}:
+			default:
+			}
 		}
 		done, err := p.handleNextEvent(io, keys)
 		if err != nil {
@@ -343,11 +356,21 @@ func (p *input) pressKey(io *termIO) (string, error) {
 	return "", nil
 }
 
-func (p *input) readEvents(ctx context.Context, io *termIO) <-chan inputKeyEvent {
+// readEvents launches a goroutine that reads one stdin chunk per granted permit
+// and forwards it on the returned channel. The permit gate ensures the reader
+// is parked (not in a syscall) once the consumer stops granting, so it cannot
+// consume bytes destined for a subsequent prompt after run() returns.
+func (p *input) readEvents(ctx context.Context, io *termIO) (<-chan inputKeyEvent, chan<- struct{}) {
 	keys := make(chan inputKeyEvent)
+	permit := make(chan struct{}, 1)
 	go func() {
 		defer close(keys)
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-permit:
+			}
 			key, n, err := io.ReadRune()
 			ev := inputKeyEvent{
 				key: key,
@@ -367,7 +390,7 @@ func (p *input) readEvents(ctx context.Context, io *termIO) <-chan inputKeyEvent
 			}
 		}
 	}()
-	return keys
+	return keys, permit
 }
 
 func (p *input) handleKeyEvent(ev inputKeyEvent, ok bool) (bool, error) {
