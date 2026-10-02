@@ -73,6 +73,24 @@ func WithDefault(d string) opt {
 	}
 }
 
+// WithNonEmpty forces the prompt to continue until the confirmed input is not empty.
+func WithNonEmpty() opt {
+	return inputOpt(func(i *input) error {
+		prev := i.CheckFn
+		i.CheckFn = func(rawInput string) (string, bool) {
+			if prev != nil {
+				next, ok := prev(rawInput)
+				if !ok {
+					return next, false
+				}
+				rawInput = next
+			}
+			return rawInput, rawInput != ""
+		}
+		return nil
+	})
+}
+
 func inputOpt(o func(d *input) error) opt {
 	return func(a any) error {
 		d, ok := a.(*input)
@@ -392,32 +410,50 @@ func (p *input) decodeInputEvent(key rune) inputIncoming {
 func (p *input) applyInputEvent(ev inputIncoming) bool {
 	switch typed := ev.(type) {
 	case inputChanged:
-		prevLen := len(p.typed)
-		prevCursor := p.cursor
-		p.typed = typed.Text
-		switch {
-		case prevLen+1 == len(p.typed):
-			if prevCursor < len(p.typed) {
-				p.cursor = prevCursor + 1
-			} else {
-				p.cursor = len(p.typed)
-			}
-		case prevLen == len(p.typed)+1:
-			if prevCursor > 0 {
-				p.cursor = prevCursor - 1
-			} else {
-				p.cursor = 0
-			}
-		case prevCursor > len(p.typed):
-			p.cursor = len(p.typed)
-		default:
-			p.cursor = len(p.typed)
-		}
+		p.applyInputChanged(typed.Text)
 	case inputConfirmed:
-		p.emit(inputComplete{Value: p.typed})
-		return true
+		return p.confirmInput()
 	}
 	return false
+}
+
+func (p *input) applyInputChanged(text string) {
+	prevLen := len(p.typed)
+	prevCursor := p.cursor
+	p.typed = text
+	switch {
+	case prevLen+1 == len(p.typed):
+		if prevCursor < len(p.typed) {
+			p.cursor = prevCursor + 1
+		} else {
+			p.cursor = len(p.typed)
+		}
+	case prevLen == len(p.typed)+1:
+		if prevCursor > 0 {
+			p.cursor = prevCursor - 1
+		} else {
+			p.cursor = 0
+		}
+	case prevCursor > len(p.typed):
+		p.cursor = len(p.typed)
+	default:
+		p.cursor = len(p.typed)
+	}
+}
+
+func (p *input) confirmInput() bool {
+	if p.CheckFn != nil {
+		next, ok := p.CheckFn(p.typed)
+		if !ok {
+			return false
+		}
+		p.typed = next
+		if p.cursor > len(p.typed) {
+			p.cursor = len(p.typed)
+		}
+	}
+	p.emit(inputComplete{Value: p.typed})
+	return true
 }
 
 func (p *input) pressBackspace() {
