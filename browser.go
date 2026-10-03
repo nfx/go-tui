@@ -10,23 +10,31 @@ import (
 	"runtime"
 )
 
+const goosLinux = "linux"
+
 var (
 	browserExecCommand    = exec.Command
 	browserGOOS           = runtime.GOOS
 	browserCommandStarter = func(cmd *exec.Cmd) error { return cmd.Start() }
 )
 
-// Browserf opens the specified URL in the default browser.
+// Browserf opens the specified URL in the default browser. addr is used as-is when
+// called with no args; otherwise it's a fmt template whose string args get URL-escaped
+// before substitution. A pre-built URL (already percent-encoded) must be passed with
+// no args, since running it through Sprintf as a template would misparse its "%XX"
+// sequences as format verbs.
 func Browserf(addr string, args ...any) error {
 	var cmd *exec.Cmd
-	for i := range args {
-		if s, ok := args[i].(string); ok {
-			args[i] = url.QueryEscape(s)
+	if len(args) > 0 {
+		for i := range args {
+			if s, ok := args[i].(string); ok {
+				args[i] = url.QueryEscape(s)
+			}
 		}
+		addr = fmt.Sprintf(addr, args...)
 	}
-	addr = fmt.Sprintf(addr, args...)
 	switch browserGOOS {
-	case "linux":
+	case goosLinux:
 		cmd = browserExecCommand("xdg-open", addr)
 	case "windows":
 		cmd = browserExecCommand("rundll32", "url.dll,FileProtocolHandler", addr)
