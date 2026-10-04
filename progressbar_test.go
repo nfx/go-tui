@@ -408,24 +408,18 @@ func TestNewFileProgressReader(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, applied)
 	assert.NotNil(t, r.p.io)
-	t.Cleanup(func() { assert.NoError(t, r.Close()) })
 	_, err = io.ReadAll(r)
 	assert.NoError(t, err)
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		for {
-			select {
-			case n := <-r.p.increments:
-				r.p.currentNum += n
-			default:
-				goto drained
-			}
+	// Close waits for the progressbar goroutine to stop, so currentNum is safe to touch afterwards.
+	assert.NoError(t, r.Close())
+	for {
+		select {
+		case n := <-r.p.increments:
+			r.p.currentNum += n
+			continue
+		default:
 		}
-	drained:
-		if r.p.currentNum == 11 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+		break
 	}
 	assert.Equal(t, int64(11), r.p.currentNum)
 	assert.Equal(t, int64(11), r.p.maxNum)
