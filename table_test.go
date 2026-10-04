@@ -776,6 +776,14 @@ func TestTableAutoRendersPointerReceiverStringer(t *testing.T) {
 	assert.Equal(t, "stringer:ok", strings.TrimSpace(mustTableRow(t, events[1]).Cells[0]))
 }
 
+func TestTableAutoRendersNilPointerStringer(t *testing.T) {
+	type row struct {
+		Status *pointerStringerStruct
+	}
+	events := collectEvents(t, "", []row{{}})
+	assert.Equal(t, "<nil>", strings.TrimSpace(mustTableRow(t, events[1]).Cells[0]))
+}
+
 func TestFactsBasicRender(t *testing.T) {
 	orig := termGetSize
 	termGetSize = func(int) (int, int, error) { return 120, 40, nil }

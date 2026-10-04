@@ -1384,11 +1384,15 @@ func tableString(v any) string {
 	if v == nil {
 		return fmt.Sprint(v)
 	}
+	value := reflect.ValueOf(v)
+	if value.Kind() == reflect.Pointer && value.IsNil() {
+		// typed-nil receivers may dereference in String; fmt recovers to "<nil>"
+		return fmt.Sprint(v)
+	}
 	x, ok := v.(fmt.Stringer)
 	if ok {
 		return x.String()
 	}
-	value := reflect.ValueOf(v)
 	for value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface {
 		if value.IsNil() {
 			return fmt.Sprint(v)
