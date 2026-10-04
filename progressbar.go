@@ -378,6 +378,7 @@ func (p *Progressbar) start(ctx context.Context) {
 		if p.stopped != nil {
 			close(p.stopped)
 		}
+		p.emit(progressClosed{Label: p.label})
 	}()
 	frame := bytes.NewBuffer(make([]byte, 2*p.io.Width))
 	frame.Reset()
@@ -465,7 +466,6 @@ func (p *Progressbar) flushLine(frame, line *bytes.Buffer) error {
 }
 
 func (p *Progressbar) stop() error {
-	p.emit(progressClosed{Label: p.label})
 	if p.rendered {
 		err := p.io.clear(1, p.io)
 		if err != nil {
