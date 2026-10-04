@@ -90,28 +90,27 @@ func WithFn(name string, fn any) {
 
 func ansciiFormatter(codes ...string) func(...any) string {
 	return func(text ...any) string {
-		var result string
+		var result strings.Builder
 		for _, code := range codes {
-			result += code
+			result.WriteString(code)
 		}
 		for _, t := range text {
 			switch x := t.(type) {
 			case *string:
 				if x != nil {
-					result += *x
+					result.WriteString(*x)
 				}
 			case []string:
-				result += strings.Join(x, ", ")
+				result.WriteString(strings.Join(x, ", "))
 			case *int:
 				if x != nil {
-					//nolint:perfsprint // ignore
-					result += fmt.Sprint(*x)
+					fmt.Fprint(&result, *x)
 				}
 			default:
-				result += fmt.Sprint(t)
+				fmt.Fprint(&result, t)
 			}
 		}
-		result += reset
-		return result
+		result.WriteString(reset)
+		return result.String()
 	}
 }
