@@ -38,3 +38,17 @@ func TestTriePrefixDoesNotIgnoreTrailingWords(t *testing.T) {
 	assert.Equal(t, []int{1}, trie.Prefix("beta gam"))
 	assert.Equal(t, 0, len(trie.Prefix("beta x")))
 }
+
+func TestTriePrefixMatchesPunctuatedWord(t *testing.T) {
+	trie := newTrie()
+	trie.Add("beta-gamma", 0)
+	trie.Add("beta gamma", 1)
+	assert.Equal(t, []int{0}, trie.Prefix("beta-gamma"))
+	assert.Equal(t, []int{0}, trie.Prefix("beta-gam"))
+	assert.Equal(t, []int{1}, trie.Prefix("beta gamma"))
+}
+
+func TestIntersectSorted(t *testing.T) {
+	assert.Equal(t, []int{2, 5}, new(trie).intersect([]int{1, 2, 3, 5, 8}, []int{2, 4, 5, 9}))
+	assert.Equal(t, 0, len(new(trie).intersect([]int{1, 3}, []int{2, 4})))
+}

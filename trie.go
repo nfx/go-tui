@@ -63,14 +63,12 @@ func (t *trie) Add(word string, i int) {
 // is a prefix of some word of the item.
 func (t *trie) Prefix(prefix string) []int {
 	var out []int
-	for i, word := range strings.FieldsFunc(prefix, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	}) {
+	for i, word := range t.queryWords(prefix) {
 		found := t.wordPrefix(word)
 		if i == 0 {
 			out = found
 		} else {
-			out = intersect(out, found)
+			out = t.intersect(out, found)
 		}
 		if len(out) == 0 {
 			return nil
@@ -82,6 +80,23 @@ func (t *trie) Prefix(prefix string) []int {
 	}
 	slices.Sort(out)
 	return slices.Compact(out)
+}
+
+// queryWords tokenizes the query the same way Add does: words are separated
+// by spaces, and other non-alphanumeric runes are dropped within a word.
+func (t *trie) queryWords(query string) (words []string) {
+	for field := range strings.SplitSeq(query, " ") {
+		word := strings.Map(func(r rune) rune {
+			if unicode.IsLetter(r) || unicode.IsDigit(r) {
+				return r
+			}
+			return -1
+		}, field)
+		if word != "" {
+			words = append(words, word)
+		}
+	}
+	return words
 }
 
 func (t *trie) wordPrefix(word string) []int {
@@ -98,10 +113,19 @@ func (t *trie) wordPrefix(word string) []int {
 	return slices.Compact(out)
 }
 
-func intersect(a, b []int) (out []int) {
-	for _, x := range a {
-		if slices.Contains(b, x) {
-			out = append(out, x)
+// intersect returns common elements of two sorted slices in linear time.
+func (t *trie) intersect(a, b []int) (out []int) {
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		switch {
+		case a[i] < b[j]:
+			i++
+		case a[i] > b[j]:
+			j++
+		default:
+			out = append(out, a[i])
+			i++
+			j++
 		}
 	}
 	return out
