@@ -126,7 +126,7 @@ func WithColumnTypeFormat[T any](fn func(v T) string) opt {
 		if fn == nil {
 			return errors.New("column type formatter cannot be nil")
 		}
-		valueType := reflect.TypeOf((*T)(nil)).Elem()
+		valueType := reflect.TypeFor[T]()
 		funcName := t.registerTemplateFunc("tableColumnTypeFormat", fn)
 		t.ensureAutoTemplateMaps()
 		t.columnTypeFormats[valueType] = funcName
@@ -146,7 +146,7 @@ func WithColumnFormat[T any](name string, fn func(v T) string) opt {
 		if err != nil {
 			return err
 		}
-		valueType := reflect.TypeOf((*T)(nil)).Elem()
+		valueType := reflect.TypeFor[T]()
 		if meta.typ != valueType {
 			return fmt.Errorf("column %q has type %s, formatter expects %s", name, meta.typ, valueType)
 		}
@@ -281,9 +281,9 @@ func percentString(v float64) string {
 }
 
 var (
-	timeType         = reflect.TypeOf(time.Time{})
-	timeDurationType = reflect.TypeOf(time.Duration(0))
-	fmtStringerType  = reflect.TypeOf((*fmt.Stringer)(nil)).Elem()
+	timeType         = reflect.TypeFor[time.Time]()
+	timeDurationType = reflect.TypeFor[time.Duration]()
+	fmtStringerType  = reflect.TypeFor[fmt.Stringer]()
 )
 
 var greenRedScalePalette = [...]string{brightGreen, green, yellow, red, brightRed}
@@ -534,10 +534,10 @@ func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 		}
 		header := mkBold(meta.header)
 		value := strings.TrimRight(buf.String(), "\r\n")
-		cellWidth := max(width([]byte(header)), width([]byte(value))) + f.cellPad + 1
-		if cellWidth < f.colMinWidth+f.cellPad {
-			cellWidth = f.colMinWidth + f.cellPad
-		}
+		cellWidth := max(
+			max(width([]byte(header)),
+				width([]byte(value)))+f.cellPad+1,
+			f.colMinWidth+f.cellPad)
 		cells[i] = factCell{
 			title:      header,
 			value:      value,
@@ -551,22 +551,12 @@ func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 func (f *facts) maxFactsColumns(cells []factCell, maxWidth int) int {
 	maxCell := f.colMinWidth + f.cellPad
 	for _, cell := range cells {
-		w := cell.width
-		if w > maxWidth {
-			w = maxWidth
-		}
+		w := min(cell.width, maxWidth)
 		if w > maxCell {
 			maxCell = w
 		}
 	}
-	cols := maxWidth / maxCell
-	if cols < 1 {
-		cols = 1
-	}
-	if cols > len(cells) {
-		cols = len(cells)
-	}
-	return cols
+	return min(max(maxWidth/maxCell, 1), len(cells))
 }
 
 func (f *facts) packFactRows(cells []factCell, cols, maxWidth int) ([][]factCell, []int) {
@@ -598,10 +588,7 @@ func (f *facts) renderFactRow(row []factCell, colWidths []int) error {
 	values := make([]string, len(row))
 	f.columns = make([]tableColumn, len(row))
 	for i, cell := range row {
-		maxLen := colWidths[i] - f.cellPad
-		if maxLen < f.colMinWidth {
-			maxLen = f.colMinWidth
-		}
+		maxLen := max(colWidths[i]-f.cellPad, f.colMinWidth)
 		header := string(truncateVisible([]byte(cell.title), maxLen, ' '))
 		value := string(truncateVisible([]byte(cell.value), maxLen, ' '))
 		headers[i] = header
@@ -982,7 +969,6 @@ func (t *table) flush(final bool) error {
 
 		return nil
 	}
-
 	return t.flushRows()
 }
 
@@ -1106,7 +1092,6 @@ func (t *table) padded(buf *bytes.Buffer, cell string, col int) error {
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -1117,7 +1102,6 @@ func (*table) pad(buf *bytes.Buffer, padding int) error {
 			return fmt.Errorf("pad: %w", err)
 		}
 	}
-
 	return nil
 }
 
@@ -1156,7 +1140,6 @@ func (t *table) currentCell(cell []byte, col, maxLen int) []byte {
 		// value is not available, but we need to insert something
 		// to keep the table structure intact.
 		t.curr = append(t.curr, " ")
-
 		return []byte{}
 	}
 	if t.locked {
@@ -1168,7 +1151,6 @@ func (t *table) currentCell(cell []byte, col, maxLen int) []byte {
 		t.columns[col].width = max(t.columns[col].width, width(cell)+t.cellPad)
 	}
 	cell = cell[:0]
-
 	return cell
 }
 
@@ -1221,7 +1203,6 @@ func (t *table) extractFromPipe(n *parse.PipeNode) ([]string, error) {
 		}
 		headers = append(headers, out...)
 	}
-
 	return headers, nil
 }
 
@@ -1317,8 +1298,8 @@ func reflectStructFields(rt reflect.Type, stack map[reflect.Type]struct{}) (stru
 	stack[rt] = struct{}{}
 	defer delete(stack, rt)
 	var out structFields
-	for i := range rt.NumField() {
-		f := rt.Field(i)
+	for f := range rt.Fields() {
+		f := f
 		if !f.IsExported() {
 			continue
 		}
@@ -1339,7 +1320,6 @@ func reflectStructFields(rt reflect.Type, stack map[reflect.Type]struct{}) (stru
 				n.name = f.Name + "." + n.name
 				out = append(out, n)
 			}
-
 			continue
 		}
 		meta, err := reflectFieldMetadata(ft, f.Tag, f.Name)

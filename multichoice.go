@@ -188,12 +188,6 @@ func (m *multichoice) render(io *termIO, buf *viewport) error {
 	return nil
 }
 
-type multichoiceItem struct {
-	Value    any
-	Selected bool
-	Active   bool
-}
-
 //nolint:cyclop,errcheck,funlen,gocognit // TODO: unfinished
 func (m *multichoice) run() error {
 	io, err := m.makeTermIO(m.in, m.out)

@@ -199,9 +199,9 @@ func (s *truncation) trimEscapePrefix(segment []byte) []byte {
 	if segment[0] == '\x9b' {
 		return segment[1:]
 	}
-	begin := bytes.IndexByte(segment, '[')
-	if begin >= 0 {
-		return segment[begin+1:]
+	_, after, ok := bytes.Cut(segment, []byte{'['})
+	if ok {
+		return after
 	}
 	return nil
 }

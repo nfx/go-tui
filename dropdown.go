@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"maps"
 	"reflect"
 	"sort"
 	"strings"
@@ -423,9 +424,7 @@ func newDropdown() *dropdown {
 // templateFuncs clones shared template funcs and injects dropdown-specific funcs.
 func (d *dropdown) templateFuncs() template.FuncMap {
 	funcs := make(template.FuncMap, len(colorFns)+1)
-	for name, fn := range colorFns {
-		funcs[name] = fn
-	}
+	maps.Copy(funcs, colorFns)
 	funcs["label"] = d.itemLabel
 	return funcs
 }
@@ -566,7 +565,7 @@ func (d *dropdown) isLabelTag(tag reflect.StructTag) bool {
 
 // hasLabelOption checks whether a comma-separated tag contains "label".
 func (d *dropdown) hasLabelOption(tag string) bool {
-	for _, option := range strings.Split(tag, ",") {
+	for option := range strings.SplitSeq(tag, ",") {
 		if strings.EqualFold(strings.TrimSpace(option), "label") {
 			return true
 		}
@@ -1235,8 +1234,8 @@ func (d *dropdown) handleLazyKey(
 		return -1, false, io.EOF
 	}
 	if ev.err != nil {
-		var more *pasteTextError
-		if errors.As(ev.err, &more) {
+		_, ok := errors.AsType[*pasteTextError](ev.err)
+		if ok {
 			return -1, false, nil
 		}
 		readErr := fmt.Errorf("read: %w", ev.err)
@@ -1294,8 +1293,8 @@ func (d *dropdown) runRender(io *termIO, frame *bytes.Buffer) (int, error) {
 
 func (d *dropdown) runMain(io *termIO, frame *bytes.Buffer, space, displayed int) (int, error) {
 	i, err := d.pressKey(io, frame, space, displayed)
-	var more *pasteTextError
-	if errors.As(err, &more) {
+	_, ok := errors.AsType[*pasteTextError](err)
+	if ok {
 		// Ctrl+V or CMD+V pressed
 		return -1, nil
 	} else if err != nil {

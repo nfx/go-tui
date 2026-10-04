@@ -108,11 +108,9 @@ func newSpinners() *Spinners {
 	ctx, cancel := context.WithCancel(context.Background())
 	ticker := time.NewTicker(100 * time.Millisecond)
 	return &Spinners{
-		config: config{
-			ctx: ctx,
-			in:  defaultInput(),
-			out: defaultOutput(),
-		},
+		ctx:        ctx,
+		in:         defaultInput(),
+		out:        defaultOutput(),
 		ticker:     ticker,
 		ticks:      ticker.C,
 		cancel:     cancel,

@@ -124,11 +124,9 @@ type input struct {
 
 func newInput(label string) *input {
 	return &input{
-		config: config{
-			ctx: context.Background(),
-			out: defaultOutput(),
-			in:  defaultInput(),
-		},
+		ctx:            context.Background(),
+		out:            defaultOutput(),
+		in:             defaultInput(),
 		Label:          label,
 		LabelTemplate:  DefaultLabelTemplate,
 		AnswerTemplate: DefaultAnswerTemplate,
@@ -342,8 +340,8 @@ func (p *input) pressKey(io *termIO) (string, error) {
 		key: key,
 		err: err,
 	}
-	var more *pasteTextError
-	if errors.As(err, &more) {
+	more, ok := errors.AsType[*pasteTextError](err)
+	if ok {
 		ev.paste = append(ev.paste, more.buf[:n]...)
 	}
 	done, err := p.handleKeyEvent(ev, true)
@@ -397,8 +395,8 @@ func (p *input) handleKeyEvent(ev inputKeyEvent, ok bool) (bool, error) {
 	if !ok {
 		return false, fmt.Errorf("read: %w", io.EOF)
 	}
-	var more *pasteTextError
-	if errors.As(ev.err, &more) {
+	_, ok = errors.AsType[*pasteTextError](ev.err)
+	if ok {
 		// Ctrl+V or CMD+V will just send more bytes. So we emulate typing.
 		// This currently works with empty input only. Or appending to the end.
 		// There's a bug when you paste in the middle of the text.

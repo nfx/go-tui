@@ -79,11 +79,9 @@ func newProgressbar() *Progressbar {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	ticker := time.NewTicker(100 * time.Millisecond)
 	return &Progressbar{
-		config: config{
-			ctx: ctx,
-			in:  defaultInput(),
-			out: defaultOutput(),
-		},
+		ctx:        ctx,
+		in:         defaultInput(),
+		out:        defaultOutput(),
 		ticker:     ticker,
 		ticks:      ticker.C,
 		cancel:     cancel,
