@@ -29,3 +29,12 @@ func TestTrieEscapes(t *testing.T) {
 		"новий", "побут", "привід", "привіт", "світ", "сокіл",
 	}, trie.Words())
 }
+
+func TestTriePrefixDoesNotIgnoreTrailingWords(t *testing.T) {
+	trie := newTrie()
+	trie.Add("beta", 0)
+	trie.Add("beta gamma", 1)
+	assert.Equal(t, []int{0, 1}, trie.Prefix("beta"))
+	assert.Equal(t, []int{1}, trie.Prefix("beta gam"))
+	assert.Equal(t, 0, len(trie.Prefix("beta x")))
+}

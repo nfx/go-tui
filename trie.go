@@ -6,6 +6,7 @@ package tui
 import (
 	"slices"
 	"sort"
+	"strings"
 	"unicode"
 )
 
@@ -58,22 +59,35 @@ func (t *trie) Add(word string, i int) {
 	r.idx = append(r.idx, i)
 }
 
+// Prefix returns sorted indexes of items where every word of the prefix
+// is a prefix of some word of the item.
 func (t *trie) Prefix(prefix string) []int {
+	var out []int
+	for i, word := range strings.FieldsFunc(prefix, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		found := t.wordPrefix(word)
+		if i == 0 {
+			out = found
+		} else {
+			out = intersect(out, found)
+		}
+		if len(out) == 0 {
+			return nil
+		}
+	}
+	if out == nil {
+		// prefix without letters or digits matches everything
+		out = t.Indexes()
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+func (t *trie) wordPrefix(word string) []int {
 	r := t
-	var isLetter bool
-	for _, b := range prefix {
-		isLetter = unicode.IsLetter(b)
-		if !isLetter && !unicode.IsDigit(b) {
-			if len(r.m) == 0 && len(r.Indexes()) > 0 {
-				// if one full word matched, we're good
-				break
-			}
-			continue
-		}
-		if isLetter {
-			b = unicode.ToLower(b)
-		}
-		s, ok := r.m[b]
+	for _, b := range word {
+		s, ok := r.m[unicode.ToLower(b)]
 		if !ok {
 			return nil
 		}
@@ -82,6 +96,15 @@ func (t *trie) Prefix(prefix string) []int {
 	out := r.Indexes()
 	slices.Sort(out)
 	return slices.Compact(out)
+}
+
+func intersect(a, b []int) (out []int) {
+	for _, x := range a {
+		if slices.Contains(b, x) {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 func (t *trie) Words() (out []string) {
