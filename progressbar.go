@@ -610,6 +610,9 @@ func (p *progressState) remainingTime(rollingRate float64) string {
 
 func (p *progressState) remainingSeconds(rollingRate float64) time.Duration {
 	remainingNum := p.maxNum - p.currentNum
+	if remainingNum <= 0 {
+		return 0
+	}
 	remainingTime := time.Duration(float64(remainingNum)/rollingRate*1) * time.Second
 	return remainingTime
 }
