@@ -10,6 +10,12 @@ import (
 	"io"
 )
 
+// resizeNotify returns nil on non-unix platforms
+// where SIGWINCH is not available.
+func resizeNotify() <-chan struct{} {
+	return nil
+}
+
 // Fallback for platforms without a readiness-polling implementation:
 // keep existing behavior without fd readiness polling.
 func waitForReadableInput(context.Context, io.Reader) error {

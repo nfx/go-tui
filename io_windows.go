@@ -14,6 +14,12 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// resizeNotify returns nil on non-unix platforms
+// where SIGWINCH is not available.
+func resizeNotify() <-chan struct{} {
+	return nil
+}
+
 var procPeekNamedPipe = windows.NewLazySystemDLL("kernel32.dll").NewProc("PeekNamedPipe")
 
 func peekNamedPipe(h windows.Handle) (avail uint32, err error) {
