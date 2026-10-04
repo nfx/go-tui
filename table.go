@@ -367,24 +367,24 @@ func (s *columnScale) bucketIndex(rank, total int) int {
 // truncation of wide cells. It uses text/template to render each row.
 // The first row is used to extract the headers from the template.
 type table struct {
-	w            io.Writer
-	buf          []byte
-	tmpl         *template.Template
-	columns      []tableColumn
-	metadata     structFields
-	rows         [][]string
-	curr         []string
-	cellPad      int
-	batchSize    int
-	maxWidth     int
+	w                io.Writer
+	buf              []byte
+	tmpl             *template.Template
+	columns          []tableColumn
+	metadata         structFields
+	rows             [][]string
+	curr             []string
+	cellPad          int
+	batchSize        int
+	maxWidth         int
 	maxWidthExplicit bool
-	colMinWidth  int
-	locked       bool
-	consumed     int
-	eventSink    func(tableEvent)
-	ended        bool
-	autoTemplate bool
-	suppressHeaders bool
+	colMinWidth      int
+	locked           bool
+	consumed         int
+	eventSink        func(tableEvent)
+	ended            bool
+	autoTemplate     bool
+	suppressHeaders  bool
 
 	customTemplateFuncs template.FuncMap
 	templateFuncSeq     int
