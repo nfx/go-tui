@@ -12,6 +12,7 @@ import (
 	"iter"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"text/template"
@@ -1374,17 +1375,38 @@ func captureOutput(cio *chanIO) <-chan string {
 	return out
 }
 
-func waitForItems(t *testing.T, d **dropdown) {
+// itemsLoadedWriter signals once the dropdown renders a frame with items.
+// Writes happen on the dropdown goroutine, so reading Items here is race-free.
+type itemsLoadedWriter struct {
+	io.Writer
+	d     *dropdown
+	ready chan struct{}
+	once  *sync.Once
+}
+
+func (w itemsLoadedWriter) Write(p []byte) (int, error) {
+	if len(w.d.Items) > 0 {
+		w.once.Do(func() { close(w.ready) })
+	}
+	return w.Writer.Write(p)
+}
+
+// notifyItemsLoaded must be applied after WithOutput.
+func notifyItemsLoaded() (opt, <-chan struct{}) {
+	ready := make(chan struct{})
+	once := &sync.Once{}
+	return opT(func(d *dropdown) error {
+		d.out = itemsLoadedWriter{Writer: d.out, d: d, ready: ready, once: once}
+		return nil
+	}), ready
+}
+
+func waitForItems(t *testing.T, ready <-chan struct{}) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if *d != nil && len((*d).Items) > 0 {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for dropdown items")
-		}
-		time.Sleep(5 * time.Millisecond)
+	select {
+	case <-ready:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for dropdown items")
 	}
 }
 
@@ -1432,11 +1454,8 @@ func lazySeq(values ...string) iter.Seq2[string, error] {
 
 func TestDropdownLazySelectsItem(t *testing.T) {
 	cio, opts := testIOforDropdown(t, 20, 6)
-	var dropdownPtr *dropdown
-	opts = WithOptions(opts, opT(func(d *dropdown) error {
-		dropdownPtr = d
-		return nil
-	}))
+	itemsLoaded, ready := notifyItemsLoaded()
+	opts = WithOptions(opts, itemsLoaded)
 	out := captureOutput(cio)
 	resCh := make(chan struct {
 		value string
@@ -1449,7 +1468,7 @@ func TestDropdownLazySelectsItem(t *testing.T) {
 			err   error
 		}{value, err}
 	}()
-	waitForItems(t, &dropdownPtr)
+	waitForItems(t, ready)
 	cio.In <- "\x0d" // enter
 	final := waitForOutputContaining(t, out, "Select: red", 2*time.Second)
 	res := <-resCh
@@ -1465,13 +1484,12 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 		cancel()
 		in.Close()
 	})
-	var dropdownPtr *dropdown
+	itemsLoaded, ready := notifyItemsLoaded()
 	opts := WithOptions(
 		WithInput(in),
 		WithOutput(io.Discard),
 		WithContext(ctx),
 		opT(func(d *dropdown) error {
-			dropdownPtr = d
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{
 					in:      in,
@@ -1483,6 +1501,7 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 			}
 			return nil
 		}),
+		itemsLoaded,
 	)
 	resCh := make(chan struct {
 		value string
@@ -1495,7 +1514,7 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 			err   error
 		}{value, err}
 	}()
-	waitForItems(t, &dropdownPtr)
+	waitForItems(t, ready)
 	waiterDeadline := time.Now().Add(2 * time.Second)
 	for in.Waiters() == 0 {
 		if time.Now().After(waiterDeadline) {
@@ -1565,13 +1584,12 @@ func TestDropdownLazyCtrlCNotLostAfterPreviousLazyExit(t *testing.T) {
 			t.Errorf("close writer: %v", closeErr)
 		}
 	})
-	var dropdownPtr *dropdown
+	itemsLoaded, ready := notifyItemsLoaded()
 	opts := WithOptions(
 		WithInput(in),
 		WithOutput(io.Discard),
 		WithContext(ctx),
 		opT(func(d *dropdown) error {
-			dropdownPtr = d
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{
 					in:      in,
@@ -1583,6 +1601,7 @@ func TestDropdownLazyCtrlCNotLostAfterPreviousLazyExit(t *testing.T) {
 			}
 			return nil
 		}),
+		itemsLoaded,
 	)
 	_, err = DropdownLazy("First", func(yield func(string, error) bool) {
 		yield("", io.EOF)
@@ -1590,10 +1609,10 @@ func TestDropdownLazyCtrlCNotLostAfterPreviousLazyExit(t *testing.T) {
 	assert.Error(t, err)
 	resCh := make(chan error, 1)
 	go func() {
-		_, err = DropdownLazy("Second", lazySeq("a", "b"), opts)
+		_, err := DropdownLazy("Second", lazySeq("a", "b"), opts)
 		resCh <- err
 	}()
-	waitForItems(t, &dropdownPtr)
+	waitForItems(t, ready)
 	_, err = writer.Write([]byte{keyCtrlC})
 	assert.NoError(t, err)
 	select {
@@ -1617,13 +1636,12 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 			t.Errorf("close writer: %v", closeErr)
 		}
 	})
-	var dropdownPtr *dropdown
+	itemsLoaded, ready := notifyItemsLoaded()
 	opts := WithOptions(
 		WithInput(in),
 		WithOutput(io.Discard),
 		WithContext(ctx),
 		opT(func(d *dropdown) error {
-			dropdownPtr = d
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{
 					in:      in,
@@ -1635,6 +1653,7 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 			}
 			return nil
 		}),
+		itemsLoaded,
 	)
 	_, err = DropdownLazy("First", func(yield func(string, error) bool) {
 		yield("", io.EOF)
@@ -1651,7 +1670,7 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 			err   error
 		}{value, err}
 	}()
-	waitForItems(t, &dropdownPtr)
+	waitForItems(t, ready)
 	_, err = writer.Write([]byte{0x1b, 0x5b, 0x42}) // down arrow
 	assert.NoError(t, err)
 	time.Sleep(20 * time.Millisecond)
