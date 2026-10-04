@@ -7,7 +7,6 @@ package assert
 import (
 	"errors"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -17,8 +16,7 @@ func Equal(t *testing.T, expected, actual any) {
 	t.Helper()
 	expected, actual, res := deepEqual(expected, actual)
 	if !res {
-		_, file, line, _ := runtime.Caller(1)
-		t.Fatalf("%s:%d:\nresults differ:\nexpected: %#v\n  actual: %#v", file, line, expected, actual)
+		t.Fatalf("results differ:\nexpected: %#v\n  actual: %#v", expected, actual)
 	}
 }
 
@@ -49,8 +47,7 @@ func NotNil(t *testing.T, value any) {
 		fail = v.IsNil()
 	}
 	if fail {
-		_, file, line, _ := runtime.Caller(1)
-		t.Fatalf("%s:%d: expected not nil, got nil", file, line)
+		t.Fatal("expected not nil, got nil")
 	}
 }
 
@@ -58,8 +55,7 @@ func NotNil(t *testing.T, value any) {
 func True(t *testing.T, value bool) { //nolint:revive // ignore
 	t.Helper()
 	if !value {
-		_, file, line, _ := runtime.Caller(1)
-		t.Fatalf("%s:%d: expected true, got false", file, line)
+		t.Fatal("expected true, got false")
 	}
 }
 
@@ -67,8 +63,7 @@ func True(t *testing.T, value bool) { //nolint:revive // ignore
 func Contains(t *testing.T, s, substr string) {
 	t.Helper()
 	if !strings.Contains(s, substr) {
-		_, file, line, _ := runtime.Caller(1)
-		t.Fatalf("%s:%d: expected %s to contain: %s", file, line, s, substr)
+		t.Fatalf("expected %s to contain: %s", s, substr)
 	}
 }
 
@@ -76,8 +71,7 @@ func Contains(t *testing.T, s, substr string) {
 func NotContains(t *testing.T, s, substr string) {
 	t.Helper()
 	if strings.Contains(s, substr) {
-		_, file, line, _ := runtime.Caller(1)
-		t.Fatalf("%s:%d: expected %s not to contain: %s", file, line, s, substr)
+		t.Fatalf("expected %s not to contain: %s", s, substr)
 	}
 }
 
@@ -85,8 +79,7 @@ func NotContains(t *testing.T, s, substr string) {
 func Error(t *testing.T, err error) {
 	t.Helper()
 	if err == nil {
-		_, file, line, _ := runtime.Caller(1)
-		t.Fatalf("%s:%d: expected error, got: nil", file, line)
+		t.Fatal("expected error, got: nil")
 	}
 }
 
@@ -94,8 +87,7 @@ func Error(t *testing.T, err error) {
 func ErrorIs(t *testing.T, err, expected error) {
 	t.Helper()
 	if !errors.Is(err, expected) {
-		_, file, line, _ := runtime.Caller(1)
-		t.Fatalf("%s:%d: expected error %v, got: %v", file, line, expected, err)
+		t.Fatalf("expected error %v, got: %v", expected, err)
 	}
 }
 
@@ -103,7 +95,6 @@ func ErrorIs(t *testing.T, err, expected error) {
 func NoError(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
-		_, file, line, _ := runtime.Caller(1)
-		t.Fatalf("%s:%d: expected no error, got: %v", file, line, err)
+		t.Fatalf("expected no error, got: %v", err)
 	}
 }
