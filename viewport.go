@@ -115,8 +115,8 @@ func (v *viewport) write(chunk []byte, done chan struct{}) (n int, err error) {
 	select {
 	case <-v.ctx.Done():
 		return 0, io.EOF
-	// [viewport.loop] will handle the write
-	case v.inner <- viewportWrite{chunk: chunk, done: done}:
+	// [viewport.loop] will handle the write, hence the copy
+	case v.inner <- viewportWrite{chunk: bytes.Clone(chunk), done: done}:
 		return len(chunk), nil
 	}
 }
@@ -127,7 +127,7 @@ func (v *viewport) writeWithWidth(chunk []byte, width int) (n int, err error) {
 	select {
 	case <-v.ctx.Done():
 		return 0, io.EOF
-	case v.inner <- viewportWrite{chunk: chunk, width: width}:
+	case v.inner <- viewportWrite{chunk: bytes.Clone(chunk), width: width}:
 		return len(chunk), nil
 	}
 }
