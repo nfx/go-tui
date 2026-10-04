@@ -249,7 +249,7 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 	}
 	metrics, ok := mustReceiveProgressEvent(t, events).(progressUpdate)
 	assert.True(t, ok)
-	assert.Equal(t, int64(time.Second), metrics.Remaining)
+	assert.Equal(t, int64(1), metrics.Remaining)
 	assert.Equal(t, int64(0), metrics.Elapsed)
 
 	assert.NoError(t, p.Close())

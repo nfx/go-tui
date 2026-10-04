@@ -36,7 +36,7 @@ type progressUpdate struct {
 	progressEventMarker
 	Complete  float64 // 0..1
 	Rate      float64 // per second
-	Remaining int64   // seconds
+	Remaining int64   // seconds; -1 when no rate is available yet
 	Elapsed   int64   // seconds
 }
 
@@ -602,11 +602,10 @@ func (p *progressState) increment(now time.Time) {
 }
 
 func (p *progressState) remainingTime(rollingRate float64) string {
-	remainingTime := p.remainingSeconds(rollingRate)
-	if rollingRate > 0 {
-		return fmt.Sprintf("%s remaining", remainingTime)
+	if rollingRate <= 0 {
+		return ""
 	}
-	return ""
+	return fmt.Sprintf("%s remaining", p.remainingSeconds(rollingRate))
 }
 
 func (p *progressState) remainingSeconds(rollingRate float64) time.Duration {
@@ -647,10 +646,14 @@ func (p *progressState) rollingRate() float64 {
 
 func (p *progressState) metricsSnapshot() progressUpdate {
 	rate := p.rollingRate()
+	remaining := int64(-1) // estimate unavailable until a rate is known
+	if rate > 0 {
+		remaining = int64(p.remainingSeconds(rate).Seconds())
+	}
 	return progressUpdate{
 		Complete:  p.completion(),
 		Rate:      rate,
-		Remaining: int64(p.remainingSeconds(rate)),
+		Remaining: remaining,
 		Elapsed:   int64(p.elapsed.Seconds()),
 	}
 }
