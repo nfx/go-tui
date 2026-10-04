@@ -8,7 +8,32 @@ import (
 	"context"
 	"io"
 	"os"
+	"sync"
 )
+
+// syncBuffer is a bytes.Buffer safe for one writer goroutine and concurrent readers.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) Len() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Len()
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 type fdByteReader struct {
 	f *os.File

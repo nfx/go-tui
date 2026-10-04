@@ -179,7 +179,7 @@ func TestChanIOForwardToWrites(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	cio := newUnstartedIO(ctx, 10, 3, 0)
-	var out bytes.Buffer
+	var out syncBuffer
 	go cio.forwardTo(ctx, &out)
 	_, err := cio.head.Write([]byte("hi\n"))
 	assert.NoError(t, err)
