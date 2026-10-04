@@ -21,7 +21,12 @@ func resizeNotify() <-chan struct{} {
 	return nil
 }
 
-var procPeekNamedPipe = windows.NewLazySystemDLL("kernel32.dll").NewProc("PeekNamedPipe")
+var (
+	k32                  = windows.NewLazySystemDLL("kernel32.dll")
+	procPeekNamedPipe    = k32.NewProc("PeekNamedPipe")
+	procPeekConsoleInput = k32.NewProc("PeekConsoleInputW")
+	procReadConsoleInput = k32.NewProc("ReadConsoleInputW")
+)
 
 func peekNamedPipe(h windows.Handle) (avail uint32, err error) {
 	var totalAvail uint32
@@ -35,9 +40,28 @@ func peekNamedPipe(h windows.Handle) (avail uint32, err error) {
 	return totalAvail, nil
 }
 
+// canDrainOnCancel reports whether [waitForReadableInput] can interrupt the
+// wait for this specific input, so a following read never blocks past cancellation.
 func canDrainOnCancel(in io.Reader) bool {
-	_, ok := in.(descriptor)
-	return ok
+	d, ok := in.(*os.File)
+	if !ok {
+		return false
+	}
+	h := windows.Handle(d.Fd())
+	ft, err := windows.GetFileType(h)
+	if err != nil {
+		return false
+	}
+	switch ft {
+	case windows.FILE_TYPE_PIPE:
+		_, err := peekNamedPipe(h)
+		return err == nil
+	case windows.FILE_TYPE_CHAR:
+		var mode uint32
+		return windows.GetConsoleMode(h, &mode) == nil
+	default:
+		return false
+	}
 }
 
 // waitForReadableInput polls concrete files until input is ready or ctx is cancelled.
@@ -88,6 +112,51 @@ func waitForPipeReadable(ctx context.Context, h windows.Handle) error {
 	}
 }
 
+const (
+	keyEventType   = 0x0001
+	maxConsolePeek = 64
+)
+
+// inputRecord mirrors INPUT_RECORD; only the KEY_EVENT_RECORD layout is decoded.
+type inputRecord struct {
+	EventType uint16
+	_         uint16
+	KeyDown   int32
+	_         [6]byte // repeat count, virtual key code and scan code
+	Char      uint16
+	_         [4]byte // control key state
+}
+
+// consoleHasChar drops queued records that character reads would discard
+// (mouse, resize, focus, key-up, non-character keys) and reports whether
+// the head of the queue is a character key press, which a read returns without blocking.
+func consoleHasChar(h windows.Handle) (bool, error) {
+	var recs [maxConsolePeek]inputRecord
+	var n uint32
+	r1, _, e1 := procPeekConsoleInput.Call(uintptr(h),
+		uintptr(unsafe.Pointer(&recs[0])), maxConsolePeek, uintptr(unsafe.Pointer(&n)))
+	if r1 == 0 {
+		return false, e1
+	}
+	skip := uint32(0)
+	for skip < n {
+		r := recs[skip]
+		if r.EventType == keyEventType && r.KeyDown != 0 && r.Char != 0 {
+			break
+		}
+		skip++
+	}
+	if skip > 0 {
+		var read uint32
+		r1, _, e1 = procReadConsoleInput.Call(uintptr(h),
+			uintptr(unsafe.Pointer(&recs[0])), uintptr(skip), uintptr(unsafe.Pointer(&read)))
+		if r1 == 0 {
+			return false, e1
+		}
+	}
+	return skip < n, nil
+}
+
 func waitForConsoleReadable(ctx context.Context, h windows.Handle) error {
 	for {
 		if ctx.Err() != nil {
@@ -97,7 +166,15 @@ func waitForConsoleReadable(ctx context.Context, h windows.Handle) error {
 		if err != nil {
 			return nil
 		}
-		if event == windows.WAIT_OBJECT_0 {
+		if event != windows.WAIT_OBJECT_0 {
+			continue
+		}
+		ok, err := consoleHasChar(h)
+		if err != nil {
+			// not a console input buffer; fall back to a blocking read.
+			return nil
+		}
+		if ok {
 			return nil
 		}
 	}

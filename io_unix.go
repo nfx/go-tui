@@ -41,8 +41,11 @@ func resizeNotify() <-chan struct{} {
 	return resizeCh
 }
 
+// canDrainOnCancel reports whether a read started after [waitForReadableInput]
+// returns promptly once ctx is cancelled: only files are polled, and poll
+// failures are returned as errors instead of falling through to a blocking read.
 func canDrainOnCancel(in io.Reader) bool {
-	_, ok := in.(descriptor)
+	_, ok := in.(*os.File)
 	return ok
 }
 
@@ -68,6 +71,9 @@ func waitForReadableInput(ctx context.Context, in io.Reader) error {
 		}
 		if err != nil {
 			return err
+		}
+		if pollFds[0].Revents&unix.POLLNVAL != 0 {
+			return unix.EBADF
 		}
 		if pollFds[0].Revents&(unix.POLLIN|unix.POLLERR|unix.POLLHUP) != 0 {
 			return nil
