@@ -369,6 +369,9 @@ func (p *input) readEvents(ctx context.Context, io *termIO) (<-chan inputKeyEven
 				return
 			case <-permit:
 			}
+			if len(io.pending) == 0 && waitForReadableInput(ctx, io.in) != nil {
+				return
+			}
 			key, n, err := io.ReadRune()
 			ev := inputKeyEvent{
 				key: key,

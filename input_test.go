@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
@@ -543,4 +544,36 @@ func TestInputRunContextDone(t *testing.T) {
 	assert.NoError(t, i.parseTemplates())
 	_, err := i.run()
 	assert.Error(t, err)
+}
+
+// regression: a read still blocked when run() exits must not swallow
+// the next keystroke; it is served to the next prompt instead.
+func TestInputRunCancelledReadKeepsNextKey(t *testing.T) {
+	pr, pw, err := os.Pipe()
+	assert.NoError(t, err)
+	// pr stays open like stdin: closing it races with the poller's Fd() call
+	defer pw.Close()
+	mk := func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	i := newInput("first")
+	i.ctx, i.in, i.out, i.makeTermIO = ctx, pr, &bytes.Buffer{}, mk
+	assert.NoError(t, i.parseTemplates())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+		time.Sleep(50 * time.Millisecond)
+		_, _ = pw.Write([]byte{'x'})
+		_, _ = pw.Write([]byte{keyEnter})
+	}()
+	_, err = i.run()
+	assert.Error(t, err)
+
+	j := newInput("second")
+	j.in, j.out, j.makeTermIO = pr, &bytes.Buffer{}, mk
+	assert.NoError(t, j.parseTemplates())
+	got, err := j.run()
+	assert.NoError(t, err)
+	assert.Equal(t, "x", got)
 }

@@ -8,6 +8,7 @@ package tui
 import (
 	"context"
 	"io"
+	"os"
 	"time"
 	"unsafe"
 
@@ -40,7 +41,8 @@ func canDrainOnCancel(in io.Reader) bool {
 }
 
 func waitForReadableInput(ctx context.Context, in io.Reader) error {
-	d, ok := in.(descriptor)
+	// only a real file is backed by its fd; a wrapper exposing Fd() may buffer data the fd never sees
+	d, ok := in.(*os.File)
 	if !ok {
 		return nil
 	}
