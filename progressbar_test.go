@@ -945,3 +945,13 @@ func TestProgressbarStopRestoreError(t *testing.T) {
 		t.Fatalf("expected EOF, got %v", err)
 	}
 }
+
+func TestMetricsSnapshotZeroMax(t *testing.T) {
+	for _, current := range []int64{0, 5} {
+		p := &progressState{currentNum: current}
+		got := p.metricsSnapshot().Complete
+		if got != 0 {
+			t.Fatalf("current=%d: Complete = %v, want 0", current, got)
+		}
+	}
+}

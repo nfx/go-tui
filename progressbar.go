@@ -501,13 +501,18 @@ func (p *progressState) isDone() bool {
 	return p.currentNum >= p.maxNum
 }
 
+// completion returns 0..1, or 0 when the maximum is not positive.
+func (p *progressState) completion() float64 {
+	if p.maxNum <= 0 {
+		return 0
+	}
+	return float64(p.currentNum) / float64(p.maxNum)
+}
+
 func (p *progressState) render(frame *bytes.Buffer, availWidth int, now time.Time) error {
 	p.increment(now)
 	rollingRate := p.rollingRate()
-	completion := 0.0
-	if p.maxNum > 0 {
-		completion = float64(p.currentNum) / float64(p.maxNum)
-	}
+	completion := p.completion()
 	prefix := fmt.Sprintf("%d%% ", int(completion*100))
 	_, err := frame.WriteString(p.layout(rollingRate, availWidth, prefix, completion))
 	return err
@@ -643,7 +648,7 @@ func (p *progressState) rollingRate() float64 {
 func (p *progressState) metricsSnapshot() progressUpdate {
 	rate := p.rollingRate()
 	return progressUpdate{
-		Complete:  float64(p.currentNum) / float64(p.maxNum),
+		Complete:  p.completion(),
 		Rate:      rate,
 		Remaining: int64(p.remainingSeconds(rate)),
 		Elapsed:   int64(p.elapsed.Seconds()),
