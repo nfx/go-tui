@@ -233,13 +233,17 @@ func TestMoreItems(t *testing.T) {
 	in, out, res := overflowForTest(t)
 	assert.Equal(t, "\rPick letter \n\r+ A\n\r- B\n\r~ 3 of 5 more\n\r", <-out)
 	in <- "\x1b\x5b\x42" // down
-	assert.Equal(t,
+	assert.Equal(
+		t,
 		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r+ B\n\r- C\n\r~ 2 of 5 more\n\r",
-		<-out)
+		<-out,
+	)
 	in <- "\x1b\x5b\x42" // down
-	assert.Equal(t,
+	assert.Equal(
+		t,
 		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r+ C\n\r- D\n\r~ 1 of 5 more\n\r",
-		<-out)
+		<-out,
+	)
 	in <- "\x1b\x5b\x42" // down
 	assert.Equal(t,
 		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r+ D\n\r- E\n\r\n\r",
@@ -266,13 +270,17 @@ func TestMoreItemsUp(t *testing.T) {
 	in, out, res := overflowForTest(t)
 	assert.Equal(t, "\rPick letter \n\r+ A\n\r- B\n\r~ 3 of 5 more\n\r", <-out)
 	in <- "\x1b\x5b\x42" // down
-	assert.Equal(t,
+	assert.Equal(
+		t,
 		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r+ B\n\r- C\n\r~ 2 of 5 more\n\r",
-		<-out)
+		<-out,
+	)
 	in <- "\x1b\x5b\x41" // up
-	assert.Equal(t,
+	assert.Equal(
+		t,
 		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r+ A\n\r- B\n\r~ 3 of 5 more\n\r",
-		<-out)
+		<-out,
+	)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r", <-out)
 	assert.Equal(t, "Pick letter: A\n", waitForDropdownOutput(t, out, "Pick letter: A\n"))
@@ -310,16 +318,22 @@ func TestDropdownFiltering(t *testing.T) {
 		"\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r\rNeque porro \n\r+ Lorem i…\n\r- dolor s…\n\r~ 3 of 5 more\n\r",
 		<-out)
 	in <- "l"
-	assert.Equal(t,
+	assert.Equal(
+		t,
 		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rNeque porro \n\r+ Lorem i…\n\r- condime…\n\r",
-		<-out)
+		<-out,
+	)
 	in <- "\x1b\x5b\x42" // down
 	assert.Equal(t,
 		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r\rNeque porro \n\r- Lorem i…\n\r+ condime…\n\r",
 		<-out)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r", <-out)
-	assert.Equal(t, "Neque porro: condimentum libero\n", waitForDropdownOutput(t, out, "Neque porro: condimentum libero\n"))
+	assert.Equal(
+		t,
+		"Neque porro: condimentum libero\n",
+		waitForDropdownOutput(t, out, "Neque porro: condimentum libero\n"),
+	)
 	assert.Equal(t, "condimentum libero", <-res)
 }
 
@@ -371,9 +385,11 @@ func TestDropdownKVMultipleItems(t *testing.T) {
 	in, out, res := dropdownKVForTest(t, map[string]int{"zebra": 1, "apple": 2, "banana": 3})
 	assert.Equal(t, "\rSelect item + {apple 2}\n\r            - {banana 3}\n\r            - {zebra 1}\n\r", <-out)
 	in <- "\x1b\x5b\x42" // down
-	assert.Equal(t,
+	assert.Equal(
+		t,
 		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r\rSelect item - {apple 2}\n\r            + {banana 3}\n\r            - {zebra 1}\n\r",
-		<-out)
+		<-out,
+	)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r", <-out)
 	assert.Equal(t, "Select item: {banana 3}\n", waitForDropdownOutput(t, out, "Select item: {banana 3}\n"))

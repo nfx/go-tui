@@ -70,7 +70,11 @@ func iterate[T any](items []T) iter.Seq2[T, error] {
 
 func TestTableRender(t *testing.T) {
 	buf := &bytes.Buffer{}
-	err := TableIter(buf, "{{ bold .Name | green }}\t{{ .Age }}\t{{ .Type }}\t{{ .Owner.Name }}\t{{ .Owner.Age }}", iterate(dummyPets))
+	err := TableIter(
+		buf,
+		"{{ bold .Name | green }}\t{{ .Age }}\t{{ .Type }}\t{{ .Owner.Name }}\t{{ .Owner.Age }}",
+		iterate(dummyPets),
+	)
 	assert.NoError(t, err)
 }
 
