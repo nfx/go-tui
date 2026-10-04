@@ -195,7 +195,7 @@ func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 	// rewrap the context, so that we can cancel the spinner when
 	// we don't want to cancel the parent context.
 	ctx, cancel := context.WithCancel(ctx)
-	replyOffset := make(chan int)
+	replyOffset := make(chan int, 1)
 	req := createSpinner{
 		cancel:      cancel,
 		frames:      SpinnerStyleDocs,
@@ -205,7 +205,6 @@ func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer close(replyOffset)
 	// when parent context is done, we can't create a spinner
 	select {
 	case <-s.ctx.Done():
@@ -300,12 +299,12 @@ func (s *Spinners) drainQueues() {
 func (s *Spinners) updateOffset(offset int, message string, err error) {
 	select {
 	case <-s.ctx.Done():
-		return // return early if stopped already
-	default: // and don't block if it isn't
+		return
+	default:
 	}
 	select {
 	case <-s.ctx.Done():
-		return // return early while stopping
+		return
 	case s.updates <- updateOffset{
 		offset:  offset,
 		message: message,
@@ -345,12 +344,12 @@ func (s *Spinners) updateSpinner(update updateOffset) {
 
 // concurrent client for [Spinners.stopSpinner].
 func (s *Spinners) stopOffset(offset int) error {
-	// select statement is selecting cases semi-randomly, so we need to check for context first,
-	// otherwise we might end up sending to a closed channel.
+	// select picks randomly among ready cases, so check ctx first to never
+	// enqueue once stopped.
 	select {
 	case <-s.ctx.Done():
 		return s.ctx.Err()
-	default: // default case is executed if no other case is ready
+	default:
 	}
 	select {
 	case <-s.ctx.Done():
@@ -427,14 +426,11 @@ func (s *Spinners) redraw(prevActive int) int {
 }
 
 func (s *Spinners) stop() {
-	// s.wg.Wait()
 	s.emit(spinnerGroupClosed{})
 	s.clearOnStop()
 	// s.io.Restore()
 	s.ticker.Stop()
-	close(s.creates)
-	close(s.updates)
-	close(s.stops)
+	// channels are not closed: senders exit via s.ctx.Done()
 }
 
 func (s *Spinners) clearOnStop() {
