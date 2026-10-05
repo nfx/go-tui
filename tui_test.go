@@ -18,7 +18,7 @@ func TestTuiViewAndPrepend(t *testing.T) {
 	if tui.view() != cio.head {
 		t.Fatalf("expected head viewport")
 	}
-	top := tui.prependView()
+	top := tui.prependView(1)
 	if tui.view() != top {
 		t.Fatalf("expected prepended viewport")
 	}

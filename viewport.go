@@ -319,26 +319,49 @@ func (v *viewport) loop() {
 				v.width = req.width
 			}
 			v.lastLines = v.appendToLinebuffer(req.chunk)
-			select {
-			case <-v.ctx.Done():
+			if !v.sendNotify(viewportChanged{lines: v.lastLines, done: req.done}) {
 				return
-			// notify is handled by [chanIO.forwardTo]
-			case v.notify <- viewportChanged{lines: v.lastLines, done: req.done}:
 			}
 		// handled by [viewport.WriteTo]
 		case w := <-v.writeTos:
-			bytes, widths, err := v.writeTo(w)
-			select {
-			case <-v.ctx.Done():
+			if !v.serveWriteTo(w) {
 				return
-			// handled by [viewport.WriteTo]
-			case w.res <- writeToResponse{
-				bytes:  bytes,
-				lines:  len(widths),
-				widths: widths,
-				err:    err,
-			}:
 			}
 		}
+	}
+}
+
+// sendNotify delivers ev to [chanIO.forwardTo] while still serving render
+// requests, so a full notify queue cannot deadlock a redraw that waits on
+// this viewport. It returns false once the context is done.
+func (v *viewport) sendNotify(ev viewportChanged) bool {
+	for {
+		select {
+		case <-v.ctx.Done():
+			return false
+		case v.notify <- ev:
+			return true
+		case w := <-v.writeTos:
+			if !v.serveWriteTo(w) {
+				return false
+			}
+		}
+	}
+}
+
+// serveWriteTo renders into the requester's writer and replies.
+// It returns false once the context is done.
+func (v *viewport) serveWriteTo(w *writeTo) bool {
+	bytes, widths, err := v.writeTo(w)
+	select {
+	case <-v.ctx.Done():
+		return false
+	case w.res <- writeToResponse{
+		bytes:  bytes,
+		lines:  len(widths),
+		widths: widths,
+		err:    err,
+	}:
+		return true
 	}
 }

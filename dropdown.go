@@ -632,10 +632,7 @@ func (d *dropdown) setReader(r io.Reader) {
 func (d *dropdown) setWriter(w io.Writer) {
 	tui, ok := w.(*Tui)
 	if ok {
-		c := tui.prependView()
-		c.height = 10             // TODO: this is properly available only after render, right?...
-		c.next.height -= c.height // TODO: propagate down
-		w = c
+		w = tui.prependView(10) // TODO: height is properly available only after render, right?...
 	}
 	d.out = w
 }
