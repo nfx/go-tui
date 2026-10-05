@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -985,4 +986,13 @@ func TestFormattersHandleNilPointerFields(t *testing.T) {
 	events = collectEvents(t, "", data, WithColumnFormat("Rate", percentString))
 	assert.Equal(t, "50%", strings.TrimSpace(mustTableRow(t, events[1]).Cells[1]))
 	assert.Equal(t, "", strings.TrimSpace(mustTableRow(t, events[2]).Cells[1]))
+}
+
+func TestPercentStringTruncationBoundaries(t *testing.T) {
+	assert.Equal(t, "57%", percentString(0.57))
+	assert.Equal(t, "-57%", percentString(-0.57))
+	assert.Equal(t, "29%", percentString(0.29))
+	assert.Equal(t, "-29%", percentString(-0.29))
+	assert.Equal(t, "56%", percentString(math.Nextafter(0.57, 0)))
+	assert.Equal(t, "28%", percentString(math.Nextafter(0.29, 0)))
 }

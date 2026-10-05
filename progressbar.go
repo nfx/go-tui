@@ -196,7 +196,12 @@ func NewParallelProgressBar[T any](label string, slice []T, yield func(T) error,
 		jobs:   make(chan int),
 	}
 	runErr := runner.run()
-	err = errors.Join(runErr, p.Close())
+	closeErr := p.Close()
+	if runner.firstErr == nil && closeErr != nil {
+		// workers were only cancelled because rendering failed
+		runErr = nil
+	}
+	err = errors.Join(runErr, closeErr)
 	cancel(err)
 	return err
 }
@@ -378,6 +383,10 @@ func (p *Progressbar) start(ctx context.Context) {
 		// p.err is published to Close by closing p.stopped
 		if err := p.stop(); err != nil {
 			p.err = errors.Join(p.err, err)
+		}
+		if p.err != nil {
+			// nobody receives from p.increments anymore, so unblock Add callers
+			p.cancel(p.err)
 		}
 		if p.stopped != nil {
 			close(p.stopped)
