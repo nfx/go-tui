@@ -519,6 +519,12 @@ func (i *chanIO) forwardTo(ctx context.Context, w io.Writer) {
 			prevH = i.handleExternalWrite(w, prevH, &pending, &nl, chunk)
 		case reply := <-i.syncCh:
 			prevH = i.flushOut(w, prevH, &pending, &nl)
+			if pending.Len() > 0 {
+				_, err := w.Write(nl.normalize(pending.Bytes()))
+				if err == nil {
+					pending.Reset()
+				}
+			}
 			close(reply)
 		}
 	}
