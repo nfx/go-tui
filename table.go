@@ -876,13 +876,23 @@ func (t *table) columnRenderTemplate(meta *fieldMetadata) string {
 	}
 	fnName, ok := t.columnNameFormats[meta.name]
 	if ok {
-		return "{{" + fnName + " ." + meta.name + "}}"
+		return formatterTemplate(fnName, meta)
 	}
 	fnName, ok = t.columnTypeFormats[meta.typ]
 	if ok {
-		return "{{" + fnName + " ." + meta.name + "}}"
+		return formatterTemplate(fnName, meta)
 	}
 	return meta.Template()
+}
+
+// formatterTemplate calls the formatter, rendering nil pointer fields as empty
+// because text/template cannot dereference nil before the formatter runs.
+func formatterTemplate(fnName string, meta *fieldMetadata) string {
+	call := "{{" + fnName + " ." + meta.name + "}}"
+	if meta.pointer {
+		return "{{if ." + meta.name + "}}" + call + "{{end}}"
+	}
+	return call
 }
 
 // templateFuncs merges shared color functions with per-table formatter functions.
@@ -1249,6 +1259,7 @@ type fieldMetadata struct {
 	stringer   bool
 	kind       reflect.Kind
 	typ        reflect.Type
+	pointer    bool
 }
 
 func (f *fieldMetadata) Template() string {
@@ -1328,6 +1339,7 @@ func reflectStructFields(rt reflect.Type, stack map[reflect.Type]struct{}) (stru
 		} else if err != nil {
 			return nil, fmt.Errorf("%s: %w", f.Name, err)
 		}
+		meta.pointer = f.Type.Kind() == reflect.Pointer
 		out = append(out, meta)
 	}
 

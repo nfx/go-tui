@@ -970,3 +970,19 @@ func TestWithMaxWidthRejectsNonPositive(t *testing.T) {
 	err = Facts(buf, row{Name: "A"}, WithMaxWidth(-1))
 	assert.ErrorIs(t, err, ErrInvalidState)
 }
+
+func TestFormattersHandleNilPointerFields(t *testing.T) {
+	type row struct {
+		Name string
+		Rate *float64
+	}
+	rate := 0.5
+	data := []row{{Name: "A", Rate: &rate}, {Name: "B"}}
+	events := collectEvents(t, "", data, WithFloat64AsPercent())
+	assert.Equal(t, "50%", strings.TrimSpace(mustTableRow(t, events[1]).Cells[1]))
+	assert.Equal(t, "", strings.TrimSpace(mustTableRow(t, events[2]).Cells[1]))
+
+	events = collectEvents(t, "", data, WithColumnFormat("Rate", percentString))
+	assert.Equal(t, "50%", strings.TrimSpace(mustTableRow(t, events[1]).Cells[1]))
+	assert.Equal(t, "", strings.TrimSpace(mustTableRow(t, events[2]).Cells[1]))
+}
