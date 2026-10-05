@@ -870,3 +870,23 @@ func waitOutputContains(t *testing.T, out <-chan string, parts ...string) string
 		}
 	}
 }
+
+// https://github.com/nfx/go-tui/issues/104
+func TestChanIOWriteAndWaitCompletesWithoutCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	cio := newUnstartedIO(ctx, 10, 3, 0)
+	var out bytes.Buffer
+	go cio.forwardTo(ctx, &out)
+
+	result := make(chan error, 1)
+	go func() { result <- cio.head.writeAndWait([]byte("hello")) }()
+
+	select {
+	case err := <-result:
+		assert.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("writeAndWait did not complete without context cancellation")
+	}
+	assert.NoError(t, ctx.Err())
+}
