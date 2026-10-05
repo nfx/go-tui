@@ -269,7 +269,9 @@ func WithColumnRedGreenScale(name string) opt {
 
 // percentString scales values to percentages and truncates toward zero.
 func percentString(v float64) string {
-	value := math.Trunc(v*10000) / 100
+	scaled := v * 10000
+	scaled = math.Nextafter(scaled, math.Copysign(math.Inf(1), scaled))
+	value := math.Trunc(scaled) / 100
 	if value == 0 {
 		return "0%"
 	}
