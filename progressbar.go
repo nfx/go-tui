@@ -102,6 +102,7 @@ func newStartedProgressBar(label string, size int64, opts ...opt) (*Progressbar,
 			return nil, fmt.Errorf("apply option: %w", err)
 		}
 	}
+	p.ctx, p.cancel = context.WithCancelCause(p.ctx)
 	p.showRate = true
 	p.showEstimate = true
 	p.maxNum = size
@@ -686,6 +687,7 @@ func NewFileProgressReader(r io.Reader, label string, opts ...opt) (*wrapReader,
 			return nil, fmt.Errorf("apply option: %w", err)
 		}
 	}
+	p.ctx, p.cancel = context.WithCancelCause(p.ctx)
 	wrap := &wrapReader{r, p}
 	size, err := wrap.Size()
 	if err != nil {

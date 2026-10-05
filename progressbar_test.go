@@ -950,6 +950,88 @@ func TestMetricsSnapshotZeroMax(t *testing.T) {
 	}
 }
 
+func TestProgressBarWithContextCancelBound(t *testing.T) {
+	parentCtx := t.Context()
+	p, err := newStartedProgressBar("test", 10,
+		WithContext(parentCtx),
+		progressbarOpt(func(pb *Progressbar) error {
+			pb.ticks = make(chan time.Time)
+			pb.ticker = time.NewTicker(time.Hour)
+			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+				return &termIO{
+					in:      in,
+					out:     &bytes.Buffer{},
+					Width:   40,
+					Height:  1,
+					Restore: func() error { return nil },
+				}, nil
+			}
+			return nil
+		}),
+	)
+	assert.NoError(t, err)
+
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- p.Close()
+	}()
+
+	select {
+	case err := <-closeDone:
+		assert.NoError(t, err)
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("p.Close() timed out because p.cancel was not bound to configured context")
+	}
+
+	select {
+	case <-p.ctx.Done():
+	default:
+		t.Fatal("expected p.ctx to be canceled after Close()")
+	}
+}
+
+func TestNewFileProgressReaderWithContextCancelBound(t *testing.T) {
+	parentCtx := t.Context()
+	r := bytes.NewReader([]byte("test data"))
+	w, err := NewFileProgressReader(r, "test",
+		WithContext(parentCtx),
+		progressbarOpt(func(pb *Progressbar) error {
+			pb.ticks = make(chan time.Time)
+			pb.ticker = time.NewTicker(time.Hour)
+			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+				return &termIO{
+					in:      in,
+					out:     &bytes.Buffer{},
+					Width:   40,
+					Height:  1,
+					Restore: func() error { return nil },
+				}, nil
+			}
+			return nil
+		}),
+	)
+	assert.NoError(t, err)
+
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- w.Close()
+	}()
+
+	select {
+	case err := <-closeDone:
+		assert.NoError(t, err)
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("w.Close() timed out because p.cancel was not bound to configured context")
+	}
+
+	select {
+	case <-w.p.ctx.Done():
+	default:
+		t.Fatal("expected w.p.ctx to be canceled after Close()")
+	}
+}
+
+
 func TestProgressStateIncrementCalculatesElapsedFromNow(t *testing.T) {
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	p := &progressState{
