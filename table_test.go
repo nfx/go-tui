@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -969,4 +970,13 @@ func TestWithMaxWidthRejectsNonPositive(t *testing.T) {
 
 	err = Facts(buf, row{Name: "A"}, WithMaxWidth(-1))
 	assert.ErrorIs(t, err, ErrInvalidState)
+}
+
+func TestPercentStringTruncationBoundaries(t *testing.T) {
+	assert.Equal(t, "57%", percentString(0.57))
+	assert.Equal(t, "-57%", percentString(-0.57))
+	assert.Equal(t, "29%", percentString(0.29))
+	assert.Equal(t, "-29%", percentString(-0.29))
+	assert.Equal(t, "56%", percentString(math.Nextafter(0.57, 0)))
+	assert.Equal(t, "28%", percentString(math.Nextafter(0.29, 0)))
 }
