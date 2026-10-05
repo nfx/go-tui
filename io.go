@@ -336,6 +336,7 @@ type chanIO struct {
 	ctx context.Context
 
 	width, height int
+	chainMu       sync.Mutex
 	head, tail    *viewport
 	vreply        chan chan *viewport
 	notify        chan viewportChanged
@@ -476,6 +477,8 @@ func (i *chanIO) handleViewports(ctx context.Context) {
 // insertManagedViewport keeps background overlays
 // above later interactive prompts.
 func (i *chanIO) insertManagedViewport(vp *viewport) {
+	i.chainMu.Lock()
+	defer i.chainMu.Unlock()
 	if i.head == nil || !i.head.fixedHeight {
 		vp.next = i.head
 		i.head = vp
@@ -688,6 +691,8 @@ func (i *chanIO) redrawManaged(w io.Writer, prevH int) (int, error) {
 // writeManaged renders all managed viewports into
 // the writer within the terminal height budget.
 func (i *chanIO) writeManaged(w io.Writer) (int, error) {
+	i.chainMu.Lock()
+	defer i.chainMu.Unlock()
 	i.rendered = i.rendered[:0]
 	if i.head == nil {
 		return 0, nil

@@ -36,6 +36,8 @@ func (t *Tui) prependView() *viewport {
 	if !ok {
 		panic("cannot get view")
 	}
+	cio.chainMu.Lock()
+	defer cio.chainMu.Unlock()
 	top := &viewport{next: cio.head, width: cio.width}
 	cio.head = top
 	return top
@@ -44,6 +46,8 @@ func (t *Tui) prependView() *viewport {
 func (t *Tui) view() *viewport {
 	cio, ok := t.out.(*chanIO)
 	if ok {
+		cio.chainMu.Lock()
+		defer cio.chainMu.Unlock()
 		return cio.head
 	}
 	return nil
