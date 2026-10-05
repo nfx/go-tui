@@ -164,3 +164,19 @@ func TestMultichoiceRunReadError(t *testing.T) {
 	err := m.run()
 	assert.Error(t, err)
 }
+
+func TestMultichoiceClampDisplayKeepsActiveItemVisible(t *testing.T) {
+	m := &multichoice{}
+	m.relevant = []int{0, 1, 2, 3, 4, 5, 6}
+	m.displayed = m.relevant[:5]
+	m.active = 4
+
+	m.clampDisplay(4) // two rows
+
+	if got := m.relevant[m.offset+m.active]; got != 4 {
+		t.Fatalf("active item changed: got %d, want 4", got)
+	}
+	if m.active < 0 || m.active >= len(m.displayed) {
+		t.Fatalf("active %d outside displayed %d", m.active, len(m.displayed))
+	}
+}
