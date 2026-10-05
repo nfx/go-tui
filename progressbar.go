@@ -344,7 +344,7 @@ func (p *Progressbar) Close() error {
 	if p.io == nil {
 		return nil // most likely no TTY
 	}
-	p.cancel(p.err)
+	p.cancel(nil) // p.err is owned by the renderer until it closes p.stopped
 	if p.stopped != nil {
 		<-p.stopped
 	}
@@ -375,7 +375,10 @@ func (p *Progressbar) emit(ev progressEvent) {
 
 func (p *Progressbar) start(ctx context.Context) {
 	defer func() {
-		_ = p.stop() //nolint:errcheck // best effort
+		// p.err is published to Close by closing p.stopped
+		if err := p.stop(); err != nil {
+			p.err = errors.Join(p.err, err)
+		}
 		if p.stopped != nil {
 			close(p.stopped)
 		}
