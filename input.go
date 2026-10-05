@@ -59,6 +59,9 @@ type inputKeyEvent struct {
 	paste []byte
 }
 
+// WithDefault pre-fills the typed text of an input. For a dropdown it is only a
+// match hint, not a pre-filled filter: items are ranked by similarity to d, and
+// the dropdown returns early only when exactly one item matches d as a prefix.
 func WithDefault(d string) opt {
 	return func(a any) error {
 		switch p := a.(type) {

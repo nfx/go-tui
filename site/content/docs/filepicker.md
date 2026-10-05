@@ -152,7 +152,7 @@ path, err := tui.FilePicker("Pick file",
 
 ## WithDefault
 
-Forwarded to dropdown typed-prefix default. See [WithDefault](dropdowns.md#withdefault).
+Forwarded to the dropdown as a match hint (not a pre-filled filter). See [WithDefault](dropdowns.md#withdefault).
 
 ```go
 path, err := tui.FilePicker("Pick file",

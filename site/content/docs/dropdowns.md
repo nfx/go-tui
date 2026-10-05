@@ -96,7 +96,7 @@ if !ok {
 
 ## WithDefault
 
-Pre-fills typed prefix for filtering. Also useful with `WithOneReturn`.
+Sets a match hint, not a pre-filled filter. The dropdown ranks items by similarity to the hint and returns early only when exactly one item matches it as a prefix; the typed filter stays empty. Also useful with `WithOneReturn`.
 
 ```go
 city, err := tui.Dropdown("City", cities,
