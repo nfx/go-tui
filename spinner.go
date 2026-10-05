@@ -413,7 +413,7 @@ func (s *Spinners) redraw(prevActive int) int {
 		line += spinner.Message
 		// truncate to terminal width so each spinner stays on one row
 		if s.io.Width > 0 && width([]byte(line)) > s.io.Width {
-			frame.Write(truncateVisible([]byte(line), s.io.Width-1, ' '))
+			frame.Write(truncateVisible([]byte(line), s.io.Width, ' '))
 		} else {
 			frame.WriteString(line)
 		}

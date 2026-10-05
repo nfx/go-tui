@@ -278,8 +278,8 @@ func TestSpinnerRedrawTruncatesLongMessage(t *testing.T) {
 		if len(line) == 0 {
 			continue
 		}
-		// each line must fit within width - 1 = 19
-		assert.True(t, width(line) <= 19)
+		// each line must fit within the full width = 20
+		assert.True(t, width(line) <= 20)
 	}
 }
 
