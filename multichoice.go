@@ -67,13 +67,18 @@ func (m *multichoice) clampDisplay(height int) {
 	if capacity < 1 {
 		capacity = 1
 	}
+	// index of the active item within m.relevant, preserved across the resize
+	activeIdx := min(max(0, m.offset+m.active), len(m.relevant)-1)
+	if activeIdx < m.offset {
+		m.offset = activeIdx
+	} else if activeIdx >= m.offset+capacity {
+		m.offset = activeIdx - capacity + 1
+	}
 	if m.offset+capacity > len(m.relevant) {
 		m.offset = max(0, len(m.relevant)-capacity)
 	}
 	m.displayed = m.relevant[m.offset : m.offset+min(capacity, len(m.relevant)-m.offset)]
-	if m.active >= len(m.displayed) {
-		m.active = max(0, len(m.displayed)-1)
-	}
+	m.active = activeIdx - m.offset
 }
 
 // render displays the dropdown.
