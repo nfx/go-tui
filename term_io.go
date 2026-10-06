@@ -205,8 +205,11 @@ func (t *termIO) readRuneBytes() ([]byte, int, error) {
 	}
 	if n > 0 && buf[0] == 0x1b {
 		n, err = t.readEscape(buf, n, err)
-		if n == 0 && err != nil {
-			return nil, n, err
+		if err != nil {
+			if n == 0 {
+				return nil, n, err
+			}
+			return buf, n, err
 		}
 	}
 	return buf, n, nil
