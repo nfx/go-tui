@@ -210,13 +210,19 @@ func (t *termIO) refreshSize() {
 func (t *termIO) readRuneBytes() ([]byte, int, error) {
 	buf := make([]byte, 16)
 	n, err := t.Read(buf)
-	if errors.Is(err, io.EOF) && n == 0 {
-		return nil, n, io.EOF
+	if n == 0 {
+		if err == nil {
+			err = io.EOF
+		}
+		return nil, n, err
 	}
 	if n > 0 && buf[0] == keyEscape {
 		n, err = t.readEscape(buf, n, err)
-		if errors.Is(err, io.EOF) && n == 0 {
-			return nil, n, io.EOF
+		if err != nil {
+			if n == 0 {
+				return nil, n, err
+			}
+			return buf, n, err
 		}
 		return buf, n, nil
 	}
