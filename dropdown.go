@@ -1375,6 +1375,8 @@ func (d *dropdown) pressKeyRune(io *termIO, key rune, displayed, space int) int 
 	case '↓':
 		d.pressDown(displayed)
 		return -1
+	case keyEscape, keyIgnored:
+		return -1
 	}
 	ev := d.decodeInputEvent(key)
 	return d.applyInputEvent(io, ev, displayed, space)

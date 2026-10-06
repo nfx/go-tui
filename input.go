@@ -67,7 +67,7 @@ func WithDefault(d string) opt {
 		switch p := a.(type) {
 		case *input:
 			p.typed = d
-			p.cursor = len(d)
+			p.cursor = utf8.RuneCountInString(d)
 			return nil
 		case *dropdown:
 			p.oneMatch = d
@@ -483,8 +483,8 @@ func (p *input) handleKeyEvent(ev inputKeyEvent, ok bool) (bool, error) {
 		// Ctrl+V or CMD+V will just send more bytes. So we emulate typing.
 		// This currently works with empty input only. Or appending to the end.
 		// There's a bug when you paste in the middle of the text.
-		for _, b := range ev.paste {
-			done := p.applyInputEvent(p.decodeInputEvent(rune(b)))
+		for _, r := range string(ev.paste) {
+			done := p.applyInputEvent(p.decodeInputEvent(r))
 			if done {
 				return true, nil
 			}
@@ -501,7 +501,7 @@ func (p *input) handleKeyEvent(ev inputKeyEvent, ok bool) (bool, error) {
 	case '→':
 		p.pressRight()
 		return false, nil
-	case '↑', '↓': // ignore up/down arrows
+	case '↑', '↓', keyEscape, keyIgnored: // ignore up/down arrows and other special keys
 		return false, nil
 	}
 	return p.applyInputEvent(p.decodeInputEvent(ev.key)), nil
@@ -526,19 +526,25 @@ func (p *input) decodeInputEvent(key rune) inputIncoming {
 	case keyEnter:
 		return inputConfirmed{}
 	case 0x7f: // backspace
-		nextText := p.typed
-		if len(nextText) > 0 && p.cursor > 0 {
-			nextText = nextText[:p.cursor-1] + nextText[p.cursor:]
+		runes := []rune(p.typed)
+		if len(runes) > 0 && p.cursor > 0 {
+			runes = append(runes[:p.cursor-1], runes[p.cursor:]...)
 		}
 		return inputChanged{
-			Text: nextText,
+			Text: string(runes),
 		}
 	default:
-		nextText := p.typed[:p.cursor] + string(key) + p.typed[p.cursor:]
 		return inputChanged{
-			Text: nextText,
+			Text: p.insertAtCursor(key),
 		}
 	}
+}
+
+// insertAtCursor returns the typed text with key inserted at the cursor,
+// which counts runes rather than bytes.
+func (p *input) insertAtCursor(key rune) string {
+	runes := []rune(p.typed)
+	return string(runes[:p.cursor]) + string(key) + string(runes[p.cursor:])
 }
 
 func (p *input) applyInputEvent(ev inputIncoming) bool {
@@ -552,26 +558,25 @@ func (p *input) applyInputEvent(ev inputIncoming) bool {
 }
 
 func (p *input) applyInputChanged(text string) {
-	prevLen := len(p.typed)
+	prevLen := utf8.RuneCountInString(p.typed)
 	prevCursor := p.cursor
 	p.typed = text
+	nextLen := utf8.RuneCountInString(p.typed)
 	switch {
-	case prevLen+1 == len(p.typed):
-		if prevCursor < len(p.typed) {
+	case prevLen+1 == nextLen:
+		if prevCursor < nextLen {
 			p.cursor = prevCursor + 1
 		} else {
-			p.cursor = len(p.typed)
+			p.cursor = nextLen
 		}
-	case prevLen == len(p.typed)+1:
+	case prevLen == nextLen+1:
 		if prevCursor > 0 {
 			p.cursor = prevCursor - 1
 		} else {
 			p.cursor = 0
 		}
-	case prevCursor > len(p.typed):
-		p.cursor = len(p.typed)
 	default:
-		p.cursor = len(p.typed)
+		p.cursor = nextLen
 	}
 }
 
@@ -582,17 +587,16 @@ func (p *input) confirmInput() bool {
 			return false
 		}
 		p.typed = next
-		if p.cursor > len(p.typed) {
-			p.cursor = len(p.typed)
-		}
+		p.cursor = min(p.cursor, utf8.RuneCountInString(p.typed))
 	}
 	p.emit(inputComplete{Value: p.typed})
 	return true
 }
 
 func (p *input) pressBackspace() {
-	if len(p.typed) > 0 && p.cursor > 0 {
-		p.typed = p.typed[:p.cursor-1] + p.typed[p.cursor:]
+	if p.cursor > 0 {
+		runes := []rune(p.typed)
+		p.typed = string(append(runes[:p.cursor-1], runes[p.cursor:]...))
 		p.cursor--
 	}
 }
@@ -604,13 +608,13 @@ func (p *input) pressLeft() {
 }
 
 func (p *input) pressRight() {
-	if p.cursor < len(p.typed) {
+	if p.cursor < utf8.RuneCountInString(p.typed) {
 		p.cursor++
 	}
 }
 
 func (p *input) pressAny(key rune) {
-	p.typed = p.typed[:p.cursor] + string(key) + p.typed[p.cursor:]
+	p.typed = p.insertAtCursor(key)
 	p.cursor++
 }
 
