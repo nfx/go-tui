@@ -197,7 +197,10 @@ func (t *termIO) refreshSize() {
 func (t *termIO) readRuneBytes() ([]byte, int, error) {
 	buf := make([]byte, 16)
 	n, err := t.Read(buf)
-	if n == 0 && err != nil {
+	if n == 0 {
+		if err == nil {
+			err = io.EOF
+		}
 		return nil, n, err
 	}
 	if n > 0 && buf[0] == 0x1b {
