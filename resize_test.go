@@ -113,15 +113,19 @@ func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 	now = start.Add(2 * time.Second)
 	sendTickOrFatal(t, ticks, now)
 	output := receiveOutputOrFatal(t, cio.Out, "no progress output after shrink")
-	// extract the content line (between last \r and next \n)
+	// the frame ends with "\n\r"; the content starts after the last \r before it
 	raw := []byte(output)
-	lo := bytes.LastIndex(raw, []byte("\r"))
-	hi := bytes.Index(raw[lo+1:], []byte("\n"))
-	if lo >= 0 && hi >= 0 {
-		contentLine := raw[lo+1 : lo+1+hi]
-		// content must not exceed shrunken width minus 1 (autowrap column)
-		assert.True(t, width(contentLine) <= 19)
+	body, ok := bytes.CutSuffix(raw, []byte("\n\r"))
+	if !ok {
+		t.Fatalf("frame missing trailing \\n\\r terminator: %q", output)
 	}
+	lo := bytes.LastIndex(body, []byte("\r"))
+	if lo < 0 {
+		t.Fatalf("frame missing leading \\r before content: %q", output)
+	}
+	contentLine := body[lo+1:]
+	// content must not exceed shrunken width minus 1 (autowrap column)
+	assert.True(t, width(contentLine) <= 19)
 }
 
 func TestProgressbarTickOnResizeExitsWhenDone(t *testing.T) {
