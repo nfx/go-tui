@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -808,4 +809,18 @@ func (x *writeC) Write(p []byte) (n int, err error) {
 	case x.C <- string(p):
 		return len(p), nil
 	}
+}
+
+// maxPollWait is how long a single readiness check blocks before
+// [waitForReadableInput] looks at its context again.
+const maxPollWait = 50 * time.Millisecond
+
+// pollWait returns how long the next readiness check may block:
+// [maxPollWait], or less when the context deadline comes sooner.
+func pollWait(ctx context.Context) time.Duration {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return maxPollWait
+	}
+	return min(maxPollWait, max(0, time.Until(deadline)))
 }

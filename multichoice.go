@@ -261,6 +261,8 @@ func (m *multichoice) run() error {
 				} else if m.active < displayed-1 {
 					m.active++
 				}
+			case keyEscape, keyIgnored:
+				// special keys do not change the selection
 			case ' ':
 				m.selected[m.relevant[m.offset+m.active]] = !m.selected[m.relevant[m.offset+m.active]]
 			case 0x7f: // backspace

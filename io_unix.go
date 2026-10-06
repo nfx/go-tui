@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -65,7 +66,8 @@ func waitForReadableInput(ctx context.Context, in io.Reader) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		_, err := unix.Poll(pollFds, 50)
+		// round up so that a sub-millisecond remainder does not spin
+		_, err := unix.Poll(pollFds, int((pollWait(ctx)+time.Millisecond-1)/time.Millisecond))
 		if errors.Is(err, unix.EINTR) {
 			continue
 		}

@@ -162,7 +162,7 @@ func waitForConsoleReadable(ctx context.Context, h windows.Handle) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		event, err := windows.WaitForSingleObject(h, 50)
+		event, err := windows.WaitForSingleObject(h, uint32((pollWait(ctx)+time.Millisecond-1)/time.Millisecond))
 		if err != nil {
 			return nil
 		}

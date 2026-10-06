@@ -97,6 +97,35 @@ func TestMultichoiceRunHandlesKeys(t *testing.T) {
 	assert.NoError(t, m.run())
 }
 
+func TestMultichoiceRunIgnoresSpecialKeys(t *testing.T) {
+	reader := &chunkReader{chunks: [][]byte{
+		[]byte("\x1b[3~"),
+		[]byte("\x1bx"),
+		{0x1b, 0x1b, 0x5b, 0x42}, // Esc, then down
+		{' '},
+		{keyEnter},
+	}}
+	m := newMultichoice()
+	m.Items = []any{"one", "two", "three"}
+	m.selected = make([]bool, len(m.Items))
+	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
+	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
+	m.labelBuf.WriteString(m.Label + " ")
+	m.in = reader
+	m.out = &bytes.Buffer{}
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{
+			in:      in,
+			out:     out,
+			Width:   40,
+			Height:  6,
+			Restore: func() error { return nil },
+		}, nil
+	}
+	assert.NoError(t, m.run())
+	assert.Equal(t, []bool{false, true, false}, m.selected)
+}
+
 func TestMultichoiceRunContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

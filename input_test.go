@@ -96,6 +96,13 @@ func TestInputWithDefault(t *testing.T) {
 	assert.Equal(t, 3, i.cursor)
 }
 
+func TestInputWithDefaultCountsRunes(t *testing.T) {
+	i := newInput("label")
+	err := WithDefault("héllo")(i)
+	assert.NoError(t, err)
+	assert.Equal(t, 5, i.cursor)
+}
+
 func TestInputWithNonEmpty(t *testing.T) {
 	i := newInput("label")
 	err := WithNonEmpty()(i)
@@ -449,6 +456,54 @@ func TestInputCursorActions(t *testing.T) {
 	assert.Equal(t, "ga", i.typed)
 }
 
+func TestInputCursorActionsMultiByte(t *testing.T) {
+	i := &input{
+		typed:  "日本語",
+		cursor: 3,
+	}
+	i.pressLeft()
+	i.pressBackspace()
+	assert.Equal(t, "日語", i.typed)
+	assert.Equal(t, 1, i.cursor)
+
+	i.pressAny('é')
+	assert.Equal(t, "日é語", i.typed)
+	assert.Equal(t, 2, i.cursor)
+	i.pressRight()
+	i.pressRight()
+	assert.Equal(t, 3, i.cursor)
+}
+
+func TestInputPasteMultiByte(t *testing.T) {
+	i := &input{typed: "a", cursor: 1}
+	paste := []byte("日本é")
+	done, err := i.handleKeyEvent(inputKeyEvent{
+		err:   &pasteTextError{buf: paste},
+		paste: paste,
+	}, true)
+	assert.NoError(t, err)
+	assert.True(t, !done)
+	assert.Equal(t, "a日本é", i.typed)
+	assert.Equal(t, 4, i.cursor)
+}
+
+// regression: multi-byte runes must be typed as runes, not as their bytes
+func TestInputTypesMultiByteFromPipe(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	cio := startChanIO(ctx, 40, 6)
+	r, w, err := os.Pipe()
+	assert.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, r.Close()) })
+	// left three times, backspace over "é", then a Cyrillic rune
+	_, err = w.WriteString("héllo\x1b[D\x1b[D\x1b[D\x7fж\r")
+	assert.NoError(t, err)
+	assert.NoError(t, w.Close())
+	got, err := Input("Label", WithInput(&fdByteReader{f: r}), WithOutput(cio))
+	assert.NoError(t, err)
+	assert.Equal(t, "hжllo", got)
+}
+
 func TestInputReadsFromPipe(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
@@ -482,6 +537,21 @@ func TestInputReadsMultipleLeftArrowsFromPipe(t *testing.T) {
 	got, err := Input("Label", WithDefault("apple"), WithInput(&fdByteReader{f: r}), WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "apqqqple", got)
+}
+
+func TestInputIgnoresSpecialKeysFromPipe(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	cio := startChanIO(ctx, 40, 6)
+	r, w, err := os.Pipe()
+	assert.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, r.Close()) })
+	_, err = w.WriteString("a\x1b[3~b\x1b[Hc\x1bxd\x1b\x1bOPe\r")
+	assert.NoError(t, err)
+	assert.NoError(t, w.Close())
+	got, err := Input("Label", WithInput(&fdByteReader{f: r}), WithOutput(cio))
+	assert.NoError(t, err)
+	assert.Equal(t, "abcde", got)
 }
 
 func TestPasswordReadsFromPipe(t *testing.T) {

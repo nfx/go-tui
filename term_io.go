@@ -4,10 +4,13 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"time"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 )
@@ -130,7 +133,17 @@ const (
 	keyCtrlC = 0x03
 	keyCtrlD = 0x04
 	keyEnter = 0x0d
+	// keyEscape is a lone Esc key press.
+	keyEscape = 0x1b
+	// keyIgnored stands for escape sequences that widgets do not handle,
+	// such as Home, Delete, function keys, or Alt+key.
+	keyIgnored = 0x00
 )
+
+// escapeTimeout bounds how long an incomplete escape sequence or UTF-8 rune
+// waits for its next byte, so that a lone Esc is reported without waiting
+// for another key.
+var escapeTimeout = 50 * time.Millisecond
 
 type pasteTextError struct {
 	buf []byte
@@ -200,41 +213,102 @@ func (t *termIO) readRuneBytes() ([]byte, int, error) {
 	if errors.Is(err, io.EOF) && n == 0 {
 		return nil, n, io.EOF
 	}
-	if n > 0 && buf[0] == 0x1b {
+	if n > 0 && buf[0] == keyEscape {
 		n, err = t.readEscape(buf, n, err)
 		if errors.Is(err, io.EOF) && n == 0 {
 			return nil, n, io.EOF
 		}
+		return buf, n, nil
 	}
+	n = t.readRuneTail(buf, n, err)
 	return buf, n, nil
+}
+
+// readRuneTail reads the remaining bytes of a multi-byte UTF-8 rune
+// that was split across reads, one byte at a time.
+func (t *termIO) readRuneTail(buf []byte, n int, readErr error) int {
+	for readErr == nil && n > 0 && n < len(buf) && !t.endsWithFullRune(buf[:n]) {
+		if !t.nextByteReady() {
+			return n
+		}
+		m, err := t.Read(buf[n : n+1])
+		n += m
+		if err != nil || m == 0 {
+			return n
+		}
+	}
+	return n
+}
+
+// endsWithFullRune reports whether buf does not end in the middle of a UTF-8 rune.
+func (*termIO) endsWithFullRune(buf []byte) bool {
+	start := len(buf) - 1
+	for start > 0 && len(buf)-start < utf8.UTFMax && !utf8.RuneStart(buf[start]) {
+		start--
+	}
+	return utf8.FullRune(buf[start:])
 }
 
 // decodeRuneBytes interprets a byte buffer as a known escape
 // rune, a paste event, or a single-byte character.
 func (t *termIO) decodeRuneBytes(buf []byte, n int) (rune, int, error) {
+	if n == 0 {
+		return keyIgnored, n, nil
+	}
 	r, consumed, ok := t.maybeKnownRune(buf[:n])
 	if ok {
 		t.pushPending(buf, consumed, n)
 		return r, consumed, nil
 	}
-	if n > 1 {
-		cp := make([]byte, n)
-		copy(cp, buf[:n])
-		return 0, n, &pasteTextError{buf: cp}
+	if buf[0] == keyEscape {
+		consumed, _ = t.escapeSequenceLen(buf[:n])
+		t.pushPending(buf, consumed, n)
+		if consumed == 1 {
+			return keyEscape, consumed, nil
+		}
+		return keyIgnored, consumed, nil
 	}
-	switch buf[0] {
-	case keyCtrlC, keyCtrlD:
-		return 0, n, io.EOF
-	default:
-		return rune(buf[0]), n, nil
+	if r, size := utf8.DecodeRune(buf[:n]); size == n {
+		switch r {
+		case keyCtrlC, keyCtrlD:
+			return 0, n, io.EOF
+		default:
+			return r, n, nil
+		}
 	}
+	n = t.holdPartialRune(buf, n)
+	cp := make([]byte, n)
+	copy(cp, buf[:n])
+	return 0, n, &pasteTextError{buf: cp}
 }
 
-// readEscape reads additional bytes one at a time until
-// a known escape sequence is recognized or the buffer fills.
+// holdPartialRune moves a trailing incomplete UTF-8 rune into pending,
+// so that a paste that filled the buffer mid-rune completes on the next read.
+// It returns the number of bytes left in buf.
+func (t *termIO) holdPartialRune(buf []byte, n int) int {
+	if t.endsWithFullRune(buf[:n]) {
+		return n
+	}
+	start := n - 1
+	for !utf8.RuneStart(buf[start]) {
+		start--
+	}
+	if start == 0 {
+		return n
+	}
+	t.pushPending(buf, start, n)
+	return start
+}
+
+// readEscape reads additional bytes one at a time until the escape
+// sequence is complete, no next byte arrives within [escapeTimeout],
+// or the buffer fills.
 func (t *termIO) readEscape(buf []byte, n int, readErr error) (int, error) {
 	for n < len(buf) {
-		if _, _, ok := t.maybeKnownRune(buf[:n]); ok {
+		if _, complete := t.escapeSequenceLen(buf[:n]); complete {
+			return n, readErr
+		}
+		if !t.nextByteReady() {
 			return n, readErr
 		}
 		m, err := t.Read(buf[n : n+1])
@@ -247,6 +321,55 @@ func (t *termIO) readEscape(buf []byte, n int, readErr error) (int, error) {
 		}
 	}
 	return n, readErr
+}
+
+// nextByteReady waits up to [escapeTimeout] for the next byte of an escape
+// sequence or rune. Readers that cannot be polled always report ready and block in Read.
+func (t *termIO) nextByteReady() bool {
+	if len(t.pending) > 0 {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), escapeTimeout)
+	defer cancel()
+	err := waitForReadableInput(ctx, t.in)
+	return !errors.Is(err, context.DeadlineExceeded)
+}
+
+// escapeSequenceLen returns the length of the escape sequence at the start
+// of buf and whether it is complete. A lone Esc has length 1, Alt+key has
+// length 2, and SS3 and CSI sequences extend through their final byte.
+func (*termIO) escapeSequenceLen(buf []byte) (int, bool) {
+	if len(buf) < 2 {
+		return len(buf), false
+	}
+	switch b := buf[1]; {
+	case b == 0x5b: // CSI
+		for i := 2; i < len(buf); i++ {
+			c := buf[i]
+			if c >= 0x20 && c <= 0x3f { // parameter and intermediate bytes
+				continue
+			}
+			if c >= 0x40 && c <= 0x7e { // final byte
+				return i + 1, true
+			}
+			// leave a byte that cannot belong to the sequence for the next read
+			return i, true
+		}
+		return len(buf), false
+	case b == 0x4f: // SS3
+		if len(buf) < 3 {
+			return 2, false
+		}
+		if buf[2] >= 0x40 && buf[2] <= 0x7e {
+			return 3, true
+		}
+		return 2, true // Alt+O
+	case b >= 0x20 && b <= 0x7e: // Alt+key
+		return 2, true
+	default:
+		// a control or non-ASCII byte is a separate key after a lone Esc
+		return 1, true
+	}
 }
 
 // maybeKnownRune checks whether buf starts with

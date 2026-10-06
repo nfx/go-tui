@@ -448,6 +448,32 @@ func TestDropdownRunSelectsWithArrow(t *testing.T) {
 	assert.Equal(t, 1, idx)
 }
 
+func TestDropdownRunIgnoresSpecialKeys(t *testing.T) {
+	reader := &chunkReader{chunks: [][]byte{
+		[]byte("\x1b[3~"),
+		[]byte("\x1bx"),
+		{0x1b, 0x1b, 0x5b, 0x42}, // Esc, then down
+		{byte(keyEnter)},
+	}}
+	d := newDropdown()
+	d.Items = []any{"one", "two"}
+	d.in = reader
+	d.out = &bytes.Buffer{}
+	d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{
+			in:      in,
+			out:     out,
+			Width:   20,
+			Height:  6,
+			Restore: func() error { return nil },
+		}, nil
+	}
+	idx, err := d.dropdownIndex()
+	assert.NoError(t, err)
+	assert.Equal(t, 1, idx)
+	assert.Equal(t, "", string(d.typed))
+}
+
 func TestDropdownRunConsumesInputEvents(t *testing.T) {
 	d := newDropdown()
 	d.Items = []any{"one", "two"}

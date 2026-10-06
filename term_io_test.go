@@ -10,7 +10,10 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
+	"testing/iotest"
+	"unicode/utf8"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"golang.org/x/term"
@@ -313,7 +316,7 @@ func TestTermIO_ReadRune(t *testing.T) {
 		{"ctrl-c", []byte{0x03}, 0, true},
 		{"ctrl-d", []byte{0x04}, 0, true},
 		{"normal char", []byte{'a'}, 'a', false},
-		{"unknown escape", []byte{0x1b, 0x5b, 0x50}, 0, true},
+		{"unknown escape", []byte{0x1b, 0x5b, 0x50}, keyIgnored, false},
 	}
 
 	for _, tt := range tests {
@@ -323,12 +326,8 @@ func TestTermIO_ReadRune(t *testing.T) {
 
 			r, n, err := termIO.ReadRune()
 			if tt.wantErr {
-				if tt.name == "unknown escape" {
-					assert.Error(t, err)
-				} else {
-					assert.Error(t, err)
-					assert.True(t, errors.Is(err, io.EOF))
-				}
+				assert.Error(t, err)
+				assert.True(t, errors.Is(err, io.EOF))
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expected, r)
@@ -352,6 +351,171 @@ func TestTermIO_ReadRunePasteError(t *testing.T) {
 	if paste.Error() == "" {
 		t.Fatalf("expected error message")
 	}
+}
+
+// regression: non-arrow escape input must not absorb the keys that follow it
+func TestTermIO_ReadRuneIgnoresNonArrowEscape(t *testing.T) {
+	tests := []struct {
+		name string
+		seq  string
+	}{
+		{"alt key", "\x1bx"},
+		{"delete", "\x1b[3~"},
+		{"home", "\x1b[H"},
+		{"ss3 function key", "\x1bOP"},
+		{"csi with private parameters", "\x1b[<0;1;2M"},
+		{"malformed csi", "\x1b[1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rest := "\x03next keys"
+			buf := bytes.NewBufferString(tt.seq + rest)
+			termIO := &termIO{in: iotest.OneByteReader(buf)}
+			r, n, err := termIO.ReadRune()
+			assert.NoError(t, err)
+			assert.Equal(t, keyIgnored, r)
+			assert.Equal(t, len(tt.seq), n)
+			// a byte read past the sequence stays buffered for the next key
+			assert.Equal(t, rest, string(termIO.pending)+buf.String())
+			_, _, err = termIO.ReadRune()
+			assert.ErrorIs(t, err, io.EOF)
+		})
+	}
+}
+
+func TestTermIO_ReadRuneEscapeBeforeControlKey(t *testing.T) {
+	termIO := &termIO{in: iotest.OneByteReader(bytes.NewBufferString("\x1b\x03"))}
+	r, n, err := termIO.ReadRune()
+	assert.NoError(t, err)
+	assert.Equal(t, keyEscape, r)
+	assert.Equal(t, 1, n)
+	_, _, err = termIO.ReadRune()
+	assert.ErrorIs(t, err, io.EOF)
+}
+
+func TestTermIO_ReadRuneEscapePairs(t *testing.T) {
+	termIO := &termIO{in: bytes.NewBufferString("\x1b\x1b[B")}
+	r, _, err := termIO.ReadRune()
+	assert.NoError(t, err)
+	assert.Equal(t, keyEscape, r)
+	r, _, err = termIO.ReadRune()
+	assert.NoError(t, err)
+	assert.Equal(t, '↓', r)
+}
+
+// regression: a lone Esc must not block until the next key press
+func TestTermIO_ReadRuneLoneEscapeTimesOut(t *testing.T) {
+	r, w, err := os.Pipe()
+	assert.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, r.Close())
+		assert.NoError(t, w.Close())
+	})
+	termIO := &termIO{in: r}
+	tests := []struct {
+		name string
+		seq  string
+		want rune
+	}{
+		{"lone escape", "\x1b", keyEscape},
+		{"incomplete csi", "\x1b[", keyIgnored},
+		{"incomplete ss3", "\x1bO", keyIgnored},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := w.WriteString(tt.seq)
+			assert.NoError(t, err)
+			got, n, err := termIO.ReadRune()
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, len(tt.seq), n)
+			_, err = w.WriteString("q")
+			assert.NoError(t, err)
+			got, _, err = termIO.ReadRune()
+			assert.NoError(t, err)
+			assert.Equal(t, 'q', got)
+		})
+	}
+}
+
+func TestTermIO_ReadRuneSplitArrow(t *testing.T) {
+	tests := []struct {
+		name string
+		seq  string
+		want rune
+	}{
+		{"csi", "\x1b[A", '↑'},
+		{"ss3", "\x1bOB", '↓'},
+		{"csi with modifier", "\x1b[1;5C", '→'},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := bytes.NewBufferString(tt.seq + "q")
+			termIO := &termIO{in: iotest.OneByteReader(buf)}
+			r, n, err := termIO.ReadRune()
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, r)
+			assert.Equal(t, len(tt.seq), n)
+			assert.Equal(t, "q", buf.String())
+		})
+	}
+}
+
+func TestTermIO_ReadRuneMultiByte(t *testing.T) {
+	for _, want := range []rune{'é', '日', '🙂'} {
+		t.Run(string(want), func(t *testing.T) {
+			buf := bytes.NewBufferString(string(want) + "q")
+			termIO := &termIO{in: iotest.OneByteReader(buf)}
+			r, n, err := termIO.ReadRune()
+			assert.NoError(t, err)
+			assert.Equal(t, want, r)
+			assert.Equal(t, utf8.RuneLen(want), n)
+			assert.Equal(t, "q", buf.String())
+		})
+	}
+}
+
+func TestTermIO_ReadRuneInvalidByte(t *testing.T) {
+	termIO := &termIO{in: bytes.NewBuffer([]byte{0xff})}
+	r, _, err := termIO.ReadRune()
+	assert.NoError(t, err)
+	assert.Equal(t, utf8.RuneError, r)
+}
+
+func TestTermIO_ReadRunePasteKeepsRunesWhole(t *testing.T) {
+	// the 16-byte read buffer fills in the middle of the trailing "é"
+	text := strings.Repeat("a", 15) + "é"
+	termIO := &termIO{in: bytes.NewBufferString(text)}
+	_, _, err := termIO.ReadRune()
+	var paste *pasteTextError
+	assert.True(t, errors.As(err, &paste))
+	assert.Equal(t, strings.Repeat("a", 15), string(paste.buf))
+	r, n, err := termIO.ReadRune()
+	assert.NoError(t, err)
+	assert.Equal(t, 'é', r)
+	assert.Equal(t, 2, n)
+}
+
+// a rune that never completes must not block reading the next key
+func TestTermIO_ReadRuneIncompleteRuneTimesOut(t *testing.T) {
+	r, w, err := os.Pipe()
+	assert.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, r.Close())
+		assert.NoError(t, w.Close())
+	})
+	termIO := &termIO{in: r}
+	_, err = w.Write([]byte{0xe2, 0x82})
+	assert.NoError(t, err)
+	_, n, err := termIO.ReadRune()
+	var paste *pasteTextError
+	assert.True(t, errors.As(err, &paste))
+	assert.Equal(t, 2, n)
+	_, err = w.WriteString("q")
+	assert.NoError(t, err)
+	got, _, err := termIO.ReadRune()
+	assert.NoError(t, err)
+	assert.Equal(t, 'q', got)
 }
 
 func TestIsPrintable(t *testing.T) {
