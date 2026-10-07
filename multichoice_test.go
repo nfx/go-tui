@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"text/template"
@@ -269,4 +270,83 @@ func waitBufferContains(t *testing.T, out *syncBuffer, part string) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+}
+
+// newPipeMultichoice prepares a multichoice that reads keys from in.
+func newPipeMultichoice(ctx context.Context, in io.Reader) *multichoice {
+	m := newMultichoice()
+	m.Ctx = ctx
+	m.Items = []any{"one", "two", "three"}
+	m.selected = make([]bool, len(m.Items))
+	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}\n"))
+	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
+	m.labelBuf.WriteString(m.Label + " ")
+	m.in = in
+	m.out = &bytes.Buffer{}
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{in: in, out: out, Width: 40, Height: 8, Restore: func() error { return nil }}, nil
+	}
+	return m
+}
+
+// TestMultichoiceRunReadsPendingEnter covers an arrow and Enter arriving in one read:
+// Enter is left in termIO.pending and must not wait for the fd to become readable.
+func TestMultichoiceRunReadsPendingEnter(t *testing.T) {
+	pr, pw, err := os.Pipe()
+	assert.NoError(t, err)
+	defer pr.Close()
+	defer pw.Close()
+	m := newPipeMultichoice(t.Context(), pr)
+	_, err = pw.Write([]byte("\x1b[B\r"))
+	assert.NoError(t, err)
+	done := make(chan error, 1)
+	go func() { done <- m.run() }()
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("Enter left in pending was not read")
+	}
+	assert.Equal(t, 1, m.active)
+}
+
+// TestMultichoiceRunCancelledWrappedReadKeepsNextKey verifies that a read blocked
+// in a wrapper that cannot be polled is handed to the next prompt, not discarded.
+func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
+	pr, pw, err := os.Pipe()
+	assert.NoError(t, err)
+	defer pr.Close()
+	defer pw.Close()
+	in := &notifyingReader{File: pr, started: make(chan struct{})}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	m := newPipeMultichoice(ctx, in)
+	finished := make(chan error, 1)
+	go func() { finished <- m.run() }()
+	select {
+	case <-in.started:
+	case <-time.After(time.Second):
+		t.Fatal("multichoice did not start reading")
+	}
+	cancel()
+	select {
+	case err := <-finished:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("cancelled multichoice did not return")
+	}
+	// the blocked read completes only now, after its prompt is gone
+	_, err = pw.Write([]byte{'x', keyEnter})
+	assert.NoError(t, err)
+	next := newInput("next")
+	next.ctx, cancel = context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	next.in, next.out = in, &bytes.Buffer{}
+	next.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
+	}
+	assert.NoError(t, next.parseTemplates())
+	got, err := next.run()
+	assert.NoError(t, err)
+	assert.Equal(t, "x", got)
 }

@@ -217,20 +217,19 @@ func (m *multichoice) run() error {
 	}()
 	ctx, cancel := context.WithCancel(m.Ctx)
 	keys := io.readKey(ctx)
-	// only drain what [waitForReadableInput] can actually interrupt
-	cancelable := canDrainOnCancel(io.in)
 	defer func() {
-		cancel() // signal the key reader to stop
-		if !cancelable {
-			return
-		}
-		for range keys {
-		}
+		cancel()
+		// wait without draining, so an unreceived key stays for the next prompt
+		io.awaitReader()
 	}()
 	var typed []rune
 	for {
 		err = m.render(io, frame)
 		if err != nil {
+			if m.Ctx.Err() != nil {
+				// the frame stops accepting writes once the prompt is cancelled
+				return m.Ctx.Err()
+			}
 			return fmt.Errorf("render: %w", err)
 		}
 		frame.WriteTo(io)

@@ -40,30 +40,6 @@ func peekNamedPipe(h windows.Handle) (avail uint32, err error) {
 	return totalAvail, nil
 }
 
-// canDrainOnCancel reports whether [waitForReadableInput] can interrupt the
-// wait for this specific input, so a following read never blocks past cancellation.
-func canDrainOnCancel(in io.Reader) bool {
-	d, ok := in.(*os.File)
-	if !ok {
-		return false
-	}
-	h := windows.Handle(d.Fd())
-	ft, err := windows.GetFileType(h)
-	if err != nil {
-		return false
-	}
-	switch ft {
-	case windows.FILE_TYPE_PIPE:
-		_, err := peekNamedPipe(h)
-		return err == nil
-	case windows.FILE_TYPE_CHAR:
-		var mode uint32
-		return windows.GetConsoleMode(h, &mode) == nil
-	default:
-		return false
-	}
-}
-
 // waitForReadableInput polls concrete files until input is ready or ctx is cancelled.
 // Other readers may buffer data independently of their descriptor and are not polled.
 func waitForReadableInput(ctx context.Context, in io.Reader) error {

@@ -1002,15 +1002,10 @@ func (d *dropdown) run() (int, error) {
 func (d *dropdown) runLazy(tio *termIO, frame *bytes.Buffer) (int, error) {
 	ctx, cancel := context.WithCancel(d.Ctx)
 	keys := tio.readKey(ctx)
-	// only drain what [waitForReadableInput] can actually interrupt
-	cancelable := canDrainOnCancel(tio.in)
 	defer func() {
-		cancel() // signal consumer to stop
-		if !cancelable {
-			return
-		}
-		for range keys {
-		}
+		cancel()
+		// wait without draining, so an unreceived key stays for the next prompt
+		tio.awaitReader()
 	}()
 	space := 0
 	displayed := 0
