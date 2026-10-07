@@ -126,11 +126,6 @@ type itPair struct {
 	err  error
 }
 
-type keyEvent struct {
-	key rune
-	err error
-}
-
 type lazyResult struct {
 	index       int
 	done        bool
@@ -1006,16 +1001,11 @@ func (d *dropdown) run() (int, error) {
 // runLazy renders the dropdown while items are streamed in.
 func (d *dropdown) runLazy(tio *termIO, frame *bytes.Buffer) (int, error) {
 	ctx, cancel := context.WithCancel(d.Ctx)
-	keys := d.readKey(ctx, tio)
-	// only drain what [waitForReadableInput] can actually interrupt
-	cancelable := canDrainOnCancel(tio.in)
+	keys := tio.readKey(ctx)
 	defer func() {
-		cancel() // signal consumer to stop
-		if !cancelable {
-			return
-		}
-		for range keys {
-		}
+		cancel()
+		// wait without draining, so an unreceived key stays for the next prompt
+		tio.awaitReader()
 	}()
 	space := 0
 	displayed := 0
@@ -1034,7 +1024,7 @@ func (d *dropdown) runLazy(tio *termIO, frame *bytes.Buffer) (int, error) {
 			return res.index, nil
 		}
 		if res.readNextKey {
-			keys = d.readKey(ctx, tio)
+			keys = tio.readKey(ctx)
 		}
 		needsRender = res.needsRender
 	}
@@ -1551,26 +1541,4 @@ func (d *dropdown) pressAny(key rune, displayed, space int) bool {
 	d.selected = 0
 	d.offset = 0
 	return false
-}
-
-// readKey reads one keypress so lazy mode can interleave input and streamed items.
-func (d *dropdown) readKey(ctx context.Context, tio *termIO) <-chan keyEvent {
-	ch := make(chan keyEvent, 1)
-	go func() {
-		defer close(ch)
-		err := waitForReadableInput(ctx, tio.in)
-		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return
-			}
-			ch <- keyEvent{err: err}
-			return
-		}
-		key, _, err := tio.ReadRune()
-		if ctx.Err() != nil {
-			return
-		}
-		ch <- keyEvent{key: key, err: err}
-	}()
-	return ch
 }

@@ -215,10 +215,21 @@ func (m *multichoice) run() error {
 			}
 		}
 	}()
+	ctx, cancel := context.WithCancel(m.Ctx)
+	keys := io.readKey(ctx)
+	defer func() {
+		cancel()
+		// wait without draining, so an unreceived key stays for the next prompt
+		io.awaitReader()
+	}()
 	var typed []rune
 	for {
 		err = m.render(io, frame)
 		if err != nil {
+			if m.Ctx.Err() != nil {
+				// the frame stops accepting writes once the prompt is cancelled
+				return m.Ctx.Err()
+			}
 			return fmt.Errorf("render: %w", err)
 		}
 		frame.WriteTo(io)
@@ -230,13 +241,22 @@ func (m *multichoice) run() error {
 			io.clear(space, frame)
 			frame.WriteTo(io)
 			return m.Ctx.Err()
-		default:
-			key, _, err := io.ReadRune()
+		case <-io.onResize:
+			// render re-reads the terminal size and clamps the visible rows
 			io.clear(space, frame)
+		case ev, ok := <-keys:
+			io.clear(space, frame)
+			if !ok {
+				// the reader stops without a key only when the context is done
+				frame.WriteTo(io)
+				return m.Ctx.Err()
+			}
+			key, err := ev.key, ev.err
 			if err != nil {
 				var more *pasteTextError
 				if errors.As(err, &more) {
 					// Ctrl+V or CMD+V pressed
+					keys = io.readKey(ctx)
 					continue
 				}
 				frame.WriteTo(io) // clear the screen
@@ -285,6 +305,9 @@ func (m *multichoice) run() error {
 					m.offset = 0
 				}
 			}
+			// read the next key only once this one is handled, so that
+			// Enter does not leave a read behind for the next prompt
+			keys = io.readKey(ctx)
 		}
 	}
 }

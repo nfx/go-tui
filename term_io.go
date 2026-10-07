@@ -33,6 +33,8 @@ type termIO struct {
 
 	fd       int             // output file descriptor for resize refresh
 	onResize <-chan struct{} // fires on terminal resize (SIGWINCH)
+
+	reader <-chan struct{} // closed once the last [termIO.readKey] goroutine is done with pending
 }
 
 var ErrNoTTY = errors.New("no tty")
@@ -179,6 +181,67 @@ func (t *termIO) ReadRune() (rune, int, error) {
 		return 0, n, err
 	}
 	return t.decodeRuneBytes(buf, n)
+}
+
+type keyEvent struct {
+	key rune
+	err error
+}
+
+// readKey reads one keypress so a widget can interleave input with other events,
+// such as streamed items or terminal resizes. The key is committed only once the
+// caller receives it: after ctx is cancelled the reader exits without consuming,
+// and a blocked read on a wrapped input is retained for the next prompt
+// (see [startInputRead]) instead of discarding the key it eventually returns.
+func (t *termIO) readKey(ctx context.Context) <-chan keyEvent {
+	// Finish publishing the previous key's pending bytes before starting a read.
+	t.awaitReader()
+	ch := make(chan keyEvent)
+	done := make(chan struct{})
+	t.reader = done
+	go func() {
+		defer close(done)
+		defer close(ch)
+		// bytes left over from the previous read never reach the fd again,
+		// so polling it would wait for an unrelated key
+		if len(t.pending) == 0 {
+			if err := waitForReadableInput(ctx, t.in); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				select {
+				case <-ctx.Done():
+				case ch <- keyEvent{err: err}:
+				}
+				return
+			}
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		read, consumed := startInputRead(t)
+		select {
+		case <-ctx.Done():
+			return
+		case <-read.done:
+		}
+		select {
+		case <-ctx.Done():
+		case ch <- keyEvent{key: read.event.key, err: read.event.err}:
+			t.pending = read.pending
+			consumed()
+		}
+	}()
+	return ch
+}
+
+// awaitReader waits until the last [termIO.readKey] goroutine exits after its
+// context is cancelled. It does not receive the key, so an unreceived key stays
+// with the input for the next prompt.
+func (t *termIO) awaitReader() {
+	if t.reader != nil {
+		<-t.reader
+	}
 }
 
 // refreshSize re-queries the terminal dimensions and updates
