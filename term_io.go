@@ -181,6 +181,34 @@ func (t *termIO) ReadRune() (rune, int, error) {
 	return t.decodeRuneBytes(buf, n)
 }
 
+type keyEvent struct {
+	key rune
+	err error
+}
+
+// readKey reads one keypress so a widget can interleave input with other events,
+// such as streamed items or terminal resizes.
+func (t *termIO) readKey(ctx context.Context) <-chan keyEvent {
+	ch := make(chan keyEvent, 1)
+	go func() {
+		defer close(ch)
+		err := waitForReadableInput(ctx, t.in)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return
+			}
+			ch <- keyEvent{err: err}
+			return
+		}
+		key, _, err := t.ReadRune()
+		if ctx.Err() != nil {
+			return
+		}
+		ch <- keyEvent{key: key, err: err}
+	}()
+	return ch
+}
+
 // refreshSize re-queries the terminal dimensions and updates
 // Width/Height so the next render uses the current geometry.
 func (t *termIO) refreshSize() {

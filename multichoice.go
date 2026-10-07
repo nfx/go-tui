@@ -215,6 +215,18 @@ func (m *multichoice) run() error {
 			}
 		}
 	}()
+	ctx, cancel := context.WithCancel(m.Ctx)
+	keys := io.readKey(ctx)
+	// only drain what [waitForReadableInput] can actually interrupt
+	cancelable := canDrainOnCancel(io.in)
+	defer func() {
+		cancel() // signal the key reader to stop
+		if !cancelable {
+			return
+		}
+		for range keys {
+		}
+	}()
 	var typed []rune
 	for {
 		err = m.render(io, frame)
@@ -230,13 +242,22 @@ func (m *multichoice) run() error {
 			io.clear(space, frame)
 			frame.WriteTo(io)
 			return m.Ctx.Err()
-		default:
-			key, _, err := io.ReadRune()
+		case <-io.onResize:
+			// render re-reads the terminal size and clamps the visible rows
 			io.clear(space, frame)
+		case ev, ok := <-keys:
+			io.clear(space, frame)
+			if !ok {
+				// the reader stops without a key only when the context is done
+				frame.WriteTo(io)
+				return m.Ctx.Err()
+			}
+			key, err := ev.key, ev.err
 			if err != nil {
 				var more *pasteTextError
 				if errors.As(err, &more) {
 					// Ctrl+V or CMD+V pressed
+					keys = io.readKey(ctx)
 					continue
 				}
 				frame.WriteTo(io) // clear the screen
@@ -285,6 +306,9 @@ func (m *multichoice) run() error {
 					m.offset = 0
 				}
 			}
+			// read the next key only once this one is handled, so that
+			// Enter does not leave a read behind for the next prompt
+			keys = io.readKey(ctx)
 		}
 	}
 }

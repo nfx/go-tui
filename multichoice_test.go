@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"strings"
 	"testing"
 	"text/template"
+	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
@@ -207,5 +209,64 @@ func TestMultichoiceClampDisplayKeepsActiveItemVisible(t *testing.T) {
 	}
 	if m.active < 0 || m.active >= len(m.displayed) {
 		t.Fatalf("active %d outside displayed %d", m.active, len(m.displayed))
+	}
+}
+
+func TestMultichoiceRunRerendersOnResize(t *testing.T) {
+	keys, typing := io.Pipe()
+	t.Cleanup(func() { _ = typing.Close() })
+	resized := make(chan struct{})
+	out := &syncBuffer{}
+	var tio *termIO
+	m := newMultichoice()
+	m.Items = []any{"one", "two", "three", "four", "five", "six"}
+	m.selected = make([]bool, len(m.Items))
+	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}\n"))
+	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}} more"))
+	m.labelBuf.WriteString(m.Label + " ")
+	m.in = keys
+	m.out = out
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		tio = &termIO{
+			in:       in,
+			out:      out,
+			Width:    40,
+			Height:   8,
+			Restore:  func() error { return nil },
+			onResize: resized,
+		}
+		return tio, nil
+	}
+	done := make(chan error, 1)
+	go func() { done <- m.run() }()
+	waitBufferContains(t, out, "2 more")
+
+	// shrink the terminal without pressing a key
+	tio.Height = 4
+	select {
+	case resized <- struct{}{}:
+	case <-time.After(time.Second):
+		t.Fatal("resize not delivered")
+	}
+	waitBufferContains(t, out, "4 more")
+
+	_, err := typing.Write([]byte{keyEnter})
+	assert.NoError(t, err)
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("multichoice did not return after Enter")
+	}
+}
+
+func waitBufferContains(t *testing.T, out *syncBuffer, part string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(out.String(), part) {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for output containing %q, got %q", part, out.String())
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
