@@ -34,6 +34,7 @@ type termIO struct {
 	fd       int             // output file descriptor for resize refresh
 	onResize <-chan struct{} // fires on terminal resize (SIGWINCH)
 
+	read   *inputRead      // outstanding read, retained until its event is accepted
 	reader <-chan struct{} // closed once the last [termIO.readKey] goroutine is done with pending
 }
 
@@ -188,11 +189,8 @@ type keyEvent struct {
 	err error
 }
 
-// readKey reads one keypress so a widget can interleave input with other events,
-// such as streamed items or terminal resizes. The key is committed only once the
-// caller receives it: after ctx is cancelled the reader exits without consuming,
-// and a blocked read on a wrapped input is retained for the next prompt
-// (see [startInputRead]) instead of discarding the key it eventually returns.
+// readKey reads one keypress asynchronously, committing it only when received.
+// Cancellation retains an unconsumed read for the next reader on this termIO.
 func (t *termIO) readKey(ctx context.Context) <-chan keyEvent {
 	// Finish publishing the previous key's pending bytes before starting a read.
 	t.awaitReader()
@@ -204,7 +202,7 @@ func (t *termIO) readKey(ctx context.Context) <-chan keyEvent {
 		defer close(ch)
 		// bytes left over from the previous read never reach the fd again,
 		// so polling it would wait for an unrelated key
-		if len(t.pending) == 0 {
+		if t.read == nil && len(t.pending) == 0 {
 			if err := waitForReadableInput(ctx, t.in); err != nil {
 				if ctx.Err() != nil {
 					return
@@ -219,7 +217,7 @@ func (t *termIO) readKey(ctx context.Context) <-chan keyEvent {
 		if ctx.Err() != nil {
 			return
 		}
-		read, consumed := startInputRead(t)
+		read, consumed := t.startRead()
 		select {
 		case <-ctx.Done():
 			return
@@ -237,7 +235,7 @@ func (t *termIO) readKey(ctx context.Context) <-chan keyEvent {
 
 // awaitReader waits until the last [termIO.readKey] goroutine exits after its
 // context is cancelled. It does not receive the key, so an unreceived key stays
-// with the input for the next prompt.
+// with this termIO for its next reader.
 func (t *termIO) awaitReader() {
 	if t.reader != nil {
 		<-t.reader
@@ -549,4 +547,37 @@ func isTerminal() bool {
 func isPrintable(r rune) bool {
 	isSurrogate := r >= 0xd800 && r <= 0xdbff
 	return r >= 32 && !isSurrogate
+}
+
+type inputRead struct {
+	done    chan struct{}
+	event   inputKeyEvent
+	pending []byte
+}
+
+// startRead reuses this termIO's outstanding read, including its buffered bytes.
+func (t *termIO) startRead() (*inputRead, func()) {
+	if t.read != nil {
+		return t.read, t.forgetRead
+	}
+	read := &inputRead{done: make(chan struct{})}
+	t.read = read
+	// The read owns its decoder state even after its original prompt returns.
+	decoder := &termIO{in: t.in, pending: t.pending}
+	go func() {
+		defer close(read.done)
+		key, n, err := decoder.ReadRune()
+		read.event = inputKeyEvent{key: key, err: err}
+		var more *pasteTextError
+		if errors.As(err, &more) {
+			read.event.paste = append([]byte(nil), more.buf[:n]...)
+		}
+		read.pending = decoder.pending
+	}()
+	return read, t.forgetRead
+}
+
+// forgetRead releases the outstanding read after its event has been accepted.
+func (t *termIO) forgetRead() {
+	t.read = nil
 }

@@ -9,10 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"reflect"
 	"strings"
-	"sync"
 	"text/template"
 	"unicode/utf8"
 )
@@ -200,7 +197,7 @@ func (p *input) run() (string, error) {
 	defer io.Restore() //nolint:errcheck
 	frame := &bytes.Buffer{}
 	// Cancel the event goroutine on return; an outstanding wrapper read is
-	// retained for the next prompt (see startInputRead).
+	// retained for the next reader on this termIO (see termIO.startRead).
 	runCtx, cancel := context.WithCancel(p.ctx)
 	defer cancel()
 	var keys <-chan inputKeyEvent
@@ -366,74 +363,8 @@ func (p *input) pressKey(io *termIO) (string, error) {
 	return "", nil
 }
 
-// wrappedInputReads retains at most one outstanding read per wrapped reader.
-// A cancelled prompt leaves the read available for the next prompt on that input.
-var wrappedInputReads = struct {
-	sync.Mutex
-	reads map[any]*inputRead
-}{reads: make(map[any]*inputRead)}
-
-type inputRead struct {
-	done    chan struct{}
-	event   inputKeyEvent
-	pending []byte
-}
-
-// startInputRead reuses a wrapper's outstanding read, including its buffered bytes.
-// Wrappers cannot be polled through Fd: their Read may serve an independent buffer.
-func startInputRead(tio *termIO) (*inputRead, func()) {
-	d, wrapped := tio.in.(descriptor)
-	if _, file := tio.in.(*os.File); file {
-		wrapped = false
-	}
-	var source any
-	if wrapped {
-		// Use reader identity where possible so closing a wrapper and reusing its
-		// descriptor cannot deliver an old result to an unrelated input.
-		source = d
-		if !reflect.ValueOf(source).Comparable() {
-			source = d.Fd()
-		}
-		wrappedInputReads.Lock()
-		defer wrappedInputReads.Unlock()
-		if read := wrappedInputReads.reads[source]; read != nil {
-			return read, func() { forgetInputRead(source, read) }
-		}
-	}
-	read := &inputRead{done: make(chan struct{})}
-	if wrapped {
-		wrappedInputReads.reads[source] = read
-	}
-	// The read owns its decoder state even after its original prompt returns.
-	decoder := &termIO{in: tio.in, pending: tio.pending}
-	go func() {
-		defer close(read.done)
-		key, n, err := decoder.ReadRune()
-		read.event = inputKeyEvent{key: key, err: err}
-		var more *pasteTextError
-		if errors.As(err, &more) {
-			read.event.paste = append([]byte(nil), more.buf[:n]...)
-		}
-		read.pending = decoder.pending
-	}()
-	return read, func() {
-		if wrapped {
-			forgetInputRead(source, read)
-		}
-	}
-}
-
-// forgetInputRead releases a shared read after a prompt has accepted its event.
-func forgetInputRead(source any, read *inputRead) {
-	wrappedInputReads.Lock()
-	defer wrappedInputReads.Unlock()
-	if wrappedInputReads.reads[source] == read {
-		delete(wrappedInputReads.reads, source)
-	}
-}
-
 // readEvents reads one chunk per permit and exits when the prompt is cancelled.
-// A blocked wrapper read is retained for the next prompt instead of losing its key.
+// A blocked read is retained for the next reader on this termIO.
 func (p *input) readEvents(ctx context.Context, tio *termIO) (<-chan inputKeyEvent, chan<- struct{}, <-chan struct{}) {
 	keys := make(chan inputKeyEvent)
 	permit := make(chan struct{}, 1)
@@ -450,10 +381,10 @@ func (p *input) readEvents(ctx context.Context, tio *termIO) (<-chan inputKeyEve
 			if ctx.Err() != nil {
 				return
 			}
-			if len(tio.pending) == 0 && waitForReadableInput(ctx, tio.in) != nil {
+			if tio.read == nil && len(tio.pending) == 0 && waitForReadableInput(ctx, tio.in) != nil {
 				return
 			}
-			read, consumed := startInputRead(tio)
+			read, consumed := tio.startRead()
 			select {
 			case <-ctx.Done():
 				return

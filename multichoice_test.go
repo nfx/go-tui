@@ -311,7 +311,7 @@ func TestMultichoiceRunReadsPendingEnter(t *testing.T) {
 }
 
 // TestMultichoiceRunCancelledWrappedReadKeepsNextKey verifies that a read blocked
-// in a wrapper that cannot be polled is handed to the next prompt, not discarded.
+// in a wrapper that cannot be polled is retained by the same termIO.
 func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	pr, pw, err := os.Pipe()
 	assert.NoError(t, err)
@@ -321,6 +321,9 @@ func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	m := newPipeMultichoice(ctx, in)
+	tio, err := m.makeTermIO(m.in, m.out)
+	assert.NoError(t, err)
+	m.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { return tio, nil }
 	finished := make(chan error, 1)
 	go func() { finished <- m.run() }()
 	select {
@@ -342,9 +345,7 @@ func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	next.ctx, cancel = context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	next.in, next.out = in, &bytes.Buffer{}
-	next.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
-	}
+	next.makeTermIO = m.makeTermIO
 	assert.NoError(t, next.parseTemplates())
 	got, err := next.run()
 	assert.NoError(t, err)

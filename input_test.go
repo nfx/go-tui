@@ -661,15 +661,16 @@ func (r *notifyingReader) Read(p []byte) (int, error) {
 	return r.File.Read(p[:1])
 }
 
-// TestInputRunCancelledWrappedReadKeepsNextKey verifies handoff of a blocked read.
+// TestInputRunCancelledWrappedReadKeepsNextKey verifies handoff of a blocked read on the same termIO.
 func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	pr, pw, err := os.Pipe()
 	assert.NoError(t, err)
 	defer pr.Close()
 	defer pw.Close()
 	in := &notifyingReader{File: pr, started: make(chan struct{})}
-	mk := func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
+	tio := &termIO{in: in, out: &bytes.Buffer{}, Width: 20, Height: 2, Restore: func() error { return nil }}
+	mk := func(io.Reader, io.Writer) (*termIO, error) {
+		return tio, nil
 	}
 	first := newInput("first")
 	ctx, cancel := context.WithCancel(t.Context())
