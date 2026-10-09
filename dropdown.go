@@ -1382,7 +1382,7 @@ func (d *dropdown) loadItem(io *termIO, frame *bytes.Buffer, it itPair, more boo
 // addItem appends an item and refreshes derived state.
 func (d *dropdown) addItem(height int, item any) error {
 	var current = -1 // original index of the item the user moved to
-	if pos := d.offset + d.selected; pos > 0 && pos < len(d.relevant) {
+	if pos := d.offset + d.selected; pos >= 0 && pos < len(d.relevant) {
 		current = d.relevant[pos]
 	}
 	d.Items = append(d.Items, item)
