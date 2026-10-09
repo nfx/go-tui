@@ -1045,7 +1045,7 @@ func TestTableScaleColorFollowsPhysicalCell(t *testing.T) {
 		Value int
 	}
 	data := []row{{"warm", 1}, {"a\nb", 100}, {"single", 50}}
-	events := collectEvents(t, "", data, WithColumnGreenRedScale("Value"))
+	events := collectEvents(t, "", data, WithColumnGreenRedScale("Value"), WithMultilineCells())
 	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[1])
 	// multi-line record: value stays on the first physical row, continuation is plain
 	first := mustTableRow(t, events[2]).Cells
@@ -1057,6 +1057,128 @@ func TestTableScaleColorFollowsPhysicalCell(t *testing.T) {
 	assertNoGreenRedScaleColor(t, cont[1])
 	last := mustTableRow(t, events[4]).Cells
 	assertScaledCellContains(t, last[1], yellow, "50")
+}
+
+func TestTableMultilineCellsDisabledByDefault(t *testing.T) {
+	type row struct {
+		Text  string
+		Value int
+	}
+	data := []row{{"a\nb", 1}, {"c\r\nd", 2}}
+	events := collectEvents(t, "", data, WithColumnGreenRedScale("Value"))
+	assert.Equal(t, 4, len(events))
+	first := mustTableRow(t, events[1]).Cells
+	assert.Equal(t, "a b", strings.TrimSpace(first[0]))
+	second := mustTableRow(t, events[2]).Cells
+	assert.Equal(t, "c d", strings.TrimSpace(second[0]))
+	assertScaledCellContains(t, second[1], brightRed, "2")
+}
+
+func TestTableMultilineCellsAlignPhysicalRows(t *testing.T) {
+	type row struct {
+		Name string
+		Note string
+	}
+	data := []row{{"alpha", "one\ntwo\nthree"}, {"beta", "four"}}
+	buf := &bytes.Buffer{}
+	assert.NoError(t, Table(buf, "{{.Name}}\t{{.Note}}", data, WithMultilineCells()))
+	lines := strings.Split(strings.TrimRight(factPlain(buf.String()), "\n"), "\n")
+	assert.Equal(t, 5, len(lines))
+	assert.Equal(t, "alpha  one", strings.TrimRight(lines[1], " "))
+	assert.Equal(t, "two", strings.TrimSpace(lines[2]))
+	assert.Equal(t, strings.Index(lines[1], "one"), strings.Index(lines[2], "two"))
+	assert.Equal(t, strings.Index(lines[1], "one"), strings.Index(lines[3], "three"))
+	assert.Equal(t, strings.Index(lines[1], "one"), strings.Index(lines[4], "four"))
+}
+
+func TestTableMultilineCellsTruncateEachLine(t *testing.T) {
+	type row struct {
+		Text string
+	}
+	data := []row{{"a\nbb\nccc\ndddd\neeeeee\nff"}}
+	// 3 visible characters, the truncation tailer and the cell padding
+	o := []opt{WithMultilineCells(), WithMaxWidth(5)}
+
+	events := collectEvents(t, "{{.Text}}", data, o...)
+	assert.Equal(t, 8, len(events))
+	var got []string
+	for _, ev := range events[1 : len(events)-1] {
+		got = append(got, strings.TrimSpace(mustTableRow(t, ev).Cells[0]))
+	}
+	assert.Equal(t, []string{"a", "bb", "ccc", "dd…", "ee…", "ff"}, got)
+
+	buf := &bytes.Buffer{}
+	assert.NoError(t, Table(buf, "{{.Text}}", data, o...))
+	lines := strings.Split(strings.TrimRight(factPlain(buf.String()), "\n"), "\n")
+	assert.Equal(t, 7, len(lines))
+	assert.Equal(t, "TE…", strings.TrimSpace(lines[0]))
+	for _, line := range lines {
+		if width([]byte(line)) > 5 {
+			t.Fatalf("width %d > 5: %q", width([]byte(line)), line)
+		}
+	}
+	assert.Equal(t, "dd…", strings.TrimSpace(lines[4]))
+	assert.Equal(t, "ee…", strings.TrimSpace(lines[5]))
+	assert.Equal(t, "ff", strings.TrimSpace(lines[6]))
+}
+
+func TestTableTrailingLineBreakEndsRow(t *testing.T) {
+	type row struct {
+		Name string
+		ID   string
+	}
+	data := []row{{"foo", "1"}, {"bar", "2"}}
+	for _, tmpl := range []string{"{{.Name}}\t{{.ID}}\n", "{{.Name}}\t{{.ID}}\r\n"} {
+		for _, o := range [][]opt{nil, {WithMultilineCells()}} {
+			events := collectEvents(t, tmpl, data, o...)
+			assert.Equal(t, 4, len(events))
+			assert.Equal(t, "1", strings.TrimSpace(mustTableRow(t, events[1]).Cells[1]))
+			assert.Equal(t, "2", strings.TrimSpace(mustTableRow(t, events[2]).Cells[1]))
+
+			buf := &bytes.Buffer{}
+			assert.NoError(t, Table(buf, tmpl, data, o...))
+			lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+			assert.Equal(t, 3, len(lines))
+		}
+	}
+}
+
+func TestTableEmptyFirstBatchColumnKeepsMinimumWidth(t *testing.T) {
+	type row struct {
+		Name string
+		Note string
+	}
+	data := make([]row, 12) // the first batch of 10 has no notes
+	for i := range data {
+		data[i].Name = fmt.Sprintf("n%02d", i)
+	}
+	data[11].Note = "late"
+	suppress := opT(func(tbl *table) error {
+		tbl.suppressHeaders = true
+		return nil
+	})
+
+	events := collectEvents(t, "", data)
+	last := mustTableRow(t, events[len(events)-2]).Cells
+	assert.Equal(t, "…", strings.TrimSpace(last[1]))
+
+	buf := &bytes.Buffer{}
+	assert.NoError(t, TableAuto(buf, data, suppress))
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	assert.Equal(t, 12, len(lines))
+	assert.Equal(t, "n11  …", strings.TrimRight(lines[11], " "))
+
+	// the reserved minimum counts toward the max width budget
+	for i := range data {
+		data[i].Name = strings.Repeat("x", 30)
+	}
+	buf.Reset()
+	assert.NoError(t, TableAuto(buf, data, suppress, WithMaxWidth(20)))
+	for line := range strings.SplitSeq(strings.TrimRight(buf.String(), "\n"), "\n") {
+		if width([]byte(line)) > 20 {
+			t.Fatalf("width %d > 20: %q", width([]byte(line)), line)
+		}
+	}
 }
 
 func TestFactsTabIsMeasured(t *testing.T) {

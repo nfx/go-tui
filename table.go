@@ -237,6 +237,15 @@ func WithMaxWidth(chars int) opt {
 	})
 }
 
+// WithMultilineCells renders line breaks inside cells as aligned physical rows.
+// Without it, line breaks inside cells are rendered as spaces.
+func WithMultilineCells() opt {
+	return opT(func(t *table) error {
+		t.multilineCells = true
+		return nil
+	})
+}
+
 func WithFloat64AsPercent() opt {
 	return WithColumnTypeFormat(func(v float64) string {
 		return percentString(v)
@@ -397,6 +406,7 @@ type table struct {
 	ended            bool
 	autoTemplate     bool
 	suppressHeaders  bool
+	multilineCells   bool
 
 	customTemplateFuncs template.FuncMap
 	templateFuncSeq     int
@@ -731,14 +741,23 @@ func (t *table) renderCells(v any) ([]string, error) {
 }
 
 // addRecord lays out a record as physical rows: line k of every cell lands in
-// row k, and the cell's color stays with each of its own lines.
+// row k, and the cell's color stays with each of its own lines. Without
+// multiline cells, every record is a single physical row.
 func (t *table) addRecord(cells, colors []string) {
 	lines := make([][]string, len(cells))
 	count := 1
 	for i, text := range cells {
 		text = strings.ReplaceAll(text, "\r\n", "\n")
+		if i == len(cells)-1 {
+			// a template ending with a line break terminates the row
+			text = strings.TrimSuffix(text, "\n")
+		}
 		text = strings.ReplaceAll(text, "\r", " ")
-		lines[i] = strings.Split(strings.ReplaceAll(text, "\t", " "), "\n")
+		text = strings.ReplaceAll(text, "\t", " ")
+		if !t.multilineCells {
+			text = strings.ReplaceAll(text, "\n", " ")
+		}
+		lines[i] = strings.Split(text, "\n")
 		count = max(count, len(lines[i]))
 	}
 	for k := range count {
@@ -1284,7 +1303,8 @@ func (t *table) allocateWidths() {
 	budget := t.maxWidth - n*t.cellPad
 	limits := make([]int, n)
 	for i := range limits {
-		limits[i] = min(need[i], floor)
+		// reserve the minimum even for columns empty in the first batch
+		limits[i] = floor
 		budget -= limits[i]
 	}
 	for budget > 0 {
@@ -1311,6 +1331,8 @@ func (t *table) allocateWidths() {
 		}
 	}
 	for i := range t.columns {
+		// widths lock after the first batch, so later values need the minimum
+		used[i] = max(used[i], floor)
 		t.columns[i].maxVisible = used[i]
 		t.columns[i].width = used[i] + t.cellPad
 	}
