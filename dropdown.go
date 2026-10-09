@@ -1001,7 +1001,7 @@ func (d *dropdown) run() (int, error) {
 // runLazy renders the dropdown while items are streamed in.
 func (d *dropdown) runLazy(tio *termIO, frame *bytes.Buffer) (int, error) {
 	ctx, cancel := context.WithCancel(d.Ctx)
-	keys := tio.readKey(ctx)
+	keys := tio.readEvents(ctx, nil)
 	defer func() {
 		cancel()
 		// wait without draining, so an unreceived key stays for the next prompt
@@ -1024,7 +1024,7 @@ func (d *dropdown) runLazy(tio *termIO, frame *bytes.Buffer) (int, error) {
 			return res.index, nil
 		}
 		if res.readNextKey {
-			keys = tio.readKey(ctx)
+			keys = tio.readEvents(ctx, nil)
 		}
 		needsRender = res.needsRender
 	}
@@ -1431,15 +1431,19 @@ func (d *dropdown) pressKey(tio *termIO, frame *bytes.Buffer, space, displayed i
 	if d.input != nil {
 		return d.pressKeyFromInput(tio, frame, space, displayed)
 	}
-	key, _, readErr := tio.ReadRune()
-	if readErr != nil {
-		return -1, readErr
+	ev, ok := <-tio.readEvents(d.Ctx, nil)
+	tio.awaitReader()
+	if !ok {
+		return -1, d.Ctx.Err()
+	}
+	if ev.err != nil {
+		return -1, ev.err
 	}
 	err = tio.clear(space, frame)
 	if err != nil {
 		return -1, err
 	}
-	i = d.pressKeyRune(tio, key, displayed, space)
+	i = d.pressKeyRune(tio, ev.key, displayed, space)
 	if i >= 0 {
 		_, err := frame.WriteTo(tio) // TODO: check if we can just defer it from beginning of the method
 		if err != nil {

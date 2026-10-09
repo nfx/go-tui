@@ -324,7 +324,7 @@ func TestTermIO_ReadRune(t *testing.T) {
 			buf := bytes.NewBuffer(tt.input)
 			termIO := &termIO{in: buf}
 
-			r, n, err := termIO.ReadRune()
+			r, n, err := termIO.readRune()
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.True(t, errors.Is(err, io.EOF))
@@ -340,7 +340,7 @@ func TestTermIO_ReadRune(t *testing.T) {
 func TestTermIO_ReadRunePasteError(t *testing.T) {
 	buf := bytes.NewBufferString("ab")
 	termIO := &termIO{in: buf}
-	_, _, err := termIO.ReadRune()
+	_, _, err := termIO.readRune()
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -371,13 +371,13 @@ func TestTermIO_ReadRuneIgnoresNonArrowEscape(t *testing.T) {
 			rest := "\x03next keys"
 			buf := bytes.NewBufferString(tt.seq + rest)
 			termIO := &termIO{in: iotest.OneByteReader(buf)}
-			r, n, err := termIO.ReadRune()
+			r, n, err := termIO.readRune()
 			assert.NoError(t, err)
 			assert.Equal(t, keyIgnored, r)
 			assert.Equal(t, len(tt.seq), n)
 			// a byte read past the sequence stays buffered for the next key
 			assert.Equal(t, rest, string(termIO.pending)+buf.String())
-			_, _, err = termIO.ReadRune()
+			_, _, err = termIO.readRune()
 			assert.ErrorIs(t, err, io.EOF)
 		})
 	}
@@ -385,20 +385,20 @@ func TestTermIO_ReadRuneIgnoresNonArrowEscape(t *testing.T) {
 
 func TestTermIO_ReadRuneEscapeBeforeControlKey(t *testing.T) {
 	termIO := &termIO{in: iotest.OneByteReader(bytes.NewBufferString("\x1b\x03"))}
-	r, n, err := termIO.ReadRune()
+	r, n, err := termIO.readRune()
 	assert.NoError(t, err)
 	assert.Equal(t, keyEscape, r)
 	assert.Equal(t, 1, n)
-	_, _, err = termIO.ReadRune()
+	_, _, err = termIO.readRune()
 	assert.ErrorIs(t, err, io.EOF)
 }
 
 func TestTermIO_ReadRuneEscapePairs(t *testing.T) {
 	termIO := &termIO{in: bytes.NewBufferString("\x1b\x1b[B")}
-	r, _, err := termIO.ReadRune()
+	r, _, err := termIO.readRune()
 	assert.NoError(t, err)
 	assert.Equal(t, keyEscape, r)
-	r, _, err = termIO.ReadRune()
+	r, _, err = termIO.readRune()
 	assert.NoError(t, err)
 	assert.Equal(t, '↓', r)
 }
@@ -425,13 +425,13 @@ func TestTermIO_ReadRuneLoneEscapeTimesOut(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := w.WriteString(tt.seq)
 			assert.NoError(t, err)
-			got, n, err := termIO.ReadRune()
+			got, n, err := termIO.readRune()
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, len(tt.seq), n)
 			_, err = w.WriteString("q")
 			assert.NoError(t, err)
-			got, _, err = termIO.ReadRune()
+			got, _, err = termIO.readRune()
 			assert.NoError(t, err)
 			assert.Equal(t, 'q', got)
 		})
@@ -452,7 +452,7 @@ func TestTermIO_ReadRuneSplitArrow(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := bytes.NewBufferString(tt.seq + "q")
 			termIO := &termIO{in: iotest.OneByteReader(buf)}
-			r, n, err := termIO.ReadRune()
+			r, n, err := termIO.readRune()
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want, r)
 			assert.Equal(t, len(tt.seq), n)
@@ -466,7 +466,7 @@ func TestTermIO_ReadRuneMultiByte(t *testing.T) {
 		t.Run(string(want), func(t *testing.T) {
 			buf := bytes.NewBufferString(string(want) + "q")
 			termIO := &termIO{in: iotest.OneByteReader(buf)}
-			r, n, err := termIO.ReadRune()
+			r, n, err := termIO.readRune()
 			assert.NoError(t, err)
 			assert.Equal(t, want, r)
 			assert.Equal(t, utf8.RuneLen(want), n)
@@ -477,7 +477,7 @@ func TestTermIO_ReadRuneMultiByte(t *testing.T) {
 
 func TestTermIO_ReadRuneInvalidByte(t *testing.T) {
 	termIO := &termIO{in: bytes.NewBuffer([]byte{0xff})}
-	r, _, err := termIO.ReadRune()
+	r, _, err := termIO.readRune()
 	assert.NoError(t, err)
 	assert.Equal(t, utf8.RuneError, r)
 }
@@ -486,11 +486,11 @@ func TestTermIO_ReadRunePasteKeepsRunesWhole(t *testing.T) {
 	// the 16-byte read buffer fills in the middle of the trailing "é"
 	text := strings.Repeat("a", 15) + "é"
 	termIO := &termIO{in: bytes.NewBufferString(text)}
-	_, _, err := termIO.ReadRune()
+	_, _, err := termIO.readRune()
 	var paste *pasteTextError
 	assert.True(t, errors.As(err, &paste))
 	assert.Equal(t, strings.Repeat("a", 15), string(paste.buf))
-	r, n, err := termIO.ReadRune()
+	r, n, err := termIO.readRune()
 	assert.NoError(t, err)
 	assert.Equal(t, 'é', r)
 	assert.Equal(t, 2, n)
@@ -507,13 +507,13 @@ func TestTermIO_ReadRuneIncompleteRuneTimesOut(t *testing.T) {
 	termIO := &termIO{in: r}
 	_, err = w.Write([]byte{0xe2, 0x82})
 	assert.NoError(t, err)
-	_, n, err := termIO.ReadRune()
+	_, n, err := termIO.readRune()
 	var paste *pasteTextError
 	assert.True(t, errors.As(err, &paste))
 	assert.Equal(t, 2, n)
 	_, err = w.WriteString("q")
 	assert.NoError(t, err)
-	got, _, err := termIO.ReadRune()
+	got, _, err := termIO.readRune()
 	assert.NoError(t, err)
 	assert.Equal(t, 'q', got)
 }
@@ -540,5 +540,154 @@ func TestIsPrintable(t *testing.T) {
 			result := isPrintable(tt.r)
 			assert.Equal(t, tt.expected, result)
 		})
+	}
+}
+
+// Input ownership follows the reader even when a new prompt changes output.
+func TestMakeTermIO_SharedInputAcrossOutputs(t *testing.T) {
+	oldSize, oldCheck := termGetSize, terminalInputChecker
+	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
+	terminalInputChecker = func(int) bool { return false }
+	t.Cleanup(func() { termGetSize, terminalInputChecker = oldSize, oldCheck })
+	in := &mockDescriptor{Reader: bytes.NewBufferString("\x1b[A\r"), fd: 0}
+	out1 := &mockDescriptor{Writer: &bytes.Buffer{}, fd: 1}
+	out2 := &mockDescriptor{Writer: &bytes.Buffer{}, fd: 2}
+	first, err := makeTermIO(in, out1)
+	assert.NoError(t, err)
+	read, _ := first.startRead()
+	<-read.done // completed but not yet accepted by the cancelled prompt
+	second, err := makeTermIO(in, out2)
+	assert.NoError(t, err)
+	if first == second || second.out != out2 || first.input != second.input {
+		t.Fatal("expected fresh terminal state with shared input")
+	}
+	adopted, accept := second.startRead()
+	if adopted != read {
+		t.Fatal("outstanding read was not adopted")
+	}
+	assert.Equal(t, '↑', adopted.event.key)
+	accept()
+	third, err := makeTermIO(in, out1)
+	assert.NoError(t, err)
+	pending, accept := third.startRead()
+	<-pending.done
+	assert.Equal(t, rune(keyEnter), pending.event.key)
+	accept()
+	inputStates.Lock()
+	_, retained := inputStates.states[in]
+	inputStates.Unlock()
+	if retained {
+		t.Fatal("idle input state retained in registry")
+	}
+	assert.NoError(t, first.Restore())
+	assert.NoError(t, second.Restore())
+	assert.NoError(t, third.Restore())
+}
+
+func TestSharedInputState_DistinctReadersSameDescriptor(t *testing.T) {
+	first := &mockDescriptor{Reader: bytes.NewBufferString("a"), fd: 123}
+	second := &mockDescriptor{Reader: bytes.NewBufferString("b"), fd: 123}
+	tio := &termIO{in: first, input: sharedInputState(first)}
+	read, accept := tio.startRead()
+	<-read.done
+	if sharedInputState(second) == tio.input {
+		t.Fatal("distinct readers shared state")
+	}
+	if sharedInputState(first) != tio.input {
+		t.Fatal("reader identity did not retain state")
+	}
+	accept()
+}
+
+func TestSharedInputState_FileIsLocal(t *testing.T) {
+	if sharedInputState(os.Stdin).source != nil {
+		t.Fatal("plain files must not enter the shared registry")
+	}
+}
+
+func TestTermIO_ReadEventsAdoptsUnacceptedRead(t *testing.T) {
+	in := &mockDescriptor{Reader: bytes.NewBufferString("\x1b[A\r"), fd: 0}
+	first := &termIO{in: in}
+	read, _ := first.startRead()
+	<-read.done
+	second := &termIO{in: in}
+	ev := <-second.readEvents(t.Context(), nil)
+	second.awaitReader()
+	assert.NoError(t, ev.err)
+	assert.Equal(t, '↑', ev.key)
+	ev = <-second.readEvents(t.Context(), nil)
+	second.awaitReader()
+	assert.NoError(t, ev.err)
+	assert.Equal(t, rune(keyEnter), ev.key)
+	ev = <-second.readEvents(t.Context(), nil)
+	second.awaitReader()
+	assert.True(t, errors.Is(ev.err, io.EOF))
+}
+
+func TestDropdownPressKeyReadsSharedPendingEnter(t *testing.T) {
+	for _, fresh := range []bool{false, true} {
+		name := "same terminal"
+		if fresh {
+			name = "fresh terminal"
+		}
+		t.Run(name, func(t *testing.T) {
+			in := &mockDescriptor{Reader: bytes.NewBufferString("\x1b[A\r"), fd: 0}
+			first := &termIO{in: in, out: &bytes.Buffer{}}
+			ev := <-first.readEvents(t.Context(), nil)
+			first.awaitReader()
+			assert.NoError(t, ev.err)
+			assert.Equal(t, '↑', ev.key)
+			second := first
+			if fresh {
+				second = &termIO{in: in, out: &bytes.Buffer{}}
+			}
+			d := newDropdown()
+			d.Items = []any{"one", "two"}
+			d.relevant = []int{0, 1}
+			i, err := d.pressKey(second, &bytes.Buffer{}, 1, 2)
+			assert.NoError(t, err)
+			assert.Equal(t, 0, i)
+			ev = <-second.readEvents(t.Context(), nil)
+			second.awaitReader()
+			assert.True(t, errors.Is(ev.err, io.EOF))
+		})
+	}
+}
+
+func TestSharedInputState_UnacceptedCtrlCRetained(t *testing.T) {
+	in := &mockDescriptor{Reader: bytes.NewBufferString("\x03"), fd: 0}
+	first := &termIO{in: in}
+	read, _ := first.startRead()
+	<-read.done
+	if sharedInputState(in) != first.input {
+		t.Fatal("unaccepted Ctrl-C was discarded as an empty failed read")
+	}
+	second := &termIO{in: in}
+	ev := <-second.readEvents(t.Context(), nil)
+	second.awaitReader()
+	assert.True(t, errors.Is(ev.err, io.EOF))
+}
+
+func TestSharedInputState_CancelledClosedReaderReleased(t *testing.T) {
+	pr, pw, err := os.Pipe()
+	assert.NoError(t, err)
+	defer pr.Close()
+	defer pw.Close()
+	in := &notifyingReader{File: pr, started: make(chan struct{})}
+	tio := &termIO{in: in}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	tio.readEvents(ctx, nil)
+	<-in.started
+	cancel()
+	tio.awaitReader()
+	assert.NoError(t, pr.Close())
+	<-tio.input.read.done
+	assert.Error(t, tio.input.read.event.err)
+	inputStates.Lock()
+	_, retained := inputStates.states[in]
+	inputStates.Unlock()
+	if retained {
+		t.Fatal("closed input retained after its cancelled read finished")
 	}
 }

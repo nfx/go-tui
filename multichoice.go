@@ -216,7 +216,7 @@ func (m *multichoice) run() error {
 		}
 	}()
 	ctx, cancel := context.WithCancel(m.Ctx)
-	keys := io.readKey(ctx)
+	keys := io.readEvents(ctx, nil)
 	defer func() {
 		cancel()
 		// wait without draining, so an unreceived key stays for the next prompt
@@ -256,7 +256,7 @@ func (m *multichoice) run() error {
 				var more *pasteTextError
 				if errors.As(err, &more) {
 					// Ctrl+V or CMD+V pressed
-					keys = io.readKey(ctx)
+					keys = io.readEvents(ctx, nil)
 					continue
 				}
 				frame.WriteTo(io) // clear the screen
@@ -307,7 +307,7 @@ func (m *multichoice) run() error {
 			}
 			// read the next key only once this one is handled, so that
 			// Enter does not leave a read behind for the next prompt
-			keys = io.readKey(ctx)
+			keys = io.readEvents(ctx, nil)
 		}
 	}
 }

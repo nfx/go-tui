@@ -162,6 +162,19 @@ func TestInputOptWrongType(t *testing.T) {
 	}
 }
 
+func (p *input) pressKey(tio *termIO) (string, error) {
+	ev, ok := <-tio.readEvents(context.Background(), nil)
+	tio.awaitReader()
+	done, err := p.handleKeyEvent(ev, ok)
+	if err != nil {
+		return "", err
+	}
+	if done {
+		return p.typed, nil
+	}
+	return "", nil
+}
+
 func TestInputPressKeyBackspace(t *testing.T) {
 	i := &input{
 		typed:  "ab",
@@ -477,7 +490,7 @@ func TestInputCursorActionsMultiByte(t *testing.T) {
 func TestInputPasteMultiByte(t *testing.T) {
 	i := &input{typed: "a", cursor: 1}
 	paste := []byte("日本é")
-	done, err := i.handleKeyEvent(inputKeyEvent{
+	done, err := i.handleKeyEvent(keyEvent{
 		err:   &pasteTextError{buf: paste},
 		paste: paste,
 	}, true)
@@ -661,16 +674,15 @@ func (r *notifyingReader) Read(p []byte) (int, error) {
 	return r.File.Read(p[:1])
 }
 
-// TestInputRunCancelledWrappedReadKeepsNextKey verifies handoff of a blocked read on the same termIO.
+// TestInputRunCancelledWrappedReadKeepsNextKey verifies handoff of a blocked read across fresh termIO instances.
 func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	pr, pw, err := os.Pipe()
 	assert.NoError(t, err)
 	defer pr.Close()
 	defer pw.Close()
 	in := &notifyingReader{File: pr, started: make(chan struct{})}
-	tio := &termIO{in: in, out: &bytes.Buffer{}, Width: 20, Height: 2, Restore: func() error { return nil }}
-	mk := func(io.Reader, io.Writer) (*termIO, error) {
-		return tio, nil
+	mk := func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{in: in, out: out, input: sharedInputState(in), Width: 20, Height: 2, Restore: func() error { return nil }}, nil
 	}
 	first := newInput("first")
 	ctx, cancel := context.WithCancel(t.Context())
