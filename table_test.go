@@ -209,7 +209,7 @@ func TestStructFieldsTemplate(t *testing.T) {
 }
 
 func TestStructFieldsForInvalid(t *testing.T) {
-	_, err := structFieldsFor[int]()
+	_, err := structFieldsForType(reflect.TypeFor[int]())
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -268,7 +268,7 @@ func TestStructFieldsForNested(t *testing.T) {
 		Inner inner
 		Score int `header:"score,align-right"`
 	}
-	fields, err := structFieldsFor[data]()
+	fields, err := structFieldsForType(reflect.TypeFor[data]())
 	assert.NoError(t, err)
 	assert.True(t, len(fields) >= 3)
 }
@@ -279,7 +279,7 @@ func TestStructFieldsForRecursiveType(t *testing.T) {
 		Next *node
 	}
 
-	fields, err := structFieldsFor[node]()
+	fields, err := structFieldsForType(reflect.TypeFor[node]())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(fields))
 	assert.Equal(t, "Name", fields[0].name)
@@ -287,7 +287,7 @@ func TestStructFieldsForRecursiveType(t *testing.T) {
 }
 
 func TestStructFieldsForIndirectRecursiveType(t *testing.T) {
-	fields, err := structFieldsFor[recursiveLeft]()
+	fields, err := structFieldsForType(reflect.TypeFor[recursiveLeft]())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(fields))
 	assert.Equal(t, "Value", fields[0].name)
@@ -298,7 +298,7 @@ func TestStructFieldsForStringerStruct(t *testing.T) {
 	type row struct {
 		Status pointerStringerStruct
 	}
-	fields, err := structFieldsFor[row]()
+	fields, err := structFieldsForType(reflect.TypeFor[row]())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(fields))
 	assert.Equal(t, "Status", fields[0].name)
@@ -995,4 +995,115 @@ func TestPercentStringTruncationBoundaries(t *testing.T) {
 	assert.Equal(t, "-29%", percentString(-0.29))
 	assert.Equal(t, "56%", percentString(math.Nextafter(0.57, 0)))
 	assert.Equal(t, "28%", percentString(math.Nextafter(0.29, 0)))
+}
+
+func TestFactsInterfaceInputUsesDynamicType(t *testing.T) {
+	orig := termGetSize
+	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { termGetSize = orig })
+
+	var data any = struct{ Name string }{"Alice"}
+	buf := &bytes.Buffer{}
+	assert.NoError(t, Facts(buf, data))
+	lines := factLines(buf.String())
+	assert.Equal(t, 2, len(lines))
+	assert.Contains(t, lines[0], "NAME")
+	assert.Contains(t, lines[1], "Alice")
+
+	var nilData any
+	assert.Error(t, Facts(&bytes.Buffer{}, nilData))
+	assert.Error(t, Facts(&bytes.Buffer{}, any(42)))
+}
+
+func TestTableInterfaceElementsRejected(t *testing.T) {
+	buf := &bytes.Buffer{}
+	assert.Error(t, Table[any](buf, "{{.}}", nil))
+	assert.Error(t, TableAuto[any](buf, nil))
+	assert.Error(t, TableIter[any](buf, "{{.}}", iterate[any](nil)))
+}
+
+func TestTableFieldTabKeepsCellIdentity(t *testing.T) {
+	type item struct {
+		Name string
+		ID   string
+	}
+	data := []item{{Name: "foo\tbar", ID: "123"}, {Name: "baz", ID: "456"}}
+	for _, tmpl := range []string{"", "{{.Name}}\t{{.ID}}"} {
+		events := collectEvents(t, tmpl, data)
+		first := mustTableRow(t, events[1]).Cells
+		assert.Equal(t, "foo bar", strings.TrimSpace(first[0]))
+		assert.Equal(t, "123", strings.TrimSpace(first[1]))
+		second := mustTableRow(t, events[2]).Cells
+		assert.Equal(t, "baz", strings.TrimSpace(second[0]))
+		assert.Equal(t, "456", strings.TrimSpace(second[1]))
+	}
+}
+
+func TestTableScaleColorFollowsPhysicalCell(t *testing.T) {
+	type row struct {
+		Text  string
+		Value int
+	}
+	data := []row{{"warm", 1}, {"a\nb", 100}, {"single", 50}}
+	events := collectEvents(t, "", data, WithColumnGreenRedScale("Value"))
+	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[1])
+	// multi-line record: value stays on the first physical row, continuation is plain
+	first := mustTableRow(t, events[2]).Cells
+	assert.Equal(t, "a", strings.TrimSpace(first[0]))
+	assertScaledCellContains(t, first[1], brightRed, "100")
+	cont := mustTableRow(t, events[3]).Cells
+	assert.Equal(t, "b", strings.TrimSpace(cont[0]))
+	assertNoGreenRedScaleColor(t, cont[0])
+	assertNoGreenRedScaleColor(t, cont[1])
+	last := mustTableRow(t, events[4]).Cells
+	assertScaledCellContains(t, last[1], yellow, "50")
+}
+
+func TestFactsTabIsMeasured(t *testing.T) {
+	orig := termGetSize
+	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { termGetSize = orig })
+
+	type row struct {
+		A string
+		B string
+	}
+	buf := &bytes.Buffer{}
+	assert.NoError(t, Facts(buf, row{A: "a\tb", B: "x"}))
+	assert.NotContains(t, buf.String(), "\t")
+	lines := factLines(buf.String())
+	assert.Equal(t, strings.Index(lines[0], "B"), strings.Index(lines[1], "x"))
+}
+
+func TestTableMaxWidthIsTotalRowBudget(t *testing.T) {
+	type row struct {
+		A, B, C string
+	}
+	long := strings.Repeat("x", 30)
+	var data []row
+	for range 25 { // spans the first and later batches
+		data = append(data, row{long, long, long})
+	}
+	data[20] = row{strings.Repeat("y", 50), "s", long}
+
+	for _, maxWidth := range []int{40, 20, 9} {
+		buf := &bytes.Buffer{}
+		assert.NoError(t, TableAuto(buf, data, WithMaxWidth(maxWidth)))
+		lines := strings.Split(strings.TrimRight(factPlain(buf.String()), "\n"), "\n")
+		assert.Equal(t, 26, len(lines))
+		for _, line := range lines {
+			if width([]byte(line)) > maxWidth {
+				t.Fatalf("width %d > %d: %q", width([]byte(line)), maxWidth, line)
+			}
+		}
+	}
+
+	// minimums that cannot fit are a floor, not an error
+	buf := &bytes.Buffer{}
+	assert.NoError(t, TableAuto(buf, data[:2], WithMaxWidth(3)))
+	assert.Equal(t, 3, len(strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")))
+}
+
+func factPlain(out string) string {
+	return strings.NewReplacer("\x1b[1m", "", "\x1b[0m", "").Replace(out)
 }

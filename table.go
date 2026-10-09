@@ -105,7 +105,15 @@ func Facts[T any](w io.Writer, data T, o ...opt) error {
 	}))
 	options = append(options, o...)
 
-	t, err := newTable[T](w, "", options...)
+	rt := reflect.TypeFor[T]()
+	if rt.Kind() == reflect.Interface {
+		// interface-typed input has no static schema; use the supplied value
+		if any(data) == nil {
+			return errors.New("facts: nil value")
+		}
+		rt = reflect.TypeOf(data)
+	}
+	t, err := newTableFor(rt, w, "", options...)
 	if err != nil {
 		return fmt.Errorf("facts: %w", err)
 	}
@@ -217,6 +225,7 @@ func WithSkipColumns(names ...string) opt {
 	})
 }
 
+// WithMaxWidth caps the total rendered row width and cell padding included.
 func WithMaxWidth(chars int) opt {
 	return opT(func(t *table) error {
 		if chars <= 0 {
@@ -370,12 +379,13 @@ func (s *columnScale) bucketIndex(rank, total int) int {
 // The first row is used to extract the headers from the template.
 type table struct {
 	w                io.Writer
-	buf              []byte
 	tmpl             *template.Template
 	columns          []tableColumn
 	metadata         structFields
 	rows             [][]string
-	curr             []string
+	pending          [][]cell
+	scratch          bytes.Buffer
+	cellEnds         []int
 	cellPad          int
 	batchSize        int
 	maxWidth         int
@@ -397,23 +407,34 @@ type table struct {
 	includeColumns    map[string]bool
 	skipColumns       map[string]bool
 	columnScales      map[string]*columnScale
-	rowScaleColors    [][]string
+}
+
+// cell is a structured table cell: its text never contains tabs or newlines,
+// so field data cannot be confused with layout.
+type cell struct {
+	text  string
+	width int    // visible width of text, tailer included
+	color string // optional ANSI prefix, closed by reset when rendered
 }
 
 type tableColumn struct {
-	width int
-	meta  *fieldMetadata
+	width      int
+	maxVisible int // including the truncation tailer
+	meta       *fieldMetadata
 }
 
 func newTable[T any](w io.Writer, rowTmpl string, o ...opt) (*table, error) {
-	metadata, err := structFieldsFor[T]()
+	return newTableFor(reflect.TypeFor[T](), w, rowTmpl, o...)
+}
+
+func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, o ...opt) (*table, error) {
+	metadata, err := structFieldsForType(rt)
 	if err != nil {
 		return nil, fmt.Errorf("metadata: %w", err)
 	}
 	t := &table{
 		w:               w,
 		metadata:        metadata,
-		buf:             []byte{},
 		maxWidth:        80,
 		batchSize:       10,
 		cellPad:         1,
@@ -438,6 +459,10 @@ func newTable[T any](w io.Writer, rowTmpl string, o ...opt) (*table, error) {
 	err = t.headers()
 	if err != nil {
 		return nil, fmt.Errorf("headers: %w", err)
+	}
+	err = t.markCellSeparators()
+	if err != nil {
+		return nil, fmt.Errorf("template: %w", err)
 	}
 
 	return t, nil
@@ -534,8 +559,8 @@ func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 		if err != nil {
 			return nil, fmt.Errorf("column %q render: %w", meta.name, err)
 		}
-		header := mkBold(meta.header)
-		value := strings.TrimRight(buf.String(), "\r\n")
+		header := mkBold(strings.ReplaceAll(meta.header, "\t", " "))
+		value := strings.ReplaceAll(strings.TrimRight(buf.String(), "\r\n"), "\t", " ")
 		cellWidth := max(
 			max(width([]byte(header)),
 				width([]byte(value)))+f.cellPad+1,
@@ -605,15 +630,11 @@ func (f *facts) renderFactRow(row []factCell, colWidths []int) error {
 }
 
 func (t *table) Append(v any) error {
-	err := t.tmpl.Execute(t, v)
+	cells, err := t.renderCells(v)
 	if err != nil {
 		return fmt.Errorf("render: %w", err)
 	}
-	_, err = t.Write([]byte("\n"))
-	if err != nil {
-		return fmt.Errorf("newline: %w", err)
-	}
-	t.captureRowScaleColors(v)
+	t.addRecord(cells, t.scaleColors(v))
 	t.consumed++
 	if t.consumed%t.batchSize == 0 {
 		err = t.flush(false)
@@ -625,10 +646,136 @@ func (t *table) Append(v any) error {
 	return nil
 }
 
-func (t *table) Write(p []byte) (n int, err error) {
-	t.buf = append(t.buf, p...)
+func (t *table) cellSeparator() string {
+	t.cellEnds = append(t.cellEnds, t.scratch.Len())
+	return ""
+}
 
-	return len(p), nil
+// markCellSeparators replaces every tab in template text with a __cellSep call,
+// so only tabs authored in the template separate cells.
+func (t *table) markCellSeparators() error {
+	sepTmpl, err := template.New("sep").Funcs(t.templateFuncs()).Parse("{{__cellSep}}")
+	if err != nil {
+		return err
+	}
+	sep := sepTmpl.Root.Nodes[0]
+	seen := map[*parse.Tree]bool{}
+	for _, tmpl := range t.tmpl.Templates() {
+		if tmpl.Tree == nil || seen[tmpl.Tree] {
+			continue
+		}
+		seen[tmpl.Tree] = true
+		t.splitTabs(tmpl.Root, sep)
+	}
+	return nil
+}
+
+func (t *table) splitTabs(list *parse.ListNode, sep parse.Node) {
+	if list == nil {
+		return
+	}
+	nodes := make([]parse.Node, 0, len(list.Nodes))
+	for _, n := range list.Nodes {
+		switch x := n.(type) {
+		case *parse.TextNode:
+			nodes = append(nodes, t.splitTextNode(x, sep)...)
+			continue
+		case *parse.IfNode:
+			t.splitTabs(x.List, sep)
+			t.splitTabs(x.ElseList, sep)
+		case *parse.RangeNode:
+			t.splitTabs(x.List, sep)
+			t.splitTabs(x.ElseList, sep)
+		case *parse.WithNode:
+			t.splitTabs(x.List, sep)
+			t.splitTabs(x.ElseList, sep)
+		}
+		nodes = append(nodes, n)
+	}
+	list.Nodes = nodes
+}
+
+func (*table) splitTextNode(n *parse.TextNode, sep parse.Node) []parse.Node {
+	parts := bytes.Split(n.Text, []byte{'\t'})
+	if len(parts) == 1 {
+		return []parse.Node{n}
+	}
+	out := make([]parse.Node, 0, len(parts)*2)
+	for i, part := range parts {
+		if i > 0 {
+			out = append(out, sep)
+		}
+		if len(part) > 0 {
+			out = append(out, &parse.TextNode{NodeType: parse.NodeText, Pos: n.Pos, Text: part})
+		}
+	}
+	return out
+}
+
+// renderCells executes the row template and returns one string per template-defined cell.
+func (t *table) renderCells(v any) ([]string, error) {
+	t.scratch.Reset()
+	t.cellEnds = t.cellEnds[:0]
+	err := t.tmpl.Execute(&t.scratch, v)
+	if err != nil {
+		return nil, err
+	}
+	out := t.scratch.Bytes()
+	cells := make([]string, 0, len(t.cellEnds)+1)
+	start := 0
+	for _, end := range t.cellEnds {
+		cells = append(cells, string(out[start:end]))
+		start = end
+	}
+	return append(cells, string(out[start:])), nil
+}
+
+// addRecord lays out a record as physical rows: line k of every cell lands in
+// row k, and the cell's color stays with each of its own lines.
+func (t *table) addRecord(cells, colors []string) {
+	lines := make([][]string, len(cells))
+	count := 1
+	for i, text := range cells {
+		text = strings.ReplaceAll(text, "\r\n", "\n")
+		text = strings.ReplaceAll(text, "\r", " ")
+		lines[i] = strings.Split(strings.ReplaceAll(text, "\t", " "), "\n")
+		count = max(count, len(lines[i]))
+	}
+	for k := range count {
+		row := make([]string, len(lines))
+		var rowColors []string
+		if colors != nil {
+			rowColors = make([]string, len(lines))
+		}
+		for i := range lines {
+			if k >= len(lines[i]) {
+				continue
+			}
+			row[i] = lines[i][k]
+			if rowColors != nil && i < len(colors) {
+				rowColors[i] = colors[i]
+			}
+		}
+		t.addRow(row, rowColors)
+	}
+}
+
+// addRow queues one physical row, keeping exactly one cell per column.
+func (t *table) addRow(texts, colors []string) {
+	row := make([]cell, len(t.columns))
+	for i := range row {
+		if i >= len(texts) || texts[i] == "" {
+			continue
+		}
+		row[i] = cell{
+			text:  texts[i],
+			width: width(truncateVisible([]byte(texts[i]), math.MaxInt32, ' ')),
+		}
+		if i < len(colors) {
+			row[i].color = colors[i]
+		}
+	}
+	t.pending = append(t.pending, row)
 }
 
 func (t *table) setColumnScale(name string, palette []string) error {
@@ -807,7 +954,7 @@ func (t *table) headers() error {
 	if t.eventSink != nil {
 		t.emit(tableBegin{Columns: columns})
 	} else {
-		t.buf = append(t.buf, []byte(strings.Join(headers, "\t")+"\n")...)
+		t.addRow(headers, nil)
 	}
 
 	return nil
@@ -833,7 +980,7 @@ func (t *table) autoHeaders() error {
 		t.emit(tableBegin{Columns: columns})
 		return nil
 	}
-	t.buf = append(t.buf, []byte(strings.Join(headers, "\t")+"\n")...)
+	t.addRow(headers, nil)
 	return nil
 }
 
@@ -899,11 +1046,12 @@ func formatterTemplate(fnName string, meta *fieldMetadata) string {
 
 // templateFuncs merges shared color functions with per-table formatter functions.
 func (t *table) templateFuncs() template.FuncMap {
-	funcs := make(template.FuncMap, len(colorFns)+len(t.customTemplateFuncs)+1)
+	funcs := make(template.FuncMap, len(colorFns)+len(t.customTemplateFuncs)+2)
 	for name, fn := range colorFns {
 		funcs[name] = fn
 	}
 	funcs["tableString"] = tableString
+	funcs["__cellSep"] = t.cellSeparator
 	for name, fn := range t.customTemplateFuncs {
 		funcs[name] = fn
 	}
@@ -971,11 +1119,7 @@ func (t *table) columnSet(names []string) (map[string]bool, error) {
 }
 
 func (t *table) flush(final bool) error {
-	t.currentBuffer()
-	err := t.applyRowScaleColors()
-	if err != nil {
-		return fmt.Errorf("scale colors: %w", err)
-	}
+	t.fitPending()
 	if t.eventSink != nil {
 		t.flushEvents(final)
 
@@ -1018,9 +1162,11 @@ func (t *table) flushRows() error {
 	return nil
 }
 
-func (t *table) captureRowScaleColors(v any) {
+// scaleColors observes the record's scaled values once and returns a color per
+// column, or nil when no scale is configured.
+func (t *table) scaleColors(v any) []string {
 	if len(t.columnScales) == 0 {
-		return
+		return nil
 	}
 	colors := make([]string, len(t.columns))
 	for i := range t.columns {
@@ -1035,28 +1181,7 @@ func (t *table) captureRowScaleColors(v any) {
 		}
 		colors[i] = scale.color(raw)
 	}
-	t.rowScaleColors = append(t.rowScaleColors, colors)
-}
-
-func (t *table) applyRowScaleColors() error {
-	if len(t.rowScaleColors) == 0 {
-		return nil
-	}
-	if len(t.rowScaleColors) > len(t.rows) {
-		return fmt.Errorf("row-color mismatch: colors=%d rows=%d", len(t.rowScaleColors), len(t.rows))
-	}
-	offset := len(t.rows) - len(t.rowScaleColors)
-	for i, colors := range t.rowScaleColors {
-		row := t.rows[offset+i]
-		for col, color := range colors {
-			if color == "" || col >= len(row) {
-				continue
-			}
-			row[col] = color + row[col] + reset
-		}
-	}
-	t.rowScaleColors = t.rowScaleColors[:0]
-	return nil
+	return colors
 }
 
 func (t *table) fieldValueByPath(v any, path string) (any, bool) {
@@ -1117,53 +1242,78 @@ func (*table) pad(buf *bytes.Buffer, padding int) error {
 	return nil
 }
 
-func (t *table) currentBuffer() {
-	col := 0
-	var cell []byte
-	maxLen := t.maxWidth - ((len(t.columns) - 1) * (t.colMinWidth + t.cellPad))
-	for _, b := range t.buf {
-		switch b {
-		case '\t':
-			cell = t.currentCell(cell, col, maxLen)
-			col++
-		case '\n':
-			cell = t.currentCell(cell, col, maxLen)
-			row := make([]string, len(t.columns))
-			copy(row, t.curr)
-			t.rows = append(t.rows, row)
-			t.curr = t.curr[:0]
-			col = 0
-		default:
-			cell = append(cell, b)
-		}
-	}
-	t.buf = t.buf[:0]
+// fitPending truncates queued rows to their column widths and moves them to rows.
+func (t *table) fitPending() {
 	if !t.locked {
 		t.locked = true
+		t.allocateWidths()
 	}
+	for _, line := range t.pending {
+		row := make([]string, len(line))
+		for i, c := range line {
+			if c.text == "" {
+				// value is not available, but we need to insert something
+				// to keep the table structure intact.
+				row[i] = " "
+				continue
+			}
+			row[i] = string(truncateVisible([]byte(c.text), t.columns[i].maxVisible, ' '))
+			if c.color != "" {
+				row[i] = c.color + row[i] + reset
+			}
+		}
+		t.rows = append(t.rows, row)
+	}
+	t.pending = t.pending[:0]
 }
 
-func (t *table) currentCell(cell []byte, col, maxLen int) []byte {
-	if col >= len(t.columns) {
-		// extra tabs from field values containing tab characters; discard
-		return []byte{}
+// allocateWidths shrinks the widest first-batch columns evenly until the padded
+// row fits maxWidth, never below colMinWidth visible characters per column.
+func (t *table) allocateWidths() {
+	n := len(t.columns)
+	if n == 0 || len(t.pending) == 0 {
+		return
 	}
-	if len(cell) == 0 {
-		// value is not available, but we need to insert something
-		// to keep the table structure intact.
-		t.curr = append(t.curr, " ")
-		return []byte{}
+	need := make([]int, n)
+	for _, line := range t.pending {
+		for i, c := range line {
+			need[i] = max(need[i], c.width)
+		}
 	}
-	if t.locked {
-		maxLen = t.columns[col].width
+	floor := t.colMinWidth + 1 // minimum visible text plus truncation tailer
+	budget := t.maxWidth - n*t.cellPad
+	limits := make([]int, n)
+	for i := range limits {
+		limits[i] = min(need[i], floor)
+		budget -= limits[i]
 	}
-	cell = truncateVisible(cell, maxLen, ' ')
-	t.curr = append(t.curr, string(cell))
-	if !t.locked {
-		t.columns[col].width = max(t.columns[col].width, width(cell)+t.cellPad)
+	for budget > 0 {
+		grew := false
+		for i := range limits {
+			if budget > 0 && limits[i] < need[i] {
+				limits[i]++
+				budget--
+				grew = true
+			}
+		}
+		if !grew {
+			break
+		}
 	}
-	cell = cell[:0]
-	return cell
+	// shrink widths to what the fitted cells actually use
+	used := make([]int, n)
+	for _, line := range t.pending {
+		for i, c := range line {
+			if c.text == "" {
+				continue
+			}
+			used[i] = max(used[i], width(truncateVisible([]byte(c.text), limits[i], ' ')))
+		}
+	}
+	for i := range t.columns {
+		t.columns[i].maxVisible = used[i]
+		t.columns[i].width = used[i] + t.cellPad
+	}
 }
 
 //nolint:cyclop // TODO: maybe refactor later
@@ -1289,11 +1439,14 @@ func (s structFields) Template() string {
 	return strings.Join(parts, "\t")
 }
 
-func structFieldsFor[T any]() (structFields, error) {
-	var t T
-	rt := reflect.ValueOf(t).Type()
+// structFieldsForType reflects columns from static type information only, so
+// interface element types are rejected: there is no value to infer a schema from.
+func structFieldsForType(rt reflect.Type) (structFields, error) {
 	if rt.Kind() == reflect.Pointer {
 		rt = rt.Elem()
+	}
+	if rt.Kind() == reflect.Interface {
+		return nil, fmt.Errorf("interface type %s is not supported, use a concrete struct type", rt)
 	}
 	if rt.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("expected struct or pointer to struct, got %s", rt.Kind())
