@@ -66,6 +66,7 @@ func WithDefault(d string) opt {
 			return nil
 		case *dropdown:
 			p.oneMatch = d
+			p.rankHint = d
 			return nil
 		default:
 			return fmt.Errorf("%w: need a input, got %v", ErrInvalidState, a)

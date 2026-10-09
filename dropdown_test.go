@@ -1774,7 +1774,9 @@ func TestWithOneMatch_singlePrefixMatchReturnsIndex(t *testing.T) {
 	var oneMatch oneHatch
 	ok := errors.As(err, &oneMatch)
 	assert.True(t, ok)
-	assert.Equal(t, 1, int(oneMatch))
+	// a run result is a position in the ranked d.relevant: "beta" ranks first
+	assert.Equal(t, 0, int(oneMatch))
+	assert.Equal(t, []int{1, 0}, d.relevant)
 	assert.Equal(t, "", d.oneMatch)
 }
 
@@ -1872,4 +1874,203 @@ func TestDropdownLazyOneReturnSingleItem(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for single-item lazy OneReturn")
 	}
+}
+
+func fixedTermOpt(width, height int) opt {
+	return opT(func(d *dropdown) error {
+		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			return &termIO{in: in, out: out, Width: width, Height: height, Restore: func() error { return nil }}, nil
+		}
+		return nil
+	})
+}
+
+func TestDropdownIndexUniqueDefaultReturnsOriginalIndex(t *testing.T) {
+	i, err := DropdownIndex("pick", []any{"xxx", "b", "a"},
+		WithInput(bytes.NewBuffer(nil)), WithOutput(io.Discard),
+		fixedTermOpt(20, 6), WithDefault("a"))
+	assert.NoError(t, err)
+	assert.Equal(t, 2, i)
+
+	v, err := Dropdown("pick", []string{"xxx", "b", "a"},
+		WithInput(bytes.NewBuffer(nil)), WithOutput(io.Discard),
+		fixedTermOpt(20, 6), WithDefault("a"))
+	assert.NoError(t, err)
+	assert.Equal(t, "a", v)
+}
+
+func TestDropdownLazyAppendAfterFilter(t *testing.T) {
+	tio := newTestTermIO(20, 6)
+	frame := &bytes.Buffer{}
+	for _, matches := range []struct {
+		filter string
+		want   []int
+	}{
+		{"alp", []int{0, 2}}, // one match grows to many
+		{"alpi", []int{2}},   // zero matches before, one after
+		{"a", []int{0, 1, 2}},
+	} {
+		d := newDropdown()
+		assert.NoError(t, d.parseTemplates())
+		for _, item := range []string{"alpha", "beta"} {
+			_, _, err := d.handleLazyItem(tio, frame, 0, itPair{item: item}, true)
+			assert.NoError(t, err)
+		}
+		assert.Equal(t, -1, d.applyInputEvent(tio, dropdownFilteredWith{Prefix: "alp"}, 2, 6))
+		assert.Equal(t, []int{0}, d.relevant)
+		if matches.filter != "alp" {
+			assert.Equal(t, -1, d.applyInputEvent(tio, dropdownFilteredWith{Prefix: matches.filter}, 2, 6))
+		}
+		_, _, err := d.handleLazyItem(tio, frame, 0, itPair{item: "alpine"}, true)
+		assert.NoError(t, err)
+		assert.Equal(t, 3, len(d.Items))
+		assert.Equal(t, 3, len(d.active))
+		if matches.filter == "alp" {
+			assert.Equal(t, []int{0, 2}, d.relevant)
+		}
+	}
+}
+
+func TestDropdownLazyKeepsDefaultRanking(t *testing.T) {
+	d := newDropdown()
+	assert.NoError(t, WithDefault("cat")(d))
+	assert.NoError(t, d.parseTemplates())
+	tio := newTestTermIO(20, 6)
+	frame := &bytes.Buffer{}
+	// empty lazy dropdown renders before any item arrives
+	_, err := d.renderInit(tio)
+	assert.NoError(t, err)
+	for _, item := range []string{"xxxx", "yyyy", "bat"} {
+		_, _, err = d.handleLazyItem(tio, frame, 0, itPair{item: item}, true)
+		assert.NoError(t, err)
+	}
+	assert.Equal(t, []int{2, 0, 1}, d.relevant)
+	assert.Equal(t, []int{2, 0, 1}, d.displayed)
+}
+
+func TestDropdownLazyRankingKeepsSelectedItem(t *testing.T) {
+	d := newDropdown()
+	assert.NoError(t, WithDefault("cat")(d))
+	assert.NoError(t, d.parseTemplates())
+	tio := newTestTermIO(20, 10)
+	frame := &bytes.Buffer{}
+	for _, item := range []string{"xxxx", "yyyy"} {
+		_, _, err := d.handleLazyItem(tio, frame, 0, itPair{item: item}, true)
+		assert.NoError(t, err)
+	}
+	d.selected = 1 // user moved to "yyyy"
+	_, _, err := d.handleLazyItem(tio, frame, 0, itPair{item: "bat"}, true)
+	assert.NoError(t, err)
+	assert.Equal(t, []int{2, 0, 1}, d.relevant)
+	assert.Equal(t, 1, d.relevant[d.offset+d.selected])
+}
+
+func TestDropdownRenderRemembersLongestWidth(t *testing.T) {
+	d := newDropdown()
+	d.Items = []any{"short", "a considerably longer item"}
+	assert.NoError(t, d.parseTemplates())
+	tio := newTestTermIO(40, 6)
+	first, err := d.renderInit(tio)
+	assert.NoError(t, err)
+	second, err := d.renderInit(tio)
+	assert.NoError(t, err)
+	assert.True(t, first > 20)
+	assert.Equal(t, first, second)
+
+	_, err = d.renderInit(tio)
+	assert.NoError(t, err)
+	tio.Width = 30
+	var buf bytes.Buffer
+	assert.NoError(t, d.render(tio, &buf))
+	assert.True(t, d.LabelNewLine)
+	_ = d.addItem(6, "x")
+	assert.Equal(t, first, d.longest)
+}
+
+func TestDropdownLazyStopsProducerOnEarlyError(t *testing.T) {
+	var started atomic.Int32
+	seq := func(yield func(int, error) bool) {
+		started.Add(1)
+		for i := 0; yield(i, nil); i++ {
+		}
+	}
+	_, err := DropdownLazy("pick", seq,
+		WithInput(bytes.NewBuffer(nil)), WithOutput(io.Discard),
+		fixedTermOpt(20, 6), WithActiveItemTemplate("{{"))
+	assert.Error(t, err)
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, int32(0), started.Load())
+}
+
+func TestDropdownLazyProducerStopsOnCancel(t *testing.T) {
+	d := newDropdown()
+	d.IterBatchSize = 1
+	done := make(chan struct{})
+	seq := func(yield func(int, error) bool) {
+		defer close(done)
+		for i := 0; yield(i, nil); i++ {
+		}
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	d.startLazyProducer(ctx, func(yield func(any, error) bool) {
+		seq(func(v int, err error) bool { return yield(v, err) })
+	})
+	time.Sleep(20 * time.Millisecond) // let the producer block on the full channel
+	d.itItems = nil                   // the dropdown clears its field when done
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("producer outlived its context")
+	}
+}
+
+func TestDropdownLazyStopsProducerAfterSelection(t *testing.T) {
+	done := make(chan struct{})
+	seq := func(yield func(int, error) bool) {
+		defer close(done)
+		for i := 0; yield(i, nil); i++ {
+		}
+	}
+	in, w, err := os.Pipe()
+	assert.NoError(t, err)
+	t.Cleanup(func() { in.Close(); w.Close() })
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		w.Write([]byte{keyEnter}) //nolint:errcheck // test helper
+	}()
+	_, err = DropdownLazy("pick", seq,
+		WithInput(in), WithOutput(io.Discard), fixedTermOpt(20, 6))
+	assert.NoError(t, err)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("producer outlived DropdownLazy")
+	}
+}
+
+func TestDropdownFilterEventsIgnoreRankingOrder(t *testing.T) {
+	d := newDropdown()
+	assert.NoError(t, WithDefault("ap")(d))
+	assert.NoError(t, d.parseTemplates())
+	tio := newTestTermIO(20, 6)
+	frame := &bytes.Buffer{}
+	for _, item := range []string{"banana", "apricot", "apple"} {
+		_, _, err := d.handleLazyItem(tio, frame, 0, itPair{item: item}, true)
+		assert.NoError(t, err)
+	}
+	var events []dropdownFilterChanged
+	d.eventSink = func(ev dropdownOutputEvent) {
+		f, ok := ev.(dropdownFilterChanged)
+		if ok {
+			events = append(events, f)
+		}
+	}
+	d.applyInputEvent(tio, dropdownFilteredWith{Prefix: "a"}, 3, 6)
+	d.applyInputEvent(tio, dropdownFilteredWith{Prefix: "apr"}, 3, 6)
+	assert.Equal(t, 2, len(events))
+	assert.Equal(t, []int{0}, events[0].Removed)
+	assert.Equal(t, []int(nil), events[0].Added)
+	assert.Equal(t, []int{2}, events[1].Removed)
+	assert.Equal(t, []int(nil), events[1].Added)
 }
