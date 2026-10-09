@@ -1958,7 +1958,7 @@ func TestDropdownLazyRankingKeepsSelectedItem(t *testing.T) {
 		_, _, err := d.handleLazyItem(tio, frame, 0, itPair{item: item}, true)
 		assert.NoError(t, err)
 	}
-	d.selected = 1 // user moved to "yyyy"
+	d.pressDown(len(d.displayed)) // user moved to "yyyy"
 	_, _, err := d.handleLazyItem(tio, frame, 0, itPair{item: "bat"}, true)
 	assert.NoError(t, err)
 	assert.Equal(t, []int{2, 0, 1}, d.relevant)

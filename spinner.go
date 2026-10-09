@@ -336,6 +336,9 @@ func (s *Spinners) updateSpinner(update updateOffset) {
 	if s.state[update.offset] == nil {
 		return // it's already stopped and we don't care
 	}
+	if s.state[update.offset].Done || s.state[update.offset].Failed {
+		return // a kept or failed spinner keeps showing how it ended
+	}
 	if update.err != nil {
 		update.message = update.err.Error()
 		s.state[update.offset].Failed = true
