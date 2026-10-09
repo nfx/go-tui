@@ -58,25 +58,15 @@ type inputConfirmed struct {
 // match hint, not a pre-filled filter: items are ranked by similarity to d, and
 // the dropdown returns early only when exactly one item matches d as a prefix.
 func WithDefault(d string) opt {
-	return func(a any) error {
-		switch p := a.(type) {
-		case *input:
-			p.typed = d
-			p.cursor = utf8.RuneCountInString(d)
-			return nil
-		case *dropdown:
-			p.oneMatch = d
-			p.rankHint = d
-			return nil
-		default:
-			return fmt.Errorf("%w: need a input, got %v", ErrInvalidState, a)
-		}
-	}
+	return opT(func(x withPrompt) error {
+		x.setDefault(d)
+		return nil
+	})
 }
 
 // WithNonEmpty forces the prompt to continue until the confirmed input is not empty.
 func WithNonEmpty() opt {
-	return inputOpt(func(i *input) error {
+	return opT(func(i *input) error {
 		prev := i.CheckFn
 		i.CheckFn = func(rawInput string) (string, bool) {
 			if prev != nil {
@@ -90,16 +80,6 @@ func WithNonEmpty() opt {
 		}
 		return nil
 	})
-}
-
-func inputOpt(o func(d *input) error) opt {
-	return func(a any) error {
-		d, ok := a.(*input)
-		if !ok {
-			return fmt.Errorf("%w: need a input, got %v", ErrInvalidState, a)
-		}
-		return o(d)
-	}
 }
 
 type input struct {
@@ -122,6 +102,27 @@ type input struct {
 	makeTermIO func(in io.Reader, out io.Writer) (*termIO, error)
 	eventSink  func(inputOutgoing)
 	input      <-chan inputIncoming
+}
+
+// implement [withPrompt] interface.
+func (i *input) setHide() {
+	i.Hide = true
+}
+
+// implement [withPrompt] interface.
+func (i *input) setLabelTemplate(tmpl string) {
+	i.LabelTemplate = tmpl
+}
+
+// implement [withPrompt] interface.
+func (i *input) setAnswerTemplate(tmpl string) {
+	i.AnswerTemplate = tmpl
+}
+
+// implement [withPrompt] interface.
+func (i *input) setDefault(typed string) {
+	i.typed = typed
+	i.cursor = utf8.RuneCountInString(typed)
 }
 
 func newInput(label string) *input {

@@ -95,43 +95,34 @@ func WithShowHidden() opt {
 	})
 }
 
-func opT[T any](o func(d *T) error) opt {
-	return func(raw any) error {
-		var zero T
-		concrete, ok := raw.(*T)
-		if !ok {
-			return fmt.Errorf("%w: need a %T, got %T", ErrWrongWidget, zero, raw)
-		}
-		return o(concrete)
-	}
-}
-
-func newFilePicker(o ...opt) (*filePicker, error) {
+// newFilePicker applies o to the picker and to the dropdown that shows the
+// first directory. Every option must be supported by at least one of them.
+func newFilePicker(o ...opt) (*filePicker, *dropdown, error) {
 	f := &filePicker{
 		extensions: map[string]bool{},
 	}
-	err := opts(o).Apply(f)
-	if err != nil {
-		return nil, err
+	d := newDropdown()
+	for _, option := range o {
+		err := applyToAny(option, f, d)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 	if f.start == "" {
 		wd, err := os.Getwd()
 		if err != nil {
-			return nil, fmt.Errorf("pwd: %w", err)
+			return nil, nil, fmt.Errorf("pwd: %w", err)
 		}
 		f.start = wd
 	}
-	return f, nil
+	return f, d, nil
 }
 
 func FilePicker(title string, o ...opt) (string, error) {
-	f, err := newFilePicker(o...)
+	f, d, err := newFilePicker(o...)
 	if err != nil {
 		return "", err
 	}
-	dropdownOpts := append([]opt{
-		// WithOneReturn(),
-	}, o...)
 	stack := []os.DirEntry{
 		&dirEntry{name: f.start, isDir: true},
 	}
@@ -145,10 +136,28 @@ func FilePicker(title string, o ...opt) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		entry, err := Dropdown(title, entries, dropdownOpts...)
+		if len(entries) == 0 {
+			return "", ErrNoItems
+		}
+		if d == nil {
+			// options were validated by newFilePicker, so the bundle
+			// may only skip the ones that configure the picker itself.
+			d = newDropdown()
+			err = WithOptions(o...)(d)
+			if err != nil && !errors.Is(err, ErrWrongWidget) {
+				return "", err
+			}
+		}
+		items := make([]any, len(entries))
+		for i, e := range entries {
+			items[i] = e
+		}
+		i, err := d.pick(title, items)
 		if err != nil {
 			return "", err
 		}
+		d = nil
+		entry := entries[i]
 		if entry.Name() == ".." {
 			if len(stack) > 1 {
 				stack = stack[:len(stack)-1]

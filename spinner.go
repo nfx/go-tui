@@ -96,16 +96,6 @@ type Spinners struct {
 	eventSink  func(spinnerEvent)
 }
 
-func spinnersOpt(o func(s *Spinners) error) opt {
-	return func(a any) error {
-		s, ok := a.(*Spinners)
-		if !ok {
-			return nil
-		}
-		return o(s)
-	}
-}
-
 func newSpinners() *Spinners {
 	ctx, cancel := context.WithCancel(context.Background())
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -159,39 +149,29 @@ func (s *Spinners) MustAddBackground(opt ...opt) *Spinner {
 	return spinner
 }
 
+// WithPrefixf sets the text shown next to a spinner added with [Spinners.Add].
 func WithPrefixf(prefix string, args ...any) opt {
 	// TODO: decide if we expose text/template or fmt. This is a bit of a mess
-	return func(a any) error {
-		cs, ok := a.(*createSpinner)
-		if !ok {
-			return nil
-		}
+	return opT(func(cs *createSpinner) error {
 		cs.prefix = fmt.Sprintf(prefix, args...)
 		return nil
-	}
+	})
 }
 
 // WithKeep will keep the spinner displayed after it's done.
 func WithKeep() opt {
-	return func(a any) error {
-		cs, ok := a.(*createSpinner)
-		if !ok {
-			return nil
-		}
+	return opT(func(cs *createSpinner) error {
 		cs.keep = true
 		return nil
-	}
+	})
 }
 
+// WithFrames replaces the animation of a spinner added with [Spinners.Add].
 func WithFrames(frames []string) opt {
-	return func(a any) error {
-		cs, ok := a.(*createSpinner)
-		if !ok {
-			return nil
-		}
+	return opT(func(cs *createSpinner) error {
 		cs.frames = slices.Clone(frames)
 		return nil
-	}
+	})
 }
 
 func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {

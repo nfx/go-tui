@@ -45,18 +45,8 @@ type progressClosed struct {
 	Label string
 }
 
-func progressbarOpt(o func(s *Progressbar) error) opt {
-	return func(a any) error {
-		s, ok := a.(*Progressbar)
-		if !ok {
-			return nil
-		}
-		return o(s)
-	}
-}
-
 func WithFormatRate(f func(float64) string) opt {
-	return progressbarOpt(func(p *Progressbar) error {
+	return opT(func(p *Progressbar) error {
 		p.fmtRate = f
 		return nil
 	})
@@ -64,7 +54,7 @@ func WithFormatRate(f func(float64) string) opt {
 
 // WithWorkers configures the amount of parallel workers for NewParallelProgressBar.
 func WithWorkers(workers int) opt {
-	return progressbarOpt(func(p *Progressbar) error {
+	return opT(func(p *Progressbar) error {
 		if workers <= 0 {
 			return fmt.Errorf("%w: workers must be greater than 0", ErrInvalidState)
 		}
@@ -94,14 +84,12 @@ func newProgressbar() *Progressbar {
 	}
 }
 
-func newStartedProgressBar(label string, size int64, opts ...opt) (*Progressbar, error) {
+func newStartedProgressBar(label string, size int64, o ...opt) (*Progressbar, error) {
 	var err error
 	p := newProgressbar()
-	for _, o := range opts {
-		err = o(p)
-		if err != nil {
-			return nil, fmt.Errorf("apply option: %w", err)
-		}
+	err = opts(o).Apply(p)
+	if err != nil {
+		return nil, fmt.Errorf("apply option: %w", err)
 	}
 	p.ctx, p.cancel = context.WithCancelCause(p.ctx)
 	p.showRate = true
@@ -694,13 +682,11 @@ type wrapReader struct {
 	p *Progressbar
 }
 
-func NewFileProgressReader(r io.Reader, label string, opts ...opt) (*wrapReader, error) {
+func NewFileProgressReader(r io.Reader, label string, o ...opt) (*wrapReader, error) {
 	p := newProgressbar()
-	for _, o := range opts {
-		err := o(p)
-		if err != nil {
-			return nil, fmt.Errorf("apply option: %w", err)
-		}
+	err := opts(o).Apply(p)
+	if err != nil {
+		return nil, fmt.Errorf("apply option: %w", err)
 	}
 	p.ctx, p.cancel = context.WithCancelCause(p.ctx)
 	wrap := &wrapReader{r, p}

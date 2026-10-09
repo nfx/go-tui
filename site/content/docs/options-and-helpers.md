@@ -3,7 +3,24 @@ title: "Shared Options and Helpers"
 weight: 20
 ---
 
-`go-tui` uses `opt` functions. Most widgets accept the shared options below.
+`go-tui` uses `opt` functions. Every option supports a fixed set of widgets,
+and widgets reject options they do not support with `ErrWrongWidget`, so a
+misplaced option fails instead of silently doing nothing.
+
+| Option | Supported by |
+|---|---|
+| `WithContext`, `WithTimeout`, `WithInput`, `WithOutput` | `Input`, `Password`, dropdowns, `Confirm`, `FilePicker`, `NewSpinners`, progress bars |
+| `WithDefault`, `WithHide`, `WithLabelTemplate`, `WithAnswerTemplate` | `Input`, `Password`, dropdowns, `Confirm`, `FilePicker` |
+| `WithNonEmpty` | `Input`, `Password` |
+| other `With*Template`, `WithTemplate`, `WithOneReturn` | dropdowns, `Confirm`, `FilePicker` |
+| `WithStartDir`, `WithExtensions`, `WithIgnoreUp`, `WithIgnoreDirs`, `WithShowHidden` | `FilePicker` |
+| `WithPrefixf`, `WithKeep`, `WithFrames` | `Spinners.Add` |
+| `WithFormatRate`, `WithWorkers` | progress bars |
+| `WithColumn*`, `WithIncludeColumns`, `WithSkipColumns`, `WithMaxWidth`, `WithMultilineCells`, `WithFloat64*` | `Table`, `TableAuto`, `TableIter`, `Facts` |
+
+Tables take their writer as an argument, so they accept none of the shared
+options below. Column options only shape auto-generated templates and have no
+effect when you pass an explicit row template.
 
 ## WithContext
 
@@ -72,7 +89,10 @@ Use this when logs or other external terminal output should coexist with default
 
 ## WithOptions
 
-Composes multiple options into a reusable option.
+Composes multiple options into one that can be reused across widgets. Each
+member applies where the widget supports it and is skipped elsewhere. The bundle
+fails with `ErrWrongWidget` only when the widget supports none of its members.
+Invalid values, such as `WithWorkers(0)`, are always reported.
 
 ```go
 common := tui.WithOptions(
@@ -99,6 +119,6 @@ All predefined helper functions are documented on
 ## Common errors
 
 - `ErrNoItems`: selection widget called with empty items.
-- `ErrInvalidState`: invalid option/configuration.
+- `ErrInvalidState`: invalid option value or configuration.
 - `ErrUnsupportedPlatform`: platform-specific feature unavailable.
-- `ErrWrongWidget`: option targets a different widget type.
+- `ErrWrongWidget`: option is not supported by the widget it was passed to.

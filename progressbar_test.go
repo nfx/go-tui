@@ -60,7 +60,7 @@ func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
 	p, err := newStartedProgressBar("download", 20,
 		WithInput(cio),
 		WithOutput(cio),
-		progressbarOpt(func(pb *Progressbar) error {
+		opT(func(pb *Progressbar) error {
 			pb.now = func() time.Time { return now }
 			pb.redrawAt = start
 			pb.ticks = ticks
@@ -129,7 +129,7 @@ func TestProgressbarTickRenders(t *testing.T) {
 	p, err := newStartedProgressBar("download", 20,
 		WithInput(cio),
 		WithOutput(cio),
-		progressbarOpt(func(pb *Progressbar) error {
+		opT(func(pb *Progressbar) error {
 			pb.now = func() time.Time { return now }
 			pb.redrawAt = start
 			pb.ticks = ticks
@@ -207,7 +207,7 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 	p, err := newStartedProgressBar("download", 20,
 		WithInput(cio),
 		WithOutput(cio),
-		progressbarOpt(func(pb *Progressbar) error {
+		opT(func(pb *Progressbar) error {
 			pb.eventSink = func(ev progressEvent) {
 				events <- ev
 			}
@@ -275,7 +275,7 @@ func TestProgressbarDoneEmitsClosed(t *testing.T) {
 	p, err := newStartedProgressBar("sync", 2,
 		WithInput(cio),
 		WithOutput(cio),
-		progressbarOpt(func(pb *Progressbar) error {
+		opT(func(pb *Progressbar) error {
 			pb.eventSink = func(ev progressEvent) {
 				events <- ev
 			}
@@ -332,7 +332,7 @@ func TestNewMaxProgressBar(t *testing.T) {
 }
 
 func TestNewMaxProgressBarAppliesOptions(t *testing.T) {
-	_, err := NewMaxProgressBar("max", 1, progressbarOpt(func(p *Progressbar) error {
+	_, err := NewMaxProgressBar("max", 1, opT(func(p *Progressbar) error {
 		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, errors.New("boom")
 		}
@@ -386,7 +386,7 @@ func TestNewFileProgressReader(t *testing.T) {
 	r, err := NewFileProgressReader(&statReader{data: []byte("hello world")}, "file",
 		WithInput(cio),
 		WithOutput(cio),
-		progressbarOpt(func(pb *Progressbar) error {
+		opT(func(pb *Progressbar) error {
 			applied = true
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
@@ -466,7 +466,7 @@ func TestNewSliceProgressBar(t *testing.T) {
 	seq := NewSliceProgressBar("items", items,
 		WithInput(cio),
 		WithOutput(cio),
-		progressbarOpt(func(pb *Progressbar) error {
+		opT(func(pb *Progressbar) error {
 			seen = pb
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
@@ -555,7 +555,7 @@ func TestNewParallelProgressBarRunsConcurrently(t *testing.T) {
 		}
 		atomic.AddInt64(&active, -1)
 		return nil
-	}, WithWorkers(3), progressbarOpt(func(p *Progressbar) error {
+	}, WithWorkers(3), opT(func(p *Progressbar) error {
 		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, ErrNoTTY
 		}
@@ -598,7 +598,7 @@ func TestNewParallelProgressBarUsesDefaultNumCPU(t *testing.T) {
 		}
 		atomic.AddInt64(&active, -1)
 		return nil
-	}, progressbarOpt(func(pb *Progressbar) error {
+	}, opT(func(pb *Progressbar) error {
 		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, ErrNoTTY
 		}
@@ -622,7 +622,7 @@ func TestNewParallelProgressBarFailFastOnFirstError(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 		return nil
-	}, WithWorkers(4), progressbarOpt(func(pb *Progressbar) error {
+	}, WithWorkers(4), opT(func(pb *Progressbar) error {
 		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, ErrNoTTY
 		}
@@ -638,7 +638,7 @@ func TestNewParallelProgressBarRecoversPanicsAsBug(t *testing.T) {
 			panic("boom")
 		}
 		return nil
-	}, WithWorkers(2), progressbarOpt(func(pb *Progressbar) error {
+	}, WithWorkers(2), opT(func(pb *Progressbar) error {
 		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, ErrNoTTY
 		}
@@ -677,7 +677,7 @@ func TestNewParallelProgressBarNoTTYStillParallel(t *testing.T) {
 		}
 		atomic.AddInt64(&active, -1)
 		return nil
-	}, WithWorkers(2), progressbarOpt(func(pb *Progressbar) error {
+	}, WithWorkers(2), opT(func(pb *Progressbar) error {
 		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, ErrNoTTY
 		}
@@ -691,7 +691,7 @@ func TestNewParallelProgressBarPropagatesCloseError(t *testing.T) {
 	closeErr := io.EOF
 	err := NewParallelProgressBar("parallel", []int{1}, func(v int) error {
 		return nil
-	}, progressbarOpt(func(pb *Progressbar) error {
+	}, opT(func(pb *Progressbar) error {
 		pb.err = closeErr
 		pb.ticks = make(chan time.Time)
 		pb.ticker = time.NewTicker(time.Hour)
@@ -721,7 +721,7 @@ func TestProgressStateHelpers(t *testing.T) {
 }
 
 func TestNewSliceProgressBarStopsOnYieldFalse(t *testing.T) {
-	seq := NewSliceProgressBar("label", []int{1, 2, 3}, progressbarOpt(func(p *Progressbar) error {
+	seq := NewSliceProgressBar("label", []int{1, 2, 3}, opT(func(p *Progressbar) error {
 		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, ErrNoTTY
 		}
@@ -738,7 +738,7 @@ func TestNewSliceProgressBarStopsOnYieldFalse(t *testing.T) {
 }
 
 func TestNewSliceProgressBarReturnsError(t *testing.T) {
-	seq := NewSliceProgressBar("label", []int{1}, progressbarOpt(func(p *Progressbar) error {
+	seq := NewSliceProgressBar("label", []int{1}, opT(func(p *Progressbar) error {
 		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, errors.New("boom")
 		}
@@ -783,7 +783,7 @@ func TestProgressbarCloseWithIO(t *testing.T) {
 
 func TestProgressbarCloseWaitsForBackgroundStop(t *testing.T) {
 	restoreDelay := 50 * time.Millisecond
-	p, err := newStartedProgressBar("sync", 1, progressbarOpt(func(pb *Progressbar) error {
+	p, err := newStartedProgressBar("sync", 1, opT(func(pb *Progressbar) error {
 		pb.ticks = make(chan time.Time)
 		pb.ticker = time.NewTicker(time.Hour)
 		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -954,7 +954,7 @@ func TestProgressBarWithContextCancelBound(t *testing.T) {
 	parentCtx := t.Context()
 	p, err := newStartedProgressBar("test", 10,
 		WithContext(parentCtx),
-		progressbarOpt(func(pb *Progressbar) error {
+		opT(func(pb *Progressbar) error {
 			pb.ticks = make(chan time.Time)
 			pb.ticker = time.NewTicker(time.Hour)
 			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -995,7 +995,7 @@ func TestNewFileProgressReaderWithContextCancelBound(t *testing.T) {
 	r := bytes.NewReader([]byte("test data"))
 	w, err := NewFileProgressReader(r, "test",
 		WithContext(parentCtx),
-		progressbarOpt(func(pb *Progressbar) error {
+		opT(func(pb *Progressbar) error {
 			pb.ticks = make(chan time.Time)
 			pb.ticker = time.NewTicker(time.Hour)
 			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
