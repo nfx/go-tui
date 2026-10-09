@@ -110,6 +110,9 @@ type dropdown struct {
 
 	selected int
 	offset   int
+	// moved is set once the user moves the selection with arrow keys, and
+	// cleared when filtering starts over at the top of the list.
+	moved    bool
 	typed    []rune
 	oneMatch string // see [WithDefault]
 	// rankHint keeps the [WithDefault] value for ranking every candidate set,
@@ -680,23 +683,18 @@ func (i oneHatch) Error() string {
 	return fmt.Sprintf("%d", i)
 }
 
-// clampDisplay derives the visible rows from current terminal
-// height and clamps offset/selected after a resize.
+// clampDisplay derives the visible rows from current terminal height and
+// scrolls them after a resize, so that the selected item stays selected.
 func (d *dropdown) clampDisplay(height int) {
 	if len(d.displayed) == 0 || len(d.relevant) == 0 {
 		return
 	}
-	capacity := min(len(d.relevant), height/2)
-	if capacity < 1 {
-		capacity = 1
-	}
-	if d.offset+capacity > len(d.relevant) {
-		d.offset = max(0, len(d.relevant)-capacity)
-	}
-	d.displayed = d.relevant[d.offset : d.offset+min(capacity, len(d.relevant)-d.offset)]
-	if d.selected >= len(d.displayed) {
-		d.selected = max(0, len(d.displayed)-1)
-	}
+	capacity := max(1, min(len(d.relevant), height/2))
+	pos := min(d.offset+d.selected, len(d.relevant)-1)
+	d.offset = min(d.offset, pos, len(d.relevant)-capacity)
+	d.offset = max(d.offset, pos-capacity+1)
+	d.displayed = d.relevant[d.offset : d.offset+capacity]
+	d.selected = pos - d.offset
 }
 
 // render displays the dropdown.
@@ -1399,10 +1397,11 @@ func (d *dropdown) loadItem(io *termIO, frame *bytes.Buffer, it itPair, more boo
 	return nil
 }
 
-// addItem appends an item and refreshes derived state.
+// addItem appends an item and refreshes derived state. Until the user moves
+// the selection, it stays on the first row, which is the best-ranked item.
 func (d *dropdown) addItem(height int, item any) error {
 	var current = -1 // original index of the item the user moved to
-	if pos := d.offset + d.selected; pos >= 0 && pos < len(d.relevant) {
+	if pos := d.offset + d.selected; d.moved && pos >= 0 && pos < len(d.relevant) {
 		current = d.relevant[pos]
 	}
 	d.Items = append(d.Items, item)
@@ -1581,6 +1580,7 @@ func (d *dropdown) clearFrame(io *termIO, frame *bytes.Buffer, space int) error 
 }
 
 func (d *dropdown) pressUp(displayed int) {
+	d.moved = true
 	if d.offset > 0 && d.selected == 0 { // page up
 		d.offset--
 		d.displayed = d.relevant[d.offset : d.offset+displayed]
@@ -1590,6 +1590,7 @@ func (d *dropdown) pressUp(displayed int) {
 }
 
 func (d *dropdown) pressDown(displayed int) {
+	d.moved = true
 	if d.offset+displayed < len(d.relevant) { // page down
 		d.offset++
 		d.displayed = d.relevant[d.offset : d.offset+displayed]
@@ -1607,6 +1608,7 @@ func (d *dropdown) pressBackspace(io *termIO) {
 	d.displayed = d.relevant[:min(len(d.relevant), io.Height/2)]
 	d.selected = 0
 	d.offset = 0
+	d.moved = false
 }
 
 // filterWith replaces the current filter text and refreshes matching rows.
@@ -1630,6 +1632,7 @@ func (d *dropdown) filterWith(text string, displayed, space, height int) bool {
 	d.displayed = d.relevant[:limit]
 	d.selected = 0
 	d.offset = 0
+	d.moved = false
 	return false
 }
 
@@ -1647,5 +1650,6 @@ func (d *dropdown) pressAny(key rune, displayed, space int) bool {
 	d.displayed = d.relevant[:min(len(d.relevant), displayed, space)]
 	d.selected = 0
 	d.offset = 0
+	d.moved = false
 	return false
 }
