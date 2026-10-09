@@ -125,10 +125,11 @@ type input struct {
 }
 
 func newInput(label string) *input {
+	in, out := defaultStreams()
 	return &input{
 		ctx:            context.Background(),
-		out:            defaultOutput(),
-		in:             defaultInput(),
+		out:            out,
+		in:             in,
 		Label:          label,
 		LabelTemplate:  DefaultLabelTemplate,
 		AnswerTemplate: DefaultAnswerTemplate,

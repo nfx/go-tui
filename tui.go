@@ -40,7 +40,8 @@ func (t *Tui) prependView(height int) *viewport {
 	}
 	cio.chainMu.Lock()
 	defer cio.chainMu.Unlock()
-	top := initViewport(cio.ctx, cio.notify, cio.width, height)
+	width, _ := cio.size()
+	top := initViewport(cio.ctx, cio.notify, width, height)
 	top.next = cio.head
 	if top.next != nil {
 		top.next.height -= height // TODO: propagate down

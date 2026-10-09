@@ -184,7 +184,9 @@ func TestChanIOClearsWrappedManagedRowsAfterWidthShrink(t *testing.T) {
 	assert.NoError(t, err)
 	_ = waitOutputContains(t, stdout.C, wideLine)
 
+	cio.sizeMu.Lock()
 	cio.width = 10
+	cio.sizeMu.Unlock()
 	_, err = vp.writeWithWidth([]byte("short\n\r"), 10)
 	assert.NoError(t, err)
 	out := waitOutputContains(t, stdout.C, "short")

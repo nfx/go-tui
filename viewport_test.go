@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
@@ -265,4 +266,54 @@ func TestViewportContextCancellation(t *testing.T) {
 	var buf bytes.Buffer
 	_, err = v.WriteTo(&buf)
 	assert.Equal(t, io.EOF, err)
+}
+
+func TestViewportWrapsByTerminalColumns(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		in   string
+		out  []string
+	}{
+		{"two-byte runes fit", "ééé", []string{"ééé\n"}},
+		{"wide runes fill the row", "界界", []string{"界界\n"}},
+		{"wide rune wraps whole", "a界界", []string{"a界\n", "界\n"}},
+		{"third wide rune wraps", "界界界", []string{"界界\n", "界\n"}},
+		{"multibyte at boundary", "abcdé", []string{"abcd\n", "é\n"}},
+		{"combining mark stays", "abcdéf", []string{"abcd\n", "éf\n"}},
+		{"exact width then newline", "abcd\nef", []string{"abcd\n", "ef\n"}},
+		{"escape at boundary stays", "abcd\x1b[0me", []string{"abcd\x1b[0m\n", "e\n"}},
+		{"escape is never split", "ab\x1b[1;31mcdé", []string{"ab\x1b[1;31mcd\n", "é\n"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			v := &viewport{width: 4, height: 10, fixedHeight: true}
+			v.appendToLinebuffer([]byte(tt.in))
+			var lines []string
+			for _, line := range v.lines {
+				assert.True(t, utf8.Valid(line))
+				lines = append(lines, string(line))
+			}
+			assert.Equal(t, tt.out, lines)
+		})
+	}
+}
+
+func TestViewportPadsByTerminalColumns(t *testing.T) {
+	v := &viewport{width: 4, height: 10}
+	v.appendToLinebuffer([]byte("界"))
+	assert.Equal(t, []string{"界  \n"}, []string{string(v.lines[0])})
+}
+
+func TestViewportKeepsRuneSplitAcrossWrites(t *testing.T) {
+	notify := make(chan viewportChanged, 10)
+	v := initViewport(t.Context(), notify, 4, 10)
+	for _, chunk := range []string{"ab\xe7", "\x95", "\x8ccd"} {
+		_, err := v.Write([]byte(chunk))
+		assert.NoError(t, err)
+		<-notify
+	}
+	var buf bytes.Buffer
+	_, err := v.WriteTo(&buf)
+	assert.NoError(t, err)
+	assert.True(t, utf8.ValidString(buf.String()))
+	assert.Equal(t, "\rab  \n\r界cd\n", buf.String())
 }

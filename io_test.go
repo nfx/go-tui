@@ -330,7 +330,8 @@ func TestStderrReturnsRawWriterWithoutTTY(t *testing.T) {
 	SetDefaultIO(in, out)
 
 	assert.Equal(t, out, Stderr())
-	assert.Equal(t, out, defaultOutput())
+	_, defaultOut := defaultStreams()
+	assert.Equal(t, out, defaultOut)
 }
 
 func TestStderrReturnsCoordinatedWriterOnTTY(t *testing.T) {
@@ -353,7 +354,8 @@ func TestStderrReturnsCoordinatedWriterOnTTY(t *testing.T) {
 	fdw, ok := stderr.(interface{ Fd() uintptr })
 	assert.True(t, ok)
 	assert.Equal(t, uintptr(42), fdw.Fd())
-	cio, ok := defaultOutput().(*chanIO)
+	_, defaultOut := defaultStreams()
+	cio, ok := defaultOut.(*chanIO)
 	assert.True(t, ok)
 	assert.NotNil(t, cio)
 	ew, ok := stderr.(*terminalStderr)
@@ -379,7 +381,8 @@ func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
 	SetDefaultIO(in, out)
 	_ = Stderr()
 
-	cio, ok := defaultOutput().(*chanIO)
+	_, defaultOut := defaultStreams()
+	cio, ok := defaultOut.(*chanIO)
 	assert.True(t, ok)
 	assert.NotNil(t, cio)
 
@@ -889,4 +892,180 @@ func TestChanIOWriteAndWaitCompletesWithoutCancel(t *testing.T) {
 		t.Fatal("writeAndWait did not complete without context cancellation")
 	}
 	assert.NoError(t, ctx.Err())
+}
+
+func TestChanIOSharedGeometryRefreshIsRaceFree(t *testing.T) {
+	prevSize := termGetSize
+	t.Cleanup(func() { termGetSize = prevSize })
+	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
+	ctx := t.Context()
+	// a real fd makes every refresh write the shared geometry
+	cio := newUnstartedIO(ctx, 80, 24, 2)
+	go cio.handleViewports(ctx)
+	go cio.forwardTo(ctx, io.Discard)
+
+	done := make(chan struct{})
+	for range 2 {
+		go func() {
+			defer func() { done <- struct{}{} }()
+			vp, err := cio.pushViewport()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			w, h := cio.size()
+			tio := &termIO{cio: cio, vp: vp, Width: w, Height: h}
+			for range 50 {
+				tio.refreshSize()
+				if _, err := tio.Write([]byte("frame")); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+			tio.release()
+		}()
+	}
+	<-done
+	<-done
+	w, h := cio.size()
+	assert.Equal(t, 80, w)
+	assert.Equal(t, 24, h)
+}
+
+func TestChanIOReadKeepsBytesThatDoNotFit(t *testing.T) {
+	cio := newUnstartedIO(t.Context(), 80, 24, 0)
+	go func() { cio.In <- "abcdef" }()
+
+	var got []string
+	for range 3 {
+		p := make([]byte, 2)
+		n, err := cio.Read(p)
+		assert.NoError(t, err)
+		assert.Equal(t, 2, n)
+		got = append(got, string(p[:n]))
+	}
+	assert.Equal(t, []string{"ab", "cd", "ef"}, got)
+}
+
+func TestChanIOZeroLengthReadDoesNotConsumeInput(t *testing.T) {
+	cio := newUnstartedIO(t.Context(), 80, 24, 0)
+	n, err := cio.Read(nil)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, n)
+
+	go func() { cio.In <- "x" }()
+	p := make([]byte, 4)
+	n, err = cio.Read(p)
+	assert.NoError(t, err)
+	assert.Equal(t, "x", string(p[:n]))
+}
+
+func managedViewports(cio *chanIO) int {
+	cio.chainMu.Lock()
+	defer cio.chainMu.Unlock()
+	var n int
+	for curr := cio.head; curr != nil; curr = curr.next {
+		if curr.fixedHeight {
+			n++
+		}
+	}
+	return n
+}
+
+func TestChanIOReleasedViewportsDoNotAccumulate(t *testing.T) {
+	cio := startChanIO(t.Context(), 80, 24)
+	var released []*viewport
+	for range 3 {
+		vp, err := cio.pushViewport()
+		assert.NoError(t, err)
+		assert.NoError(t, vp.writeAndWait([]byte("prompt")))
+		assert.NoError(t, vp.writeAndWait(nil))
+		cio.releaseViewport(vp)
+		cio.releaseViewport(vp) // idempotent
+		released = append(released, vp)
+	}
+	assert.Equal(t, 0, managedViewports(cio))
+	for _, vp := range released {
+		// the viewport loop stops with its context
+		assert.NotNil(t, vp.ctx.Err())
+	}
+	// the chain still accepts new prompts
+	vp, err := cio.pushViewport()
+	assert.NoError(t, err)
+	assert.Equal(t, 1, managedViewports(cio))
+	cio.releaseViewport(vp)
+}
+
+func TestChanIOReleasedViewportKeepsLastFrameInScrollback(t *testing.T) {
+	cio, stdout := chainIOforTest(t, 40, 6)
+	kept, err := cio.pushViewport()
+	assert.NoError(t, err)
+	live, err := cio.pushViewport()
+	assert.NoError(t, err)
+	assert.NoError(t, kept.writeAndWait([]byte("aborted")))
+	assert.NoError(t, live.writeAndWait([]byte("live")))
+	_ = waitOutputContains(t, stdout.C, "live")
+
+	cio.releaseViewport(kept)
+	// the released frame ends its line and the live overlay is redrawn below it
+	out := waitOutputContains(t, stdout.C, "\raborted\n\rlive")
+	assert.True(t, !strings.HasSuffix(out, "\n"))
+	assert.Equal(t, 1, managedViewports(cio))
+
+	cio.releaseViewport(live)
+	out = waitOutputContains(t, stdout.C, "\rlive\n")
+	assert.True(t, strings.HasSuffix(out, "\n"))
+	assert.Equal(t, 0, managedViewports(cio))
+}
+
+type failingWriter struct{ err error }
+
+func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
+
+func TestChanIOFlushAndCloseReportWriteFailure(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cio := newUnstartedIO(ctx, 80, 24, 0)
+	go cio.handleViewports(ctx)
+	go cio.forwardTo(ctx, failingWriter{io.ErrShortWrite})
+	tio := &tio{arbiter: cio, cancel: cancel}
+
+	_, err := cio.Write([]byte("lost\n"))
+	assert.NoError(t, err) // queueing is asynchronous
+	assert.ErrorIs(t, cio.Flush(), io.ErrShortWrite)
+	assert.ErrorIs(t, tio.Flush(), io.ErrShortWrite)
+	assert.ErrorIs(t, tio.Close(), io.ErrShortWrite)
+}
+
+func TestDefaultStreamsArePairedUnderSetDefaultIO(t *testing.T) {
+	prevIn := defaultIO.input()
+	prevOut := defaultIO.rawOutput()
+	t.Cleanup(func() { SetDefaultIO(prevIn, prevOut) })
+	in1, out1 := bytes.NewBufferString("1"), &bytes.Buffer{}
+	in2, out2 := bytes.NewBufferString("2"), &bytes.Buffer{}
+	SetDefaultIO(in1, out1)
+
+	stop := make(chan struct{})
+	swapped := make(chan struct{})
+	go func() {
+		defer close(swapped)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			SetDefaultIO(in2, out2)
+			SetDefaultIO(in1, out1)
+		}
+	}()
+	for range 1000 {
+		in, out := defaultStreams()
+		paired := (in == io.Reader(in1) && out == io.Writer(out1)) ||
+			(in == io.Reader(in2) && out == io.Writer(out2))
+		if !paired {
+			t.Fatalf("mismatched default streams: %p %p", in, out)
+		}
+	}
+	close(stop)
+	<-swapped
 }
