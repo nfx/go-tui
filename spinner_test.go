@@ -40,7 +40,7 @@ func testIOforSpinners(t *testing.T, width, height int, o ...opt) (*chanIO, func
 			WithInput(cio),
 			WithOutput(cio),
 			WithContext(ctx),
-			spinnersOpt(func(s *Spinners) error {
+			opT(func(s *Spinners) error {
 				s.ticks = ticks
 				s.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 					return &termIO{
@@ -303,7 +303,7 @@ func TestSpinnersContextCancellation(t *testing.T) {
 
 func TestSpinnersOpt(t *testing.T) {
 	called := false
-	opt := spinnersOpt(func(s *Spinners) error {
+	opt := opT(func(s *Spinners) error {
 		called = true
 		return nil
 	})
@@ -315,7 +315,7 @@ func TestSpinnersOpt(t *testing.T) {
 
 	// Test with non-Spinners type
 	err = opt("not a spinner")
-	assert.NoError(t, err) // should not error, just return nil
+	assert.ErrorIs(t, err, ErrWrongWidget)
 }
 
 func TestNewSpinnersError(t *testing.T) {
@@ -459,7 +459,7 @@ func TestSpinnersMustAddBackgroundPanics(t *testing.T) {
 
 func TestSpinnersEmitStructuredEvents(t *testing.T) {
 	events := make(chan spinnerEvent, 32)
-	_, _, opts := testIOforSpinners(t, 12, 4, spinnersOpt(func(s *Spinners) error {
+	_, _, opts := testIOforSpinners(t, 12, 4, opT(func(s *Spinners) error {
 		s.eventSink = func(ev spinnerEvent) {
 			events <- ev
 		}

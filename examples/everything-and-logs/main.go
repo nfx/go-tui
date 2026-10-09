@@ -26,7 +26,6 @@ func main() {
 
 	spinners, err := tui.NewSpinners(
 		tui.WithContext(ctx), // TODO: require context by default
-		tui.WithPrefixf("example"),
 	)
 	if errors.Is(err, io.EOF) {
 		return

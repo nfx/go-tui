@@ -277,9 +277,18 @@ func (d *dropdown) startLazyProducer(ctx context.Context, itemFn iter.Seq2[any, 
 
 func DropdownIndex(label string, items []any, o ...opt) (int, error) {
 	d := newDropdown()
+	err := opts(o).Apply(d)
+	if err != nil {
+		return -1, err
+	}
+	return d.pick(label, items)
+}
+
+// pick runs a configured dropdown over items and shows the answer.
+func (d *dropdown) pick(label string, items []any) (int, error) {
 	d.Label = label
 	d.Items = items
-	i, err := d.dropdownIndex(o...)
+	i, err := d.dropdownIndex()
 	if err != nil {
 		return -1, err
 	}
@@ -355,9 +364,10 @@ func WithOneReturn() opt {
 	})
 }
 
+// WithHide skips printing the answer of a dropdown or an input.
 func WithHide() opt {
-	return opT(func(d *dropdown) error {
-		d.Hide = true
+	return opT(func(x withPrompt) error {
+		x.setHide()
 		return nil
 	})
 }
@@ -398,9 +408,10 @@ func WithTemplate(main string, activeDetails ...string) opt {
 	})
 }
 
+// WithLabelTemplate overrides the prompt label of a dropdown or an input.
 func WithLabelTemplate(tmpl string) opt {
-	return opT(func(d *dropdown) error {
-		d.LabelTemplate = tmpl
+	return opT(func(x withPrompt) error {
+		x.setLabelTemplate(tmpl)
 		return nil
 	})
 }
@@ -426,9 +437,10 @@ func WithMoreItemsTemplate(tmpl string) opt {
 	})
 }
 
+// WithAnswerTemplate overrides the answer line of a dropdown or an input.
 func WithAnswerTemplate(tmpl string) opt {
-	return opT(func(d *dropdown) error {
-		d.AnswerTemplate = tmpl
+	return opT(func(x withPrompt) error {
+		x.setAnswerTemplate(tmpl)
 		return nil
 	})
 }
@@ -651,6 +663,27 @@ func mustEndWith(base string, r byte) string {
 		base += string(r)
 	}
 	return base
+}
+
+// implement [withPrompt] interface.
+func (d *dropdown) setHide() {
+	d.Hide = true
+}
+
+// implement [withPrompt] interface.
+func (d *dropdown) setLabelTemplate(tmpl string) {
+	d.LabelTemplate = tmpl
+}
+
+// implement [withPrompt] interface.
+func (d *dropdown) setAnswerTemplate(tmpl string) {
+	d.AnswerTemplate = tmpl
+}
+
+// implement [withPrompt] interface.
+func (d *dropdown) setDefault(hint string) {
+	d.oneMatch = hint
+	d.rankHint = hint
 }
 
 // implements [withIO].

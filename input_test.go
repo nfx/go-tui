@@ -144,7 +144,7 @@ func TestInputReadOptionError(t *testing.T) {
 }
 
 func TestInputReadRunError(t *testing.T) {
-	_, err := Input("Label", inputOpt(func(i *input) error {
+	_, err := Input("Label", opT(func(i *input) error {
 		i.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
 			return nil, io.EOF
 		}
@@ -156,9 +156,9 @@ func TestInputReadRunError(t *testing.T) {
 }
 
 func TestInputOptWrongType(t *testing.T) {
-	err := inputOpt(func(*input) error { return nil })("nope")
-	if err == nil {
-		t.Fatalf("expected error")
+	err := opT(func(*input) error { return nil })("nope")
+	if !errors.Is(err, ErrWrongWidget) {
+		t.Fatalf("expected ErrWrongWidget, got %v", err)
 	}
 }
 

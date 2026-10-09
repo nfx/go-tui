@@ -336,7 +336,21 @@ func TestTableXWrites(t *testing.T) {
 		Name string
 	}
 	data := []item{{Name: "a"}, {Name: "b"}}
-	assert.NoError(t, TableAuto(buf, data, WithLabelTemplate("{{.Name}} ")))
+	assert.NoError(t, TableAuto(buf, data))
+	assert.True(t, buf.Len() > 0)
+}
+
+func TestTableRejectsOptionsOfOtherWidgets(t *testing.T) {
+	type item struct {
+		Name string
+	}
+	data := []item{{Name: "a"}}
+	err := TableAuto(&bytes.Buffer{}, data, WithLabelTemplate("{{.Name}} "))
+	assert.ErrorIs(t, err, ErrWrongWidget)
+	assert.Contains(t, err.Error(), "need tui.withPrompt, got *tui.table")
+
+	err = TableAuto(&bytes.Buffer{}, data, WithOutput(&bytes.Buffer{}))
+	assert.ErrorIs(t, err, ErrWrongWidget)
 }
 
 func TestTableFieldValueWithTabDoesNotPanic(t *testing.T) {
