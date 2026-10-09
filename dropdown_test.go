@@ -21,6 +21,49 @@ import (
 	"github.com/nfx/go-tui/internal/assert"
 )
 
+func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
+	pr, pw, err := os.Pipe()
+	assert.NoError(t, err)
+	defer pr.Close()
+	defer pw.Close()
+	in := &notifyingReader{File: pr, started: make(chan struct{})}
+	d := newDropdown()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	d.Ctx = ctx
+	tio := &termIO{in: in, out: &bytes.Buffer{}}
+	finished := make(chan error, 1)
+	go func() {
+		_, err := d.pressKey(tio, &bytes.Buffer{}, 1, 1)
+		finished <- err
+	}()
+	select {
+	case <-in.started:
+	case <-time.After(time.Second):
+		t.Fatal("dropdown did not start reading")
+	}
+	cancel()
+	select {
+	case err := <-finished:
+		assert.True(t, errors.Is(err, context.Canceled))
+	case <-time.After(time.Second):
+		t.Fatal("cancelled dropdown did not return")
+	}
+	_, err = pw.Write([]byte{'x', keyEnter})
+	assert.NoError(t, err)
+	next := newInput("next")
+	next.ctx, cancel = context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	next.in, next.out = in, &bytes.Buffer{}
+	next.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
+	}
+	assert.NoError(t, next.parseTemplates())
+	got, err := next.run()
+	assert.NoError(t, err)
+	assert.Equal(t, "x", got)
+}
+
 func waitForDropdownOutput(t *testing.T, out <-chan string, want string) string {
 	t.Helper()
 	deadline := time.After(2 * time.Second)

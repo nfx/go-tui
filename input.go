@@ -9,10 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"reflect"
 	"strings"
-	"sync"
 	"text/template"
 	"unicode/utf8"
 )
@@ -51,12 +48,6 @@ type inputChanged struct {
 
 type inputConfirmed struct {
 	inputIncomingMarker
-}
-
-type inputKeyEvent struct {
-	key   rune
-	err   error
-	paste []byte
 }
 
 // WithDefault pre-fills the typed text of an input. For a dropdown it is only a
@@ -200,17 +191,18 @@ func (p *input) run() (string, error) {
 	defer io.Restore() //nolint:errcheck
 	frame := &bytes.Buffer{}
 	// Cancel the event goroutine on return; an outstanding wrapper read is
-	// retained for the next prompt (see startInputRead).
+	// retained for the next prompt on this input (see termIO.startRead).
 	runCtx, cancel := context.WithCancel(p.ctx)
 	defer cancel()
-	var keys <-chan inputKeyEvent
+	var keys <-chan keyEvent
 	var permit chan<- struct{}
 	if p.input == nil {
-		var stopped <-chan struct{}
-		keys, permit, stopped = p.readEvents(runCtx, io)
+		permits := make(chan struct{}, 1)
+		permit = permits
+		keys = io.readEvents(runCtx, permits)
 		defer func() {
 			cancel()
-			<-stopped
+			io.awaitReader()
 		}()
 	}
 	p.emit(inputInit{
@@ -241,7 +233,7 @@ func (p *input) run() (string, error) {
 }
 
 // handleNextEvent waits for the next key or input event and applies it to the input state.
-func (p *input) handleNextEvent(tio *termIO, keys <-chan inputKeyEvent) (bool, error) {
+func (p *input) handleNextEvent(tio *termIO, keys <-chan keyEvent) (bool, error) {
 	select {
 	case <-p.ctx.Done():
 		return false, errors.Join(p.ctx.Err(), p.clear(tio))
@@ -346,135 +338,7 @@ func (*input) clear(io *termIO) error {
 	return errors.Join(errs...)
 }
 
-func (p *input) pressKey(io *termIO) (string, error) {
-	key, n, err := io.ReadRune()
-	ev := inputKeyEvent{
-		key: key,
-		err: err,
-	}
-	more, ok := errors.AsType[*pasteTextError](err)
-	if ok {
-		ev.paste = append(ev.paste, more.buf[:n]...)
-	}
-	done, err := p.handleKeyEvent(ev, true)
-	if err != nil {
-		return "", err
-	}
-	if done {
-		return p.typed, nil
-	}
-	return "", nil
-}
-
-// wrappedInputReads retains at most one outstanding read per wrapped reader.
-// A cancelled prompt leaves the read available for the next prompt on that input.
-var wrappedInputReads = struct {
-	sync.Mutex
-	reads map[any]*inputRead
-}{reads: make(map[any]*inputRead)}
-
-type inputRead struct {
-	done    chan struct{}
-	event   inputKeyEvent
-	pending []byte
-}
-
-// startInputRead reuses a wrapper's outstanding read, including its buffered bytes.
-// Wrappers cannot be polled through Fd: their Read may serve an independent buffer.
-func startInputRead(tio *termIO) (*inputRead, func()) {
-	d, wrapped := tio.in.(descriptor)
-	if _, file := tio.in.(*os.File); file {
-		wrapped = false
-	}
-	var source any
-	if wrapped {
-		// Use reader identity where possible so closing a wrapper and reusing its
-		// descriptor cannot deliver an old result to an unrelated input.
-		source = d
-		if !reflect.ValueOf(source).Comparable() {
-			source = d.Fd()
-		}
-		wrappedInputReads.Lock()
-		defer wrappedInputReads.Unlock()
-		if read := wrappedInputReads.reads[source]; read != nil {
-			return read, func() { forgetInputRead(source, read) }
-		}
-	}
-	read := &inputRead{done: make(chan struct{})}
-	if wrapped {
-		wrappedInputReads.reads[source] = read
-	}
-	// The read owns its decoder state even after its original prompt returns.
-	decoder := &termIO{in: tio.in, pending: tio.pending}
-	go func() {
-		defer close(read.done)
-		key, n, err := decoder.ReadRune()
-		read.event = inputKeyEvent{key: key, err: err}
-		var more *pasteTextError
-		if errors.As(err, &more) {
-			read.event.paste = append([]byte(nil), more.buf[:n]...)
-		}
-		read.pending = decoder.pending
-	}()
-	return read, func() {
-		if wrapped {
-			forgetInputRead(source, read)
-		}
-	}
-}
-
-// forgetInputRead releases a shared read after a prompt has accepted its event.
-func forgetInputRead(source any, read *inputRead) {
-	wrappedInputReads.Lock()
-	defer wrappedInputReads.Unlock()
-	if wrappedInputReads.reads[source] == read {
-		delete(wrappedInputReads.reads, source)
-	}
-}
-
-// readEvents reads one chunk per permit and exits when the prompt is cancelled.
-// A blocked wrapper read is retained for the next prompt instead of losing its key.
-func (p *input) readEvents(ctx context.Context, tio *termIO) (<-chan inputKeyEvent, chan<- struct{}, <-chan struct{}) {
-	keys := make(chan inputKeyEvent)
-	permit := make(chan struct{}, 1)
-	stopped := make(chan struct{})
-	go func() {
-		defer close(stopped)
-		defer close(keys)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-permit:
-			}
-			if ctx.Err() != nil {
-				return
-			}
-			if len(tio.pending) == 0 && waitForReadableInput(ctx, tio.in) != nil {
-				return
-			}
-			read, consumed := startInputRead(tio)
-			select {
-			case <-ctx.Done():
-				return
-			case <-read.done:
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case keys <- read.event:
-				tio.pending = read.pending
-				consumed()
-			}
-			if read.event.err != nil && read.event.paste == nil {
-				return
-			}
-		}
-	}()
-	return keys, permit, stopped
-}
-
-func (p *input) handleKeyEvent(ev inputKeyEvent, ok bool) (bool, error) {
+func (p *input) handleKeyEvent(ev keyEvent, ok bool) (bool, error) {
 	if !ok {
 		return false, fmt.Errorf("read: %w", io.EOF)
 	}

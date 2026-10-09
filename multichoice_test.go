@@ -311,7 +311,7 @@ func TestMultichoiceRunReadsPendingEnter(t *testing.T) {
 }
 
 // TestMultichoiceRunCancelledWrappedReadKeepsNextKey verifies that a read blocked
-// in a wrapper that cannot be polled is handed to the next prompt, not discarded.
+// in a wrapper that cannot be polled is handed to a fresh prompt.
 func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	pr, pw, err := os.Pipe()
 	assert.NoError(t, err)
@@ -343,7 +343,7 @@ func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	defer cancel()
 	next.in, next.out = in, &bytes.Buffer{}
 	next.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
+		return &termIO{in: in, out: out, input: sharedInputState(in), Width: 20, Height: 2, Restore: func() error { return nil }}, nil
 	}
 	assert.NoError(t, next.parseTemplates())
 	got, err := next.run()
