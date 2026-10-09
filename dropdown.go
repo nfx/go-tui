@@ -12,6 +12,7 @@ import (
 	"iter"
 	"maps"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"text/template"
@@ -111,6 +112,11 @@ type dropdown struct {
 	offset   int
 	typed    []rune
 	oneMatch string // see [WithDefault]
+	// rankHint keeps the [WithDefault] value for ranking every candidate set,
+	// including items that are added lazily, after oneMatch is consumed.
+	rankHint string
+	// longest is the widest active or inactive item seen so far.
+	longest int
 
 	in  io.Reader
 	out io.Writer
@@ -208,8 +214,23 @@ func DropdownLazy[V any](label string, itemFn iter.Seq2[V, error], o ...opt) (V,
 	if err != nil {
 		return zero, err
 	}
-	startDropdownLazyProducer(d, itemFn)
-	i, err := d.dropdownIndex()
+	// validate everything that can fail before the producer starts
+	err = d.parseTemplates()
+	if err != nil {
+		return zero, fmt.Errorf("templates: %w", err)
+	}
+	// the producer is owned by this call: it stops on every return path
+	ctx, cancel := context.WithCancel(d.Ctx)
+	defer cancel()
+	d.Ctx = ctx
+	d.startLazyProducer(ctx, func(yield func(any, error) bool) {
+		for v, err := range itemFn {
+			if !yield(v, err) {
+				return
+			}
+		}
+	})
+	i, err := d.selectIndex()
 	if err != nil {
 		return zero, err
 	}
@@ -225,20 +246,24 @@ func DropdownLazy[V any](label string, itemFn iter.Seq2[V, error], o ...opt) (V,
 	return valid, nil
 }
 
-func startDropdownLazyProducer[V any](d *dropdown, itemFn iter.Seq2[V, error]) {
-	d.itItems = make(chan itPair, max(1, d.IterBatchSize))
+// startLazyProducer streams itemFn into the dropdown until it is done
+// or ctx is cancelled. A yield blocked on a full channel observes ctx, but
+// iterator work that neither yields nor checks a context is not interrupted.
+func (d *dropdown) startLazyProducer(ctx context.Context, itemFn iter.Seq2[any, error]) {
+	ch := make(chan itPair, max(1, d.IterBatchSize))
+	d.itItems = ch // the dropdown may later set its own field to nil
 	go func() {
-		defer close(d.itItems)
+		defer close(ch)
 		select {
-		case <-d.Ctx.Done():
+		case <-ctx.Done():
 			return
 		default:
 		}
 		for v, err := range itemFn {
 			select {
-			case <-d.Ctx.Done():
+			case <-ctx.Done():
 				return
-			case d.itItems <- itPair{v, err}:
+			case ch <- itPair{v, err}:
 				if err != nil {
 					return
 				}
@@ -292,6 +317,12 @@ func (d *dropdown) dropdownIndex(o ...opt) (int, error) {
 	if err != nil {
 		return -1, fmt.Errorf("templates: %w", err)
 	}
+	return d.selectIndex()
+}
+
+// selectIndex runs a dropdown with parsed templates and returns the original
+// item index. [dropdown.run] returns a position in d.relevant instead.
+func (d *dropdown) selectIndex() (int, error) {
 	if d.OneReturn && len(d.Items) == 1 {
 		return 0, nil
 	}
@@ -711,7 +742,7 @@ func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
 
 func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 	if len(d.displayed) > 0 {
-		return 0, nil // already initialized
+		return d.longest, nil // already initialized
 	}
 	d.emit(dropdownInit{Label: d.Label})
 	d.trie = newTrie()
@@ -720,12 +751,16 @@ func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 	d.inactive = make([]bbuf, len(d.Items))
 	d.widths = make([]int, len(d.Items))
 	d.relevant = make([]int, len(d.Items))
+	d.longest = 0
+	if d.oneMatch != "" {
+		d.rankHint = d.oneMatch
+	}
 	for i, item := range d.Items {
 		err = d.setItem(i, item)
 		if err != nil {
-			return longest, fmt.Errorf("add item: %w", err)
+			return d.longest, fmt.Errorf("add item: %w", err)
 		}
-		longest = max(longest, d.widths[i], d.activeWidths[i])
+		d.relevant[i] = i
 	}
 	if d.oneMatch != "" && len(d.Items) > 0 {
 		d.sortRelevantByLevenstein(d.oneMatch)
@@ -737,23 +772,28 @@ func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 			// this may properly work only with all items known upfront,
 			// as lazily added items might yield more than one match at
 			// some undetermined point in the future.
-			return longest, oneHatch(matched[0])
+			// run results are positions in d.relevant, which is now sorted
+			return d.longest, oneHatch(slices.Index(d.relevant, matched[0]))
 		}
 	}
 	d.displayed = d.relevant[:min(len(d.relevant), io.Height/2)]
-	return longest, nil
+	return d.longest, nil
 }
 
 func (d *dropdown) sortRelevantByLevenstein(match string) {
-	lookup := make(map[int]int, len(d.relevant))
+	d.rankByLevenstein(d.relevant, match)
+}
+
+func (d *dropdown) rankByLevenstein(relevant []int, match string) {
+	lookup := make(map[int]int, len(relevant))
 	match = strings.ToLower(match)
-	for _, i := range d.relevant {
+	for _, i := range relevant {
 		label := strings.ToLower(d.itemLabel(d.Items[i]))
 		lookup[i] = d.levenstein(label, match)
 	}
-	sort.SliceStable(d.relevant, func(i, j int) bool {
-		left := d.relevant[i]
-		right := d.relevant[j]
+	sort.SliceStable(relevant, func(i, j int) bool {
+		left := relevant[i]
+		right := relevant[j]
 		if lookup[left] == lookup[right] {
 			return left < right
 		}
@@ -799,7 +839,7 @@ func (d *dropdown) setItem(i int, item any) error {
 	inactive := d.inactive[i].String()
 	d.trie.Add(inactive, i)
 	d.widths[i] = width(d.inactive[i])
-	d.relevant[i] = i
+	d.longest = max(d.longest, d.widths[i], d.activeWidths[i])
 	d.emit(dropdownAppendItem{
 		Item:  item,
 		Index: i,
@@ -877,9 +917,12 @@ func (d *dropdown) height() int {
 
 // snapshotState captures dropdown state so key handlers can emit semantic diffs.
 func (d *dropdown) snapshotState() dropdownState {
+	// ranking may reorder relevant, while Diff needs numerically sorted indexes
+	relevant := append([]int(nil), d.relevant...)
+	slices.Sort(relevant)
 	return dropdownState{
 		prefix:   string(d.typed),
-		relevant: append([]int(nil), d.relevant...),
+		relevant: relevant,
 	}
 }
 
@@ -973,6 +1016,7 @@ func (d *dropdown) decodeInputEvent(key rune) dropdownInputEvent {
 
 var ErrNoSpace = errors.New("no space in terminal")
 
+// run returns the position of the chosen item in d.relevant, not its original index.
 func (d *dropdown) run() (int, error) {
 	io, err := d.makeTermIO(d.in, d.out)
 	if err != nil {
@@ -1337,23 +1381,42 @@ func (d *dropdown) loadItem(io *termIO, frame *bytes.Buffer, it itPair, more boo
 
 // addItem appends an item and refreshes derived state.
 func (d *dropdown) addItem(height int, item any) error {
+	var current = -1 // original index of the item the user moved to
+	if pos := d.offset + d.selected; pos > 0 && pos < len(d.relevant) {
+		current = d.relevant[pos]
+	}
 	d.Items = append(d.Items, item)
 	d.active = append(d.active, nil)
 	d.activeWidths = append(d.activeWidths, 0)
 	d.inactive = append(d.inactive, nil)
 	d.widths = append(d.widths, 0)
-	d.relevant = append(d.relevant, 0)
 	err := d.setItem(len(d.Items)-1, item)
 	if err != nil {
 		return fmt.Errorf("set item: %w", err)
 	}
-	if len(d.typed) > 0 {
-		d.relevant = d.trie.Prefix(string(d.typed))
-	} else {
-		d.relevant = d.trie.Prefix("")
+	d.relevant = d.matching(string(d.typed))
+	capacity := max(1, height/2)
+	if pos := slices.Index(d.relevant, current); current >= 0 && pos >= 0 {
+		// ranking may reorder rows, keep the user on the same item
+		d.offset = min(d.offset, pos)
+		if pos-d.offset >= capacity {
+			d.offset = pos - capacity + 1
+		}
+		d.selected = pos - d.offset
 	}
-	d.displayed = d.relevant[:min(len(d.relevant), height/2)]
+	d.displayed = d.relevant[min(d.offset, len(d.relevant)):]
+	d.displayed = d.displayed[:min(len(d.displayed), capacity)]
 	return nil
+}
+
+// matching returns relevant item indexes for the prefix, ranked by
+// the [WithDefault] hint when there is one.
+func (d *dropdown) matching(prefix string) []int {
+	relevant := d.trie.Prefix(prefix)
+	if d.rankHint != "" {
+		d.rankByLevenstein(relevant, d.rankHint)
+	}
+	return relevant
 }
 
 // pressKeyRune updates dropdown state for an already-read key.
@@ -1500,7 +1563,7 @@ func (d *dropdown) pressBackspace(io *termIO) {
 		return
 	}
 	d.typed = d.typed[:len(d.typed)-1]
-	d.relevant = d.trie.Prefix(string(d.typed))
+	d.relevant = d.matching(string(d.typed))
 	d.displayed = d.relevant[:min(len(d.relevant), io.Height/2)]
 	d.selected = 0
 	d.offset = 0
@@ -1511,7 +1574,7 @@ func (d *dropdown) filterWith(text string, displayed, space, height int) bool {
 	prevTyped := string(d.typed)
 	prevRelevant := d.relevant
 	d.typed = []rune(text)
-	d.relevant = d.trie.Prefix(text)
+	d.relevant = d.matching(text)
 	if d.OneReturn && len(d.relevant) == 1 {
 		return true
 	}
@@ -1532,13 +1595,13 @@ func (d *dropdown) filterWith(text string, displayed, space, height int) bool {
 
 func (d *dropdown) pressAny(key rune, displayed, space int) bool {
 	d.typed = append(d.typed, key)
-	d.relevant = d.trie.Prefix(string(d.typed))
+	d.relevant = d.matching(string(d.typed))
 	if d.OneReturn && len(d.relevant) == 1 {
 		return true
 	}
 	if len(d.relevant) == 0 {
 		d.typed = d.typed[:len(d.typed)-1]
-		d.relevant = d.trie.Prefix(string(d.typed))
+		d.relevant = d.matching(string(d.typed))
 		return false
 	}
 	d.displayed = d.relevant[:min(len(d.relevant), displayed, space)]
