@@ -97,7 +97,10 @@ func prettyJsonLoop(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int
 		stack = stack[:len(stack)-1]
 		return depth, stack
 	}
-	if ch != '"' && curr == jsonQuoted {
+	if curr == jsonQuoted && ch == '\\' {
+		return depth, pretttJsonBackslash(stack, w, ch)
+	}
+	if curr == jsonQuoted && ch != '"' {
 		w.WriteByte(ch)
 		return depth, stack
 	}
@@ -145,8 +148,14 @@ func prettyJsonOpenArray(stack []jsonState, w *bytes.Buffer, ch byte, depth int)
 }
 
 func prettyJsonClose(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
-	depth--
-	stack = stack[:len(stack)-1]
+	// a pending value (number, literal or nested container) sits above its container
+	if stack[len(stack)-1] == jsonValue {
+		stack = stack[:len(stack)-1]
+	}
+	if top := stack[len(stack)-1]; top == jsonObject || top == jsonArray {
+		stack = stack[:len(stack)-1]
+		depth--
+	}
 	w.WriteString(bold)
 	w.WriteByte(ch)
 	w.WriteString(reset)
@@ -189,7 +198,7 @@ func prettyJsonQuote(stack []jsonState, w *bytes.Buffer, ch byte, depth int) []j
 		w.WriteByte(ch)
 		w.WriteString(reset)
 		stack = stack[:len(stack)-1]
-	case jsonArray: // open const
+	case jsonRoot, jsonArray: // open const
 		w.WriteString(valDepthShades[abs(depth)%len(valDepthShades)])
 		w.WriteByte(ch)
 		stack = append(stack, jsonQuoted)
