@@ -6,8 +6,10 @@ package tui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 	"time"
 
@@ -186,7 +188,7 @@ func WithFrames(frames []string) opt {
 		if !ok {
 			return nil
 		}
-		cs.frames = frames
+		cs.frames = slices.Clone(frames)
 		return nil
 	}
 }
@@ -202,20 +204,28 @@ func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 		replyOffset: replyOffset,
 	}
 	err := opts(opt).Apply(&req)
+	if err == nil && len(req.frames) == 0 {
+		err = errors.New("spinner: frames must not be empty")
+	}
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	// when parent context is done, we can't create a spinner
 	select {
 	case <-s.ctx.Done():
+		cancel()
 		return nil, s.ctx.Err()
 	case <-ctx.Done():
+		cancel()
 		return nil, ctx.Err()
 	case s.creates <- req:
 		select {
 		case <-s.ctx.Done(): // spinner group is done
+			cancel()
 			return nil, s.ctx.Err()
 		case <-ctx.Done(): // what created this spinner is done
+			cancel()
 			return nil, ctx.Err()
 		case offset := <-replyOffset:
 			// go close in background
@@ -388,6 +398,9 @@ func (s *Spinners) markDone(offset int) {
 		return
 	}
 	spinner.Done = true
+	if spinner.cancel != nil {
+		spinner.cancel() // release the child context and its monitor
+	}
 	s.wg.Done()
 }
 

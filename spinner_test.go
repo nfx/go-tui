@@ -511,3 +511,10 @@ func TestSpinnersEmitStructuredEvents(t *testing.T) {
 	_, ok = mustReceiveSpinnerEvent(t, events).(spinnerGroupClosed)
 	assert.True(t, ok)
 }
+
+func TestSpinnersAddRejectsEmptyFrames(t *testing.T) {
+	s := &Spinners{}
+	if _, err := s.Add(context.Background(), WithFrames(nil)); err == nil {
+		t.Fatal("expected error for empty frames")
+	}
+}
