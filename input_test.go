@@ -738,3 +738,206 @@ func TestInputRunBufferedWrappedReader(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
 }
+
+func pasteEvent(text string) keyEvent {
+	return keyEvent{err: &pasteTextError{buf: []byte(text)}, paste: []byte(text)}
+}
+
+// regression: keys returned by one read keep their meaning
+func TestInputHandleBufferedKeys(t *testing.T) {
+	i := &input{typed: "x", cursor: 1}
+	done, err := i.handleKeyEvent(pasteEvent("ab\x7f\x1b[Dc\rd"), true)
+	assert.NoError(t, err)
+	assert.True(t, done)
+	assert.Equal(t, "xca", i.typed)
+}
+
+func runInputOn(t *testing.T, in io.Reader, option ...opt) (string, error) {
+	t.Helper()
+	i := newInput("Label")
+	i.in, i.out = in, &bytes.Buffer{}
+	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	i.ctx = ctx
+	return i.read(option...)
+}
+
+// regression: a, b, Backspace and Enter typed together must submit "a"
+func TestInputRunBufferedKeystrokes(t *testing.T) {
+	got, err := runInputOn(t, &chunkReader{chunks: [][]byte{[]byte("ab\x7f\r")}})
+	assert.NoError(t, err)
+	assert.Equal(t, "a", got)
+}
+
+func TestInputRunBufferedKeysInTheMiddle(t *testing.T) {
+	in := &chunkReader{chunks: [][]byte{[]byte("\x1b[Da\x1b[Cé\x1b[D\x1b[D"), []byte("é\r")}}
+	got, err := runInputOn(t, in, WithDefault("日本"))
+	assert.NoError(t, err)
+	assert.Equal(t, "日aé本é", got)
+}
+
+// regression: keys after a confirming Enter stay for the next prompt
+func TestInputRunKeepsKeysAfterEnter(t *testing.T) {
+	in := &chunkReader{chunks: [][]byte{[]byte("a\rbc\r")}}
+	got, err := runInputOn(t, in)
+	assert.NoError(t, err)
+	assert.Equal(t, "a", got)
+	got, err = runInputOn(t, in)
+	assert.NoError(t, err)
+	assert.Equal(t, "bc", got)
+}
+
+func TestInputRendersPastedControlsSafely(t *testing.T) {
+	i := &input{Label: "L", typed: "a\rb\x1b[2J\x7f\u009b", cursor: 1, LabelTemplate: "{{.}} ", AnswerTemplate: "{{.Answer}}"}
+	assert.NoError(t, i.parseTemplates())
+	var out bytes.Buffer
+	err := i.render(&termIO{out: &out}, &bytes.Buffer{})
+	assert.NoError(t, err)
+	assert.Equal(t, "\rL a␍b␛[2J␡�\x1b[K\x1b[8D", out.String())
+}
+
+func TestInputShowAnswerRendersControlsSafely(t *testing.T) {
+	var out bytes.Buffer
+	i := &input{Label: "L", typed: "a\rb", LabelTemplate: "{{.}} ", AnswerTemplate: "{{.Answer}}"}
+	i.out = &out
+	assert.NoError(t, i.parseTemplates())
+	assert.NoError(t, i.showAnswer())
+	assert.Equal(t, "a␍b\n", out.String())
+}
+
+// regression: a backspace that deletes nothing must not move the cursor
+func TestInputBackspaceAtStartKeepsCursor(t *testing.T) {
+	i := &input{typed: "abc", cursor: 0}
+	done, err := i.handleKeyEvent(keyEvent{key: 0x7f}, true)
+	assert.NoError(t, err)
+	assert.True(t, !done)
+	assert.Equal(t, "abc", i.typed)
+	assert.Equal(t, 0, i.cursor)
+}
+
+func TestInputChangedWithCursor(t *testing.T) {
+	i := &input{typed: "abc", cursor: 3}
+	cursor := 1
+	i.applyInputEvent(inputChanged{Text: "abcd", Cursor: &cursor})
+	assert.Equal(t, 1, i.cursor)
+	cursor = 10
+	i.applyInputEvent(inputChanged{Text: "ab", Cursor: &cursor})
+	assert.Equal(t, 2, i.cursor)
+	// a text-only event derives the cursor from the change in length
+	i.applyInputEvent(inputChanged{Text: "abx"})
+	assert.Equal(t, 3, i.cursor)
+}
+
+func renderInput(t *testing.T, i *input, termWidth int) string {
+	t.Helper()
+	i.LabelTemplate = "{{.}} "
+	i.AnswerTemplate = "{{.Answer}}"
+	assert.NoError(t, i.parseTemplates())
+	var out bytes.Buffer
+	err := i.render(&termIO{out: &out, Width: termWidth}, &bytes.Buffer{})
+	assert.NoError(t, err)
+	return out.String()
+}
+
+// regression: wide runes must be clipped by terminal columns, not rune count
+func TestInputRenderClipsWideRunesByWidth(t *testing.T) {
+	// "L " takes two of six columns, leaving four for two wide runes
+	got := renderInput(t, &input{Label: "L", typed: "界界界界", cursor: 4}, 6)
+	assert.Equal(t, "\rL 界界\x1b[K", got)
+	got = renderInput(t, &input{Label: "L", typed: "界界界界", cursor: 0}, 6)
+	assert.Equal(t, "\rL 界界\x1b[K\x1b[4D", got)
+	got = renderInput(t, &input{Label: "L", typed: "a界界界", cursor: 2}, 6)
+	assert.Equal(t, "\rL 界界\x1b[K\x1b[2D", got)
+}
+
+func TestInputRenderMovesOverCombiningRunes(t *testing.T) {
+	got := renderInput(t, &input{Label: "L", typed: "e\u0301e\u0301x", cursor: 2}, 0)
+	assert.Equal(t, "\rL e\u0301e\u0301x\x1b[K\x1b[2D", got)
+}
+
+func TestInputRenderClipsWithoutOrphanCombiningRune(t *testing.T) {
+	// the window cannot hold the "e" under the combining acute accent
+	got := renderInput(t, &input{Label: "L", typed: "ae\u0301bcd", cursor: 6}, 5)
+	assert.Equal(t, "\rL bcd\x1b[K", got)
+}
+
+// regression: a combining mark at the cursor must not render without its base
+func TestInputRenderClipsOrphanCombiningRuneAtCursor(t *testing.T) {
+	i := &input{typed: "は\u3099ab", cursor: 1}
+	start, end := i.visibleWindow([]rune(i.typed), 2)
+	assert.Equal(t, 2, start)
+	assert.Equal(t, 4, end)
+	got := renderInput(t, &input{Label: "L", typed: "は\u3099ab", cursor: 1}, 4)
+	assert.Equal(t, "\rL ab\x1b[K\x1b[2D", got)
+}
+
+func TestInputRenderMasksPasswordByRune(t *testing.T) {
+	got := renderInput(t, &input{Label: "L", typed: "界e\u0301", cursor: 1, Password: true}, 0)
+	assert.Equal(t, "\rL ***\x1b[K\x1b[2D", got)
+}
+
+func TestInputRenderLabelFillsRow(t *testing.T) {
+	got := renderInput(t, &input{Label: "Label", typed: "abc", cursor: 1}, 6)
+	assert.Equal(t, "\rLabel \x1b[K", got)
+}
+
+// blockingReader reports the start of each read and returns chunks on demand.
+type blockingReader struct {
+	started chan struct{}
+	chunks  chan []byte
+}
+
+func (r *blockingReader) Read(p []byte) (int, error) {
+	r.started <- struct{}{}
+	chunk, ok := <-r.chunks
+	if !ok {
+		return 0, io.EOF
+	}
+	return copy(p, chunk), nil
+}
+
+// regression: a resize must not authorize a read beyond the confirming Enter
+func TestInputRunResizeDoesNotReadAhead(t *testing.T) {
+	in := &blockingReader{started: make(chan struct{}, 4), chunks: make(chan []byte)}
+	resized := make(chan struct{})
+	i := newInput("Label")
+	i.in, i.out = in, &bytes.Buffer{}
+	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{in: in, out: out, Width: 20, Height: 2, onResize: resized, Restore: func() error { return nil }}, nil
+	}
+	secondRead := make(chan bool, 1)
+	// confirmation waits for a read started after Enter
+	i.CheckFn = func(s string) (string, bool) {
+		select {
+		case <-in.started:
+			secondRead <- true
+		case <-time.After(200 * time.Millisecond):
+			secondRead <- false
+		}
+		return s, true
+	}
+	assert.NoError(t, i.parseTemplates())
+	finished := make(chan error, 1)
+	go func() {
+		_, err := i.run()
+		finished <- err
+	}()
+	select {
+	case <-in.started:
+	case <-time.After(time.Second):
+		t.Fatal("prompt did not start reading")
+	}
+	resized <- struct{}{}
+	in.chunks <- []byte{keyEnter}
+	assert.True(t, !<-secondRead)
+	close(in.chunks)
+	select {
+	case err := <-finished:
+		assert.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("prompt did not return")
+	}
+}

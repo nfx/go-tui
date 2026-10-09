@@ -11,6 +11,7 @@ import (
 	"io"
 	"strings"
 	"text/template"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -44,6 +45,9 @@ func (inputIncomingMarker) isInputIncoming() {}
 type inputChanged struct {
 	inputIncomingMarker
 	Text string
+	// Cursor is the rune index of the cursor after the change. When nil, the
+	// cursor is derived from the change in text length.
+	Cursor *int
 }
 
 type inputConfirmed struct {
@@ -170,7 +174,7 @@ func (i *input) showAnswer() error {
 	// TODO: unify reused structures
 	err := i.answerTemplate.Execute(&buf, dropdownAnswer{
 		Label:  i.Label,
-		Answer: i.typed,
+		Answer: i.safeText(i.typed),
 	})
 	if err != nil {
 		return fmt.Errorf("answer: %w", err)
@@ -199,11 +203,16 @@ func (p *input) run() (string, error) {
 	if p.input == nil {
 		permits := make(chan struct{}, 1)
 		permit = permits
+		// without a paste boundary, buffered bytes are keys typed together
+		io.splitKeys = true
 		keys = io.readEvents(runCtx, permits)
 		defer func() {
 			cancel()
 			io.awaitReader()
 		}()
+		// authorize the first read. Only a consumed key authorizes the next one,
+		// so neither a resize nor a confirmation lets the reader run ahead.
+		permit <- struct{}{}
 	}
 	p.emit(inputInit{
 		Label:    p.Label,
@@ -214,63 +223,154 @@ func (p *input) run() (string, error) {
 		if err != nil {
 			return "", errors.Join(err, p.clear(io))
 		}
-		// authorize the reader to fetch the next chunk; a 1-slot buffer with
-		// non-blocking send caps outstanding reads at one.
-		if permit != nil {
-			select {
-			case permit <- struct{}{}:
-			default:
-			}
-		}
-		done, err := p.handleNextEvent(io, keys)
+		done, consumed, err := p.handleNextEvent(io, keys)
 		if err != nil {
 			return "", err
 		}
 		if done {
 			return p.typed, p.clear(io)
 		}
+		if consumed && permit != nil {
+			// the reader took the previous permit before sending the key,
+			// so the slot is free and this send does not block.
+			permit <- struct{}{}
+		}
 	}
 }
 
 // handleNextEvent waits for the next key or input event and applies it to the input state.
-func (p *input) handleNextEvent(tio *termIO, keys <-chan keyEvent) (bool, error) {
+// It reports whether a key was consumed from keys.
+func (p *input) handleNextEvent(tio *termIO, keys <-chan keyEvent) (done, consumed bool, err error) {
 	select {
 	case <-p.ctx.Done():
-		return false, errors.Join(p.ctx.Err(), p.clear(tio))
+		return false, false, errors.Join(p.ctx.Err(), p.clear(tio))
 	case ev, ok := <-keys:
+		if !ok && p.ctx.Err() != nil {
+			// the reader closed keys because of the cancellation
+			return false, false, errors.Join(p.ctx.Err(), p.clear(tio))
+		}
 		// key press handlers has to be limited to state updates, not writes to the buffer.
 		done, err := p.handleKeyEvent(ev, ok)
 		if err != nil { // e.g., Ctrl+C or Ctrl+D
-			return false, errors.Join(err, p.clear(tio))
+			return false, ok, errors.Join(err, p.clear(tio))
 		}
-		return done, nil
+		return done, ok, nil
 	case ev, ok := <-p.input:
 		done, err := p.handleInputEvent(ev, ok)
 		if err != nil {
-			return false, errors.Join(err, p.clear(tio))
+			return false, false, errors.Join(err, p.clear(tio))
 		}
-		return done, nil
+		return done, false, nil
 	case <-tio.onResize:
 		// resize triggers a re-render with updated geometry
-		return false, nil
+		return false, false, nil
 	}
 }
 
-// visibleWindow returns the start and end rune indexes for
-// the visible portion of text, anchored around the cursor.
+// visibleWindow returns the start and end rune indexes of the portion
+// of runes that fits into availW terminal columns, anchored around the cursor.
 func (i *input) visibleWindow(runes []rune, availW int) (int, int) {
 	total := len(runes)
-	if availW <= 0 || total <= availW {
+	cursor := min(max(i.cursor, 0), total)
+	if availW <= 0 {
+		return cursor, cursor
+	}
+	if i.cellsWidth(runes) <= availW {
 		return 0, total
 	}
-	if i.cursor <= availW/2 {
-		return 0, availW
+	half := availW / 2
+	start := 0
+	switch {
+	case i.cellsWidth(runes[:cursor]) <= half:
+	case i.cellsWidth(runes[cursor:]) <= half:
+		// fill the window backwards from the end of the text
+		for w := 0; start < total; start++ {
+			w += i.cellWidth(runes[total-1-start])
+			if w > availW {
+				break
+			}
+		}
+		return i.skipCombining(runes, total-start), total
+	default:
+		// keep half of the window before the cursor
+		start = cursor
+		for w := 0; start > 0; start-- {
+			w += i.cellWidth(runes[start-1])
+			if w > half {
+				break
+			}
+		}
+		start = i.skipCombining(runes, start)
 	}
-	if i.cursor >= total-availW/2 {
-		return total - availW, total
+	end := start
+	for w := 0; end < total; end++ {
+		w += i.cellWidth(runes[end])
+		if w > availW {
+			break
+		}
 	}
-	start := i.cursor - availW/2
-	return start, start + availW
+	return start, end
+}
+
+// skipCombining moves a clipped window start past zero-width runes, whose
+// base rune is outside the window, even past a cursor between them.
+func (i *input) skipCombining(runes []rune, start int) int {
+	for start > 0 && start < len(runes) && i.cellWidth(runes[start]) == 0 {
+		start++
+	}
+	return start
+}
+
+// cellWidth returns the terminal columns of a rune written as valid UTF-8,
+// where a replacement character occupies a column.
+func (*input) cellWidth(r rune) int {
+	if r == utf8.RuneError {
+		return 1
+	}
+	return runeWidth(r)
+}
+
+func (i *input) cellsWidth(runes []rune) int {
+	w := 0
+	for _, r := range runes {
+		w += i.cellWidth(r)
+	}
+	return w
+}
+
+// displayRunes returns one terminal-safe rune per typed rune, so that
+// the cursor indexes both: a password is masked, and control characters,
+// which a paste stores as text, are shown instead of being interpreted.
+func (i *input) displayRunes() []rune {
+	runes := []rune(i.typed)
+	for k, r := range runes {
+		if i.Password {
+			runes[k] = '*'
+		} else {
+			runes[k] = i.safeRune(r)
+		}
+	}
+	return runes
+}
+
+// safeRune replaces a control character with its Unicode control picture,
+// or with the replacement character for C1 controls, which have no picture.
+func (*input) safeRune(r rune) rune {
+	switch {
+	case r < 0x20:
+		return 0x2400 + r // e.g. ␍ for a carriage return
+	case r == 0x7f:
+		return '\u2421' // ␡
+	case unicode.IsControl(r):
+		return utf8.RuneError
+	default:
+		return r
+	}
+}
+
+// safeText applies [input.safeRune] to every rune of text.
+func (i *input) safeText(text string) string {
+	return strings.Map(i.safeRune, text)
 }
 
 func (i *input) render(io *termIO, frame *bytes.Buffer) error {
@@ -289,31 +389,18 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 	labelW := width(labelBuf.Bytes())
 	_, err := frame.Write(labelBuf.Bytes())
 	collect(err)
-	displayed := i.typed
-	if i.Password {
-		displayed = strings.Repeat("*", utf8.RuneCountInString(i.typed))
-	}
 	// clip text to a visible window that fits on one row
-	runes := []rune(displayed)
-	var visStart, visEnd int
-	var visibleText string
-	var visCursor int
+	runes := i.displayRunes()
+	visStart, visEnd := 0, len(runes)
 	if io.Width > 0 {
-		availW := io.Width - labelW
-		if availW < 1 {
-			availW = 1
-		}
-		visStart, visEnd = i.visibleWindow(runes, availW)
-		visibleText = string(runes[visStart:visEnd])
-		visCursor = i.cursor - visStart
-	} else {
-		visibleText = displayed
-		visCursor = i.cursor
+		visStart, visEnd = i.visibleWindow(runes, io.Width-labelW)
 	}
+	visible := runes[visStart:visEnd]
+	visCursor := min(max(i.cursor-visStart, 0), len(visible))
 	// write displayed text and clear to the end of the line
-	_, err = fmt.Fprintf(frame, "%s\x1b[K", visibleText)
+	_, err = fmt.Fprintf(frame, "%s\x1b[K", string(visible))
 	collect(err)
-	moveLeft := utf8.RuneCountInString(visibleText) - visCursor
+	moveLeft := i.cellsWidth(visible[visCursor:])
 	if moveLeft > 0 {
 		// move the cursor left by the difference between
 		// the end and the desired position
@@ -344,16 +431,8 @@ func (p *input) handleKeyEvent(ev keyEvent, ok bool) (bool, error) {
 	}
 	_, ok = errors.AsType[*pasteTextError](ev.err)
 	if ok {
-		// Ctrl+V or CMD+V will just send more bytes. So we emulate typing.
-		// This currently works with empty input only. Or appending to the end.
-		// There's a bug when you paste in the middle of the text.
-		for _, r := range string(ev.paste) {
-			done := p.applyInputEvent(p.decodeInputEvent(r))
-			if done {
-				return true, nil
-			}
-		}
-		return false, nil
+		// a read started by another widget may report buffered keys as a paste
+		return p.handleBufferedKeys(ev.paste)
 	} else if ev.err != nil {
 		// Ctrl+C or Ctrl+D will result in an error like io.EOF
 		return false, fmt.Errorf("read: %w", ev.err)
@@ -369,6 +448,21 @@ func (p *input) handleKeyEvent(ev keyEvent, ok bool) (bool, error) {
 		return false, nil
 	}
 	return p.applyInputEvent(p.decodeInputEvent(ev.key)), nil
+}
+
+// handleBufferedKeys applies keys returned together by one read in order, so
+// that Enter or backspace keep their meaning. A paste cannot be told apart from
+// them, as there is no paste boundary. Keys after a confirming Enter are dropped.
+func (p *input) handleBufferedKeys(buf []byte) (bool, error) {
+	decoder := &termIO{in: bytes.NewReader(nil), pending: buf, splitKeys: true}
+	for len(decoder.pending) > 0 {
+		key, _, err := decoder.readRune()
+		done, err := p.handleKeyEvent(keyEvent{key: key, err: err}, true)
+		if done || err != nil {
+			return done, err
+		}
+	}
+	return false, nil
 }
 
 func (p *input) handleInputEvent(ev inputIncoming, ok bool) (bool, error) {
@@ -391,41 +485,52 @@ func (p *input) decodeInputEvent(key rune) inputIncoming {
 		return inputConfirmed{}
 	case 0x7f: // backspace
 		runes := []rune(p.typed)
-		if len(runes) > 0 && p.cursor > 0 {
-			runes = append(runes[:p.cursor-1], runes[p.cursor:]...)
+		cursor := min(p.cursor, len(runes))
+		if cursor > 0 {
+			runes = append(runes[:cursor-1], runes[cursor:]...)
+			cursor--
 		}
 		return inputChanged{
-			Text: string(runes),
+			Text:   string(runes),
+			Cursor: &cursor,
 		}
 	default:
-		return inputChanged{
-			Text: p.insertAtCursor(key),
-		}
+		return p.insertAtCursor(string(key))
 	}
 }
 
-// insertAtCursor returns the typed text with key inserted at the cursor,
-// which counts runes rather than bytes.
-func (p *input) insertAtCursor(key rune) string {
+// insertAtCursor returns a change that inserts text at the cursor,
+// which counts runes rather than bytes, and moves the cursor after it.
+func (p *input) insertAtCursor(text string) inputChanged {
 	runes := []rune(p.typed)
-	return string(runes[:p.cursor]) + string(key) + string(runes[p.cursor:])
+	inserted := []rune(text)
+	cursor := min(p.cursor, len(runes))
+	next := cursor + len(inserted)
+	return inputChanged{
+		Text:   string(runes[:cursor]) + string(inserted) + string(runes[cursor:]),
+		Cursor: &next,
+	}
 }
 
 func (p *input) applyInputEvent(ev inputIncoming) bool {
 	switch typed := ev.(type) {
 	case inputChanged:
-		p.applyInputChanged(typed.Text)
+		p.applyInputChanged(typed)
 	case inputConfirmed:
 		return p.confirmInput()
 	}
 	return false
 }
 
-func (p *input) applyInputChanged(text string) {
+func (p *input) applyInputChanged(ev inputChanged) {
 	prevLen := utf8.RuneCountInString(p.typed)
 	prevCursor := p.cursor
-	p.typed = text
+	p.typed = ev.Text
 	nextLen := utf8.RuneCountInString(p.typed)
+	if ev.Cursor != nil {
+		p.cursor = min(max(*ev.Cursor, 0), nextLen)
+		return
+	}
 	switch {
 	case prevLen+1 == nextLen:
 		if prevCursor < nextLen {
@@ -478,8 +583,7 @@ func (p *input) pressRight() {
 }
 
 func (p *input) pressAny(key rune) {
-	p.typed = p.insertAtCursor(key)
-	p.cursor++
+	p.applyInputChanged(p.insertAtCursor(string(key)))
 }
 
 func (p *input) parseTemplates() (err error) {
