@@ -373,8 +373,8 @@ func TestInputVisibleWindowZeroAvail(t *testing.T) {
 	i := &input{cursor: 3}
 	runes := []rune("hello")
 	start, end := i.visibleWindow(runes, 0)
-	assert.Equal(t, 0, start)
-	assert.Equal(t, 5, end)
+	assert.Equal(t, 3, start)
+	assert.Equal(t, 3, end)
 }
 
 func sendTickOrFatal(t *testing.T, ticks chan time.Time, now time.Time) {

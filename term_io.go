@@ -32,6 +32,9 @@ type termIO struct {
 
 	pending  []byte
 	bm1, bm2 byte
+	// splitKeys decodes keys returned together by one read one at a time,
+	// keeping the rest pending, instead of reporting them as a paste.
+	splitKeys bool
 
 	fd       int             // output file descriptor for resize refresh
 	onResize <-chan struct{} // fires on terminal resize (SIGWINCH)
@@ -337,7 +340,7 @@ func (*termIO) endsWithFullRune(buf []byte) bool {
 }
 
 // decodeRuneBytes interprets a byte buffer as a known escape
-// rune, a paste event, or a single-byte character.
+// rune, a paste event, or a single character.
 func (t *termIO) decodeRuneBytes(buf []byte, n int) (rune, int, error) {
 	if n == 0 {
 		return keyIgnored, n, nil
@@ -355,12 +358,13 @@ func (t *termIO) decodeRuneBytes(buf []byte, n int) (rune, int, error) {
 		}
 		return keyIgnored, consumed, nil
 	}
-	if r, size := utf8.DecodeRune(buf[:n]); size == n {
+	if r, size := utf8.DecodeRune(buf[:n]); size == n || t.splitKeys {
+		t.pushPending(buf, size, n)
 		switch r {
 		case keyCtrlC, keyCtrlD:
-			return 0, n, io.EOF
+			return 0, size, io.EOF
 		default:
-			return r, n, nil
+			return r, size, nil
 		}
 	}
 	n = t.holdPartialRune(buf, n)
@@ -511,7 +515,8 @@ func (t *termIO) pushPending(buf []byte, consumed, n int) {
 	if consumed >= n {
 		return
 	}
-	t.pending = append(t.pending[:0], buf[consumed:n]...)
+	// unread bytes go before any bytes that are still pending
+	t.pending = append(buf[consumed:n:n], t.pending...)
 }
 
 // clear erases the given number of terminal lines using
@@ -635,7 +640,7 @@ func (t *termIO) startRead() (*inputRead, func()) {
 		inputStates.states[state.source] = state
 	}
 	// The read owns its decoder even after its original prompt returns.
-	decoder := &termIO{in: t.in, pending: pending}
+	decoder := &termIO{in: t.in, pending: pending, splitKeys: t.splitKeys}
 	go func() {
 		defer close(read.done)
 		key, n, err := decoder.readRune()
