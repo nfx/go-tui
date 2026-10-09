@@ -864,8 +864,8 @@ func TestWrapReaderCloseProgressError(t *testing.T) {
 	if !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF, got %v", err)
 	}
-	if cr.closed {
-		t.Fatalf("unexpected close")
+	if !cr.closed {
+		t.Fatalf("expected underlying close despite progress error")
 	}
 }
 
@@ -1031,7 +1031,6 @@ func TestNewFileProgressReaderWithContextCancelBound(t *testing.T) {
 	}
 }
 
-
 func TestProgressStateIncrementCalculatesElapsedFromNow(t *testing.T) {
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	p := &progressState{
@@ -1046,3 +1045,20 @@ func TestProgressStateIncrementCalculatesElapsedFromNow(t *testing.T) {
 	assert.Equal(t, int64(3), p.metricsSnapshot().Elapsed)
 }
 
+func TestProgressbarAddAfterStoppedDoesNotBlock(t *testing.T) {
+	stopped := make(chan struct{})
+	close(stopped)
+	p := &Progressbar{
+		io:         &termIO{},
+		ctx:        t.Context(),
+		stopped:    stopped,
+		increments: make(chan int64),
+	}
+	done := make(chan struct{})
+	go func() { p.Add(1); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Add blocked after renderer stopped")
+	}
+}

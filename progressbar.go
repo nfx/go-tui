@@ -341,6 +341,8 @@ func (p *Progressbar) Add(num int64) {
 	select {
 	case <-p.ctx.Done():
 		return
+	case <-p.stopped: // renderer exited, nobody receives increments anymore
+		return
 	case p.increments <- num:
 	}
 }
@@ -755,13 +757,14 @@ func (w *wrapReader) Read(p []byte) (n int, err error) {
 }
 
 func (w *wrapReader) Close() error {
-	err := w.p.Close()
-	if err != nil {
-		return fmt.Errorf("progress: %w", err)
+	var errs []error
+	if err := w.p.Close(); err != nil {
+		errs = append(errs, fmt.Errorf("progress: %w", err))
 	}
-	closer, ok := w.r.(io.Closer)
-	if ok {
-		return closer.Close()
+	if closer, ok := w.r.(io.Closer); ok {
+		if err := closer.Close(); err != nil {
+			errs = append(errs, err)
+		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
