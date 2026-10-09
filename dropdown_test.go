@@ -1774,9 +1774,9 @@ func TestWithOneMatch_singlePrefixMatchReturnsIndex(t *testing.T) {
 	var oneMatch oneHatch
 	ok := errors.As(err, &oneMatch)
 	assert.True(t, ok)
-	// a run result is a position in the ranked d.relevant: "beta" ranks first
-	assert.Equal(t, 0, int(oneMatch))
-	assert.Equal(t, []int{1, 0}, d.relevant)
+	// a unique prefix skips ranking, so the position is in item order
+	assert.Equal(t, 1, int(oneMatch))
+	assert.Equal(t, []int{0, 1}, d.relevant)
 	assert.Equal(t, "", d.oneMatch)
 }
 
@@ -1829,9 +1829,9 @@ func TestWithOneMatch_multipleMatchesKeepDropdown(t *testing.T) {
 
 func TestDropdownLevenstein(t *testing.T) {
 	d := newDropdown()
-	assert.Equal(t, 3, d.levenstein("kitten", "sitting"))
-	assert.Equal(t, 0, d.levenstein("alpha", "alpha"))
-	assert.Equal(t, 1, d.levenstein("alpa", "alpha"))
+	assert.Equal(t, 3, d.levenstein([]rune("kitten"), []rune("sitting")))
+	assert.Equal(t, 0, d.levenstein([]rune("alpha"), []rune("alpha")))
+	assert.Equal(t, 1, d.levenstein([]rune("alpa"), []rune("alpha")))
 }
 
 func TestDropdownLazyEmptySequence(t *testing.T) {
@@ -2073,4 +2073,96 @@ func TestDropdownFilterEventsIgnoreRankingOrder(t *testing.T) {
 	assert.Equal(t, []int(nil), events[0].Added)
 	assert.Equal(t, []int{2}, events[1].Removed)
 	assert.Equal(t, []int(nil), events[1].Added)
+}
+
+func TestDropdownLevensteinCountsRunes(t *testing.T) {
+	d := newDropdown()
+	assert.Equal(t, 1, d.levenstein([]rune("é"), []rune("a")))
+	assert.Equal(t, 1, d.levenstein([]rune("é"), []rune("è")))
+	assert.Equal(t, 3, d.levenstein([]rune("sitting"), []rune("kitten")))
+	assert.Equal(t, 3, d.levenstein([]rune(""), []rune("abc")))
+	assert.Equal(t, 0, d.levenstein([]rune(""), []rune("")))
+}
+
+func TestDropdownLevensteinBoundedWork(t *testing.T) {
+	d := newDropdown()
+	long := strings.Repeat("a", 100_000)
+	assert.Equal(t, 0, d.levenstein([]rune(long), []rune(long)))
+	assert.Equal(t, maxRankRunes, d.levenstein([]rune(long), []rune(strings.Repeat("b", 100_000))))
+}
+
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *lockedBuffer) Len() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Len()
+}
+
+func TestDropdownEagerRedrawsOnResizeWhileIdle(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	reader, writer := io.Pipe()
+	t.Cleanup(func() {
+		cancel()
+		_ = reader.Close()
+		_ = writer.Close()
+	})
+	out := &lockedBuffer{}
+	resize := make(chan struct{})
+	resCh := make(chan string, 1)
+	go func() {
+		value, _ := Dropdown("Pick", []string{"a", "b"}, WithOptions(
+			WithInput(reader),
+			WithOutput(out),
+			WithContext(ctx),
+			opT(func(d *dropdown) error {
+				d.makeTermIO = func(in io.Reader, w io.Writer) (*termIO, error) {
+					return &termIO{
+						in: in, out: w, Width: 20, Height: 6,
+						Restore:  func() error { return nil },
+						onResize: resize,
+					}, nil
+				}
+				return nil
+			}),
+		))
+		resCh <- value
+	}()
+	waitUntil(t, func() bool { return out.Len() > 0 })
+	before := out.Len()
+	select {
+	case resize <- struct{}{}:
+	case <-time.After(time.Second):
+		t.Fatal("eager dropdown did not receive resize while idle")
+	}
+	waitUntil(t, func() bool { return out.Len() > before })
+	// the retained reader still delivers the next key
+	_, err := writer.Write([]byte{keyEnter})
+	assert.NoError(t, err)
+	select {
+	case v := <-resCh:
+		assert.Equal(t, "a", v)
+	case <-time.After(2 * time.Second):
+		t.Fatal("dropdown did not accept key after resize")
+	}
+}
+
+func waitUntil(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not met in time")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }

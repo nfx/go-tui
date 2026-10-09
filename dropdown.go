@@ -763,18 +763,20 @@ func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 		d.relevant[i] = i
 	}
 	if d.oneMatch != "" && len(d.Items) > 0 {
-		d.sortRelevantByLevenstein(d.oneMatch)
 		// this is a hack to make [WithDefault] + [WithOneReturn] equivalent
 		// work for dropdowns.
 		matched := d.trie.Prefix(d.oneMatch)
+		match := d.oneMatch
 		d.oneMatch = ""
 		if len(matched) == 1 {
 			// this may properly work only with all items known upfront,
 			// as lazily added items might yield more than one match at
 			// some undetermined point in the future.
-			// run results are positions in d.relevant, which is now sorted
+			// run results are positions in d.relevant; it is still in item
+			// order here, as ranking is skipped for a unique prefix.
 			return d.longest, oneHatch(slices.Index(d.relevant, matched[0]))
 		}
+		d.sortRelevantByLevenstein(match)
 	}
 	d.displayed = d.relevant[:min(len(d.relevant), io.Height/2)]
 	return d.longest, nil
@@ -784,12 +786,23 @@ func (d *dropdown) sortRelevantByLevenstein(match string) {
 	d.rankByLevenstein(d.relevant, match)
 }
 
+// maxRankRunes bounds the per-label work of similarity ranking: only the
+// first maxRankRunes runes of a label and of the hint are compared, so one
+// comparison costs at most maxRankRunes² steps and linear memory.
+const maxRankRunes = 256
+
+// rankByLevenstein orders relevant by edit distance between the lowercased
+// item labels and match, keeping item order for ties. Ranking stops early
+// when the context is cancelled, leaving the remaining items unranked.
 func (d *dropdown) rankByLevenstein(relevant []int, match string) {
+	want := []rune(strings.ToLower(match))
 	lookup := make(map[int]int, len(relevant))
-	match = strings.ToLower(match)
 	for _, i := range relevant {
-		label := strings.ToLower(d.itemLabel(d.Items[i]))
-		lookup[i] = d.levenstein(label, match)
+		if d.Ctx.Err() != nil {
+			return
+		}
+		label := []rune(strings.ToLower(d.itemLabel(d.Items[i])))
+		lookup[i] = d.levenstein(label, want)
 	}
 	sort.SliceStable(relevant, func(i, j int) bool {
 		left := relevant[i]
@@ -801,29 +814,35 @@ func (d *dropdown) rankByLevenstein(relevant []int, match string) {
 	})
 }
 
-func (*dropdown) levenstein(a, b string) int {
-	dist := make([][]int, len(a)+1)
-	for i := range dist {
-		dist[i] = make([]int, len(b)+1)
-		dist[i][0] = i // a is the first column
+// levenstein is the edit distance over runes using two rolling rows,
+// as wide as the shorter input, over at most [maxRankRunes] runes each.
+func (*dropdown) levenstein(a, b []rune) int {
+	a = a[:min(len(a), maxRankRunes)]
+	b = b[:min(len(b), maxRankRunes)]
+	if len(b) > len(a) {
+		a, b = b, a // rows are as wide as the shorter sequence
 	}
-	for j := range dist[0] {
-		dist[0][j] = j // b is the first row
+	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
 	}
 	for i := 1; i <= len(a); i++ {
+		curr[0] = i
 		for j := 1; j <= len(b); j++ {
 			cost := 1
 			if a[i-1] == b[j-1] {
 				cost = 0
 			}
-			dist[i][j] = min(
-				dist[i-1][j]+1,      // deletion
-				dist[i][j-1]+1,      // insertion
-				dist[i-1][j-1]+cost, // substitution
+			curr[j] = min(
+				prev[j]+1,      // deletion
+				curr[j-1]+1,    // insertion
+				prev[j-1]+cost, // substitution
 			)
 		}
+		prev, curr = curr, prev
 	}
-	return dist[len(a)][len(b)]
+	return prev[len(b)]
 }
 
 func (d *dropdown) setItem(i int, item any) error {
@@ -1471,9 +1490,15 @@ func (d *dropdown) applyInputEvent(io *termIO, ev dropdownInputEvent, displayed,
 
 // pressKeyFromInput reads the next event from the pre-supplied input channel and applies it.
 func (d *dropdown) pressKeyFromInput(tio *termIO, frame *bytes.Buffer, space, displayed int) (int, error) {
-	ev, ok := <-d.input
-	if !ok {
-		return -1, io.EOF
+	var ev dropdownInputEvent
+	select {
+	case e, ok := <-d.input:
+		if !ok {
+			return -1, io.EOF
+		}
+		ev = e
+	case <-tio.onResize:
+		return -1, tio.clear(space, frame)
 	}
 	err := tio.clear(space, frame)
 	if err != nil {
@@ -1490,14 +1515,28 @@ func (d *dropdown) pressKeyFromInput(tio *termIO, frame *bytes.Buffer, space, di
 	return -1, nil
 }
 
+// pressKey applies the next key, or clears the frame on resize so the caller
+// redraws with the new geometry.
 func (d *dropdown) pressKey(tio *termIO, frame *bytes.Buffer, space, displayed int) (i int, err error) {
 	if d.input != nil {
 		return d.pressKeyFromInput(tio, frame, space, displayed)
 	}
-	ev, ok := <-tio.readEvents(d.Ctx, nil)
-	tio.awaitReader()
-	if !ok {
-		return -1, d.Ctx.Err()
+	ctx, cancel := context.WithCancel(d.Ctx)
+	defer cancel()
+	keys := tio.readEvents(ctx, nil)
+	var ev keyEvent
+	select {
+	case e, ok := <-keys:
+		tio.awaitReader()
+		if !ok {
+			return -1, d.Ctx.Err()
+		}
+		ev = e
+	case <-tio.onResize:
+		cancel()
+		// an unreceived key stays with the input for the next read
+		tio.awaitReader()
+		return -1, tio.clear(space, frame)
 	}
 	if ev.err != nil {
 		return -1, ev.err
