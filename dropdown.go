@@ -431,9 +431,10 @@ func WithAnswerTemplate(tmpl string) opt {
 }
 
 func newDropdown() *dropdown {
+	in, out := defaultStreams()
 	return &dropdown{
-		in:                   defaultInput(),
-		out:                  defaultOutput(),
+		in:                   in,
+		out:                  out,
 		Ctx:                  context.Background(),
 		Label:                "Select from list",
 		makeTermIO:           makeTermIO,

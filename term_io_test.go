@@ -691,3 +691,59 @@ func TestSharedInputState_CancelledClosedReaderReleased(t *testing.T) {
 		t.Fatal("closed input retained after its cancelled read finished")
 	}
 }
+
+func TestMakeTermIORestoresRawModeWhenViewportFails(t *testing.T) {
+	prevRaw, prevRestore, prevChecker := termMakeRaw, termRestore, terminalInputChecker
+	t.Cleanup(func() {
+		termMakeRaw, termRestore, terminalInputChecker = prevRaw, prevRestore, prevChecker
+	})
+	raw := false
+	terminalInputChecker = func(int) bool { return true }
+	termMakeRaw = func(int) (*term.State, error) {
+		raw = true
+		return &term.State{}, nil
+	}
+	restoreErr := errors.New("restore failed")
+	termRestore = func(int, *term.State) error {
+		raw = false
+		return restoreErr
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cio := startChanIO(ctx, 80, 24)
+	cancel()
+
+	tio, err := makeTermIO(&mockDescriptor{fd: 5}, cio)
+	assert.True(t, tio == nil)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.ErrorIs(t, err, restoreErr)
+	assert.True(t, !raw)
+}
+
+func TestTermIORestoreReleasesViewportAndLeavesRawModeOnce(t *testing.T) {
+	prevRaw, prevRestore, prevChecker := termMakeRaw, termRestore, terminalInputChecker
+	t.Cleanup(func() {
+		termMakeRaw, termRestore, terminalInputChecker = prevRaw, prevRestore, prevChecker
+	})
+	var restores int
+	terminalInputChecker = func(int) bool { return true }
+	termMakeRaw = func(int) (*term.State, error) { return &term.State{}, nil }
+	termRestore = func(int, *term.State) error {
+		restores++
+		return nil
+	}
+	cio := startChanIO(t.Context(), 80, 24)
+	tio, err := makeTermIO(&mockDescriptor{fd: 5}, cio)
+	assert.NoError(t, err)
+
+	// output-only widgets leave raw mode but keep drawing
+	assert.NoError(t, tio.restoreMode())
+	assert.Equal(t, 1, restores)
+	assert.Equal(t, 1, managedViewports(cio))
+	_, err = tio.Write([]byte("still drawing"))
+	assert.NoError(t, err)
+
+	assert.NoError(t, tio.Restore())
+	assert.NoError(t, tio.Restore())
+	assert.Equal(t, 1, restores) // must not undo raw mode a later prompt entered
+	assert.Equal(t, 0, managedViewports(cio))
+}

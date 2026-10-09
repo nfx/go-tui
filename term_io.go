@@ -25,7 +25,10 @@ type termIO struct {
 	in            io.Reader
 	out           io.Writer
 	Width, Height int
-	Restore       func() error
+	// Restore gives the viewport back and leaves raw mode.
+	Restore func() error
+	// modeRestore only leaves raw mode, see [termIO.restoreMode].
+	modeRestore func() error
 
 	cio *chanIO
 	vp  *viewport
@@ -70,19 +73,23 @@ func makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
 		}
 		vp, err := cio.pushViewport()
 		if err != nil {
-			return nil, fmt.Errorf("viewport: %w", err)
+			err = fmt.Errorf("viewport: %w", err)
+			if rerr := restore(); rerr != nil {
+				err = errors.Join(err, fmt.Errorf("restore: %w", rerr))
+			}
+			return nil, err
 		}
-		return &termIO{
+		width, height := cio.size()
+		return withRestore(&termIO{
 			in:       in,
 			input:    sharedInputState(in),
 			out:      out,
-			Width:    cio.width,
-			Height:   vp.height, // first render will set the height
+			Width:    width,
+			Height:   height, // first render will set the height
 			vp:       vp,
 			cio:      cio,
-			Restore:  restore,
 			onResize: resizeNotify(),
-		}, nil
+		}, restore), nil
 	}
 	fd := int(stderr.Fd())
 	width, height, err := termGetSize(fd)
@@ -93,16 +100,41 @@ func makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
 	if err != nil {
 		return nil, fmt.Errorf("raw: %w", err)
 	}
-	return &termIO{
+	return withRestore(&termIO{
 		in:       in,
 		input:    sharedInputState(in),
 		out:      out,
 		Width:    width,
 		Height:   height,
-		Restore:  restore,
 		fd:       fd,
 		onResize: resizeNotify(),
-	}, nil
+	}, restore), nil
+}
+
+// withRestore makes Restore release the viewport, then leave raw mode.
+// Raw mode is left at most once: a repeated call must not restore the mode
+// saved at acquisition over raw mode that a later prompt has entered.
+func withRestore(t *termIO, restore func() error) *termIO {
+	var once sync.Once
+	var err error
+	t.modeRestore = func() error {
+		once.Do(func() { err = restore() })
+		return err
+	}
+	t.Restore = func() error {
+		t.release()
+		return t.modeRestore()
+	}
+	return t
+}
+
+// restoreMode leaves raw mode but keeps the viewport, for output-only
+// widgets that keep drawing after acquisition.
+func (t *termIO) restoreMode() error {
+	if t.modeRestore == nil {
+		return t.Restore()
+	}
+	return t.modeRestore()
 }
 
 // rawRestore puts stdin into raw mode and returns
@@ -118,6 +150,15 @@ func rawRestore(stdin descriptor) (func() error, error) {
 	return func() error {
 		return termRestore(int(stdin.Fd()), oldState)
 	}, nil
+}
+
+// release gives the managed viewport back to the arbiter once the widget is
+// done drawing. Its last frame stays in the scrollback. Safe to call more than once.
+func (t *termIO) release() {
+	if t == nil || t.cio == nil || t.vp == nil {
+		return
+	}
+	t.cio.releaseViewport(t.vp)
 }
 
 // Read drains any buffered pending bytes before
@@ -270,11 +311,12 @@ func (t *termIO) awaitReader() {
 func (t *termIO) refreshSize() {
 	if t.cio != nil {
 		t.cio.refreshSize()
-		if t.cio.width > 0 {
-			t.Width = t.cio.width
+		w, h := t.cio.size()
+		if w > 0 {
+			t.Width = w
 		}
-		if t.cio.height > 0 {
-			t.Height = t.cio.height
+		if h > 0 {
+			t.Height = h
 		}
 		return
 	}

@@ -78,10 +78,11 @@ var runtimeNumCPU = runtime.NumCPU
 func newProgressbar() *Progressbar {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	ticker := time.NewTicker(100 * time.Millisecond)
+	in, out := defaultStreams()
 	return &Progressbar{
 		ctx:        ctx,
-		in:         defaultInput(),
-		out:        defaultOutput(),
+		in:         in,
+		out:        out,
 		ticker:     ticker,
 		ticks:      ticker.C,
 		cancel:     cancel,
@@ -112,7 +113,7 @@ func newStartedProgressBar(label string, size int64, opts ...opt) (*Progressbar,
 	} else if err != nil {
 		return nil, fmt.Errorf("make io: %w", err)
 	}
-	err = p.io.Restore()
+	err = p.io.restoreMode()
 	if err != nil {
 		return nil, fmt.Errorf("restore: %w", err)
 	}
@@ -714,7 +715,7 @@ func NewFileProgressReader(r io.Reader, label string, opts ...opt) (*wrapReader,
 	if err != nil {
 		return nil, fmt.Errorf("make io: %w", err)
 	}
-	err = p.io.Restore()
+	err = p.io.restoreMode()
 	if err != nil {
 		return nil, fmt.Errorf("restore: %w", err)
 	}

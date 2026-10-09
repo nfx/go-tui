@@ -8,11 +8,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
+	"unicode/utf8"
 )
 
 type viewportChanged struct {
-	lines int
-	done  chan struct{}
+	lines   int
+	done    chan struct{}
+	release *viewport // set by [chanIO.releaseViewport]
 }
 
 type writeToResponse struct {
@@ -24,7 +27,8 @@ type writeToResponse struct {
 
 type writeTo struct {
 	io.Writer
-	res chan writeToResponse
+	res    chan writeToResponse
+	height int // if positive, the height budget to render within
 }
 
 type viewport struct {
@@ -37,6 +41,11 @@ type viewport struct {
 	ctx           context.Context
 	fixedHeight   bool
 	lastLines     int
+	// partial holds a rune split across writes until the rest arrives.
+	partial []byte
+
+	cancel  context.CancelFunc // stops a managed viewport's loop
+	release sync.Once          // guards [chanIO.releaseViewport]
 }
 
 type viewportWrite struct {
@@ -68,11 +77,15 @@ func (v *viewport) WriteTo(w io.Writer) (int64, error) {
 	budget := v.height
 	for curr != nil {
 		respond := make(chan writeToResponse)
+		height := 0 // the first viewport keeps its own height
+		if curr != v {
+			height = budget
+		}
 		select {
 		case <-curr.ctx.Done():
 			return total, io.EOF
-		// [viewport.loop] will handle the write
-		case curr.writeTos <- &writeTo{Writer: w, res: respond}:
+		// [viewport.loop] will handle the write and apply the height budget
+		case curr.writeTos <- &writeTo{Writer: w, res: respond, height: height}:
 			select {
 			case <-curr.ctx.Done():
 				return total, io.EOF
@@ -87,11 +100,8 @@ func (v *viewport) WriteTo(w io.Writer) (int64, error) {
 				if budget <= 0 {
 					return total, nil
 				}
+				// simplified assumption: tail viewport cannot have fixed height
 				curr = curr.next
-				if curr != nil {
-					// simplified assumption: tail viewport cannot have fixed height
-					curr.height = budget
-				}
 			}
 		}
 	}
@@ -216,50 +226,68 @@ func (v *viewport) padded(chunk []byte, lo, mid int) (int, int) {
 	return lo, mid
 }
 
-// appendToLinebuffer parses a raw chunk into display lines,
-// handling escape sequences, line wrapping, and carriage returns.
+// appendToLinebuffer parses a raw chunk into display lines, handling escape
+// sequences, line wrapping, and carriage returns. It wraps by terminal columns
+// with the same rune widths as [width] and never splits a rune or an escape sequence.
 func (v *viewport) appendToLinebuffer(chunk []byte) int {
 	lo, mid, hi := 0, 0, len(chunk)
 	var printed, addedLines int
-	var escape bool
 	for mid < hi {
-		escape, printed = v.updateEscapeState(chunk[mid], escape, printed)
-		var skipped bool
-		lo, mid, skipped = v.skipCarriageReturn(chunk[mid], lo, mid)
-		if skipped {
-			continue
-		}
-		if printed > 0 && printed%v.width == 0 {
-			lo, addedLines = v.addLine(chunk, lo, mid, addedLines)
-		}
-		if chunk[mid] == '\n' { // FIXME: windows is \r\n ?..
+		switch b := chunk[mid]; b {
+		case '\r':
+			lo, mid, _ = v.skipCarriageReturn(b, lo, mid)
+		case '\n': // FIXME: windows is \r\n ?..
 			lo, mid = v.padded(chunk, lo, mid)
 			addedLines++
-			printed = 0 // reset printed char count
-			continue
+			printed = 0 // reset printed column count
+		case keyEscape:
+			// zero-width, stays on the current line
+			mid += v.escapeLen(chunk[mid:])
+		default:
+			r, size := utf8.DecodeRune(chunk[mid:])
+			w := runeWidth(r)
+			if printed > 0 && v.width > 0 && printed+w > v.width {
+				lo, addedLines = v.addLine(chunk, lo, mid, addedLines)
+				printed = 0
+			}
+			printed += w
+			mid += size
 		}
-		if !escape {
-			printed++
-		}
-		mid++
 	}
-	if lo < hi { // todo: check for escape seqs
+	if lo < hi {
 		v.padded(chunk, lo, hi)
 		addedLines++
 	}
 	return addedLines
 }
 
-// updateEscapeState tracks whether the current byte is
-// inside an ANSI escape sequence and adjusts the print count.
-func (*viewport) updateEscapeState(b byte, escape bool, printed int) (bool, int) {
-	if escape && isEscapeEnd(b) {
-		return false, printed
+// escapeLen returns the length of the escape sequence at the start of chunk,
+// through its terminating letter, or the rest of chunk if it does not end.
+func (*viewport) escapeLen(chunk []byte) int {
+	for i := 1; i < len(chunk); i++ {
+		if isEscapeEnd(chunk[i]) {
+			return i + 1
+		}
 	}
-	if isEscapeStart(b) {
-		return true, printed - 1
+	return len(chunk)
+}
+
+// joinPartialRune prepends a rune split by the previous write and holds back
+// a rune split at the end of this one, so that lines never cut a character.
+func (v *viewport) joinPartialRune(chunk []byte) []byte {
+	if len(v.partial) > 0 {
+		chunk = append(v.partial, chunk...)
+		v.partial = nil
 	}
-	return escape, printed
+	start := len(chunk) - 1
+	for start > 0 && len(chunk)-start < utf8.UTFMax && !utf8.RuneStart(chunk[start]) {
+		start--
+	}
+	if start < 0 || utf8.FullRune(chunk[start:]) {
+		return chunk
+	}
+	v.partial = bytes.Clone(chunk[start:])
+	return chunk[:start]
 }
 
 // skipCarriageReturn advances past a carriage return byte,
@@ -318,7 +346,13 @@ func (v *viewport) loop() {
 			if req.width > 0 {
 				v.width = req.width
 			}
-			v.lastLines = v.appendToLinebuffer(req.chunk)
+			if len(req.chunk) == 0 {
+				v.partial = nil // an empty write clears the frame
+			}
+			// a write holding only part of a rune keeps the current frame
+			if chunk := v.joinPartialRune(req.chunk); len(chunk) > 0 || len(req.chunk) == 0 {
+				v.lastLines = v.appendToLinebuffer(chunk)
+			}
 			if !v.sendNotify(viewportChanged{lines: v.lastLines, done: req.done}) {
 				return
 			}
@@ -352,6 +386,9 @@ func (v *viewport) sendNotify(ev viewportChanged) bool {
 // serveWriteTo renders into the requester's writer and replies.
 // It returns false once the context is done.
 func (v *viewport) serveWriteTo(w *writeTo) bool {
+	if w.height > 0 {
+		v.height = w.height
+	}
 	bytes, widths, err := v.writeTo(w)
 	select {
 	case <-v.ctx.Done():

@@ -45,9 +45,10 @@ type multichoice struct {
 var DefaultMultichoiceItemTemplate = `[{{if .Selected}}x{{else}} {{end}}] {{.Value}}`
 
 func newMultichoice() *multichoice {
+	in, out := defaultStreams()
 	return &multichoice{
-		in:                defaultInput(),
-		out:               defaultOutput(),
+		in:                in,
+		out:               out,
 		Ctx:               context.Background(),
 		Label:             "Select an item",
 		LabelTemplate:     DefaultLabelTemplate,

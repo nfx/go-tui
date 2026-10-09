@@ -109,10 +109,11 @@ func spinnersOpt(o func(s *Spinners) error) opt {
 func newSpinners() *Spinners {
 	ctx, cancel := context.WithCancel(context.Background())
 	ticker := time.NewTicker(100 * time.Millisecond)
+	in, out := defaultStreams()
 	return &Spinners{
 		ctx:        ctx,
-		in:         defaultInput(),
-		out:        defaultOutput(),
+		in:         in,
+		out:        out,
 		ticker:     ticker,
 		ticks:      ticker.C,
 		cancel:     cancel,
@@ -134,7 +135,7 @@ func NewSpinners(opt ...opt) (*Spinners, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = s.io.Restore() // todo: hack, fix this
+	err = s.io.restoreMode() // spinners only draw, so they never need raw mode
 	if err != nil {
 		return nil, fmt.Errorf("restore: %w", err)
 	}
@@ -441,9 +442,19 @@ func (s *Spinners) redraw(prevActive int) int {
 func (s *Spinners) stop() {
 	s.emit(spinnerGroupClosed{})
 	s.clearOnStop()
-	// s.io.Restore()
+	s.restoreOnStop()
 	s.ticker.Stop()
 	// channels are not closed: senders exit via s.ctx.Done()
+}
+
+// restoreOnStop keeps failed and kept spinners in the scrollback and gives the viewport back.
+func (s *Spinners) restoreOnStop() {
+	if s.io == nil {
+		return
+	}
+	if err := s.io.Restore(); err != nil {
+		slog.Debug("restore spinners", "err", err)
+	}
 }
 
 func (s *Spinners) clearOnStop() {
