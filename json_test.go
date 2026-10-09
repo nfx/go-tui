@@ -95,3 +95,41 @@ func TestPrettyJsonLoopEscape(t *testing.T) {
 		t.Fatalf("unexpected stack")
 	}
 }
+
+func TestPrettyJsonRecolorCorpus(t *testing.T) {
+	corpus := []string{
+		`{"x":"a\"}}x"}`,
+		`{"x":"a\\"}`,
+		`{"x":"a\\\"}"}`,
+		`{"k{":"v}","a]":["}",{"b":"\\"}]}`,
+		`"root{"`,
+		`"a\"}"`,
+		`42`,
+		`null`,
+		`[]`,
+		`[[1,[2,[]]],[{}],"]"]`,
+		`{"a":{"b":{"c":1}},"d":[1,2,{"e":"\"}"}],"f":2}`,
+		`{"a":1}`,
+	}
+	for _, in := range corpus {
+		buf, err := jsonIndent(in)
+		if err != nil {
+			t.Fatalf("%s: %v", in, err)
+		}
+		var out bytes.Buffer
+		prettyJsonRecolor(buf, &out)
+	}
+}
+
+func FuzzPrettyJsonRecolor(f *testing.F) {
+	f.Add(`{"x":"a\"}}x"}`)
+	f.Add(`[1,"\\",{"a":[]}]`)
+	f.Fuzz(func(t *testing.T, in string) {
+		buf, err := jsonIndent(in)
+		if err != nil {
+			t.Skip()
+		}
+		var out bytes.Buffer
+		prettyJsonRecolor(buf, &out)
+	})
+}
