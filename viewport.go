@@ -266,6 +266,10 @@ func (v *viewport) joinPartial(chunk []byte) []byte {
 	if n := text.incompleteTail(); n > 0 {
 		v.partial = bytes.Clone(text[len(text)-n:])
 		text = text[:len(text)-n]
+	} else if n := text.incompleteSequence(); n > 0 {
+		// the terminator is too far away to wait for, and an open string
+		// sequence would swallow everything written after it
+		text = text[:len(text)-n]
 	}
 	return text
 }

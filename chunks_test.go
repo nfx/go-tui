@@ -109,6 +109,35 @@ func TestTruncationResetsSGR(t *testing.T) {
 	}
 }
 
+func TestTruncationClosesHyperlink(t *testing.T) {
+	for _, tt := range []struct {
+		in, out string
+	}{
+		{"\x1b]8;;http://a\x07link text\x1b]8;;\x07", "\x1b]8;;http://a\x07li…\x1b]8;;\x1b\\"},
+		{"\x1b]8;id=1;http://a\x1b\\link text", "\x1b]8;id=1;http://a\x1b\\li…\x1b]8;;\x1b\\"},
+		{"\x1b]8;;http://a\x07a\x1b]8;;\x07bcdef", "\x1b]8;;http://a\x07a\x1b]8;;\x07b…"}, // already closed
+		{"\x1b[31m\x1b]8;;http://a\x07abcdef", "\x1b[31m\x1b]8;;http://a\x07ab…\x1b]8;;\x1b\\\x1b[0m"},
+	} {
+		t.Run(tt.in, func(t *testing.T) {
+			assert.Equal(t, tt.out, string(text(tt.in).truncateColumns(3)))
+		})
+	}
+}
+
+func TestTruncationDropsControls(t *testing.T) {
+	for _, tt := range []struct {
+		in, out string
+	}{
+		{"a\tb", "ab"},
+		{"\bab\x7fcdef", "ab…"},
+		{"a\u0085b", "ab"},
+	} {
+		t.Run(tt.in, func(t *testing.T) {
+			assert.Equal(t, tt.out, string(text(tt.in).truncateColumns(3)))
+		})
+	}
+}
+
 func TestTruncateVisible(t *testing.T) {
 	for _, tt := range []struct {
 		in     string

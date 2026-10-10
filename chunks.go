@@ -228,8 +228,32 @@ func (t text) beforeNewline() text {
 	return t
 }
 
-// truncateColumns fits t into maxLen columns, closing an open style when needed.
-// It drops incomplete or broken sequences and replaces invalid bytes with U+FFFD.
+// osc8 returns the URI of an OSC 8 sequence, and whether t is one.
+func (t segment) osc8() (uri []byte, ok bool) {
+	body, ok := bytes.CutPrefix(t.text, []byte("\x1b]8;"))
+	if !ok {
+		return nil, false
+	}
+	body = bytes.TrimSuffix(bytes.TrimSuffix(body, []byte("\a")), []byte("\x1b\\"))
+	_, uri, ok = bytes.Cut(body, []byte(";"))
+	return uri, ok
+}
+
+// isHyperlink reports whether t is an OSC 8 sequence that opens a link.
+func (t segment) isHyperlink() bool {
+	uri, ok := t.osc8()
+	return ok && len(uri) > 0
+}
+
+// endsHyperlink reports whether t is an OSC 8 sequence that closes a link.
+func (t segment) endsHyperlink() bool {
+	uri, ok := t.osc8()
+	return ok && len(uri) == 0
+}
+
+// truncateColumns fits t into maxLen columns, closing an open hyperlink and
+// style when needed.
+// It drops controls, incomplete or broken sequences and replaces invalid bytes with U+FFFD.
 func (t text) truncateColumns(maxLen int) text {
 	if maxLen <= 0 {
 		return nil
@@ -243,16 +267,23 @@ func (t text) truncateColumns(maxLen int) text {
 	used := 0
 	// styled is set when an SGR sequence may have left a style open.
 	styled := false
+	// linked is set when the last OSC 8 sequence kept opened a hyperlink.
+	linked := false
 	for seg := range t.segments() {
 		switch {
-		case seg.isIncomplete, seg.isBroken:
-			continue
+		case seg.isIncomplete, seg.isBroken, seg.isControl:
+			continue // controls move the cursor, so they cannot count as zero columns
 		case seg.isEscape:
 			if !utf8.Valid(seg.text) {
 				continue // a control string may carry any bytes
 			}
 			if s, ok := seg.sgrStyle(); ok {
 				styled = s
+			}
+			if seg.isHyperlink() {
+				linked = true
+			} else if seg.endsHyperlink() {
+				linked = false
 			}
 			out = append(out, seg.text...)
 			continue
@@ -269,6 +300,9 @@ func (t text) truncateColumns(maxLen int) text {
 	}
 	if cut {
 		out = append(out, "…"...)
+	}
+	if linked {
+		out = append(out, "\x1b]8;;\x1b\\"...)
 	}
 	if styled {
 		out = append(out, "\x1b[0m"...)
@@ -356,15 +390,22 @@ func (t text) partialRuneTail() int {
 
 // incompleteTail returns a trailing split sequence to hold for the next write.
 func (t text) incompleteTail() int {
+	if n := t.incompleteSequence(); n > 0 && n <= maxHeldBytes {
+		return n
+	} else if n > 0 {
+		return 0
+	}
+	return t.partialRuneTail()
+}
+
+// incompleteSequence returns the length of an escape sequence cut by the end of t.
+func (t text) incompleteSequence() int {
 	for seg := range t.segments() {
 		if seg.isIncomplete {
-			if len(seg.text) > maxHeldBytes {
-				return 0
-			}
 			return len(seg.text)
 		}
 	}
-	return t.partialRuneTail()
+	return 0
 }
 
 // stripBroken removes sequences that would swallow following terminal text.

@@ -349,12 +349,14 @@ func TestViewportJoinsSplitWrites(t *testing.T) {
 	}
 }
 
-func TestViewportReleasesLongSequence(t *testing.T) {
+func TestViewportDropsLongSequence(t *testing.T) {
 	v := &viewport{width: 4, height: 10, fixedHeight: true}
 	title := "\x1b]0;" + strings.Repeat("x", maxHeldBytes)
 	assert.Equal(t, 0, len(v.joinPartial([]byte(title[:4]))))
 	assert.Equal(t, 4, len(v.partial))
-	// the terminator is too far away to wait for
-	assert.Equal(t, len(title), len(v.joinPartial([]byte(title[4:]))))
+	// the terminator is too far away to wait for, so the sequence is dropped
+	assert.Equal(t, 0, len(v.joinPartial([]byte(title[4:]))))
 	assert.Equal(t, 0, len(v.partial))
+	// text before the oversized sequence is kept
+	assert.Equal(t, "ab", string(v.joinPartial([]byte("ab"+title))))
 }
