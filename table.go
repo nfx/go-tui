@@ -555,6 +555,7 @@ func (f *facts) writeRowGap() error {
 	return nil
 }
 
+// renderFactCells renders fact values and measures their terminal widths.
 func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 	cells := make([]factCell, len(f.metadata))
 	funcs := f.templateFuncs()
@@ -572,8 +573,8 @@ func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 		header := mkBold(strings.ReplaceAll(meta.header, "\t", " "))
 		value := strings.ReplaceAll(strings.TrimRight(buf.String(), "\r\n"), "\t", " ")
 		cellWidth := max(
-			max(width([]byte(header)),
-				width([]byte(value)))+f.cellPad+1,
+			max(text(header).width(),
+				text(value).width())+f.cellPad+1,
 			f.colMinWidth+f.cellPad)
 		cells[i] = factCell{
 			title:      header,
@@ -620,14 +621,15 @@ func (f *facts) packFactRows(cells []factCell, cols, maxWidth int) ([][]factCell
 	return rows, colWidths
 }
 
+// renderFactRow clips a fact row to its allocated column widths.
 func (f *facts) renderFactRow(row []factCell, colWidths []int) error {
 	headers := make([]string, len(row))
 	values := make([]string, len(row))
 	f.columns = make([]tableColumn, len(row))
 	for i, cell := range row {
 		maxLen := max(colWidths[i]-f.cellPad, f.colMinWidth)
-		header := string(truncateVisible([]byte(cell.title), maxLen, ' '))
-		value := string(truncateVisible([]byte(cell.value), maxLen, ' '))
+		header := string(text(cell.title).truncateVisible(maxLen, ' '))
+		value := string(text(cell.value).truncateVisible(maxLen, ' '))
 		headers[i] = header
 		values[i] = value
 		f.columns[i] = tableColumn{
@@ -740,9 +742,7 @@ func (t *table) renderCells(v any) ([]string, error) {
 	return append(cells, string(out[start:])), nil
 }
 
-// addRecord lays out a record as physical rows: line k of every cell lands in
-// row k, and the cell's color stays with each of its own lines. Without
-// multiline cells, every record is a single physical row.
+// addRecord keeps each cell line and its color on the same physical row.
 func (t *table) addRecord(cells, colors []string) {
 	lines := make([][]string, len(cells))
 	count := 1
@@ -788,7 +788,7 @@ func (t *table) addRow(texts, colors []string) {
 		}
 		row[i] = cell{
 			text:  texts[i],
-			width: width(truncateVisible([]byte(texts[i]), math.MaxInt32, ' ')),
+			width: text(texts[i]).truncateVisible(math.MaxInt32, ' ').width(),
 		}
 		if i < len(colors) {
 			row[i].color = colors[i]
@@ -1230,8 +1230,9 @@ func (t *table) fieldValueByPath(v any, path string) (any, bool) {
 	return raw.Interface(), true
 }
 
+// padded writes cell aligned within column col.
 func (t *table) padded(buf *bytes.Buffer, cell string, col int) error {
-	padding := t.columns[col].width - width([]byte(cell))
+	padding := t.columns[col].width - text(cell).width()
 	if t.columns[col].meta.alignRight { // right align
 		err := t.pad(buf, padding)
 		if err != nil {
@@ -1276,7 +1277,7 @@ func (t *table) fitPending() {
 				row[i] = " "
 				continue
 			}
-			row[i] = string(truncateVisible([]byte(c.text), t.columns[i].maxVisible, ' '))
+			row[i] = string(text(c.text).truncateVisible(t.columns[i].maxVisible, ' '))
 			if c.color != "" {
 				row[i] = c.color + row[i] + reset
 			}
@@ -1327,7 +1328,7 @@ func (t *table) allocateWidths() {
 			if c.text == "" {
 				continue
 			}
-			used[i] = max(used[i], width(truncateVisible([]byte(c.text), limits[i], ' ')))
+			used[i] = max(used[i], text(c.text).truncateVisible(limits[i], ' ').width())
 		}
 	}
 	for i := range t.columns {

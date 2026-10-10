@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
@@ -456,7 +457,7 @@ func TestInputCursorActions(t *testing.T) {
 		typed:  "go",
 		cursor: 2,
 	}
-	i.pressBackspace()
+	pressBackspace(i)
 	assert.Equal(t, "g", i.typed)
 	assert.Equal(t, 1, i.cursor)
 
@@ -475,7 +476,7 @@ func TestInputCursorActionsMultiByte(t *testing.T) {
 		cursor: 3,
 	}
 	i.pressLeft()
-	i.pressBackspace()
+	pressBackspace(i)
 	assert.Equal(t, "日語", i.typed)
 	assert.Equal(t, 1, i.cursor)
 
@@ -864,14 +865,15 @@ func TestInputRenderClipsWithoutOrphanCombiningRune(t *testing.T) {
 	assert.Equal(t, "\rL bcd\x1b[K", got)
 }
 
-// regression: a combining mark at the cursor must not render without its base
+// regression: a combining mark at the cursor must not render without its base,
+// a cursor inside of a cluster stands on the whole cluster
 func TestInputRenderClipsOrphanCombiningRuneAtCursor(t *testing.T) {
 	i := &input{typed: "は\u3099ab", cursor: 1}
-	start, end := i.visibleWindow([]rune(i.typed), 2)
-	assert.Equal(t, 2, start)
-	assert.Equal(t, 4, end)
+	start, end := i.visibleWindow(text(i.typed).clusters(), 2)
+	assert.Equal(t, 0, start)
+	assert.Equal(t, 1, end)
 	got := renderInput(t, &input{Label: "L", typed: "は\u3099ab", cursor: 1}, 4)
-	assert.Equal(t, "\rL ab\x1b[K\x1b[2D", got)
+	assert.Equal(t, "\rL は\u3099\x1b[K\x1b[2D", got)
 }
 
 func TestInputRenderMasksPasswordByRune(t *testing.T) {
@@ -940,4 +942,79 @@ func TestInputRunResizeDoesNotReadAhead(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("prompt did not return")
 	}
+}
+
+func TestInputCursorMovesByCluster(t *testing.T) {
+	i := &input{typed: "aé👨‍👩b", cursor: 0}
+	i.pressRight()
+	assert.Equal(t, 1, i.cursor)
+	i.pressRight() // over e and its accent
+	assert.Equal(t, 3, i.cursor)
+	i.pressRight() // over the whole ZWJ sequence
+	assert.Equal(t, 6, i.cursor)
+	i.pressLeft()
+	assert.Equal(t, 3, i.cursor)
+	pressBackspace(i) // deletes e with its accent
+	assert.Equal(t, "a👨‍👩b", i.typed)
+	assert.Equal(t, 1, i.cursor)
+}
+
+// pressBackspace applies a backspace the way a key event does.
+func pressBackspace(i *input) {
+	i.applyInputEvent(i.decodeInputEvent(0x7f))
+}
+
+func TestInputBackspaceByCluster(t *testing.T) {
+	for _, tt := range []struct {
+		name, typed string
+		cursor      int
+		password    bool
+		want        string
+		wantCursor  int
+	}{
+		{"combining mark", "ae\u0301b", 3, false, "ab", 1},
+		{"flag", "a🇺🇦", 3, false, "a", 1},
+		{"skin tone", "👍🏽x", 2, false, "x", 0},
+		{"ZWJ sequence", "a👨\u200d👩\u200d👧", 6, false, "a", 1},
+		{"keycap", "1\ufe0f\u20e3", 3, false, "", 0},
+		{"at the start", "e\u0301", 0, false, "e\u0301", 0},
+		{"beyond the end", "ae\u0301", 9, false, "a", 1},
+		{"masked by rune", "ae\u0301", 3, true, "ae", 2},
+		{"masked flag by rune", "🇺🇦", 2, true, "🇺", 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			i := &input{typed: tt.typed, cursor: tt.cursor, Password: tt.password}
+			pressBackspace(i)
+			assert.Equal(t, tt.want, i.typed)
+			assert.Equal(t, tt.wantCursor, i.cursor)
+		})
+	}
+}
+
+func FuzzInputWindow(f *testing.F) {
+	for _, seed := range fuzzSeeds {
+		f.Add(seed, uint8(3), uint8(5))
+		f.Add(seed, uint8(0), uint8(2))
+	}
+	f.Fuzz(func(t *testing.T, s string, cursor, avail uint8) {
+		i := &input{typed: s, cursor: int(cursor)}
+		runes := i.displayRunes()
+		cells := text(string(runes)).clusters()
+		first, last := i.visibleWindow(cells, int(avail))
+		if first < 0 || first > last || last > len(cells) {
+			t.Fatalf("window [%d,%d) of %d clusters", first, last, len(cells))
+		}
+		visible := string(runes[cells.runeOffset(first):cells.runeOffset(last)])
+		if avail > 0 && text(visible).width() > int(avail) {
+			t.Fatalf("window %q wider than %d", visible, avail)
+		}
+		for range 3 {
+			i.pressLeft()
+			i.pressRight()
+		}
+		pressBackspace(i)
+		if !utf8.ValidString(i.typed) && utf8.ValidString(s) {
+			t.Fatalf("backspace broke UTF-8: %q", i.typed)
+		}
+	})
 }

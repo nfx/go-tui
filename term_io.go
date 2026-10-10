@@ -359,7 +359,7 @@ func (t *termIO) readRuneBytes() ([]byte, int, error) {
 // readRuneTail reads the remaining bytes of a multi-byte UTF-8 rune
 // that was split across reads, one byte at a time.
 func (t *termIO) readRuneTail(buf []byte, n int, readErr error) int {
-	for readErr == nil && n > 0 && n < len(buf) && !t.endsWithFullRune(buf[:n]) {
+	for readErr == nil && n > 0 && n < len(buf) && text(buf[:n]).partialRuneTail() > 0 {
 		if !t.nextByteReady() {
 			return n
 		}
@@ -370,15 +370,6 @@ func (t *termIO) readRuneTail(buf []byte, n int, readErr error) int {
 		}
 	}
 	return n
-}
-
-// endsWithFullRune reports whether buf does not end in the middle of a UTF-8 rune.
-func (*termIO) endsWithFullRune(buf []byte) bool {
-	start := len(buf) - 1
-	for start > 0 && len(buf)-start < utf8.UTFMax && !utf8.RuneStart(buf[start]) {
-		start--
-	}
-	return utf8.FullRune(buf[start:])
 }
 
 // decodeRuneBytes interprets a byte buffer as a known escape
@@ -419,14 +410,8 @@ func (t *termIO) decodeRuneBytes(buf []byte, n int) (rune, int, error) {
 // so that a paste that filled the buffer mid-rune completes on the next read.
 // It returns the number of bytes left in buf.
 func (t *termIO) holdPartialRune(buf []byte, n int) int {
-	if t.endsWithFullRune(buf[:n]) {
-		return n
-	}
-	start := n - 1
-	for !utf8.RuneStart(buf[start]) {
-		start--
-	}
-	if start == 0 {
+	start := n - text(buf[:n]).partialRuneTail()
+	if start == 0 || start == n {
 		return n
 	}
 	t.pushPending(buf, start, n)
@@ -477,18 +462,8 @@ func (*termIO) escapeSequenceLen(buf []byte) (int, bool) {
 	}
 	switch b := buf[1]; {
 	case b == 0x5b: // CSI
-		for i := 2; i < len(buf); i++ {
-			c := buf[i]
-			if c >= 0x20 && c <= 0x3f { // parameter and intermediate bytes
-				continue
-			}
-			if c >= 0x40 && c <= 0x7e { // final byte
-				return i + 1, true
-			}
-			// leave a byte that cannot belong to the sequence for the next read
-			return i, true
-		}
-		return len(buf), false
+		p := text(buf).csiSegment()
+		return len(p.text), !p.isIncomplete
 	case b == 0x4f: // SS3
 		if len(buf) < 3 {
 			return 2, false

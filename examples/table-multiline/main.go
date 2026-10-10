@@ -18,6 +18,8 @@ func main() {
 		{"build", "fetch deps\ncompile\nlink", 1},
 		{"test", "unit\nintegration", 3},
 		{"deploy", "upload", 2},
+		{"文档", "生成\n発行\n\U0001F680 publish", 1},
+		{"cafe\u0301", "\x1b[31mred\nstill red\x1b[0m", 4},
 	}
 
 	// By default, line breaks inside cells are rendered as spaces,

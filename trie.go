@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 type trie struct {
@@ -21,40 +22,39 @@ func newTrie() *trie {
 	}
 }
 
+// Add indexes the words in word, ignoring terminal controls and escapes.
+//
 //nolint:cyclop // it's ok
-func (t *trie) Add(word string, i int) {
+func (t *trie) Add(word bbuf, i int) {
 	r := t
-	var escape, isLetter bool
-	for _, b := range word {
-		if escape && isEscapeEnd(byte(b)) {
-			escape = false
-			continue
-		} else if isEscapeStart(byte(b)) {
-			escape = true
+	for seg := range text(word).segments() {
+		if !seg.isText() {
+			continue // escape sequences with their payloads, and controls
 		}
-		if escape {
-			continue
-		}
-		if b == ' ' {
-			if r != t {
-				r.idx = append(r.idx, i)
+		for rest := seg.text; len(rest) > 0; {
+			b, size := utf8.DecodeRune(rest)
+			rest = rest[size:]
+			if b == ' ' {
+				if r != t {
+					r.idx = append(r.idx, i)
+				}
+				r = t
+				continue
 			}
-			r = t
-			continue
+			isLetter := unicode.IsLetter(b)
+			if !isLetter && !unicode.IsDigit(b) {
+				continue
+			}
+			if isLetter {
+				b = unicode.ToLower(b)
+			}
+			s, ok := r.m[b]
+			if !ok {
+				s = newTrie()
+				r.m[b] = s
+			}
+			r = s
 		}
-		isLetter = unicode.IsLetter(b)
-		if !isLetter && !unicode.IsDigit(b) {
-			continue
-		}
-		if isLetter {
-			b = unicode.ToLower(b)
-		}
-		s, ok := r.m[b]
-		if !ok {
-			s = newTrie()
-			r.m[b] = s
-		}
-		r = s
 	}
 	r.idx = append(r.idx, i)
 }

@@ -24,6 +24,8 @@ func main() {
 		"age":     30,
 		"address": map[string]string{"city": `New "York"`, "zip": "10001"},
 		"hobbies": []string{"reading", "traveling", "coding"},
+		// strings with wide characters, emoji, escapes and quotes
+		"unicode": []string{"東京", "cafe\u0301", "\U0001F468\u200D\U0001F469\u200D\U0001F467", `say "hi"`, "tab\there", "line\nbreak"},
 		"stuff": []interface{}{
 			map[string]interface{}{
 				"name":    "John Doe",

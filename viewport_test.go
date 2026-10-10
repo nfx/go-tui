@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 	"unicode/utf8"
 
@@ -316,4 +317,46 @@ func TestViewportKeepsRuneSplitAcrossWrites(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, utf8.ValidString(buf.String()))
 	assert.Equal(t, "\rab  \n\r界cd\n", buf.String())
+}
+
+func TestViewportJoinsSplitWrites(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		writes []string
+		out    []string
+	}{
+		{"rune", []string{"ab\xe7", "\x95", "\x8ccd"}, []string{"ab\n", "界cd\n"}},
+		{"CSI", []string{"ab\x1b[1", ";31", "mcdéfg"}, []string{"ab\n", "\x1b[1;31mcdéf\n", "g\n"}},
+		{"lone ESC", []string{"ab\x1b", "[0mcd"}, []string{"ab\n", "\x1b[0mcd\n"}},
+		{"OSC 8 link", []string{"\x1b]8;;http://a", "\x1b", "\\link"}, []string{"\x1b]8;;http://a\x1b\\link\n"}},
+		{"broken CSI", []string{"ab\x1b[31\ncd"}, []string{"ab\n", "cd\n"}},
+		{"broken ESC", []string{"ab\x1b\x1b[0mc"}, []string{"ab\x1b[0mc\n"}},
+		{"broken after a split", []string{"ab\x1b]0;t", "\x1b[0mc"}, []string{"ab\n", "\x1b[0mc\n"}},
+		{"carriage return joins a cluster", []string{"abc\re\r\u0301x"}, []string{"abce\u0301\n", "x\n"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			v := &viewport{width: 4, height: 10, fixedHeight: true}
+			for _, w := range tt.writes {
+				v.appendToLinebuffer(v.joinPartial([]byte(w)))
+			}
+			assert.Equal(t, 0, len(v.partial))
+			var lines []string
+			for _, line := range v.lines {
+				lines = append(lines, string(line))
+			}
+			assert.Equal(t, tt.out, lines)
+		})
+	}
+}
+
+func TestViewportDropsLongSequence(t *testing.T) {
+	v := &viewport{width: 4, height: 10, fixedHeight: true}
+	title := "\x1b]0;" + strings.Repeat("x", maxHeldBytes)
+	assert.Equal(t, 0, len(v.joinPartial([]byte(title[:4]))))
+	assert.Equal(t, 4, len(v.partial))
+	// the terminator is too far away to wait for, so the sequence is dropped
+	assert.Equal(t, 0, len(v.joinPartial([]byte(title[4:]))))
+	assert.Equal(t, 0, len(v.partial))
+	// text before the oversized sequence is kept
+	assert.Equal(t, "ab", string(v.joinPartial([]byte("ab"+title))))
 }

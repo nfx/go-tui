@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"sync"
-	"unicode/utf8"
 )
 
 type viewportChanged struct {
@@ -41,7 +40,7 @@ type viewport struct {
 	ctx           context.Context
 	fixedHeight   bool
 	lastLines     int
-	// partial holds a rune split across writes until the rest arrives.
+	// partial holds a rune or escape sequence split across writes until the rest arrives.
 	partial []byte
 
 	cancel  context.CancelFunc // stops a managed viewport's loop
@@ -201,7 +200,7 @@ func (v *viewport) writeTo(w io.Writer) (int64, []int, error) {
 			return bytes, widths, err
 		}
 		bytes += int64(b)
-		widths = append(widths, width(l))
+		widths = append(widths, text(l).width())
 	}
 	return bytes, widths, nil
 }
@@ -209,9 +208,9 @@ func (v *viewport) writeTo(w io.Writer) (int64, []int, error) {
 // padded extracts a line from chunk[lo:mid], pads it to
 // the terminal width, and appends it to the line buffer.
 func (v *viewport) padded(chunk []byte, lo, mid int) (int, int) {
-	line := v.stripCarriageReturns(chunk[lo:mid])
+	line := bytes.Clone(chunk[lo:mid])
 	if !v.fixedHeight {
-		pl := v.width - width(line)
+		pl := v.width - text(line).width()
 		if pl < 0 {
 			pl = 0
 		}
@@ -226,32 +225,23 @@ func (v *viewport) padded(chunk []byte, lo, mid int) (int, int) {
 	return lo, mid
 }
 
-// appendToLinebuffer parses a raw chunk into display lines, handling escape
-// sequences, line wrapping, and carriage returns. It wraps by terminal columns
-// with the same rune widths as [width] and never splits a rune or an escape sequence.
+// appendToLinebuffer wraps prepared text without splitting clusters or escapes.
 func (v *viewport) appendToLinebuffer(chunk []byte) int {
 	lo, mid, hi := 0, 0, len(chunk)
 	var printed, addedLines int
-	for mid < hi {
-		switch b := chunk[mid]; b {
-		case '\r':
-			lo, mid, _ = v.skipCarriageReturn(b, lo, mid)
+	for t := range text(chunk).segments() {
+		switch t.text[0] {
 		case '\n': // FIXME: windows is \r\n ?..
 			lo, mid = v.padded(chunk, lo, mid)
 			addedLines++
 			printed = 0 // reset printed column count
-		case keyEscape:
-			// zero-width, stays on the current line
-			mid += v.escapeLen(chunk[mid:])
 		default:
-			r, size := utf8.DecodeRune(chunk[mid:])
-			w := runeWidth(r)
-			if printed > 0 && v.width > 0 && printed+w > v.width {
+			if t.width > 0 && printed > 0 && v.width > 0 && printed+t.width > v.width {
 				lo, addedLines = v.addLine(chunk, lo, mid, addedLines)
 				printed = 0
 			}
-			printed += w
-			mid += size
+			printed += t.width
+			mid += len(t.text)
 		}
 	}
 	if lo < hi {
@@ -261,75 +251,37 @@ func (v *viewport) appendToLinebuffer(chunk []byte) int {
 	return addedLines
 }
 
-// escapeLen returns the length of the escape sequence at the start of chunk,
-// through its terminating letter, or the rest of chunk if it does not end.
-func (*viewport) escapeLen(chunk []byte) int {
-	for i := 1; i < len(chunk); i++ {
-		if isEscapeEnd(chunk[i]) {
-			return i + 1
-		}
-	}
-	return len(chunk)
-}
-
-// joinPartialRune prepends a rune split by the previous write and holds back
-// a rune split at the end of this one, so that lines never cut a character.
-func (v *viewport) joinPartialRune(chunk []byte) []byte {
+// joinPartial joins cross-write sequences and removes broken terminal data.
+func (v *viewport) joinPartial(chunk []byte) []byte {
 	if len(v.partial) > 0 {
 		chunk = append(v.partial, chunk...)
 		v.partial = nil
 	}
-	start := len(chunk) - 1
-	for start > 0 && len(chunk)-start < utf8.UTFMax && !utf8.RuneStart(chunk[start]) {
-		start--
+	if bytes.IndexByte(chunk, '\r') >= 0 {
+		// lines never return the cursor, and without them
+		// the neighbors form the clusters that are wrapped
+		chunk = bytes.ReplaceAll(chunk, []byte{'\r'}, nil)
 	}
-	if start < 0 || utf8.FullRune(chunk[start:]) {
-		return chunk
+	text := text(chunk).stripBroken()
+	if n := text.incompleteTail(); n > 0 {
+		v.partial = bytes.Clone(text[len(text)-n:])
+		text = text[:len(text)-n]
+	} else if n := text.incompleteSequence(); n > 0 {
+		// the terminator is too far away to wait for, and an open string
+		// sequence would swallow everything written after it
+		text = text[:len(text)-n]
 	}
-	v.partial = bytes.Clone(chunk[start:])
-	return chunk[:start]
+	return text
 }
 
-// skipCarriageReturn advances past a carriage return byte,
-// adjusting the low and mid cursors accordingly.
-func (*viewport) skipCarriageReturn(b byte, lo, mid int) (int, int, bool) {
-	if b != '\r' {
-		return lo, mid, false
-	}
-	if lo == mid {
-		lo++
-	}
-	return lo, mid + 1, true
-}
-
-// addLine flushes the bytes between lo and mid as a
-// complete line when a width-based wrap boundary is hit.
+// addLine flushes bytes before a width-based wrap boundary.
 func (v *viewport) addLine(chunk []byte, lo, mid int, addedLines int) (int, int) {
 	if lo < mid {
-		raw := v.stripCarriageReturns(chunk[lo:mid])
-		tmp := make([]byte, len(raw)+1)
-		copy(tmp, raw)
-		tmp[len(tmp)-1] = '\n'
-		v.lines = append(v.lines, tmp)
+		v.lines = append(v.lines, append(bytes.Clone(chunk[lo:mid]), '\n'))
 		addedLines++
 	}
 	lo = mid
 	return lo, addedLines
-}
-
-// stripCarriageReturns returns a copy of chunk
-// with all carriage return bytes removed.
-func (*viewport) stripCarriageReturns(chunk []byte) []byte {
-	if bytes.IndexByte(chunk, '\r') < 0 {
-		return append([]byte(nil), chunk...)
-	}
-	out := make([]byte, 0, len(chunk))
-	for _, b := range chunk {
-		if b != '\r' {
-			out = append(out, b)
-		}
-	}
-	return out
 }
 
 // loop is the viewport's single-goroutine event loop that
@@ -350,7 +302,7 @@ func (v *viewport) loop() {
 				v.partial = nil // an empty write clears the frame
 			}
 			// a write holding only part of a rune keeps the current frame
-			if chunk := v.joinPartialRune(req.chunk); len(chunk) > 0 || len(req.chunk) == 0 {
+			if chunk := v.joinPartial(req.chunk); len(chunk) > 0 || len(req.chunk) == 0 {
 				v.lastLines = v.appendToLinebuffer(chunk)
 			}
 			if !v.sendNotify(viewportChanged{lines: v.lastLines, done: req.done}) {
