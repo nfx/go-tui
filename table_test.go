@@ -1127,8 +1127,8 @@ func TestTableMultilineCellsTruncateEachLine(t *testing.T) {
 	assert.Equal(t, 7, len(lines))
 	assert.Equal(t, "TE…", strings.TrimSpace(lines[0]))
 	for _, line := range lines {
-		if width([]byte(line)) > 5 {
-			t.Fatalf("width %d > 5: %q", width([]byte(line)), line)
+		if text(line).width() > 5 {
+			t.Fatalf("width %d > 5: %q", text(line).width(), line)
 		}
 	}
 	assert.Equal(t, "dd…", strings.TrimSpace(lines[4]))
@@ -1189,8 +1189,8 @@ func TestTableEmptyFirstBatchColumnKeepsMinimumWidth(t *testing.T) {
 	buf.Reset()
 	assert.NoError(t, TableAuto(buf, data, suppress, WithMaxWidth(20)))
 	for line := range strings.SplitSeq(strings.TrimRight(buf.String(), "\n"), "\n") {
-		if width([]byte(line)) > 20 {
-			t.Fatalf("width %d > 20: %q", width([]byte(line)), line)
+		if text(line).width() > 20 {
+			t.Fatalf("width %d > 20: %q", text(line).width(), line)
 		}
 	}
 }
@@ -1228,8 +1228,8 @@ func TestTableMaxWidthIsTotalRowBudget(t *testing.T) {
 		lines := strings.Split(strings.TrimRight(factPlain(buf.String()), "\n"), "\n")
 		assert.Equal(t, 26, len(lines))
 		for _, line := range lines {
-			if width([]byte(line)) > maxWidth {
-				t.Fatalf("width %d > %d: %q", width([]byte(line)), maxWidth, line)
+			if text(line).width() > maxWidth {
+				t.Fatalf("width %d > %d: %q", text(line).width(), maxWidth, line)
 			}
 		}
 	}

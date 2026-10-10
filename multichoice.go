@@ -82,7 +82,7 @@ func (m *multichoice) clampDisplay(height int) {
 	m.active = activeIdx - m.offset
 }
 
-// render displays the dropdown.
+// render refreshes and draws the multichoice list.
 //
 //nolint:cyclop,funlen,gocognit,ineffassign,nestif,staticcheck // TODO: unfinished
 func (m *multichoice) render(io *termIO, buf *viewport) error {
@@ -102,8 +102,8 @@ func (m *multichoice) render(io *termIO, buf *viewport) error {
 			if err != nil {
 				return fmt.Errorf("inactive: %w", err)
 			}
-			m.trie.Add(m.inactive[i].String(), i)
-			m.widths[i] = width(m.inactive[i])
+			m.trie.Add(m.inactive[i], i)
+			m.widths[i] = text(m.inactive[i]).width()
 			m.relevant[i] = i
 			longest = max(longest, m.widths[i])
 		}
@@ -122,7 +122,7 @@ func (m *multichoice) render(io *termIO, buf *viewport) error {
 		if err != nil {
 			return fmt.Errorf("more: %w", err)
 		}
-		longest = max(longest, width(bufMore))
+		longest = max(longest, text(bufMore).width())
 	}
 	var item bbuf
 	var itemW int
@@ -133,9 +133,9 @@ func (m *multichoice) render(io *termIO, buf *viewport) error {
 	label := m.labelBuf.Bytes()
 	// TODO: we still have issues when label overflows the terminal width - some terminals wrap it, some don't.
 	// proper solution would be to use viewports and scroll the label as well
-	prefix = width(label)
+	prefix = text(label).width()
 	if prefix > io.Width {
-		label = truncateVisible(label, io.Width-1, ' ')
+		label = text(label).truncateVisible(io.Width-1, ' ')
 	}
 	_, err = buf.Write(label)
 	if err != nil {
@@ -157,14 +157,14 @@ func (m *multichoice) render(io *termIO, buf *viewport) error {
 			if err != nil {
 				return fmt.Errorf("active: %w", err)
 			}
-			itemW = width(item)
+			itemW = text(item).width()
 		} else {
 			item = m.inactive[j]
 			itemW = m.widths[j]
 		}
 		if itemW > io.Width {
 			// this may fail if active item is wider than the terminal, but we can solve this later
-			item = truncateVisible(item, io.Width-1, '\n')
+			item = bbuf(text(item).truncateVisible(io.Width-1, '\n'))
 		}
 		_, err = buf.Write(item)
 		if err != nil {

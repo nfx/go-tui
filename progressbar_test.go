@@ -32,7 +32,7 @@ func TestProgressStateRenderFitsWidth(t *testing.T) {
 		var frame bytes.Buffer
 		err := state.render(&frame, availWidth, now)
 		assert.NoError(t, err)
-		assert.True(t, width(frame.Bytes()) <= availWidth)
+		assert.True(t, text(frame.Bytes()).width() <= availWidth)
 	}
 }
 
@@ -98,7 +98,7 @@ func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
 		t.Fatalf("no progress output")
 	}
 
-	assert.Equal(t, 39, width([]byte(output)))
+	assert.Equal(t, 39, text(output).width())
 }
 
 func mustReceiveProgressEvent(t *testing.T, ch <-chan progressEvent) progressEvent {

@@ -7,5 +7,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	println("You entered:", result)
+	// Masked input moves and deletes by rune, showing one mask per rune.
+	println("You entered", len([]rune(result)), "runes")
 }

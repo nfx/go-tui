@@ -270,75 +270,56 @@ func (p *input) handleNextEvent(tio *termIO, keys <-chan keyEvent) (done, consum
 	}
 }
 
-// visibleWindow returns the start and end rune indexes of the portion
-// of runes that fits into availW terminal columns, anchored around the cursor.
-func (i *input) visibleWindow(runes []rune, availW int) (int, int) {
-	total := len(runes)
-	cursor := min(max(i.cursor, 0), total)
+// visibleWindow returns the start and end indexes of the clusters
+// that fit into availW terminal columns, anchored around the cursor.
+func (i *input) visibleWindow(cells clusters, availW int) (int, int) {
+	at := cells.at(i.cursor)
 	if availW <= 0 {
-		return cursor, cursor
+		return at, at
 	}
-	if i.cellsWidth(runes) <= availW {
-		return 0, total
+	if cells.width() <= availW {
+		return 0, len(cells)
 	}
 	half := availW / 2
 	start := 0
 	switch {
-	case i.cellsWidth(runes[:cursor]) <= half:
-	case i.cellsWidth(runes[cursor:]) <= half:
+	case cells[:at].width() <= half:
+	case cells[at:].width() <= half:
 		// fill the window backwards from the end of the text
-		for w := 0; start < total; start++ {
-			w += i.cellWidth(runes[total-1-start])
-			if w > availW {
-				break
-			}
+		start = len(cells)
+		for w := 0; start > 0 && w+cells[start-1].width <= availW; start-- {
+			w += cells[start-1].width
 		}
-		return i.skipCombining(runes, total-start), total
 	default:
 		// keep half of the window before the cursor
-		start = cursor
-		for w := 0; start > 0; start-- {
-			w += i.cellWidth(runes[start-1])
-			if w > half {
-				break
-			}
+		start = at
+		for w := 0; start > 0 && w+cells[start-1].width <= half; start-- {
+			w += cells[start-1].width
 		}
-		start = i.skipCombining(runes, start)
 	}
 	end := start
-	for w := 0; end < total; end++ {
-		w += i.cellWidth(runes[end])
-		if w > availW {
-			break
-		}
+	for w := 0; end < len(cells) && w+cells[end].width <= availW; end++ {
+		w += cells[end].width
 	}
 	return start, end
 }
 
-// skipCombining moves a clipped window start past zero-width runes, whose
-// base rune is outside the window, even past a cursor between them.
-func (i *input) skipCombining(runes []rune, start int) int {
-	for start > 0 && start < len(runes) && i.cellWidth(runes[start]) == 0 {
-		start++
+// prevBoundary returns the rune offset of the cluster boundary before cursor.
+func (i *input) prevBoundary(cursor int) int {
+	cells := text(string(i.displayRunes())).clusters()
+	if k := cells.at(cursor - 1); k < len(cells) {
+		return cells[k].start
 	}
-	return start
+	return max(cursor-1, 0)
 }
 
-// cellWidth returns the terminal columns of a rune written as valid UTF-8,
-// where a replacement character occupies a column.
-func (*input) cellWidth(r rune) int {
-	if r == utf8.RuneError {
-		return 1
+// nextBoundary returns the rune offset of the cluster boundary after cursor.
+func (i *input) nextBoundary(cursor int) int {
+	cells := text(string(i.displayRunes())).clusters()
+	if k := cells.at(cursor); k < len(cells) {
+		return cells[k].end
 	}
-	return runeWidth(r)
-}
-
-func (i *input) cellsWidth(runes []rune) int {
-	w := 0
-	for _, r := range runes {
-		w += i.cellWidth(r)
-	}
-	return w
+	return cursor + 1
 }
 
 // displayRunes returns one terminal-safe rune per typed rune, so that
@@ -376,6 +357,7 @@ func (i *input) safeText(text string) string {
 	return strings.Map(i.safeRune, text)
 }
 
+// render draws one input row and restores the cursor position.
 func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 	io.refreshSize()
 	frame.Reset()
@@ -389,21 +371,23 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 	// render label into a scratch buffer to measure its width
 	var labelBuf bytes.Buffer
 	collect(i.labelTemplate.Execute(&labelBuf, i.Label))
-	labelW := width(labelBuf.Bytes())
+	labelW := text(labelBuf.Bytes()).width()
 	_, err := frame.Write(labelBuf.Bytes())
 	collect(err)
 	// clip text to a visible window that fits on one row
 	runes := i.displayRunes()
-	visStart, visEnd := 0, len(runes)
+	cells := text(string(runes)).clusters()
+	first, last := 0, len(cells)
 	if io.Width > 0 {
-		visStart, visEnd = i.visibleWindow(runes, io.Width-labelW)
+		first, last = i.visibleWindow(cells, io.Width-labelW)
 	}
-	visible := runes[visStart:visEnd]
-	visCursor := min(max(i.cursor-visStart, 0), len(visible))
+	visible := runes[cells.runeOffset(first):cells.runeOffset(last)]
 	// write displayed text and clear to the end of the line
 	_, err = fmt.Fprintf(frame, "%s\x1b[K", string(visible))
 	collect(err)
-	moveLeft := i.cellsWidth(visible[visCursor:])
+	// a cursor inside of a cluster stands on its first rune
+	at := min(max(cells.at(i.cursor), first), last)
+	moveLeft := cells[at:last].width()
 	if moveLeft > 0 {
 		// move the cursor left by the difference between
 		// the end and the desired position
@@ -482,6 +466,7 @@ func (p *input) emit(ev inputOutgoing) {
 	p.eventSink(ev)
 }
 
+// decodeInputEvent maps one terminal key to an input change or confirmation.
 func (p *input) decodeInputEvent(key rune) inputIncoming {
 	switch key {
 	case keyEnter:
@@ -490,8 +475,9 @@ func (p *input) decodeInputEvent(key rune) inputIncoming {
 		runes := []rune(p.typed)
 		cursor := min(p.cursor, len(runes))
 		if cursor > 0 {
-			runes = append(runes[:cursor-1], runes[cursor:]...)
-			cursor--
+			from := p.prevBoundary(cursor)
+			runes = append(runes[:from], runes[cursor:]...)
+			cursor = from
 		}
 		return inputChanged{
 			Text:   string(runes),
@@ -565,23 +551,17 @@ func (p *input) confirmInput() bool {
 	return true
 }
 
-func (p *input) pressBackspace() {
-	if p.cursor > 0 {
-		runes := []rune(p.typed)
-		p.typed = string(append(runes[:p.cursor-1], runes[p.cursor:]...))
-		p.cursor--
-	}
-}
-
+// pressLeft moves the cursor to the preceding cluster boundary.
 func (p *input) pressLeft() {
 	if p.cursor > 0 {
-		p.cursor--
+		p.cursor = p.prevBoundary(p.cursor)
 	}
 }
 
+// pressRight moves the cursor to the next cluster boundary.
 func (p *input) pressRight() {
 	if p.cursor < utf8.RuneCountInString(p.typed) {
-		p.cursor++
+		p.cursor = p.nextBoundary(p.cursor)
 	}
 }
 

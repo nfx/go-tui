@@ -425,12 +425,12 @@ func (p *Progressbar) tick(frame *bytes.Buffer) bool {
 	usable := p.io.Width - 1
 	contentWidth := 0
 	labelBytes := []byte(p.label)
-	labelW := width(labelBytes) + 1 // label + trailing space
+	labelW := text(labelBytes).width() + 1 // label + trailing space
 	switch {
 	case usable <= 0:
 	case labelW > usable:
 		// truncate label to fit, no room for bar/details
-		line.Write(truncateVisible(labelBytes, usable, ' '))
+		line.Write(text(labelBytes).truncateVisible(usable, ' '))
 	default:
 		line.Write(labelBytes)
 		line.WriteByte(' ')
@@ -442,7 +442,7 @@ func (p *Progressbar) tick(frame *bytes.Buffer) bool {
 		}
 	}
 	if usable > 0 {
-		contentWidth = width(line.Bytes()[1:])
+		contentWidth = text(line.Bytes()[1:]).width()
 	}
 	line.WriteByte('\n')
 	line.WriteByte('\r')
@@ -524,12 +524,13 @@ func (p *progressState) render(frame *bytes.Buffer, availWidth int, now time.Tim
 	return err
 }
 
+// layout fits progress details and a bar into availWidth columns.
 func (p *progressState) layout(rollingRate float64, availWidth int, prefix string, completion float64) string {
 	if availWidth <= 0 {
 		return ""
 	}
-	if width([]byte(prefix)) >= availWidth {
-		return string(truncateVisible([]byte(prefix), availWidth, ' '))
+	if text(prefix).width() >= availWidth {
+		return string(text(prefix).truncateVisible(availWidth, ' '))
 	}
 	details := p.renderDetails(rollingRate)
 	for n := len(details); n >= 0; n-- {
@@ -549,7 +550,7 @@ func (p *progressState) layout(rollingRate float64, availWidth int, prefix strin
 			return prefix + p.filledBarLine(barWidth, completion) + compact
 		}
 	}
-	return string(truncateVisible([]byte(prefix), availWidth, ' '))
+	return string(text(prefix).truncateVisible(availWidth, ' '))
 }
 
 func (p *progressState) renderSuffix(details []string, leadingSpace bool) string {
@@ -562,8 +563,9 @@ func (p *progressState) renderSuffix(details []string, leadingSpace bool) string
 	return fmt.Sprintf("(%s)", strings.Join(details, ", "))
 }
 
+// barWidth reserves prefix, suffix, and bar delimiters from availWidth.
 func (p *progressState) barWidth(availWidth int, prefix, suffix string) int {
-	return availWidth - width([]byte(prefix)) - width([]byte(suffix)) - 2
+	return availWidth - text(prefix).width() - text(suffix).width() - 2
 }
 
 func (p *progressState) renderDetails(rollingRate float64) []string {

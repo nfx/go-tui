@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+	"unicode/utf8"
 )
 
 type dropdownOutputEvent interface {
@@ -877,33 +878,34 @@ func (*dropdown) levenstein(a, b []rune) int {
 	return prev[len(b)]
 }
 
+// setItem renders and indexes item at i.
 func (d *dropdown) setItem(i int, item any) error {
 	err := d.activeItemTemplate.Execute(&d.active[i], item)
 	if err != nil {
 		return fmt.Errorf("active: %w", err)
 	}
-	d.activeWidths[i] = width(d.active[i])
+	d.activeWidths[i] = text(d.active[i]).width()
 	err = d.inactiveItemTemplate.Execute(&d.inactive[i], item)
 	if err != nil {
 		return fmt.Errorf("inactive: %w", err)
 	}
-	inactive := d.inactive[i].String()
-	d.trie.Add(inactive, i)
-	d.widths[i] = width(d.inactive[i])
+	d.trie.Add(d.inactive[i], i)
+	d.widths[i] = text(d.inactive[i]).width()
 	d.longest = max(d.longest, d.widths[i], d.activeWidths[i])
 	d.emit(dropdownAppendItem{
 		Item:  item,
 		Index: i,
-		Text:  inactive,
+		Text:  d.inactive[i].String(),
 	})
 	return nil
 }
 
+// renderLabel writes the label and returns its occupied columns.
 func (d *dropdown) renderLabel(buf *bytes.Buffer, io *termIO, longest int) int {
 	label := d.labelBuf.Bytes()
-	prefix := width(label)
+	prefix := text(label).width()
 	if prefix > io.Width {
-		label = truncateVisible(label, io.Width-1, ' ')
+		label = text(label).truncateVisible(io.Width-1, ' ')
 		prefix = io.Width - 1
 	}
 	buf.Write(label)
@@ -917,6 +919,7 @@ func (d *dropdown) renderLabel(buf *bytes.Buffer, io *termIO, longest int) int {
 	return prefix
 }
 
+// renderItem selects and clips item j for row i.
 func (d *dropdown) renderItem(io *termIO, i, j int) bbuf {
 	var item bbuf
 	var itemW int
@@ -928,11 +931,12 @@ func (d *dropdown) renderItem(io *termIO, i, j int) bbuf {
 		itemW = d.widths[j]
 	}
 	if itemW > io.Width {
-		item = truncateVisible(item, io.Width-1, '\n')
+		item = bbuf(text(item).truncateVisible(io.Width-1, '\n'))
 	}
 	return item
 }
 
+// renderMore renders the remaining-items indicator when needed.
 func (d *dropdown) renderMore(total int, height int, longest int) (bbuf, int, error) {
 	var bufMore bbuf
 	if total <= len(d.displayed) {
@@ -945,7 +949,7 @@ func (d *dropdown) renderMore(total int, height int, longest int) (bbuf, int, er
 	if err != nil {
 		return nil, 0, fmt.Errorf("more: %w", err)
 	}
-	longest = max(longest, width(bufMore))
+	longest = max(longest, text(bufMore).width())
 	return bufMore, longest, nil
 }
 
@@ -1659,7 +1663,7 @@ func (d *dropdown) filterWith(text string, displayed, space, height int) bool {
 		return false
 	}
 	limit := min(len(d.relevant), displayed, space)
-	if len(text) < len(prevTyped) {
+	if utf8.RuneCountInString(text) < utf8.RuneCountInString(prevTyped) {
 		limit = min(len(d.relevant), height)
 	}
 	d.displayed = d.relevant[:limit]

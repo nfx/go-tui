@@ -16,3 +16,4 @@ Core guides:
 - [Tables](table.md)
 - [Pretty JSON](json.md)
 - [File Picker](filepicker.md)
+- [Text handling](text.md)

@@ -388,6 +388,8 @@ func (s *Spinners) markDone(offset int) {
 	s.wg.Done()
 }
 
+// redraw renders all active spinners as single terminal rows.
+//
 //nolint:errcheck // TODO: add error handling in Spinners state
 func (s *Spinners) redraw(prevActive int) int {
 	s.io.refreshSize()
@@ -409,8 +411,8 @@ func (s *Spinners) redraw(prevActive int) int {
 		}
 		line += spinner.Message
 		// truncate to terminal width so each spinner stays on one row
-		if s.io.Width > 0 && width([]byte(line)) > s.io.Width {
-			frame.Write(truncateVisible([]byte(line), s.io.Width, ' '))
+		if s.io.Width > 0 && text(line).width() > s.io.Width {
+			frame.Write(text(line).truncateVisible(s.io.Width, ' '))
 		} else {
 			frame.WriteString(line)
 		}

@@ -125,7 +125,7 @@ func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 	}
 	contentLine := body[lo+1:]
 	// content must not exceed shrunken width minus 1 (autowrap column)
-	assert.True(t, width(contentLine) <= 19)
+	assert.True(t, text(contentLine).width() <= 19)
 }
 
 func TestProgressbarTickOnResizeExitsWhenDone(t *testing.T) {
@@ -254,7 +254,7 @@ func TestProgressbarLabelTruncation(t *testing.T) {
 	assert.True(t, ok)
 	lines := bytes.Split(out.Bytes(), []byte("\n"))
 	for _, line := range lines {
-		w := width(line)
+		w := text(line).width()
 		assert.True(t, w <= 14)
 	}
 }
@@ -285,7 +285,7 @@ func TestSpinnerRedrawTruncatesLongMessage(t *testing.T) {
 			continue
 		}
 		// each line must fit within the full width = 20
-		assert.True(t, width(line) <= 20)
+		assert.True(t, text(line).width() <= 20)
 	}
 }
 
@@ -341,40 +341,35 @@ func TestMultichoiceClampDisplayShrink(t *testing.T) {
 
 func TestInputVisibleWindowNoClipping(t *testing.T) {
 	i := &input{cursor: 3}
-	runes := []rune("hello")
-	start, end := i.visibleWindow(runes, 10)
+	start, end := i.visibleWindow(text("hello").clusters(), 10)
 	assert.Equal(t, 0, start)
 	assert.Equal(t, 5, end)
 }
 
 func TestInputVisibleWindowClipsCursorAtStart(t *testing.T) {
 	i := &input{cursor: 2}
-	runes := []rune("abcdefghij")
-	start, end := i.visibleWindow(runes, 5)
+	start, end := i.visibleWindow(text("abcdefghij").clusters(), 5)
 	assert.Equal(t, 0, start)
 	assert.Equal(t, 5, end)
 }
 
 func TestInputVisibleWindowClipsCursorAtEnd(t *testing.T) {
 	i := &input{cursor: 9}
-	runes := []rune("abcdefghij")
-	start, end := i.visibleWindow(runes, 5)
+	start, end := i.visibleWindow(text("abcdefghij").clusters(), 5)
 	assert.Equal(t, 5, start)
 	assert.Equal(t, 10, end)
 }
 
 func TestInputVisibleWindowClipsCursorInMiddle(t *testing.T) {
 	i := &input{cursor: 5}
-	runes := []rune("abcdefghij")
-	start, end := i.visibleWindow(runes, 4)
+	start, end := i.visibleWindow(text("abcdefghij").clusters(), 4)
 	assert.Equal(t, 3, start)
 	assert.Equal(t, 7, end)
 }
 
 func TestInputVisibleWindowZeroAvail(t *testing.T) {
 	i := &input{cursor: 3}
-	runes := []rune("hello")
-	start, end := i.visibleWindow(runes, 0)
+	start, end := i.visibleWindow(text("hello").clusters(), 0)
 	assert.Equal(t, 3, start)
 	assert.Equal(t, 3, end)
 }
