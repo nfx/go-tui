@@ -878,7 +878,7 @@ func TestProgressbarTickShowsElapsed(t *testing.T) {
 			startedAt:   time.Now().Add(-2 * time.Second),
 			redrawAt:    time.Now().Add(-1 * time.Second),
 		},
-		label: "test",
+		label: text("test"),
 		io: &termIO{
 			out:     &bytes.Buffer{},
 			Width:   40,
@@ -907,7 +907,7 @@ func TestProgressbarTickWriteError(t *testing.T) {
 			redrawAt:   time.Now(),
 			startedAt:  time.Now().Add(-time.Second),
 		},
-		label: "test",
+		label: text("test"),
 		io: &termIO{
 			out:     errWriterPB{},
 			Width:   40,

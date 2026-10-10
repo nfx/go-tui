@@ -369,10 +369,10 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 	}
 	collect(frame.WriteByte('\r'))
 	// render label into a scratch buffer to measure its width
-	var labelBuf bytes.Buffer
-	collect(i.labelTemplate.Execute(&labelBuf, i.Label))
-	labelW := text(labelBuf.Bytes()).width()
-	_, err := frame.Write(labelBuf.Bytes())
+	var label text
+	collect(i.labelTemplate.Execute(&label, i.Label))
+	labelW := label.width()
+	_, err := frame.Write(label)
 	collect(err)
 	// clip text to a visible window that fits on one row
 	runes := i.displayRunes()

@@ -19,6 +19,17 @@ const (
 // text is text written to a terminal: UTF-8 with controls and escape sequences.
 type text []byte
 
+// String returns t as a string.
+func (t text) String() string {
+	return string(t)
+}
+
+// Write appends p to t, so that templates and formatters render into it.
+func (t *text) Write(p []byte) (n int, err error) {
+	*t = append(*t, p...)
+	return len(p), nil
+}
+
 // glyph is a code point, as a terminal shows it.
 type glyph rune
 

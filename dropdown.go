@@ -80,9 +80,9 @@ type dropdown struct {
 	Label        string
 	Items        []any
 	trie         *trie
-	active       []bbuf
+	active       []text
 	activeWidths []int
-	inactive     []bbuf
+	inactive     []text
 	widths       []int
 	relevant     []int
 	displayed    []int
@@ -92,7 +92,7 @@ type dropdown struct {
 	LabelNewLine bool
 
 	LabelTemplate        string
-	labelBuf             bytes.Buffer
+	labelBuf             text
 	ActiveItemTemplate   string
 	activeItemTemplate   *template.Template
 	InactiveItemTemplate string
@@ -779,9 +779,9 @@ func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 	}
 	d.emit(dropdownInit{Label: d.Label})
 	d.trie = newTrie()
-	d.active = make([]bbuf, len(d.Items))
+	d.active = make([]text, len(d.Items))
 	d.activeWidths = make([]int, len(d.Items))
-	d.inactive = make([]bbuf, len(d.Items))
+	d.inactive = make([]text, len(d.Items))
 	d.widths = make([]int, len(d.Items))
 	d.relevant = make([]int, len(d.Items))
 	d.longest = 0
@@ -884,13 +884,13 @@ func (d *dropdown) setItem(i int, item any) error {
 	if err != nil {
 		return fmt.Errorf("active: %w", err)
 	}
-	d.activeWidths[i] = text(d.active[i]).width()
+	d.activeWidths[i] = d.active[i].width()
 	err = d.inactiveItemTemplate.Execute(&d.inactive[i], item)
 	if err != nil {
 		return fmt.Errorf("inactive: %w", err)
 	}
 	d.trie.Add(d.inactive[i], i)
-	d.widths[i] = text(d.inactive[i]).width()
+	d.widths[i] = d.inactive[i].width()
 	d.longest = max(d.longest, d.widths[i], d.activeWidths[i])
 	d.emit(dropdownAppendItem{
 		Item:  item,
@@ -902,10 +902,10 @@ func (d *dropdown) setItem(i int, item any) error {
 
 // renderLabel writes the label and returns its occupied columns.
 func (d *dropdown) renderLabel(buf *bytes.Buffer, io *termIO, longest int) int {
-	label := d.labelBuf.Bytes()
-	prefix := text(label).width()
+	label := d.labelBuf
+	prefix := label.width()
 	if prefix > io.Width {
-		label = text(label).truncateVisible(io.Width-1, ' ')
+		label = label.truncateVisible(io.Width-1, ' ')
 		prefix = io.Width - 1
 	}
 	buf.Write(label)
@@ -920,8 +920,8 @@ func (d *dropdown) renderLabel(buf *bytes.Buffer, io *termIO, longest int) int {
 }
 
 // renderItem selects and clips item j for row i.
-func (d *dropdown) renderItem(io *termIO, i, j int) bbuf {
-	var item bbuf
+func (d *dropdown) renderItem(io *termIO, i, j int) text {
+	var item text
 	var itemW int
 	if i == d.selected {
 		item = d.active[j]
@@ -931,14 +931,14 @@ func (d *dropdown) renderItem(io *termIO, i, j int) bbuf {
 		itemW = d.widths[j]
 	}
 	if itemW > io.Width {
-		item = bbuf(text(item).truncateVisible(io.Width-1, '\n'))
+		item = item.truncateVisible(io.Width-1, '\n')
 	}
 	return item
 }
 
 // renderMore renders the remaining-items indicator when needed.
-func (d *dropdown) renderMore(total int, height int, longest int) (bbuf, int, error) {
-	var bufMore bbuf
+func (d *dropdown) renderMore(total int, height int, longest int) (text, int, error) {
+	var bufMore text
 	if total <= len(d.displayed) {
 		return bufMore, longest, nil // nothing to do
 	}
@@ -949,7 +949,7 @@ func (d *dropdown) renderMore(total int, height int, longest int) (bbuf, int, er
 	if err != nil {
 		return nil, 0, fmt.Errorf("more: %w", err)
 	}
-	longest = max(longest, text(bufMore).width())
+	longest = max(longest, bufMore.width())
 	return bufMore, longest, nil
 }
 

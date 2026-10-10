@@ -409,14 +409,6 @@ func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
 	p.ticker.Stop()
 }
 
-func TestBBufWrite(t *testing.T) {
-	var b bbuf
-	n, err := b.Write([]byte("abc"))
-	assert.NoError(t, err)
-	assert.Equal(t, 3, n)
-	assert.Equal(t, "abc", string(b))
-}
-
 func TestWriteCWritesToChannel(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()

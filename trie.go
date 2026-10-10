@@ -25,9 +25,9 @@ func newTrie() *trie {
 // Add indexes the words in word, ignoring terminal controls and escapes.
 //
 //nolint:cyclop // it's ok
-func (t *trie) Add(word bbuf, i int) {
+func (t *trie) Add(word text, i int) {
 	r := t
-	for seg := range text(word).segments() {
+	for seg := range word.segments() {
 		if !seg.isText() {
 			continue // escape sequences with their payloads, and controls
 		}

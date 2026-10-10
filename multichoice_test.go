@@ -22,7 +22,7 @@ func TestMultichoiceRenderInitializes(t *testing.T) {
 	io := newTestTermIO(20, 6)
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
 	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf.WriteString(m.Label + " ")
+	m.labelBuf = text(m.Label + " ")
 
 	frame := &viewport{
 		ctx:      t.Context(),
@@ -42,7 +42,7 @@ func TestMultichoiceRenderMoreItems(t *testing.T) {
 	m.active = 0
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
 	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf.WriteString("longlabel ")
+	m.labelBuf = text("longlabel ")
 	io := newTestTermIO(5, 4)
 	frame := &viewport{
 		ctx:      t.Context(),
@@ -85,7 +85,7 @@ func TestMultichoiceRunHandlesKeys(t *testing.T) {
 	m.selected = make([]bool, len(m.Items))
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
 	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf.WriteString(m.Label + " ")
+	m.labelBuf = text(m.Label + " ")
 	m.in = reader
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -113,7 +113,7 @@ func TestMultichoiceRunIgnoresSpecialKeys(t *testing.T) {
 	m.selected = make([]bool, len(m.Items))
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
 	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf.WriteString(m.Label + " ")
+	m.labelBuf = text(m.Label + " ")
 	m.in = reader
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -138,7 +138,7 @@ func TestMultichoiceRunContextDone(t *testing.T) {
 	m.selected = make([]bool, len(m.Items))
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
 	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf.WriteString(m.Label + " ")
+	m.labelBuf = text(m.Label + " ")
 	m.in = &chunkReader{chunks: [][]byte{{byte(keyEnter)}}}
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -160,7 +160,7 @@ func TestMultichoiceRunPasteIgnored(t *testing.T) {
 	m.selected = make([]bool, len(m.Items))
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
 	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf.WriteString(m.Label + " ")
+	m.labelBuf = text(m.Label + " ")
 	m.in = &chunkReader{chunks: [][]byte{{'a', 'b'}, {byte(keyEnter)}}}
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -181,7 +181,7 @@ func TestMultichoiceRunReadError(t *testing.T) {
 	m.selected = make([]bool, len(m.Items))
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
 	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf.WriteString(m.Label + " ")
+	m.labelBuf = text(m.Label + " ")
 	m.in = bytes.NewBuffer(nil)
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -224,7 +224,7 @@ func TestMultichoiceRunRerendersOnResize(t *testing.T) {
 	m.selected = make([]bool, len(m.Items))
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}\n"))
 	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}} more"))
-	m.labelBuf.WriteString(m.Label + " ")
+	m.labelBuf = text(m.Label + " ")
 	m.in = keys
 	m.out = out
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -280,7 +280,7 @@ func newPipeMultichoice(ctx context.Context, in io.Reader) *multichoice {
 	m.selected = make([]bool, len(m.Items))
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}\n"))
 	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf.WriteString(m.Label + " ")
+	m.labelBuf = text(m.Label + " ")
 	m.in = in
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
