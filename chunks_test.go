@@ -13,6 +13,14 @@ import (
 	"github.com/nfx/go-tui/internal/assert"
 )
 
+func TestTextWrite(t *testing.T) {
+	var b text
+	n, err := fmt.Fprintf(&b, "a%dc", 1)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, n)
+	assert.Equal(t, "a1c", b.String())
+}
+
 func TestTruncateColumns(t *testing.T) {
 	for _, tt := range []struct {
 		in  string

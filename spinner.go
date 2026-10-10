@@ -322,14 +322,14 @@ func (s *Spinners) updateSpinner(update updateOffset) {
 	if update.err != nil {
 		update.message = update.err.Error()
 		s.state[update.offset].Failed = true
-		s.state[update.offset].Message = update.message
+		s.state[update.offset].Message = text(update.message)
 		s.emit(spinnerFailed{
 			Index: update.offset,
 			Error: update.message,
 		})
 		return
 	}
-	s.state[update.offset].Message = update.message
+	s.state[update.offset].Message = text(update.message)
 	s.emit(spinnerUpdated{
 		Index:   update.offset,
 		Message: update.message,
@@ -399,22 +399,24 @@ func (s *Spinners) redraw(prevActive int) int {
 		s.io.clear(prevActive, frame)
 	}
 	currActive := 0
+	var line text
 	for _, spinner := range s.state {
 		if spinner == nil {
 			continue
 		}
 		spinner.next()
 		frame.WriteByte('\r')
-		line := spinner.frames[spinner.tick] + " "
-		if spinner.Prefix != "" {
-			line += spinner.Prefix + ": "
+		line = append(line[:0], spinner.frames[spinner.tick]...)
+		line = append(line, ' ')
+		if len(spinner.Prefix) > 0 {
+			line = append(append(line, spinner.Prefix...), ": "...)
 		}
-		line += spinner.Message
+		line = append(line, spinner.Message...)
 		// truncate to terminal width so each spinner stays on one row
-		if s.io.Width > 0 && text(line).width() > s.io.Width {
-			frame.Write(text(line).truncateVisible(s.io.Width, ' '))
+		if s.io.Width > 0 && line.width() > s.io.Width {
+			frame.Write(line.truncateVisible(s.io.Width, ' '))
 		} else {
-			frame.WriteString(line)
+			frame.Write(line)
 		}
 		frame.WriteByte('\n')
 		frame.WriteByte('\r')
@@ -468,7 +470,7 @@ func (s *Spinners) newSpinner(ns createSpinner) {
 	offset := len(s.state)
 	s.state = append(s.state, &spinnerState{
 		cancel: ns.cancel,
-		Prefix: ns.prefix,
+		Prefix: text(ns.prefix),
 		tick:   (len(s.state) + 1) % len(ns.frames),
 		frames: ns.frames,
 		active: true,
@@ -492,8 +494,8 @@ type spinnerState struct {
 	active  bool
 	keep    bool
 	frames  []string
-	Prefix  string
-	Message string
+	Prefix  text
+	Message text
 	Failed  bool
 	Done    bool
 }

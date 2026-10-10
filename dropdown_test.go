@@ -569,8 +569,8 @@ func TestDropdownPressKeyRuneAndRenderMore(t *testing.T) {
 	d.relevant = []int{0, 1}
 	d.displayed = d.relevant
 	d.trie = newTrie()
-	d.trie.Add(bbuf("alpha"), 0)
-	d.trie.Add(bbuf("beta"), 1)
+	d.trie.Add(text("alpha"), 0)
+	d.trie.Add(text("beta"), 1)
 
 	tio := newTestTermIO(20, 6)
 
@@ -586,7 +586,7 @@ func TestDropdownPressKeyRuneAndRenderMore(t *testing.T) {
 	d.OneReturn = true
 	d.typed = nil
 	d.trie = newTrie()
-	d.trie.Add(bbuf("abc"), 0)
+	d.trie.Add(text("abc"), 0)
 	d.Items = []any{"abc"}
 	d.relevant = []int{0}
 	d.displayed = d.relevant
@@ -743,7 +743,7 @@ func TestDropdownPressAnyOneReturn(t *testing.T) {
 	d := newDropdown()
 	d.OneReturn = true
 	d.trie = newTrie()
-	d.trie.Add(bbuf("ok"), 0)
+	d.trie.Add(text("ok"), 0)
 
 	assert.True(t, d.pressAny('o', 1, 1))
 }
@@ -863,9 +863,9 @@ func TestDropdownItemLabelFallsBackToPointerStringer(t *testing.T) {
 func TestDropdownSetItemUsesResolvedLabelForTrie(t *testing.T) {
 	d := newDropdown()
 	item := dropdownHeuristicLabelItem{ID: 3, Name: "omega"}
-	d.active = make([]bbuf, 1)
+	d.active = make([]text, 1)
 	d.activeWidths = make([]int, 1)
-	d.inactive = make([]bbuf, 1)
+	d.inactive = make([]text, 1)
 	d.widths = make([]int, 1)
 	d.relevant = make([]int, 1)
 	d.trie = newTrie()
@@ -929,7 +929,7 @@ func TestDropdownPressKeyRuneEnter(t *testing.T) {
 func TestDropdownPressKeyRuneBackspace(t *testing.T) {
 	d := newDropdown()
 	d.trie = newTrie()
-	d.trie.Add(bbuf("a"), 0)
+	d.trie.Add(text("a"), 0)
 	d.relevant = []int{0}
 	d.displayed = []int{0}
 	d.Items = []any{"a"}
@@ -986,7 +986,7 @@ func TestDropdownPressKeyRuneArrows(t *testing.T) {
 func TestDropdownRunMainConsumesInputChannel(t *testing.T) {
 	d := newDropdown()
 	d.trie = newTrie()
-	d.trie.Add(bbuf("a"), 0)
+	d.trie.Add(text("a"), 0)
 	d.Items = []any{"a"}
 	d.relevant = []int{0}
 	d.displayed = []int{0}
@@ -1018,7 +1018,7 @@ func TestDropdownRunMainRejectsInvalidConfirmedIndex(t *testing.T) {
 func TestDropdownPressKeyRuneDefault(t *testing.T) {
 	d := newDropdown()
 	d.trie = newTrie()
-	d.trie.Add(bbuf("a"), 0)
+	d.trie.Add(text("a"), 0)
 	d.Items = []any{"a"}
 	d.relevant = []int{0}
 	d.displayed = []int{0}
@@ -1030,8 +1030,8 @@ func TestDropdownPressKeyRuneDefault(t *testing.T) {
 func TestDropdownPressKeyRuneEmitsStateEvents(t *testing.T) {
 	d := newDropdown()
 	d.trie = newTrie()
-	d.trie.Add(bbuf("alpha"), 0)
-	d.trie.Add(bbuf("beta"), 1)
+	d.trie.Add(text("alpha"), 0)
+	d.trie.Add(text("beta"), 1)
 	d.Items = []any{"alpha", "beta"}
 	d.relevant = []int{0, 1}
 	d.displayed = []int{0, 1}
@@ -1056,7 +1056,7 @@ func TestDropdownPressKeyRuneOneReturn(t *testing.T) {
 	d := newDropdown()
 	d.OneReturn = true
 	d.trie = newTrie()
-	d.trie.Add(bbuf("a"), 0)
+	d.trie.Add(text("a"), 0)
 	d.Items = []any{"a"}
 	d.relevant = []int{0}
 	d.displayed = []int{0}

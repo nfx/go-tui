@@ -15,17 +15,6 @@ import (
 	"golang.org/x/term"
 )
 
-type bbuf []byte
-
-func (b *bbuf) String() string {
-	return string(*b)
-}
-
-func (b *bbuf) Write(p []byte) (n int, err error) {
-	*b = append(*b, p...)
-	return len(p), nil
-}
-
 // tio owns package-default terminal IO and lazily upgrades stderr to a shared
 // arbiter when the configured output is an interactive TTY.
 type tio struct {

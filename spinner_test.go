@@ -394,7 +394,7 @@ func TestSpinnersDrainQueues(t *testing.T) {
 	}
 	s.updates <- updateOffset{offset: 0, message: "msg"}
 	s.drainQueues()
-	if s.state[0].Message != "msg" {
+	if s.state[0].Message.String() != "msg" {
 		t.Fatalf("expected message update")
 	}
 	s.stops <- 0

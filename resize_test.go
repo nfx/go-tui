@@ -214,7 +214,7 @@ func TestProgressbarTickTinyWidth(t *testing.T) {
 					redrawAt:   time.Now(),
 					startedAt:  time.Now().Add(-time.Second),
 				},
-				label: "test",
+				label: text("test"),
 				io: &termIO{
 					out:     &bytes.Buffer{},
 					Width:   tt.width,
@@ -238,7 +238,7 @@ func TestProgressbarLabelTruncation(t *testing.T) {
 			redrawAt:   time.Now(),
 			startedAt:  time.Now().Add(-time.Second),
 		},
-		label: "this is a very long label that exceeds terminal width",
+		label: text("this is a very long label that exceeds terminal width"),
 		io: &termIO{
 			out:     &bytes.Buffer{},
 			Width:   15,
@@ -270,7 +270,7 @@ func TestSpinnerRedrawTruncatesLongMessage(t *testing.T) {
 	s.state = []*spinnerState{
 		{
 			frames:  []string{"..."},
-			Message: "this is a very long spinner message that should be truncated",
+			Message: text("this is a very long spinner message that should be truncated"),
 			tick:    0,
 		},
 	}

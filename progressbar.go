@@ -105,11 +105,11 @@ func newStartedProgressBar(label string, size int64, o ...opt) (*Progressbar, er
 	if err != nil {
 		return nil, fmt.Errorf("restore: %w", err)
 	}
-	p.label = label
+	p.label = text(label)
 	p.startedAt = p.now()
 	p.redrawAt = p.startedAt
 	p.emit(progressInit{
-		Label: p.label,
+		Label: p.label.String(),
 		Max:   p.maxNum,
 	})
 	go p.start(p.ctx)
@@ -119,7 +119,7 @@ func newStartedProgressBar(label string, size int64, o ...opt) (*Progressbar, er
 type Progressbar struct {
 	config
 	progressState
-	label          string
+	label          text
 	increments     chan int64
 	stopped        chan struct{}
 	cancel         context.CancelCauseFunc
@@ -382,7 +382,7 @@ func (p *Progressbar) start(ctx context.Context) {
 		if p.stopped != nil {
 			close(p.stopped)
 		}
-		p.emit(progressClosed{Label: p.label})
+		p.emit(progressClosed{Label: p.label.String()})
 	}()
 	frame := bytes.NewBuffer(make([]byte, 2*p.io.Width))
 	frame.Reset()
@@ -419,33 +419,31 @@ func (p *Progressbar) tick(frame *bytes.Buffer) bool {
 			p.err = fmt.Errorf("clear: %w", err)
 		}
 	}
-	line := bytes.NewBuffer(make([]byte, 0, max(p.io.Width, 4)))
-	line.WriteByte('\r')
+	line := make(text, 0, max(p.io.Width, 4))
+	line = append(line, '\r')
 	// reserve one column to avoid the terminal's autowrap column
 	usable := p.io.Width - 1
 	contentWidth := 0
-	labelBytes := []byte(p.label)
-	labelW := text(labelBytes).width() + 1 // label + trailing space
+	labelW := p.label.width() + 1 // label + trailing space
 	switch {
 	case usable <= 0:
 	case labelW > usable:
 		// truncate label to fit, no room for bar/details
-		line.Write(text(labelBytes).truncateVisible(usable, ' '))
+		line = append(line, p.label.truncateVisible(usable, ' ')...)
 	default:
-		line.Write(labelBytes)
-		line.WriteByte(' ')
+		line = append(line, p.label...)
+		line = append(line, ' ')
 		if availWidth := usable - labelW; availWidth > 0 {
-			if err := p.render(line, availWidth, now); err != nil {
+			if err := p.render(&line, availWidth, now); err != nil {
 				p.err = fmt.Errorf("redraw: %w", err)
 				return true
 			}
 		}
 	}
 	if usable > 0 {
-		contentWidth = text(line.Bytes()[1:]).width()
+		contentWidth = line[1:].width()
 	}
-	line.WriteByte('\n')
-	line.WriteByte('\r')
+	line = append(line, '\n', '\r')
 	if err := p.flushLine(frame, line); err != nil {
 		p.err = fmt.Errorf("redraw: %w", err)
 		return true
@@ -463,8 +461,8 @@ func (p *Progressbar) linesToClear(width int) int {
 	return max((p.lastFrameWidth+width-1)/width, 1)
 }
 
-func (p *Progressbar) flushLine(frame, line *bytes.Buffer) error {
-	if _, err := frame.Write(line.Bytes()); err != nil {
+func (p *Progressbar) flushLine(frame *bytes.Buffer, line text) error {
+	if _, err := frame.Write(line); err != nil {
 		return err
 	}
 	_, err := frame.WriteTo(p.io)
@@ -515,12 +513,12 @@ func (p *progressState) completion() float64 {
 	return float64(p.currentNum) / float64(p.maxNum)
 }
 
-func (p *progressState) render(frame *bytes.Buffer, availWidth int, now time.Time) error {
+func (p *progressState) render(w io.Writer, availWidth int, now time.Time) error {
 	p.increment(now)
 	rollingRate := p.rollingRate()
 	completion := p.completion()
 	prefix := fmt.Sprintf("%d%% ", int(completion*100))
-	_, err := frame.WriteString(p.layout(rollingRate, availWidth, prefix, completion))
+	_, err := io.WriteString(w, p.layout(rollingRate, availWidth, prefix, completion))
 	return err
 }
 
@@ -707,11 +705,11 @@ func NewFileProgressReader(r io.Reader, label string, o ...opt) (*wrapReader, er
 	if err != nil {
 		return nil, fmt.Errorf("restore: %w", err)
 	}
-	p.label = label
+	p.label = text(label)
 	p.startedAt = p.now()
 	p.redrawAt = p.startedAt
 	p.emit(progressInit{
-		Label: p.label,
+		Label: p.label.String(),
 		Max:   p.maxNum,
 	})
 	go p.start(p.ctx)

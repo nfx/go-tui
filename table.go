@@ -391,9 +391,9 @@ type table struct {
 	tmpl             *template.Template
 	columns          []tableColumn
 	metadata         structFields
-	rows             [][]string
+	rows             [][]text
 	pending          [][]cell
-	scratch          bytes.Buffer
+	scratch          text
 	cellEnds         []int
 	cellPad          int
 	batchSize        int
@@ -422,7 +422,7 @@ type table struct {
 // cell is a structured table cell: its text never contains tabs or newlines,
 // so field data cannot be confused with layout.
 type cell struct {
-	text  string
+	text  text
 	width int    // visible width of text, tailer included
 	color string // optional ANSI prefix, closed by reset when rendered
 }
@@ -479,8 +479,8 @@ func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, o ...opt) (*table
 }
 
 type factCell struct {
-	title      string
-	value      string
+	title      text
+	value      text
 	width      int
 	alignRight bool
 }
@@ -565,16 +565,15 @@ func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 		if err != nil {
 			return nil, fmt.Errorf("column %q template: %w", meta.name, err)
 		}
-		buf := bytes.NewBuffer(nil)
-		err = tmpl.Execute(buf, facts)
+		var buf text
+		err = tmpl.Execute(&buf, facts)
 		if err != nil {
 			return nil, fmt.Errorf("column %q render: %w", meta.name, err)
 		}
 		header := mkBold(strings.ReplaceAll(meta.header, "\t", " "))
-		value := strings.ReplaceAll(strings.TrimRight(buf.String(), "\r\n"), "\t", " ")
+		value := text(bytes.ReplaceAll(bytes.TrimRight(buf, "\r\n"), []byte{'\t'}, []byte{' '}))
 		cellWidth := max(
-			max(text(header).width(),
-				text(value).width())+f.cellPad+1,
+			max(header.width(), value.width())+f.cellPad+1,
 			f.colMinWidth+f.cellPad)
 		cells[i] = factCell{
 			title:      header,
@@ -623,15 +622,13 @@ func (f *facts) packFactRows(cells []factCell, cols, maxWidth int) ([][]factCell
 
 // renderFactRow clips a fact row to its allocated column widths.
 func (f *facts) renderFactRow(row []factCell, colWidths []int) error {
-	headers := make([]string, len(row))
-	values := make([]string, len(row))
+	headers := make([]text, len(row))
+	values := make([]text, len(row))
 	f.columns = make([]tableColumn, len(row))
 	for i, cell := range row {
 		maxLen := max(colWidths[i]-f.cellPad, f.colMinWidth)
-		header := string(text(cell.title).truncateVisible(maxLen, ' '))
-		value := string(text(cell.value).truncateVisible(maxLen, ' '))
-		headers[i] = header
-		values[i] = value
+		headers[i] = cell.title.truncateVisible(maxLen, ' ')
+		values[i] = cell.value.truncateVisible(maxLen, ' ')
 		f.columns[i] = tableColumn{
 			width: colWidths[i],
 			meta:  &fieldMetadata{alignRight: cell.alignRight},
@@ -659,7 +656,7 @@ func (t *table) Append(v any) error {
 }
 
 func (t *table) cellSeparator() string {
-	t.cellEnds = append(t.cellEnds, t.scratch.Len())
+	t.cellEnds = append(t.cellEnds, len(t.scratch))
 	return ""
 }
 
@@ -726,13 +723,13 @@ func (*table) splitTextNode(n *parse.TextNode, sep parse.Node) []parse.Node {
 
 // renderCells executes the row template and returns one string per template-defined cell.
 func (t *table) renderCells(v any) ([]string, error) {
-	t.scratch.Reset()
+	t.scratch = t.scratch[:0]
 	t.cellEnds = t.cellEnds[:0]
 	err := t.tmpl.Execute(&t.scratch, v)
 	if err != nil {
 		return nil, err
 	}
-	out := t.scratch.Bytes()
+	out := t.scratch
 	cells := make([]string, 0, len(t.cellEnds)+1)
 	start := 0
 	for _, end := range t.cellEnds {
@@ -761,7 +758,7 @@ func (t *table) addRecord(cells, colors []string) {
 		count = max(count, len(lines[i]))
 	}
 	for k := range count {
-		row := make([]string, len(lines))
+		row := make([]text, len(lines))
 		var rowColors []string
 		if colors != nil {
 			rowColors = make([]string, len(lines))
@@ -770,7 +767,7 @@ func (t *table) addRecord(cells, colors []string) {
 			if k >= len(lines[i]) {
 				continue
 			}
-			row[i] = lines[i][k]
+			row[i] = text(lines[i][k])
 			if rowColors != nil && i < len(colors) {
 				rowColors[i] = colors[i]
 			}
@@ -780,15 +777,15 @@ func (t *table) addRecord(cells, colors []string) {
 }
 
 // addRow queues one physical row, keeping exactly one cell per column.
-func (t *table) addRow(texts, colors []string) {
+func (t *table) addRow(texts []text, colors []string) {
 	row := make([]cell, len(t.columns))
 	for i := range row {
-		if i >= len(texts) || texts[i] == "" {
+		if i >= len(texts) || len(texts[i]) == 0 {
 			continue
 		}
 		row[i] = cell{
 			text:  texts[i],
-			width: text(texts[i]).truncateVisible(math.MaxInt32, ' ').width(),
+			width: texts[i].truncateVisible(math.MaxInt32, ' ').width(),
 		}
 		if i < len(colors) {
 			row[i].color = colors[i]
@@ -951,6 +948,7 @@ func (t *table) headers() error {
 	}
 	t.columns = make([]tableColumn, len(headers))
 	columns := make([]tableColumnInfo, len(headers))
+	bold := make([]text, len(headers))
 	for i := range headers {
 		meta, ok := lookup[headers[i]]
 		if !ok {
@@ -965,7 +963,7 @@ func (t *table) headers() error {
 			Header: meta.header,
 			Kind:   meta.kind.String(),
 		}
-		headers[i] = mkBold(meta.header)
+		bold[i] = mkBold(meta.header)
 	}
 	if t.suppressHeaders {
 		return nil
@@ -973,7 +971,7 @@ func (t *table) headers() error {
 	if t.eventSink != nil {
 		t.emit(tableBegin{Columns: columns})
 	} else {
-		t.addRow(headers, nil)
+		t.addRow(bold, nil)
 	}
 
 	return nil
@@ -983,7 +981,7 @@ func (t *table) headers() error {
 func (t *table) autoHeaders() error {
 	t.columns = make([]tableColumn, len(t.metadata))
 	columns := make([]tableColumnInfo, len(t.metadata))
-	headers := make([]string, len(t.metadata))
+	headers := make([]text, len(t.metadata))
 	for i, meta := range t.metadata {
 		t.columns[i].meta = meta
 		columns[i] = tableColumnInfo{
@@ -1149,7 +1147,11 @@ func (t *table) flush(final bool) error {
 
 func (t *table) flushEvents(final bool) {
 	for _, row := range t.rows {
-		t.emit(tableRow{Cells: append([]string(nil), row...)})
+		cells := make([]string, len(row))
+		for i, c := range row {
+			cells[i] = c.String()
+		}
+		t.emit(tableRow{Cells: cells})
 	}
 	if final && !t.ended {
 		t.ended = true
@@ -1231,17 +1233,17 @@ func (t *table) fieldValueByPath(v any, path string) (any, bool) {
 }
 
 // padded writes cell aligned within column col.
-func (t *table) padded(buf *bytes.Buffer, cell string, col int) error {
-	padding := t.columns[col].width - text(cell).width()
+func (t *table) padded(buf *bytes.Buffer, cell text, col int) error {
+	padding := t.columns[col].width - cell.width()
 	if t.columns[col].meta.alignRight { // right align
 		err := t.pad(buf, padding)
 		if err != nil {
 			return err
 		}
 	}
-	_, err := buf.WriteString(cell)
+	_, err := buf.Write(cell)
 	if err != nil {
-		return fmt.Errorf("write string: %w", err)
+		return fmt.Errorf("write: %w", err)
 	}
 	if !t.columns[col].meta.alignRight { // left align
 		err = t.pad(buf, padding)
@@ -1269,17 +1271,17 @@ func (t *table) fitPending() {
 		t.allocateWidths()
 	}
 	for _, line := range t.pending {
-		row := make([]string, len(line))
+		row := make([]text, len(line))
 		for i, c := range line {
-			if c.text == "" {
+			if len(c.text) == 0 {
 				// value is not available, but we need to insert something
 				// to keep the table structure intact.
-				row[i] = " "
+				row[i] = text(" ")
 				continue
 			}
-			row[i] = string(text(c.text).truncateVisible(t.columns[i].maxVisible, ' '))
+			row[i] = c.text.truncateVisible(t.columns[i].maxVisible, ' ')
 			if c.color != "" {
-				row[i] = c.color + row[i] + reset
+				row[i] = append(append(text(c.color), row[i]...), reset...)
 			}
 		}
 		t.rows = append(t.rows, row)
@@ -1325,10 +1327,10 @@ func (t *table) allocateWidths() {
 	used := make([]int, n)
 	for _, line := range t.pending {
 		for i, c := range line {
-			if c.text == "" {
+			if len(c.text) == 0 {
 				continue
 			}
-			used[i] = max(used[i], text(c.text).truncateVisible(limits[i], ' ').width())
+			used[i] = max(used[i], c.text.truncateVisible(limits[i], ' ').width())
 		}
 	}
 	for i := range t.columns {
@@ -1421,8 +1423,8 @@ func (t *table) extractFromList(n *parse.ListNode) ([]string, error) {
 	return headers, nil
 }
 
-func mkBold(s string) string {
-	return "\x1b[1m" + s + "\x1b[0m"
+func mkBold(s string) text {
+	return text("\x1b[1m" + s + "\x1b[0m")
 }
 
 // theoretically we could make this public with additional options.

@@ -4,7 +4,6 @@
 package tui
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -22,12 +21,12 @@ type multichoice struct {
 	selected  []bool
 	active    int
 
-	inactive []bbuf
+	inactive []text
 	widths   []int
 	Default  []any
 
 	LabelTemplate     string
-	labelBuf          bytes.Buffer
+	labelBuf          text
 	ItemTemplate      string
 	itemTemplate      *template.Template
 	MoreItemsTemplate string
@@ -94,7 +93,7 @@ func (m *multichoice) render(io *termIO, buf *viewport) error {
 	var longest int
 	if len(m.displayed) == 0 {
 		m.trie = newTrie()
-		m.inactive = make([]bbuf, len(m.Items))
+		m.inactive = make([]text, len(m.Items))
 		m.widths = make([]int, len(m.Items))
 		m.relevant = make([]int, len(m.Items))
 		for i, item := range m.Items {
@@ -103,7 +102,7 @@ func (m *multichoice) render(io *termIO, buf *viewport) error {
 				return fmt.Errorf("inactive: %w", err)
 			}
 			m.trie.Add(m.inactive[i], i)
-			m.widths[i] = text(m.inactive[i]).width()
+			m.widths[i] = m.inactive[i].width()
 			m.relevant[i] = i
 			longest = max(longest, m.widths[i])
 		}
@@ -111,7 +110,7 @@ func (m *multichoice) render(io *termIO, buf *viewport) error {
 	}
 	// re-derive visible rows from current height
 	m.clampDisplay(io.Height)
-	var bufMore bbuf
+	var bufMore text
 	total := len(m.relevant)
 	height := min(total, io.Height/2)
 	if total > len(m.displayed) {
@@ -122,20 +121,20 @@ func (m *multichoice) render(io *termIO, buf *viewport) error {
 		if err != nil {
 			return fmt.Errorf("more: %w", err)
 		}
-		longest = max(longest, text(bufMore).width())
+		longest = max(longest, bufMore.width())
 	}
-	var item bbuf
+	var item text
 	var itemW int
 	err = buf.WriteByte('\r') // ensure we start from the leftmost position
 	if err != nil {
 		return fmt.Errorf("rewind: %w", err)
 	}
-	label := m.labelBuf.Bytes()
+	label := m.labelBuf
 	// TODO: we still have issues when label overflows the terminal width - some terminals wrap it, some don't.
 	// proper solution would be to use viewports and scroll the label as well
-	prefix = text(label).width()
+	prefix = label.width()
 	if prefix > io.Width {
-		label = text(label).truncateVisible(io.Width-1, ' ')
+		label = label.truncateVisible(io.Width-1, ' ')
 	}
 	_, err = buf.Write(label)
 	if err != nil {
@@ -157,14 +156,14 @@ func (m *multichoice) render(io *termIO, buf *viewport) error {
 			if err != nil {
 				return fmt.Errorf("active: %w", err)
 			}
-			itemW = text(item).width()
+			itemW = item.width()
 		} else {
 			item = m.inactive[j]
 			itemW = m.widths[j]
 		}
 		if itemW > io.Width {
 			// this may fail if active item is wider than the terminal, but we can solve this later
-			item = bbuf(text(item).truncateVisible(io.Width-1, '\n'))
+			item = item.truncateVisible(io.Width-1, '\n')
 		}
 		_, err = buf.Write(item)
 		if err != nil {
