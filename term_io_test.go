@@ -747,3 +747,34 @@ func TestTermIORestoreReleasesViewportAndLeavesRawModeOnce(t *testing.T) {
 	assert.Equal(t, 1, restores) // must not undo raw mode a later prompt entered
 	assert.Equal(t, 0, managedViewports(cio))
 }
+
+func TestInput_ScriptedReaderAndWriter(t *testing.T) {
+	var out bytes.Buffer
+	value, err := Input(context.Background(), "Name",
+		WithInput(strings.NewReader("alice\r")), WithOutput(&out))
+	assert.NoError(t, err)
+	assert.Equal(t, "alice", value)
+	assert.Contains(t, out.String(), "Name")
+}
+
+func TestDropdown_ScriptedReaderAndWriter(t *testing.T) {
+	var out bytes.Buffer
+	// Down, Enter
+	value, err := Dropdown(context.Background(), "Pick", []string{"a", "b", "c"},
+		WithInput(strings.NewReader("\x1b[B\r")), WithOutput(&out))
+	assert.NoError(t, err)
+	assert.Equal(t, "b", value)
+}
+
+func TestConfirm_ScriptedReaderAndWriter(t *testing.T) {
+	var out bytes.Buffer
+	ok := Confirm(context.Background(), "Proceed",
+		WithInput(strings.NewReader("\r")), WithOutput(&out))
+	assert.True(t, ok)
+}
+
+func TestInput_ScriptedInputDefaultOutput(t *testing.T) {
+	value, err := Input(context.Background(), "Name", WithInput(strings.NewReader("bob\r")))
+	assert.NoError(t, err)
+	assert.Equal(t, "bob", value)
+}

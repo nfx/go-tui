@@ -111,6 +111,33 @@ func makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
 	}, restore), nil
 }
 
+// plainWidth is the geometry assumed for scripted input and output.
+const plainWidth, plainHeight = 80, 24
+
+// makePromptIO acquires the terminal for prompts. Input that is not a file
+// descriptor, e.g. a [strings.Reader] passed to WithInput, cannot be a terminal,
+// so prompts then read it as scripted input and write frames to out as plain
+// text without raw mode or a managed viewport. Real descriptors still require a terminal.
+func makePromptIO(in io.Reader, out io.Writer) (*termIO, error) {
+	_, isInFD := in.(descriptor)
+	_, isOutFD := out.(descriptor)
+	_, isOutChanIO := out.(*chanIO)
+	if isInFD && (isOutFD || isOutChanIO) {
+		return makeTermIO(in, out)
+	}
+	t := &termIO{
+		in:       in,
+		input:    sharedInputState(in),
+		out:      out,
+		Width:    plainWidth,
+		Height:   plainHeight,
+		onResize: nil, // never fires
+	}
+	t.modeRestore = func() error { return nil }
+	t.Restore = t.modeRestore
+	return t, nil
+}
+
 // withRestore makes Restore release the viewport, then leave raw mode.
 // Raw mode is left at most once: a repeated call must not restore the mode
 // saved at acquisition over raw mode that a later prompt has entered.

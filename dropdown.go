@@ -453,7 +453,7 @@ func newDropdown(ctx context.Context) *dropdown {
 		out:                  out,
 		Ctx:                  ctx,
 		Label:                "Select from list",
-		makeTermIO:           makeTermIO,
+		makeTermIO:           makePromptIO,
 		LabelTemplate:        DefaultLabelTemplate,
 		ActiveItemTemplate:   DefaultDropdownActiveItemTemplate,
 		InactiveItemTemplate: DefaultDropdownInactiveItemTemplate,
