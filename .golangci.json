@@ -114,7 +114,6 @@
          "noctx",
          "nolintlint",
          "nosprintfhostport",
-         "ownfunc",
          "perfsprint",
          "predeclared",
          "promlinter",
