@@ -82,9 +82,9 @@ Example:
 tui.WithActiveItemTemplate(`{{ .Name }} {{ dim (ago .UpdatedAt) }}`)
 ```
 
-## Dropdown-specific helper
+## Choice label helper
 
-Dropdown templates also expose:
+Dropdown and multichoice templates also expose:
 
 - `label`
 
@@ -103,3 +103,9 @@ Use `WithFn(name, fn)` to register your own global helper.
 ```go
 tui.WithFn("upper", strings.ToUpper)
 ```
+
+Multichoice item templates receive raw items (map entries have `.Key` and
+`.Value`). Its answer template receives `.Label`, `.Count`, and the ordered
+`.Answer` collection. Use `{{range .Answer}}{{label .}}{{else}}none{{end}}`
+for collection answers. See [Multichoice](multichoice.md) for the shared content
+templates and default matching contract.

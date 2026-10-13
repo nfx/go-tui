@@ -9,6 +9,7 @@ Core guides:
 - [Shared Options and Helpers](options-and-helpers.md)
 - [Template Functions](template-functions.md)
 - [Dropdowns](dropdowns.md)
+- [Multichoice](multichoice.md)
 - [Input and Password](input.md)
 - [Progress Bars](progressbar.md)
 - [Spinners](spinners.md)

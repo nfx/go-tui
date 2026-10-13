@@ -582,8 +582,12 @@ type failWriter struct {
 	err error
 }
 
+// Write retains the first output failure, treating incomplete writes as errors.
 func (f *failWriter) Write(p []byte) (int, error) {
 	n, err := f.w.Write(p)
+	if err == nil && n < len(p) {
+		err = io.ErrShortWrite
+	}
 	if err != nil && f.err == nil {
 		f.err = err
 	}

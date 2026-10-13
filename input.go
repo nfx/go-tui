@@ -57,6 +57,8 @@ type inputConfirmed struct {
 // WithDefault pre-fills the typed text of an input. For a dropdown it is only a
 // match hint, not a pre-filled filter: items are ranked by similarity to d, and
 // the dropdown returns early only when exactly one item matches d as a prefix.
+// Multichoice checks a unique word-prefix match once and still requires Enter.
+// Lazy multichoice resolves the hint after successful exhaustion.
 func WithDefault(d string) opt {
 	return opT(func(x withPrompt) error {
 		x.setDefault(d)

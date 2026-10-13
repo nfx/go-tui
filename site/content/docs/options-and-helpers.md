@@ -9,10 +9,11 @@ misplaced option fails instead of silently doing nothing.
 
 | Option | Supported by |
 |---|---|
-| `WithInput`, `WithOutput` | `Input`, `Password`, dropdowns, `Confirm`, `FilePicker`, `NewSpinners`, progress bars |
-| `WithDefault`, `WithHide`, `WithLabelTemplate`, `WithAnswerTemplate` | `Input`, `Password`, dropdowns, `Confirm`, `FilePicker` |
+| `WithInput`, `WithOutput` | `Input`, `Password`, dropdowns, multichoice, `Confirm`, `FilePicker`, `NewSpinners`, progress bars |
+| `WithDefault`, `WithHide`, `WithLabelTemplate`, `WithAnswerTemplate` | `Input`, `Password`, dropdowns, multichoice, `Confirm`, `FilePicker` |
 | `WithNonEmpty` | `Input`, `Password` |
-| other `With*Template`, `WithTemplate`, `WithOneReturn` | dropdowns, `Confirm`, `FilePicker` |
+| other `With*Template`, `WithTemplate`, `WithFieldTemplate` | dropdowns, multichoice, `Confirm`, `FilePicker` |
+| `WithOneReturn` | dropdowns, `Confirm`, `FilePicker` |
 | `WithStartDir`, `WithExtensions`, `WithIgnoreUp`, `WithIgnoreDirs`, `WithShowHidden` | `FilePicker` |
 | `WithPrefixf`, `WithKeep`, `WithFrames` | `Spinners.Add` |
 | `WithFormatRate`, `WithWorkers` | progress bars |
@@ -24,7 +25,7 @@ effect when you pass an explicit row template.
 
 ## Context
 
-Interactive and long-running widgets (`Input`, `Password`, dropdowns, `Confirm`,
+Interactive and long-running widgets (`Input`, `Password`, dropdowns, multichoice, `Confirm`,
 `FilePicker`, `NewSpinners` and progress bars) take a `context.Context` as the
 first argument. Cancelling it, for example on Ctrl-C or a parent shutdown,
 stops the widget and its workers. For an upper bound on interaction time,
@@ -51,7 +52,7 @@ treated as scripted input: the prompt skips raw mode and the managed viewport,
 assumes an 80x24 terminal, and writes plain frames, including ANSI cursor
 sequences, to the output. Send keys as terminal bytes, for example `\r` for
 Enter and `\x1b[B` for Down. This applies to `Input`, `Password`, dropdowns,
-`Confirm` and `FilePicker`. Spinners and progress bars still need a terminal and
+multichoice, `Confirm` and `FilePicker`. Spinners and progress bars still need a terminal and
 stay silent without one.
 
 ## WithOutput
@@ -116,6 +117,8 @@ All predefined helper functions are documented on
 ## Common errors
 
 - `ErrNoItems`: selection widget called with empty items.
+- `ErrInvalidOption`: nil multichoice lazy sequence.
+- `ErrEmptyLazyResult`: a completed lazy selection source contains no items.
 - `ErrInvalidState`: invalid option value or configuration.
 - `ErrUnsupportedPlatform`: platform-specific feature unavailable.
 - `ErrWrongWidget`: option is not supported by the widget it was passed to.
