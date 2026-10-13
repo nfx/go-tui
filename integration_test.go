@@ -999,7 +999,7 @@ func TestMultichoiceManagedCancelAndDeadline(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			if deadline {
 				cancel()
-				ctx, cancel = context.WithTimeout(t.Context(), 100*time.Millisecond)
+				ctx, cancel = context.WithTimeout(t.Context(), 750*time.Millisecond)
 			}
 			defer cancel()
 			res := prompt(func() (string, error) {
@@ -1020,7 +1020,7 @@ func TestMultichoiceManagedCancelAndDeadline(t *testing.T) {
 				if !errors.Is(got.err, want) {
 					t.Fatal(got.err)
 				}
-			case <-time.After(time.Second):
+			case <-time.After(failsafe):
 				t.Fatal("cancel blocked")
 			}
 			term.waitRows(t)

@@ -12,6 +12,7 @@ import (
 	"os"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -34,11 +35,11 @@ type termIO struct {
 	cio *chanIO
 	vp  *viewport
 
-	pending   []byte
-	pendingAt time.Time // pending bytes retain their source-read arrival time
-	readAt    time.Time // arrival of the most recent Read
-	eventAt   time.Time // arrival of the first bytes of the current event
-	bm1, bm2  byte
+	pending      []byte
+	pendingOrder uint64 // pending bytes retain their source-read order
+	readOrder    uint64 // order of the most recent Read
+	eventOrder   uint64 // order of the first bytes of the current event
+	bm1, bm2     byte
 	// splitKeys decodes keys returned together by one read one at a time,
 	// keeping the rest pending, instead of reporting them as a paste.
 	splitKeys bool
@@ -194,16 +195,16 @@ func (t *termIO) release() {
 	t.cio.releaseViewport(t.vp)
 }
 
-// Read preserves buffered arrival times and timestamps fresh source bytes.
+// Read preserves buffered arrival order and assigns an order to fresh source bytes.
 func (t *termIO) Read(p []byte) (n int, err error) {
 	if len(t.pending) > 0 {
 		n = copy(p, t.pending)
-		t.readAt = t.pendingAt
+		t.readOrder = t.pendingOrder
 		t.pending = t.pending[n:]
 		return n, nil
 	}
 	n, err = t.in.Read(p)
-	t.readAt = time.Now()
+	t.readOrder = nextInputOrder()
 	return n, err
 }
 
@@ -273,12 +274,20 @@ func (t *termIO) readRune(ctx context.Context) (rune, int, error) {
 	return t.decodeRuneBytes(buf, n)
 }
 
+// inputOrder orders reads, loading completion, and cancellation even when
+// the system clock returns equal timestamps for successive events.
+var inputOrder atomic.Uint64
+
+func nextInputOrder() uint64 {
+	return inputOrder.Add(1)
+}
+
 type keyEvent struct {
 	key       rune
 	err       error
 	paste     []byte
 	bracketed bool
-	readAt    time.Time
+	readOrder uint64
 }
 
 // readEvents reads one event per permit; nil permits reads a single event.
@@ -333,7 +342,7 @@ func (t *termIO) readEvents(ctx context.Context, permits <-chan struct{}) <-chan
 				return
 			case ch <- event:
 				t.pending = read.pending
-				t.pendingAt = read.pendingAt
+				t.pendingOrder = read.pendingOrder
 				consumed()
 			}
 			if permits == nil || (read.event.err != nil && read.event.paste == nil) {
@@ -345,12 +354,12 @@ func (t *termIO) readEvents(ctx context.Context, permits <-chan struct{}) <-chan
 }
 
 // shapeEvent adapts a completed read to the consumer's paste mode, dropping
-// bracketed events that were read before the discard deadline.
+// bracketed events whose opening bytes preceded cancellation.
 func (t *termIO) shapeEvent(read *inputRead) keyEvent {
 	inputStates.Lock()
 	defer inputStates.Unlock()
 	event := read.event
-	if event.bracketed && event.readAt.Before(read.discardBefore) {
+	if event.bracketed && event.readOrder < read.discardBefore {
 		return keyEvent{key: keyIgnored}
 	}
 	if event.bracketed && !t.bracketedPaste {
@@ -398,7 +407,7 @@ func (t *termIO) refreshSize() {
 func (t *termIO) readRuneBytes(ctx context.Context) ([]byte, int, error) {
 	buf := make([]byte, 16)
 	n, err := t.Read(buf)
-	t.eventAt = t.readAt
+	t.eventOrder = t.readOrder
 	if n == 0 {
 		if err == nil {
 			err = io.EOF
@@ -591,15 +600,15 @@ func (t *termIO) decodeCSIArrow(buf []byte) (rune, int, bool) {
 	return 0, 0, false
 }
 
-// pushPending retains unread bytes and their source arrival time for the next event.
+// pushPending retains unread bytes and their source arrival order for the next event.
 func (t *termIO) pushPending(buf []byte, consumed, n int) {
 	if consumed >= n {
 		return
 	}
 	// Read drains one source buffer before fetching more, so all leftovers
-	// share its arrival time. Prepend them to the remaining pending bytes.
+	// share its arrival order. Prepend them to the remaining pending bytes.
 	t.pending = append(buf[consumed:n:n], t.pending...)
-	t.pendingAt = t.readAt
+	t.pendingOrder = t.readOrder
 }
 
 // clear erases the given number of terminal lines using
@@ -660,18 +669,18 @@ func isPrintable(r rune) bool {
 type inputRead struct {
 	done          chan struct{}
 	event         keyEvent
-	discardBefore time.Time
+	discardBefore uint64
 	pending       []byte
-	pendingAt     time.Time
+	pendingOrder  uint64
 }
 
 // inputState retains only input decoding state across sequential prompt runs.
 // The registry contains states with an outstanding read or buffered bytes.
 type inputState struct {
-	source    any
-	read      *inputRead
-	pending   []byte
-	pendingAt time.Time
+	source       any
+	read         *inputRead
+	pending      []byte
+	pendingOrder uint64
 }
 
 var inputStates = struct {
@@ -727,9 +736,9 @@ func (t *termIO) startRead(ctx context.Context) (*inputRead, func()) {
 		read := state.read
 		return read, func() { t.acceptRead(state, read) }
 	}
-	pending, pendingAt := state.pending, state.pendingAt
+	pending, pendingOrder := state.pending, state.pendingOrder
 	if len(pending) == 0 {
-		pending, pendingAt = t.pending, t.pendingAt
+		pending, pendingOrder = t.pending, t.pendingOrder
 	}
 	read := &inputRead{done: make(chan struct{})}
 	state.read = read
@@ -737,7 +746,7 @@ func (t *termIO) startRead(ctx context.Context) (*inputRead, func()) {
 		inputStates.states[state.source] = state
 	}
 	// The read owns its decoder even after its original prompt returns.
-	decoder := &termIO{in: t.in, pending: pending, pendingAt: pendingAt, splitKeys: t.splitKeys}
+	decoder := &termIO{in: t.in, pending: pending, pendingOrder: pendingOrder, splitKeys: t.splitKeys}
 	readCtx := context.WithoutCancel(ctx)
 	go func() {
 		defer close(read.done)
@@ -745,7 +754,7 @@ func (t *termIO) startRead(ctx context.Context) (*inputRead, func()) {
 		read.event = event
 		err := event.err
 		read.pending = decoder.pending
-		read.pendingAt = decoder.pendingAt
+		read.pendingOrder = decoder.pendingOrder
 		// A failed read with no key or buffered bytes has nothing to hand off.
 		// Release its source even when the cancelled prompt never accepts it.
 		if n == 0 && err != nil && len(read.pending) == 0 {
@@ -768,7 +777,7 @@ func (t *termIO) acceptRead(state *inputState, read *inputRead) {
 	}
 	state.read = nil
 	state.pending = read.pending
-	state.pendingAt = read.pendingAt
+	state.pendingOrder = read.pendingOrder
 	if state.source != nil && len(state.pending) == 0 && inputStates.states[state.source] == state {
 		delete(inputStates.states, state.source)
 	}
@@ -776,7 +785,7 @@ func (t *termIO) acceptRead(state *inputState, read *inputRead) {
 
 // readEvent keeps paste framing with the retained read so partial payloads cannot become keys.
 func (t *termIO) readEvent(ctx context.Context) (event keyEvent, size int) {
-	defer func() { event.readAt = t.eventAt }()
+	defer func() { event.readOrder = t.eventOrder }()
 	buf, n, err := t.readRuneBytes(ctx)
 	if err != nil {
 		return keyEvent{err: err}, n
@@ -826,18 +835,18 @@ func (t *termIO) readBracketedPayload() ([]byte, error) {
 func (t *termIO) abandonPaste(read *inputRead) {
 	inputStates.Lock()
 	defer inputStates.Unlock()
-	read.discardBefore = time.Now()
+	read.discardBefore = nextInputOrder()
 }
 
-// replayKeys retains a coalesced event's arrival time and post-Enter bytes.
+// replayKeys retains a coalesced event's arrival order and post-Enter bytes.
 func (t *termIO) replayKeys(event keyEvent) {
 	t.awaitReader()
 	state := t.inputState()
 	inputStates.Lock()
 	defer inputStates.Unlock()
 	state.pending = append(append([]byte(nil), event.paste...), state.pending...)
-	state.pendingAt = event.readAt
-	t.pending, t.pendingAt = state.pending, state.pendingAt
+	state.pendingOrder = event.readOrder
+	t.pending, t.pendingOrder = state.pending, state.pendingOrder
 	if state.source != nil {
 		inputStates.states[state.source] = state
 	}

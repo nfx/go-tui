@@ -14,7 +14,6 @@ import (
 	"sort"
 	"strings"
 	"text/template"
-	"time"
 	"unicode"
 )
 
@@ -141,6 +140,7 @@ type multichoice struct {
 	InactiveItemTemplate string
 	MoreItemsTemplate    string
 	AnswerTemplate       string
+	answerSet            bool // an explicit WithAnswerTemplate wins over generated ones
 	ItemTemplate         string
 
 	labelBuf             text
@@ -169,7 +169,7 @@ type multichoice struct {
 	manualFocus bool
 
 	// Reject Enter decoded during loading even if exhaustion is handled first.
-	readyAt    time.Time
+	readyOrder uint64
 	producer   iter.Seq2[any, error]
 	in         io.Reader
 	out        io.Writer
@@ -209,7 +209,7 @@ func (m *multichoice) setHide() { m.Hide = true }
 func (m *multichoice) setLabelTemplate(t string) { m.LabelTemplate = t }
 
 // setAnswerTemplate configures the confirmed collection summary.
-func (m *multichoice) setAnswerTemplate(t string) { m.AnswerTemplate = t }
+func (m *multichoice) setAnswerTemplate(t string) { m.AnswerTemplate, m.answerSet = t, true }
 
 // setDefault records a selection hint without pre-filling the filter.
 func (m *multichoice) setDefault(hint string) { m.hint = hint }
@@ -231,10 +231,12 @@ func (m *multichoice) setContentTemplate(main string, details ...string) {
 	}
 	m.ActiveItemTemplate = fmt.Sprintf(`{{cyan %s}}%s`, main, extra)
 	m.InactiveItemTemplate = fmt.Sprintf(`{{%s}}`, main)
-	m.AnswerTemplate = fmt.Sprintf(
-		`{{dim "✔ " .Label " …"}} {{range $i, $item := .Answer}}{{if $i}}, {{end}}{{bold %s}}{{else}}none{{end}}`,
-		main,
-	)
+	if !m.answerSet {
+		m.AnswerTemplate = fmt.Sprintf(
+			`{{dim "✔ " .Label " …"}} {{range $i, $item := .Answer}}{{if $i}}, {{end}}{{bold %s}}{{else}}none{{end}}`,
+			main,
+		)
+	}
 }
 
 // setFieldTemplate keeps named fields consistent across rows and collection answers.
@@ -246,10 +248,12 @@ func (m *multichoice) setFieldTemplate(fields ...string) {
 	main := strings.Join(expr, ` ", " `)
 	m.ActiveItemTemplate = fmt.Sprintf(`{{cyan %s}}`, main)
 	m.InactiveItemTemplate = fmt.Sprintf(`{{print %s}}`, main)
-	m.AnswerTemplate = fmt.Sprintf(
-		`{{dim "✔ " .Label " …"}} {{range $i, $item := .Answer}}{{if $i}}, {{end}}{{bold %s}}{{else}}none{{end}}`,
-		main,
-	)
+	if !m.answerSet {
+		m.AnswerTemplate = fmt.Sprintf(
+			`{{dim "✔ " .Label " …"}} {{range $i, $item := .Answer}}{{if $i}}, {{end}}{{bold %s}}{{else}}none{{end}}`,
+			main,
+		)
+	}
 }
 
 // prepare validates options and builds item caches before acquiring terminal resources.
@@ -635,7 +639,7 @@ func (m *multichoice) finishLoading() error {
 		return ErrEmptyLazyResult
 	}
 	m.resolveDefault()
-	m.readyAt = time.Now()
+	m.readyOrder = nextInputOrder()
 	return nil
 }
 
@@ -796,7 +800,7 @@ func (m *multichoice) acceptEvent(tio *termIO, ev keyEvent) (bool, error) {
 		tio.replayKeys(ev)
 	case ev.err != nil:
 		return false, fmt.Errorf("input: %w", ev.err)
-	case ev.key == keyEnter && !m.readyAt.IsZero() && ev.readAt.Before(m.readyAt):
+	case ev.key == keyEnter && m.readyOrder != 0 && ev.readOrder < m.readyOrder:
 		return false, nil
 	default:
 		return m.handleKey(ev.key), nil

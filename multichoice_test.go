@@ -745,11 +745,11 @@ func TestMultichoiceEnterDecodedBeforeExhaustionCannotConfirm(t *testing.T) {
 	if err := m.finishLoading(); err != nil {
 		t.Fatal(err)
 	}
-	done, err := m.acceptEvent(&termIO{}, keyEvent{key: keyEnter, readAt: m.readyAt.Add(-time.Nanosecond)})
+	done, err := m.acceptEvent(&termIO{}, keyEvent{key: keyEnter, readOrder: m.readyOrder - 1})
 	if done || err != nil {
 		t.Fatal(done, err)
 	}
-	done, err = m.acceptEvent(&termIO{}, keyEvent{key: keyEnter, readAt: m.readyAt})
+	done, err = m.acceptEvent(&termIO{}, keyEvent{key: keyEnter, readOrder: m.readyOrder})
 	if !done || err != nil {
 		t.Fatal(done, err)
 	}
@@ -1314,8 +1314,8 @@ func TestMultichoiceBufferedEnterRetainsArrival(t *testing.T) {
 			read, accept := old.startRead(t.Context())
 			<-read.done
 			accept()
-			if read.event.readAt.IsZero() {
-				t.Fatal("source read has no arrival time")
+			if read.event.readOrder == 0 {
+				t.Fatal("source read has no arrival order")
 			}
 			if err := m.finishLoading(); err != nil {
 				t.Fatal(err)
@@ -1325,14 +1325,14 @@ func TestMultichoiceBufferedEnterRetainsArrival(t *testing.T) {
 					t.Fatal(done, err)
 				}
 			}
-			// A fresh termIO must preserve both pending and replayed arrival times.
+			// A fresh termIO must preserve both pending and replayed arrival orders.
 			next := &termIO{in: in, splitKeys: true, bracketedPaste: true}
 			for range tc.buffered {
 				buffered, consume := next.startRead(t.Context())
 				<-buffered.done
 				consume()
-				if !buffered.event.readAt.Equal(read.event.readAt) {
-					t.Fatal("buffered bytes lost their source-read time")
+				if buffered.event.readOrder != read.event.readOrder {
+					t.Fatal("buffered bytes lost their source-read order")
 				}
 				if done, err := m.acceptEvent(next, buffered.event); done || err != nil {
 					t.Fatalf("old Enter confirmed after loading: %v, %v", done, err)
@@ -1341,8 +1341,8 @@ func TestMultichoiceBufferedEnterRetainsArrival(t *testing.T) {
 			fresh, consume := next.startRead(t.Context())
 			<-fresh.done
 			consume()
-			if fresh.event.readAt.Before(m.readyAt) {
-				t.Fatal("fresh Enter retained an old arrival time")
+			if fresh.event.readOrder <= m.readyOrder {
+				t.Fatal("fresh Enter retained an old arrival order")
 			}
 			if done, err := m.acceptEvent(next, fresh.event); !done || err != nil {
 				t.Fatalf("fresh Enter did not confirm: %v, %v", done, err)
@@ -1364,21 +1364,21 @@ func TestTermIOPasteTailRetainsFreshArrival(t *testing.T) {
 	}
 	// The decoder has observed the opening frame and is waiting for its end.
 	waitPromptRead(t, in)
-	readyAt := time.Now()
+	readyOrder := nextInputOrder()
 	if _, err := typing.Write([]byte("\x1b[201~\r")); err != nil {
 		t.Fatal(err)
 	}
 	<-read.done
 	accept()
-	if !read.event.bracketed || !read.event.readAt.Before(readyAt) {
-		t.Fatal("paste lost the arrival time of its opening frame")
+	if !read.event.bracketed || read.event.readOrder >= readyOrder {
+		t.Fatal("paste lost the arrival order of its opening frame")
 	}
 	next := &termIO{in: in, splitKeys: true, bracketedPaste: true}
 	tail, consume := next.startRead(t.Context())
 	<-tail.done
 	consume()
-	if tail.event.key != keyEnter || tail.event.readAt.Before(readyAt) {
-		t.Fatal("Enter after the closing frame retained the paste's old arrival time")
+	if tail.event.key != keyEnter || tail.event.readOrder <= readyOrder {
+		t.Fatal("Enter after the closing frame retained the paste's old arrival order")
 	}
 }
 
@@ -1421,5 +1421,23 @@ func TestMultichoiceDefaultStreams(t *testing.T) {
 			assert.Equal(t, in, m.in)
 			assert.Equal(t, wantOut, m.out)
 		})
+	}
+}
+
+func TestExplicitAnswerTemplateSurvivesContentTemplates(t *testing.T) {
+	for name, content := range map[string]opt{"template": WithTemplate(".Name"), "field": WithFieldTemplate("Name")} {
+		for _, answerFirst := range []bool{true, false} {
+			m := newMultichoice(t.Context())
+			o := []opt{WithAnswerTemplate("custom"), content}
+			if !answerFirst {
+				o = []opt{content, WithAnswerTemplate("custom")}
+			}
+			if err := opts(o).Apply(m); err != nil {
+				t.Fatal(err)
+			}
+			if m.AnswerTemplate != "custom" {
+				t.Fatalf("%s answerFirst=%v: %q", name, answerFirst, m.AnswerTemplate)
+			}
+		}
 	}
 }
