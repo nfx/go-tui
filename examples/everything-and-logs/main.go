@@ -24,9 +24,7 @@ func main() {
 		<-logDone
 	}()
 
-	spinners, err := tui.NewSpinners(
-		tui.WithContext(ctx), // TODO: require context by default
-	)
+	spinners, err := tui.NewSpinners(ctx)
 	if errors.Is(err, io.EOF) {
 		return
 	}
@@ -75,9 +73,8 @@ func addBackgroundSpinner(ctx context.Context, spinners *tui.Spinners, prefix st
 
 func runStaticDropdown(ctx context.Context, spinner *tui.Spinner) (string, bool) {
 	spinner.Update("active")
-	flavor, err := tui.Dropdown("Flavor:", []string{
-		"apple", "banana", "cider", "pineapple", "pizza"},
-		tui.WithContext(ctx))
+	flavor, err := tui.Dropdown(ctx, "Flavor:", []string{
+		"apple", "banana", "cider", "pineapple", "pizza"})
 	if errors.Is(err, io.EOF) {
 		return "", false
 	}
@@ -87,7 +84,7 @@ func runStaticDropdown(ctx context.Context, spinner *tui.Spinner) (string, bool)
 
 func runLazyDropdown(ctx context.Context, spinner *tui.Spinner) bool {
 	spinner.Update("active")
-	_, err := tui.DropdownLazy("Lazy flavor:", randomLazyItems(ctx, 20))
+	_, err := tui.DropdownLazy(ctx, "Lazy flavor:", randomLazyItems(ctx, 20))
 	if errors.Is(err, io.EOF) {
 		return false
 	}
@@ -97,7 +94,7 @@ func runLazyDropdown(ctx context.Context, spinner *tui.Spinner) bool {
 
 func runPassword(ctx context.Context, spinner *tui.Spinner) bool {
 	spinner.Update("active")
-	_, err := tui.Password("Password:", tui.WithContext(ctx)) //nolint:contextcheck // example
+	_, err := tui.Password(ctx, "Password:")
 	if errors.Is(err, io.EOF) {
 		return false
 	}
@@ -107,10 +104,7 @@ func runPassword(ctx context.Context, spinner *tui.Spinner) bool {
 
 func runInput(ctx context.Context, spinner *tui.Spinner, flavor string) (string, bool) {
 	spinner.Update("active")
-	flavor, err := tui.Input( //nolint:contextcheck // example
-		"Confirm flavor:",
-		tui.WithContext(ctx),
-		tui.WithDefault(flavor))
+	flavor, err := tui.Input(ctx, "Confirm flavor:", tui.WithDefault(flavor))
 	if errors.Is(err, io.EOF) {
 		return "", false
 	}
@@ -157,9 +151,7 @@ func startProgress(ctx context.Context) <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for range tui.NewSliceProgressBar("progress", make([]int, 10_000),
-			tui.WithContext(ctx), // TODO: require context by default
-		) {
+		for range tui.NewSliceProgressBar(ctx, "progress", make([]int, 10_000)) {
 			time.Sleep(1 * time.Millisecond)
 		}
 	}()

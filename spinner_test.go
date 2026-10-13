@@ -39,7 +39,6 @@ func testIOforSpinners(t *testing.T, width, height int, o ...opt) (*chanIO, func
 		}, WithOptions(append(opts{
 			WithInput(cio),
 			WithOutput(cio),
-			WithContext(ctx),
 			opT(func(s *Spinners) error {
 				s.ticks = ticks
 				s.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -60,7 +59,7 @@ func testIOforSpinners(t *testing.T, width, height int, o ...opt) (*chanIO, func
 func spinnersForTest(t *testing.T) (*Spinners, *chanIO, func()) {
 	t.Helper()
 	cio, tick, opts := testIOforSpinners(t, 12, 4)
-	s, err := NewSpinners(opts)
+	s, err := NewSpinners(cio.ctx, opts)
 	assert.NoError(t, err)
 	return s, cio, tick
 }
@@ -77,7 +76,7 @@ func mustReceiveSpinnerEvent(t *testing.T, ch <-chan spinnerEvent) spinnerEvent 
 	}
 }
 
-func testLongRunningWithNewSpinners(t *testing.T, cb func(...opt) (*Spinners, error)) {
+func testLongRunningWithNewSpinners(t *testing.T, cb func(context.Context, ...opt) (*Spinners, error)) {
 	t.Helper()
 	prev := longRunningNewSpinners
 	longRunningNewSpinners = cb
@@ -88,8 +87,8 @@ func testLongRunningWithNewSpinners(t *testing.T, cb func(...opt) (*Spinners, er
 
 func TestLongRunningShowsMessageWhileCbRuns(t *testing.T) {
 	cio, tick, spinnerOpts := testIOforSpinners(t, 24, 5)
-	testLongRunningWithNewSpinners(t, func(opt ...opt) (*Spinners, error) {
-		return NewSpinners(append(opts{spinnerOpts}, opt...)...)
+	testLongRunningWithNewSpinners(t, func(_ context.Context, opt ...opt) (*Spinners, error) {
+		return NewSpinners(cio.ctx, append(opts{spinnerOpts}, opt...)...)
 	})
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -114,7 +113,7 @@ func TestLongRunningShowsMessageWhileCbRuns(t *testing.T) {
 }
 
 func TestLongRunningFallsBackWhenSpinnerSetupFails(t *testing.T) {
-	testLongRunningWithNewSpinners(t, func(...opt) (*Spinners, error) {
+	testLongRunningWithNewSpinners(t, func(context.Context, ...opt) (*Spinners, error) {
 		return nil, errors.New("spinner setup failed")
 	})
 	expected := errors.New("callback failed")
@@ -281,8 +280,8 @@ func TestSpinnerStateNext(t *testing.T) {
 
 func TestSpinnersContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	cio, tick, opts := testIOforSpinners(t, 12, 4, WithContext(ctx))
-	s, err := NewSpinners(opts)
+	cio, tick, opts := testIOforSpinners(t, 12, 4)
+	s, err := NewSpinners(ctx, opts)
 	assert.NoError(t, err)
 
 	spinner, err := s.Add(ctx)
@@ -324,7 +323,7 @@ func TestNewSpinnersError(t *testing.T) {
 		return errors.New("test error")
 	}
 
-	_, err := NewSpinners(errorOpt)
+	_, err := NewSpinners(t.Context(), errorOpt)
 	assert.Error(t, err)
 }
 
@@ -378,7 +377,7 @@ func TestSpinnerFailedState(t *testing.T) {
 }
 
 func TestSpinnersDrainQueues(t *testing.T) {
-	s := newSpinners()
+	s := newSpinners(t.Context())
 	s.creates = make(chan createSpinner, 1)
 	s.updates = make(chan updateOffset, 1)
 	s.stops = make(chan int, 1)
@@ -405,7 +404,7 @@ func TestSpinnersDrainQueues(t *testing.T) {
 }
 
 func TestSpinnersUpdateOffsetSends(t *testing.T) {
-	s := newSpinners()
+	s := newSpinners(t.Context())
 	s.updates = make(chan updateOffset, 1)
 	s.updateOffset(2, "note", nil)
 	got := <-s.updates
@@ -415,7 +414,7 @@ func TestSpinnersUpdateOffsetSends(t *testing.T) {
 }
 
 func TestSpinnersUpdateOffsetContextDone(t *testing.T) {
-	s := newSpinners()
+	s := newSpinners(t.Context())
 	s.updates = make(chan updateOffset, 1)
 	s.cancel()
 	s.updateOffset(1, "msg", nil)
@@ -427,7 +426,7 @@ func TestSpinnersUpdateOffsetContextDone(t *testing.T) {
 }
 
 func TestSpinnersAddContextDone(t *testing.T) {
-	s := newSpinners()
+	s := newSpinners(t.Context())
 	s.cancel()
 	_, err := s.Add(t.Context())
 	if err == nil {
@@ -447,7 +446,7 @@ func TestSpinnersAddWithCanceledContext(t *testing.T) {
 }
 
 func TestSpinnersMustAddBackgroundPanics(t *testing.T) {
-	s := newSpinners()
+	s := newSpinners(t.Context())
 	s.cancel()
 	defer func() {
 		if recover() == nil {
@@ -465,7 +464,7 @@ func TestSpinnersEmitStructuredEvents(t *testing.T) {
 		}
 		return nil
 	}))
-	s, err := NewSpinners(opts)
+	s, err := NewSpinners(t.Context(), opts)
 	assert.NoError(t, err)
 	defer s.Close()
 

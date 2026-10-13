@@ -1,16 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/nfx/go-tui"
 )
 
 func main() {
+	ctx := context.Background()
 	items := []any{"red", "green", "blue", "cyan", "magenta", "yellow", "black", "white"}
 
 	// DropdownIndex returns a position of the selected item instead of the item.
-	idx, err := tui.DropdownIndex("Pick a color", items,
+	idx, err := tui.DropdownIndex(ctx, "Pick a color", items,
 		// WithOptions bundles several options into one
 		tui.WithOptions(
 			tui.WithLabelTemplate(`{{ "🎨" }} {{ . | bold | underline }}`),

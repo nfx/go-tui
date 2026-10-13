@@ -125,10 +125,10 @@ func (i *input) setDefault(typed string) {
 	i.cursor = utf8.RuneCountInString(typed)
 }
 
-func newInput(label string) *input {
+func newInput(ctx context.Context, label string) *input {
 	in, out := defaultStreams()
 	return &input{
-		ctx:            context.Background(),
+		ctx:            ctx,
 		out:            out,
 		in:             in,
 		Label:          label,
@@ -138,13 +138,13 @@ func newInput(label string) *input {
 	}
 }
 
-func Input(label string, option ...opt) (string, error) {
-	i := newInput(label)
+func Input(ctx context.Context, label string, option ...opt) (string, error) {
+	i := newInput(ctx, label)
 	return i.read(option...)
 }
 
-func Password(label string, option ...opt) (string, error) {
-	i := newInput(label)
+func Password(ctx context.Context, label string, option ...opt) (string, error) {
+	i := newInput(ctx, label)
 	i.Password = true
 	return i.read(option...)
 }

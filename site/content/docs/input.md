@@ -11,8 +11,8 @@ APIs:
 ## Basic example
 
 ```go
-value, err := tui.Input("Project name")
-password, err := tui.Password("API token")
+value, err := tui.Input(ctx, "Project name")
+password, err := tui.Password(ctx, "API token")
 ```
 
 `Password` masks entered text and does not print an answer line.
@@ -22,28 +22,8 @@ password, err := tui.Password("API token")
 Sets initial text and cursor position.
 
 ```go
-value, err := tui.Input("Project name",
+value, err := tui.Input(ctx, "Project name",
 	tui.WithDefault("demo-service"),
-)
-```
-
-## WithContext
-
-Sets interaction context.
-
-```go
-value, err := tui.Input("Project name",
-	tui.WithContext(ctx),
-)
-```
-
-## WithTimeout
-
-Stops interaction when timeout elapses.
-
-```go
-value, err := tui.Input("Project name",
-	tui.WithTimeout(20*time.Second),
 )
 ```
 
@@ -52,7 +32,7 @@ value, err := tui.Input("Project name",
 Overrides input source.
 
 ```go
-value, err := tui.Input("Project name",
+value, err := tui.Input(ctx, "Project name",
 	tui.WithInput(in),
 )
 ```
@@ -62,7 +42,7 @@ value, err := tui.Input("Project name",
 Overrides output destination.
 
 ```go
-value, err := tui.Input("Project name",
+value, err := tui.Input(ctx, "Project name",
 	tui.WithOutput(out),
 )
 ```
@@ -73,11 +53,10 @@ Bundles common options.
 
 ```go
 common := tui.WithOptions(
-	tui.WithTimeout(20*time.Second),
 	tui.WithOutput(os.Stderr),
 )
 
-value, err := tui.Input("Project name", common)
+value, err := tui.Input(ctx, "Project name", common)
 ```
 
 ## Notes

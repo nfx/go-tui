@@ -5,7 +5,7 @@ weight: 60
 
 APIs:
 
-- `NewSpinners(opts...)`
+- `NewSpinners(ctx, opts...)`
 - `(*Spinners).Add(ctx, opts...)`
 - `(*Spinners).MustAddBackground(opts...)`
 - `(*Spinners).Close()`
@@ -17,7 +17,7 @@ APIs:
 ## Basic example
 
 ```go
-group, err := tui.NewSpinners()
+group, err := tui.NewSpinners(ctx)
 if err != nil {
 	return err
 }
@@ -72,22 +72,6 @@ Detailed behavior:
 - Frame slices must be non-empty. There is no runtime guard for empty slices.
 - Keep frame width visually consistent to avoid jitter in terminal output.
 
-## WithContext
-
-Sets group context (applies to `NewSpinners`).
-
-```go
-group, err := tui.NewSpinners(tui.WithContext(ctx))
-```
-
-## WithTimeout
-
-Wraps group context with timeout.
-
-```go
-group, err := tui.NewSpinners(tui.WithTimeout(45*time.Second))
-```
-
 ## WithInput
 
 Overrides group input source.
@@ -110,7 +94,6 @@ Composes group options for reuse.
 
 ```go
 common := tui.WithOptions(
-	tui.WithContext(ctx),
 	tui.WithOutput(out),
 )
 

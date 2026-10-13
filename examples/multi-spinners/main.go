@@ -9,16 +9,17 @@ import (
 )
 
 func main() {
-	sm, err := tui.NewSpinners()
+	ctx := context.Background()
+	sm, err := tui.NewSpinners(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	first, err := sm.Add(context.Background())
+	first, err := sm.Add(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
-	ctx2, cancel2 := context.WithCancel(context.Background())
+	ctx2, cancel2 := context.WithCancel(ctx)
 	second, err := sm.Add(ctx2)
 	if err != nil {
 		log.Fatal(err)
@@ -27,7 +28,7 @@ func main() {
 	go func() {
 		first.Update("Processing task 1... A")
 		time.Sleep(2 * time.Second)
-		third, err := sm.Add(context.Background())
+		third, err := sm.Add(ctx)
 		if err != nil {
 			log.Fatal(err)
 		}

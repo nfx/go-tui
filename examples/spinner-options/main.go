@@ -9,27 +9,28 @@ import (
 )
 
 func main() {
-	spinners, err := tui.NewSpinners()
+	ctx := context.Background()
+	spinners, err := tui.NewSpinners(ctx)
 	if err != nil {
 		panic(err)
 	}
 	defer spinners.Close()
 
 	// WithKeep leaves the last message on screen after the spinner is closed.
-	kept, err := spinners.Add(context.Background(),
+	kept, err := spinners.Add(ctx,
 		tui.WithPrefixf("%s", "build"),
 		tui.WithKeep())
 	if err != nil {
 		panic(err)
 	}
 	// WithFrames replaces the animation, see also tui.SpinnerStyleDocs.
-	custom, err := spinners.Add(context.Background(),
+	custom, err := spinners.Add(ctx,
 		tui.WithPrefixf("deploy"),
 		tui.WithFrames(tui.SpinnerStyleDocs))
 	if err != nil {
 		panic(err)
 	}
-	failing, err := spinners.Add(context.Background(), tui.WithPrefixf("tests"))
+	failing, err := spinners.Add(ctx, tui.WithPrefixf("tests"))
 	if err != nil {
 		panic(err)
 	}

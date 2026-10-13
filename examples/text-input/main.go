@@ -1,9 +1,14 @@
 package main
 
-import "github.com/nfx/go-tui"
+import (
+	"context"
+
+	"github.com/nfx/go-tui"
+)
 
 func main() {
-	result, err := tui.Input("Enter something:")
+	ctx := context.Background()
+	result, err := tui.Input(ctx, "Enter something:")
 	if err != nil {
 		panic(err)
 	}

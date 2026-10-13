@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -97,11 +98,11 @@ func WithShowHidden() opt {
 
 // newFilePicker applies o to the picker and to the dropdown that shows the
 // first directory. Every option must be supported by at least one of them.
-func newFilePicker(o ...opt) (*filePicker, *dropdown, error) {
+func newFilePicker(ctx context.Context, o ...opt) (*filePicker, *dropdown, error) {
 	f := &filePicker{
 		extensions: map[string]bool{},
 	}
-	d := newDropdown()
+	d := newDropdown(ctx)
 	for _, option := range o {
 		err := applyToAny(option, f, d)
 		if err != nil {
@@ -118,8 +119,8 @@ func newFilePicker(o ...opt) (*filePicker, *dropdown, error) {
 	return f, d, nil
 }
 
-func FilePicker(title string, o ...opt) (string, error) {
-	f, d, err := newFilePicker(o...)
+func FilePicker(ctx context.Context, title string, o ...opt) (string, error) {
+	f, d, err := newFilePicker(ctx, o...)
 	if err != nil {
 		return "", err
 	}
@@ -142,7 +143,7 @@ func FilePicker(title string, o ...opt) (string, error) {
 		if d == nil {
 			// options were validated by newFilePicker, so the bundle
 			// may only skip the ones that configure the picker itself.
-			d = newDropdown()
+			d = newDropdown(ctx)
 			err = WithOptions(o...)(d)
 			if err != nil && !errors.Is(err, ErrWrongWidget) {
 				return "", err

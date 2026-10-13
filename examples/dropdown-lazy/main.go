@@ -1,8 +1,13 @@
 package main
 
-import "github.com/nfx/go-tui"
+import (
+	"context"
+
+	"github.com/nfx/go-tui"
+)
 
 func main() {
+	ctx := context.Background()
 	var err error
 	emu := func(yield func(string, error) bool) {
 		for _, v := range []string{
@@ -14,7 +19,7 @@ func main() {
 			}
 		}
 	}
-	_, err = tui.DropdownLazy("Select", emu)
+	_, err = tui.DropdownLazy(ctx, "Select", emu)
 	if err != nil {
 		panic(err)
 	}

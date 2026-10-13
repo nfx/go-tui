@@ -8,7 +8,7 @@ weight: 100
 Opens an interactive file picker and returns selected path.
 
 ```go
-path, err := tui.FilePicker("Select config",
+path, err := tui.FilePicker(ctx, "Select config",
 	tui.WithStartDir("/etc"),
 	tui.WithExtensions(".yaml", ".yml", ".json"),
 )
@@ -25,7 +25,7 @@ fmt.Println(path)
 Sets initial directory. Default is current working directory.
 
 ```go
-path, err := tui.FilePicker("Pick file",
+path, err := tui.FilePicker(ctx, "Pick file",
 	tui.WithStartDir("/var/log"),
 )
 ```
@@ -35,7 +35,7 @@ path, err := tui.FilePicker("Pick file",
 Filters non-directory entries by extension (case-insensitive).
 
 ```go
-path, err := tui.FilePicker("Pick file",
+path, err := tui.FilePicker(ctx, "Pick file",
 	tui.WithExtensions(".json", ".yaml"),
 )
 ```
@@ -45,7 +45,7 @@ path, err := tui.FilePicker("Pick file",
 Hides `..` navigation entry.
 
 ```go
-path, err := tui.FilePicker("Pick file",
+path, err := tui.FilePicker(ctx, "Pick file",
 	tui.WithIgnoreUp(),
 )
 ```
@@ -55,7 +55,7 @@ path, err := tui.FilePicker("Pick file",
 Hides directory entries.
 
 ```go
-path, err := tui.FilePicker("Pick file",
+path, err := tui.FilePicker(ctx, "Pick file",
 	tui.WithIgnoreDirs(),
 )
 ```
@@ -65,7 +65,7 @@ path, err := tui.FilePicker("Pick file",
 Shows dot-files and dot-directories.
 
 ```go
-path, err := tui.FilePicker("Pick file",
+path, err := tui.FilePicker(ctx, "Pick file",
 	tui.WithShowHidden(),
 )
 ```
@@ -75,7 +75,7 @@ path, err := tui.FilePicker("Pick file",
 Forwarded to dropdown template configuration. See [WithTemplate](dropdowns.md#withtemplate).
 
 ```go
-path, err := tui.FilePicker("Pick file",
+path, err := tui.FilePicker(ctx, "Pick file",
 	tui.WithTemplate(".Name"),
 )
 ```
@@ -85,7 +85,7 @@ path, err := tui.FilePicker("Pick file",
 Forwarded to dropdown label template. See [WithLabelTemplate](dropdowns.md#withlabeltemplate).
 
 ```go
-path, err := tui.FilePicker("Pick file",
+path, err := tui.FilePicker(ctx, "Pick file",
 	tui.WithLabelTemplate(`{{ cyan "file:" }} {{ . }}`),
 )
 ```
@@ -95,7 +95,7 @@ path, err := tui.FilePicker("Pick file",
 Forwarded to dropdown active-row template. See [WithActiveItemTemplate](dropdowns.md#withactiveitemtemplate).
 
 ```go
-path, err := tui.FilePicker("Pick file",
+path, err := tui.FilePicker(ctx, "Pick file",
 	tui.WithActiveItemTemplate(`{{ green "> " . }}`),
 )
 ```
@@ -105,7 +105,7 @@ path, err := tui.FilePicker("Pick file",
 Forwarded to dropdown inactive-row template. See [WithInactiveItemTemplate](dropdowns.md#withinactiveitemtemplate).
 
 ```go
-path, err := tui.FilePicker("Pick file",
+path, err := tui.FilePicker(ctx, "Pick file",
 	tui.WithInactiveItemTemplate(`{{ dim "  " . }}`),
 )
 ```
@@ -115,7 +115,7 @@ path, err := tui.FilePicker("Pick file",
 Forwarded to dropdown footer template. See [WithMoreItemsTemplate](dropdowns.md#withmoreitemstemplate).
 
 ```go
-path, err := tui.FilePicker("Pick file",
+path, err := tui.FilePicker(ctx, "Pick file",
 	tui.WithMoreItemsTemplate(`{{ dim .More " hidden" }}`),
 )
 ```
@@ -125,7 +125,7 @@ path, err := tui.FilePicker("Pick file",
 Forwarded to dropdown answer template. See [WithAnswerTemplate](dropdowns.md#withanswertemplate).
 
 ```go
-path, err := tui.FilePicker("Pick file",
+path, err := tui.FilePicker(ctx, "Pick file",
 	tui.WithAnswerTemplate(`{{ green "picked:" }} {{ .Answer }}`),
 )
 ```
@@ -135,7 +135,7 @@ path, err := tui.FilePicker("Pick file",
 Forwarded to dropdown answer visibility. See [WithHide](dropdowns.md#withhide).
 
 ```go
-path, err := tui.FilePicker("Pick file",
+path, err := tui.FilePicker(ctx, "Pick file",
 	tui.WithHide(),
 )
 ```
@@ -145,7 +145,7 @@ path, err := tui.FilePicker("Pick file",
 Forwarded to dropdown one-item auto-select behavior. See [WithOneReturn](dropdowns.md#withonereturn).
 
 ```go
-path, err := tui.FilePicker("Pick file",
+path, err := tui.FilePicker(ctx, "Pick file",
 	tui.WithOneReturn(),
 )
 ```
@@ -155,7 +155,7 @@ path, err := tui.FilePicker("Pick file",
 Forwarded to the dropdown as a match hint (not a pre-filled filter). See [WithDefault](dropdowns.md#withdefault).
 
 ```go
-path, err := tui.FilePicker("Pick file",
+path, err := tui.FilePicker(ctx, "Pick file",
 	tui.WithDefault("conf"),
 )
 ```
@@ -170,7 +170,7 @@ common := tui.WithOptions(
 	tui.WithTemplate(".Name"),
 )
 
-path, err := tui.FilePicker("Pick file", common)
+path, err := tui.FilePicker(ctx, "Pick file", common)
 ```
 
 ## Option compatibility note
@@ -180,4 +180,4 @@ path, err := tui.FilePicker("Pick file", common)
 - picker options (`WithStartDir`, `WithExtensions`, `WithIgnoreUp`, `WithIgnoreDirs`, `WithShowHidden`)
 - dropdown-targeted options (see links above)
 
-It does not accept shared IO/context options directly (`WithContext`, `WithTimeout`, `WithInput`, `WithOutput`).
+It does not accept shared IO/context options directly (`WithInput`, `WithOutput`).

@@ -641,7 +641,7 @@ func TestDropdownPressKeyReadsSharedPendingEnter(t *testing.T) {
 			if fresh {
 				second = &termIO{in: in, out: &bytes.Buffer{}}
 			}
-			d := newDropdown()
+			d := newDropdown(t.Context())
 			d.Items = []any{"one", "two"}
 			d.relevant = []int{0, 1}
 			i, err := d.pressKey(second, &bytes.Buffer{}, 1, 2)

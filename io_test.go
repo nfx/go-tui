@@ -63,9 +63,8 @@ func TestChanIO_Forward(t *testing.T) {
 		}()
 	}
 
-	s, err := NewSpinners(
+	s, err := NewSpinners(cio.ctx,
 		WithOutput(cio),
-		WithContext(cio.ctx),
 		opT(func(s *Spinners) error { //nolint:unparam // ..
 			s.ticks = ticks
 			return nil
@@ -291,24 +290,24 @@ func TestSetDefaultIO(t *testing.T) {
 	out := &bytes.Buffer{}
 	SetDefaultIO(in, out)
 
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	assert.Equal(t, in, d.in)
 	assert.Equal(t, out, d.out)
 
-	input := newInput("label")
+	input := newInput(t.Context(), "label")
 	assert.Equal(t, in, input.in)
 	assert.Equal(t, out, input.out)
 
-	multichoice := newMultichoice()
+	multichoice := newMultichoice(t.Context())
 	assert.Equal(t, in, multichoice.in)
 	assert.Equal(t, out, multichoice.out)
 
-	s := newSpinners()
+	s := newSpinners(t.Context())
 	assert.Equal(t, in, s.in)
 	assert.Equal(t, out, s.out)
 	s.ticker.Stop()
 
-	p := newProgressbar()
+	p := newProgressbar(t.Context())
 	assert.Equal(t, in, p.in)
 	assert.Equal(t, out, p.out)
 	p.ticker.Stop()
@@ -386,24 +385,24 @@ func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
 	assert.True(t, ok)
 	assert.NotNil(t, cio)
 
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	assert.Equal(t, in, d.in)
 	assert.Equal(t, cio, d.out)
 
-	input := newInput("label")
+	input := newInput(t.Context(), "label")
 	assert.Equal(t, in, input.in)
 	assert.Equal(t, cio, input.out)
 
-	multichoice := newMultichoice()
+	multichoice := newMultichoice(t.Context())
 	assert.Equal(t, in, multichoice.in)
 	assert.Equal(t, cio, multichoice.out)
 
-	s := newSpinners()
+	s := newSpinners(t.Context())
 	assert.Equal(t, in, s.in)
 	assert.Equal(t, cio, s.out)
 	s.ticker.Stop()
 
-	p := newProgressbar()
+	p := newProgressbar(t.Context())
 	assert.Equal(t, in, p.in)
 	assert.Equal(t, cio, p.out)
 	p.ticker.Stop()
@@ -443,7 +442,7 @@ func TestConfirmAndStderrShareDefaultTerminal(t *testing.T) {
 
 	result := make(chan bool, 1)
 	go func() {
-		result <- Confirm("Are you sure?")
+		result <- Confirm(t.Context(), "Are you sure?")
 	}()
 
 	waitOutputContains(t, stdout.C, "Are you sure?")
@@ -474,7 +473,7 @@ func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {
 
 	result := make(chan bool, 1)
 	go func() {
-		result <- Confirm("Are you sure?")
+		result <- Confirm(t.Context(), "Are you sure?")
 	}()
 
 	initial := waitOutputContains(t, stdout.C, "Are you sure?", "Yes", "No")
@@ -505,7 +504,7 @@ func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
 	result := make(chan string, 1)
 	errs := make(chan error, 1)
 	go func() {
-		value, err := Input("Label")
+		value, err := Input(t.Context(), "Label")
 		if err != nil {
 			errs <- err
 			return
@@ -539,7 +538,7 @@ func TestInputAndStderrShareDefaultTerminal(t *testing.T) {
 	result := make(chan string, 1)
 	errs := make(chan error, 1)
 	go func() {
-		value, err := Input("PROMPT")
+		value, err := Input(t.Context(), "PROMPT")
 		if err != nil {
 			errs <- err
 			return
@@ -580,7 +579,7 @@ func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
 	result := make(chan string, 1)
 	errs := make(chan error, 1)
 	go func() {
-		value, err := Input("PROMPT")
+		value, err := Input(t.Context(), "PROMPT")
 		if err != nil {
 			errs <- err
 			return
@@ -622,7 +621,7 @@ func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
 	result := make(chan string, 1)
 	errs := make(chan error, 1)
 	go func() {
-		value, err := Input("PROMPT", WithDefault("apple"))
+		value, err := Input(t.Context(), "PROMPT", WithDefault("apple"))
 		if err != nil {
 			errs <- err
 			return
@@ -673,7 +672,7 @@ func TestStderrWritesUseNativeHistoryWhilePromptActive(t *testing.T) {
 
 	done := make(chan bool, 1)
 	go func() {
-		done <- Confirm("scrollback")
+		done <- Confirm(t.Context(), "scrollback")
 	}()
 
 	waitOutputContains(t, stdout.C, "scrollback")

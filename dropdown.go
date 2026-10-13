@@ -145,16 +145,16 @@ type lazyResult struct {
 
 var confirmRunner = defaultConfirmRunner
 
-func Confirmf(format string, a ...any) bool {
-	return Confirm(fmt.Sprintf(format, a...))
+func Confirmf(ctx context.Context, format string, a ...any) bool {
+	return Confirm(ctx, fmt.Sprintf(format, a...))
 }
 
-func Confirm(action string, opts ...opt) bool {
-	return confirmRunner(action, opts...)
+func Confirm(ctx context.Context, action string, opts ...opt) bool {
+	return confirmRunner(ctx, action, opts...)
 }
 
-func defaultConfirmRunner(action string, opts ...opt) bool {
-	res, err := Dropdown(action, []string{"Yes", "No"}, opts...)
+func defaultConfirmRunner(ctx context.Context, action string, opts ...opt) bool {
+	res, err := Dropdown(ctx, action, []string{"Yes", "No"}, opts...)
 	if err != nil {
 		return false
 	}
@@ -166,7 +166,7 @@ type mapKV[K comparable, V any] struct {
 	Value V
 }
 
-func DropdownKV[K comparable, V any](label string, items map[K]V, opts ...opt) (K, V, error) {
+func DropdownKV[K comparable, V any](ctx context.Context, label string, items map[K]V, opts ...opt) (K, V, error) {
 	var zeroK K
 	var zeroV V
 	if len(items) == 0 {
@@ -185,14 +185,14 @@ func DropdownKV[K comparable, V any](label string, items map[K]V, opts ...opt) (
 		WithInactiveItemTemplate(`~ {{ dim .Key }}`),
 		WithAnswerTemplate(`{{ dim "✔ " .Label " …" }} {{ .Answer.Key | bold }}`),
 	}, opts...)
-	item, err := Dropdown(label, kvs, opts...)
+	item, err := Dropdown(ctx, label, kvs, opts...)
 	if err != nil {
 		return zeroK, zeroV, err
 	}
 	return item.Key, item.Value, nil
 }
 
-func Dropdown[T any](label string, items []T, opts ...opt) (T, error) {
+func Dropdown[T any](ctx context.Context, label string, items []T, opts ...opt) (T, error) {
 	var zero T
 	if len(items) == 0 {
 		return zero, ErrNoItems
@@ -202,7 +202,7 @@ func Dropdown[T any](label string, items []T, opts ...opt) (T, error) {
 	for i, v := range items {
 		anyItems[i] = v
 	}
-	i, err := DropdownIndex(label, anyItems, opts...)
+	i, err := DropdownIndex(ctx, label, anyItems, opts...)
 	if err != nil {
 		return zero, err
 	}
@@ -210,9 +210,9 @@ func Dropdown[T any](label string, items []T, opts ...opt) (T, error) {
 	return items[i], nil
 }
 
-func DropdownLazy[V any](label string, itemFn iter.Seq2[V, error], o ...opt) (V, error) {
+func DropdownLazy[V any](ctx context.Context, label string, itemFn iter.Seq2[V, error], o ...opt) (V, error) {
 	var zero V
-	d := newDropdown()
+	d := newDropdown(ctx)
 	d.Label = label
 	err := opts(o).Apply(d)
 	if err != nil {
@@ -224,7 +224,7 @@ func DropdownLazy[V any](label string, itemFn iter.Seq2[V, error], o ...opt) (V,
 		return zero, fmt.Errorf("templates: %w", err)
 	}
 	// the producer is owned by this call: it stops on every return path
-	ctx, cancel := context.WithCancel(d.Ctx)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	d.Ctx = ctx
 	d.startLazyProducer(ctx, func(yield func(any, error) bool) {
@@ -276,8 +276,8 @@ func (d *dropdown) startLazyProducer(ctx context.Context, itemFn iter.Seq2[any, 
 	}()
 }
 
-func DropdownIndex(label string, items []any, o ...opt) (int, error) {
-	d := newDropdown()
+func DropdownIndex(ctx context.Context, label string, items []any, o ...opt) (int, error) {
+	d := newDropdown(ctx)
 	err := opts(o).Apply(d)
 	if err != nil {
 		return -1, err
@@ -446,12 +446,12 @@ func WithAnswerTemplate(tmpl string) opt {
 	})
 }
 
-func newDropdown() *dropdown {
+func newDropdown(ctx context.Context) *dropdown {
 	in, out := defaultStreams()
 	return &dropdown{
 		in:                   in,
 		out:                  out,
-		Ctx:                  context.Background(),
+		Ctx:                  ctx,
 		Label:                "Select from list",
 		makeTermIO:           makeTermIO,
 		LabelTemplate:        DefaultLabelTemplate,
@@ -699,16 +699,6 @@ func (d *dropdown) setWriter(w io.Writer) {
 		w = tui.prependView(10) // TODO: height is properly available only after render, right?...
 	}
 	d.out = w
-}
-
-// implements [withContext].
-func (d *dropdown) setContext(ctx context.Context) {
-	d.Ctx = ctx
-}
-
-// implements [withContext].
-func (d *dropdown) getContext() context.Context {
-	return d.Ctx
 }
 
 type oneHatch int //nolint:errname // hack for [WithDefault]

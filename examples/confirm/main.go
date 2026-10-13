@@ -1,14 +1,19 @@
 package main
 
-import "github.com/nfx/go-tui"
+import (
+	"context"
+
+	"github.com/nfx/go-tui"
+)
 
 func main() {
-	if !tui.Confirm("Delete all the things?") {
+	ctx := context.Background()
+	if !tui.Confirm(ctx, "Delete all the things?") {
 		println("Aborted")
 		return
 	}
 	// Confirmf formats the action like fmt.Sprintf
-	if tui.Confirmf("Really delete %d things?", 42) {
+	if tui.Confirmf(ctx, "Really delete %d things?", 42) {
 		println("Deleted")
 	}
 }

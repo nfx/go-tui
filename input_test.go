@@ -90,7 +90,7 @@ func (f *failingBuffer) Write(p []byte) (n int, err error) {
 }
 
 func TestInputWithDefault(t *testing.T) {
-	i := newInput("label")
+	i := newInput(t.Context(), "label")
 	err := WithDefault("abc")(i)
 	assert.NoError(t, err)
 	assert.Equal(t, "abc", i.typed)
@@ -98,21 +98,21 @@ func TestInputWithDefault(t *testing.T) {
 }
 
 func TestInputWithDefaultCountsRunes(t *testing.T) {
-	i := newInput("label")
+	i := newInput(t.Context(), "label")
 	err := WithDefault("héllo")(i)
 	assert.NoError(t, err)
 	assert.Equal(t, 5, i.cursor)
 }
 
 func TestInputWithNonEmpty(t *testing.T) {
-	i := newInput("label")
+	i := newInput(t.Context(), "label")
 	err := WithNonEmpty()(i)
 	assert.NoError(t, err)
 	assert.True(t, i.CheckFn != nil)
 }
 
 func TestInputShowAnswerVisibility(t *testing.T) {
-	i := newInput("Name")
+	i := newInput(t.Context(), "Name")
 	i.typed = "value"
 	err := i.parseTemplates()
 	assert.NoError(t, err)
@@ -138,14 +138,14 @@ func TestInputShowAnswerVisibility(t *testing.T) {
 }
 
 func TestInputReadOptionError(t *testing.T) {
-	_, err := Input("Label", func(any) error { return io.EOF })
+	_, err := Input(t.Context(), "Label", func(any) error { return io.EOF })
 	if !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF, got %v", err)
 	}
 }
 
 func TestInputReadRunError(t *testing.T) {
-	_, err := Input("Label", opT(func(i *input) error {
+	_, err := Input(t.Context(), "Label", opT(func(i *input) error {
 		i.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
 			return nil, io.EOF
 		}
@@ -207,7 +207,7 @@ func TestInputPressKeyEOF(t *testing.T) {
 }
 
 func TestInputReadTemplateError(t *testing.T) {
-	i := newInput("Label")
+	i := newInput(t.Context(), "Label")
 	i.LabelTemplate = "{{"
 	_, err := i.read()
 	assert.Error(t, err)
@@ -278,7 +278,7 @@ func TestInputPressKeyEnterEmitsCompletedEvent(t *testing.T) {
 }
 
 func TestInputPressKeyEnterWithNonEmptyRejectsEmpty(t *testing.T) {
-	i := newInput("Label")
+	i := newInput(t.Context(), "Label")
 	assert.NoError(t, WithNonEmpty()(i))
 	tio := &termIO{in: bytes.NewBuffer([]byte{keyEnter})}
 	out, err := i.pressKey(tio)
@@ -288,7 +288,7 @@ func TestInputPressKeyEnterWithNonEmptyRejectsEmpty(t *testing.T) {
 }
 
 func TestInputRunEmitsLifecycleEvents(t *testing.T) {
-	i := newInput("Label")
+	i := newInput(t.Context(), "Label")
 	i.in = &chunkReader{
 		chunks: [][]byte{
 			{'x'},
@@ -322,7 +322,7 @@ func TestInputRunEmitsLifecycleEvents(t *testing.T) {
 }
 
 func TestInputRunConsumesInputChannelEvents(t *testing.T) {
-	i := newInput("Label")
+	i := newInput(t.Context(), "Label")
 	input := make(chan inputIncoming, 2)
 	input <- inputChanged{Text: "remote"}
 	input <- inputConfirmed{}
@@ -357,7 +357,7 @@ func TestInputRunConsumesInputChannelEvents(t *testing.T) {
 }
 
 func TestInputRunWithNonEmptyIgnoresEmptyConfirmation(t *testing.T) {
-	i := newInput("Label")
+	i := newInput(t.Context(), "Label")
 	input := make(chan inputIncoming, 3)
 	input <- inputConfirmed{}
 	input <- inputChanged{Text: "remote"}
@@ -393,7 +393,7 @@ func TestInputRunWithNonEmptyIgnoresEmptyConfirmation(t *testing.T) {
 
 // regression: readEvents goroutine must not exit on pasteTextError
 func TestInputRunPasteFollowedByEnter(t *testing.T) {
-	i := newInput("Label")
+	i := newInput(t.Context(), "Label")
 	i.in = &chunkReader{
 		chunks: [][]byte{
 			{'h', 'i'},
@@ -419,7 +419,7 @@ func TestInputRunPasteFollowedByEnter(t *testing.T) {
 
 // regression: multiple paste chunks interleaved with single keys
 func TestInputRunTypeAndPaste(t *testing.T) {
-	i := newInput("Label")
+	i := newInput(t.Context(), "Label")
 	i.in = &chunkReader{
 		chunks: [][]byte{
 			{'h'},
@@ -513,7 +513,7 @@ func TestInputTypesMultiByteFromPipe(t *testing.T) {
 	_, err = w.WriteString("héllo\x1b[D\x1b[D\x1b[D\x7fж\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Input("Label", WithInput(&fdByteReader{f: r}), WithOutput(cio))
+	got, err := Input(t.Context(), "Label", WithInput(&fdByteReader{f: r}), WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "hжllo", got)
 }
@@ -528,7 +528,7 @@ func TestInputReadsFromPipe(t *testing.T) {
 	_, err = w.WriteString("hi\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Input("Label", WithInput(&fdByteReader{f: r}), WithOutput(cio))
+	got, err := Input(t.Context(), "Label", WithInput(&fdByteReader{f: r}), WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "hi", got)
 }
@@ -548,7 +548,7 @@ func TestInputReadsMultipleLeftArrowsFromPipe(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Input("Label", WithDefault("apple"), WithInput(&fdByteReader{f: r}), WithOutput(cio))
+	got, err := Input(t.Context(), "Label", WithDefault("apple"), WithInput(&fdByteReader{f: r}), WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "apqqqple", got)
 }
@@ -563,7 +563,7 @@ func TestInputIgnoresSpecialKeysFromPipe(t *testing.T) {
 	_, err = w.WriteString("a\x1b[3~b\x1b[Hc\x1bxd\x1b\x1bOPe\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Input("Label", WithInput(&fdByteReader{f: r}), WithOutput(cio))
+	got, err := Input(t.Context(), "Label", WithInput(&fdByteReader{f: r}), WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "abcde", got)
 }
@@ -578,7 +578,7 @@ func TestPasswordReadsFromPipe(t *testing.T) {
 	_, err = w.WriteString("secret\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Password("Label", WithInput(&fdByteReader{f: r}), WithOutput(cio))
+	got, err := Password(t.Context(), "Label", WithInput(&fdByteReader{f: r}), WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "secret", got)
 }
@@ -598,7 +598,7 @@ func TestInputThenPasswordWithPasteDoesNotLoseBytes(t *testing.T) {
 	// step 1: feed login, run Input.
 	_, err = w.WriteString("alice\r")
 	assert.NoError(t, err)
-	gotLogin, err := Input("Login", WithInput(r), WithOutput(cio))
+	gotLogin, err := Input(t.Context(), "Login", WithInput(r), WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "alice", gotLogin)
 	// step 2: only after Input has returned, feed the password paste.
@@ -607,7 +607,7 @@ func TestInputThenPasswordWithPasteDoesNotLoseBytes(t *testing.T) {
 	wantPassword := "0123456789abcdefghijklmnopqrstuv"
 	_, err = w.WriteString(wantPassword + "\r")
 	assert.NoError(t, err)
-	gotPassword, err := Password("Password", WithInput(r), WithOutput(cio))
+	gotPassword, err := Password(t.Context(), "Password", WithInput(r), WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, wantPassword, gotPassword)
 }
@@ -615,7 +615,7 @@ func TestInputThenPasswordWithPasteDoesNotLoseBytes(t *testing.T) {
 func TestInputRunContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	i := newInput("Label")
+	i := newInput(t.Context(), "Label")
 	i.ctx = ctx
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{
@@ -641,7 +641,7 @@ func TestInputRunCancelledReadKeepsNextKey(t *testing.T) {
 		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	i := newInput("first")
+	i := newInput(t.Context(), "first")
 	i.ctx, i.in, i.out, i.makeTermIO = ctx, pr, &bytes.Buffer{}, mk
 	assert.NoError(t, i.parseTemplates())
 	go func() {
@@ -654,7 +654,7 @@ func TestInputRunCancelledReadKeepsNextKey(t *testing.T) {
 	_, err = i.run()
 	assert.Error(t, err)
 
-	j := newInput("second")
+	j := newInput(t.Context(), "second")
 	j.in, j.out, j.makeTermIO = pr, &bytes.Buffer{}, mk
 	assert.NoError(t, j.parseTemplates())
 	got, err := j.run()
@@ -685,7 +685,7 @@ func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	mk := func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{in: in, out: out, input: sharedInputState(in), Width: 20, Height: 2, Restore: func() error { return nil }}, nil
 	}
-	first := newInput("first")
+	first := newInput(t.Context(), "first")
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	first.ctx, first.in, first.out, first.makeTermIO = ctx, in, &bytes.Buffer{}, mk
@@ -710,7 +710,7 @@ func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	// Write before starting another prompt: the result must survive without a consumer.
 	_, err = pw.Write([]byte{'x', keyEnter})
 	assert.NoError(t, err)
-	second := newInput("second")
+	second := newInput(t.Context(), "second")
 	second.ctx, cancel = context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	second.in, second.out, second.makeTermIO = in, &bytes.Buffer{}, mk
@@ -727,7 +727,7 @@ func TestInputRunBufferedWrappedReader(t *testing.T) {
 	defer pr.Close()
 	defer pw.Close()
 	in := &mockDescriptor{Reader: bytes.NewBufferString("x\r"), fd: pr.Fd()}
-	prompt := newInput("buffered")
+	prompt := newInput(t.Context(), "buffered")
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	prompt.ctx, prompt.in, prompt.out = ctx, in, &bytes.Buffer{}
@@ -755,7 +755,7 @@ func TestInputHandleBufferedKeys(t *testing.T) {
 
 func runInputOn(t *testing.T, in io.Reader, option ...opt) (string, error) {
 	t.Helper()
-	i := newInput("Label")
+	i := newInput(t.Context(), "Label")
 	i.in, i.out = in, &bytes.Buffer{}
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
@@ -905,7 +905,7 @@ func (r *blockingReader) Read(p []byte) (int, error) {
 func TestInputRunResizeDoesNotReadAhead(t *testing.T) {
 	in := &blockingReader{started: make(chan struct{}, 4), chunks: make(chan []byte)}
 	resized := make(chan struct{})
-	i := newInput("Label")
+	i := newInput(t.Context(), "Label")
 	i.in, i.out = in, &bytes.Buffer{}
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{in: in, out: out, Width: 20, Height: 2, onResize: resized, Restore: func() error { return nil }}, nil
