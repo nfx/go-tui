@@ -23,8 +23,6 @@ func newTrie() *trie {
 }
 
 // Add indexes the words in word, ignoring terminal controls and escapes.
-//
-//nolint:cyclop // it's ok
 func (t *trie) Add(word text, i int) {
 	r := t
 	for seg := range word.segments() {

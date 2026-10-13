@@ -28,7 +28,7 @@ func openPty() (master, slave *os.File, err error) {
 		slave, err = os.OpenFile(fmt.Sprintf("/dev/pts/%d", n), os.O_RDWR|unix.O_NOCTTY, 0)
 	}
 	if err != nil {
-		master.Close()
+		master.Close() //nolint:errcheck // test cleanup
 		return nil, nil, err
 	}
 	return master, slave, nil

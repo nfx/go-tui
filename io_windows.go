@@ -42,7 +42,7 @@ func peekNamedPipe(h windows.Handle) (avail uint32, err error) {
 
 // waitForReadableInput polls concrete files until input is ready or ctx is cancelled.
 // Other readers may buffer data independently of their descriptor and are not polled.
-func waitForReadableInput(ctx context.Context, in io.Reader) error {
+func (t *termIO) waitForReadableInput(ctx context.Context, in io.Reader) error {
 	// only a real file is backed by its fd; a wrapper exposing Fd() may buffer data the fd never sees
 	d, ok := in.(*os.File)
 	if !ok {
@@ -57,7 +57,7 @@ func waitForReadableInput(ctx context.Context, in io.Reader) error {
 	case windows.FILE_TYPE_PIPE:
 		return waitForPipeReadable(ctx, h)
 	case windows.FILE_TYPE_CHAR:
-		return waitForConsoleReadable(ctx, h)
+		return t.waitForConsoleReadable(ctx, h)
 	default:
 		return nil
 	}
@@ -133,12 +133,12 @@ func consoleHasChar(h windows.Handle) (bool, error) {
 	return skip < n, nil
 }
 
-func waitForConsoleReadable(ctx context.Context, h windows.Handle) error {
+func (t *termIO) waitForConsoleReadable(ctx context.Context, h windows.Handle) error {
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		event, err := windows.WaitForSingleObject(h, uint32((pollWait(ctx)+time.Millisecond-1)/time.Millisecond))
+		event, err := windows.WaitForSingleObject(h, uint32((t.pollWait(ctx)+time.Millisecond-1)/time.Millisecond))
 		if err != nil {
 			return nil
 		}

@@ -157,7 +157,7 @@ func TestProgressbarTickOnResizeExitsWhenDone(t *testing.T) {
 		}),
 	)
 	assert.NoError(t, err)
-	t.Cleanup(func() { _ = p.Close() })
+	t.Cleanup(func() { _ = p.Close() }) //nolint:errcheck // test cleanup
 
 	p.Add(10)
 

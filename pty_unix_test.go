@@ -22,8 +22,8 @@ func openTTY(t *testing.T, width, height int) *os.File {
 		t.Skipf("no pseudo-terminal: %v", err)
 	}
 	t.Cleanup(func() {
-		tty.Close()
-		master.Close()
+		tty.Close()    //nolint:errcheck // test cleanup
+		master.Close() //nolint:errcheck // test cleanup
 	})
 	setTTYSize(t, tty, width, height)
 	return tty

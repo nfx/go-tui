@@ -126,7 +126,7 @@ func (i *input) setDefault(typed string) {
 }
 
 func newInput(ctx context.Context, label string) *input {
-	in, out := defaultStreams()
+	in, out := defaultStreams(ctx)
 	return &input{
 		ctx:            ctx,
 		out:            out,
@@ -140,16 +140,16 @@ func newInput(ctx context.Context, label string) *input {
 
 func Input(ctx context.Context, label string, option ...opt) (string, error) {
 	i := newInput(ctx, label)
-	return i.read(option...)
+	return i.read(ctx, option...)
 }
 
 func Password(ctx context.Context, label string, option ...opt) (string, error) {
 	i := newInput(ctx, label)
 	i.Password = true
-	return i.read(option...)
+	return i.read(ctx, option...)
 }
 
-func (i *input) read(option ...opt) (string, error) {
+func (i *input) read(ctx context.Context, option ...opt) (string, error) {
 	err := opts(option).Apply(i)
 	if err != nil {
 		return "", err
@@ -158,7 +158,7 @@ func (i *input) read(option ...opt) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	out, err := i.run()
+	out, err := i.run(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -190,7 +190,7 @@ func (i *input) showAnswer() error {
 }
 
 // run renders the prompt and stops its event goroutine before restoring the terminal.
-func (p *input) run() (string, error) {
+func (p *input) run(ctx context.Context) (string, error) {
 	io, err := p.makeTermIO(p.in, p.out)
 	if err != nil {
 		return "", err
@@ -199,7 +199,7 @@ func (p *input) run() (string, error) {
 	frame := &bytes.Buffer{}
 	// Cancel the event goroutine on return; an outstanding wrapper read is
 	// retained for the next prompt on this input (see termIO.startRead).
-	runCtx, cancel := context.WithCancel(p.ctx)
+	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var keys <-chan keyEvent
 	var permit chan<- struct{}
@@ -226,7 +226,7 @@ func (p *input) run() (string, error) {
 		if err != nil {
 			return "", errors.Join(err, p.clear(io))
 		}
-		done, consumed, err := p.handleNextEvent(io, keys)
+		done, consumed, err := p.handleNextEvent(ctx, io, keys)
 		if err != nil {
 			return "", err
 		}
@@ -243,7 +243,11 @@ func (p *input) run() (string, error) {
 
 // handleNextEvent waits for the next key or input event and applies it to the input state.
 // It reports whether a key was consumed from keys.
-func (p *input) handleNextEvent(tio *termIO, keys <-chan keyEvent) (done, consumed bool, err error) {
+func (p *input) handleNextEvent(
+	ctx context.Context,
+	tio *termIO,
+	keys <-chan keyEvent,
+) (done, consumed bool, err error) {
 	select {
 	case <-p.ctx.Done():
 		return false, false, errors.Join(p.ctx.Err(), p.clear(tio))
@@ -253,7 +257,7 @@ func (p *input) handleNextEvent(tio *termIO, keys <-chan keyEvent) (done, consum
 			return false, false, errors.Join(p.ctx.Err(), p.clear(tio))
 		}
 		// key press handlers has to be limited to state updates, not writes to the buffer.
-		done, err := p.handleKeyEvent(ev, ok)
+		done, err := p.handleKeyEvent(ctx, ev, ok)
 		if err != nil { // e.g., Ctrl+C or Ctrl+D
 			return false, ok, errors.Join(err, p.clear(tio))
 		}
@@ -412,14 +416,13 @@ func (*input) clear(io *termIO) error {
 	return errors.Join(errs...)
 }
 
-func (p *input) handleKeyEvent(ev keyEvent, ok bool) (bool, error) {
+func (p *input) handleKeyEvent(ctx context.Context, ev keyEvent, ok bool) (bool, error) {
 	if !ok {
 		return false, fmt.Errorf("read: %w", io.EOF)
 	}
-	_, ok = errors.AsType[*pasteTextError](ev.err)
-	if ok {
+	if isPasteText(ev.err) {
 		// a read started by another widget may report buffered keys as a paste
-		return p.handleBufferedKeys(ev.paste)
+		return p.handleBufferedKeys(ctx, ev.paste)
 	} else if ev.err != nil {
 		// Ctrl+C or Ctrl+D will result in an error like io.EOF
 		return false, fmt.Errorf("read: %w", ev.err)
@@ -440,11 +443,11 @@ func (p *input) handleKeyEvent(ev keyEvent, ok bool) (bool, error) {
 // handleBufferedKeys applies keys returned together by one read in order, so
 // that Enter or backspace keep their meaning. A paste cannot be told apart from
 // them, as there is no paste boundary. Keys after a confirming Enter are dropped.
-func (p *input) handleBufferedKeys(buf []byte) (bool, error) {
+func (p *input) handleBufferedKeys(ctx context.Context, buf []byte) (bool, error) {
 	decoder := &termIO{in: bytes.NewReader(nil), pending: buf, splitKeys: true}
 	for len(decoder.pending) > 0 {
-		key, _, err := decoder.readRune()
-		done, err := p.handleKeyEvent(keyEvent{key: key, err: err}, true)
+		key, _, err := decoder.readRune(ctx)
+		done, err := p.handleKeyEvent(ctx, keyEvent{key: key, err: err}, true)
 		if done || err != nil {
 			return done, err
 		}

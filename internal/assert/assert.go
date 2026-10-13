@@ -45,6 +45,7 @@ func NotNil(t *testing.T, value any) {
 	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map,
 		reflect.Pointer, reflect.Slice, reflect.UnsafePointer:
 		fail = v.IsNil()
+	default:
 	}
 	if fail {
 		t.Fatal("expected not nil, got nil")

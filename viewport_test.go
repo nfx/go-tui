@@ -276,9 +276,9 @@ func TestViewportWrapsByTerminalColumns(t *testing.T) {
 		out  []string
 	}{
 		{"two-byte runes fit", "ééé", []string{"ééé\n"}},
-		{"wide runes fill the row", "界界", []string{"界界\n"}},
-		{"wide rune wraps whole", "a界界", []string{"a界\n", "界\n"}},
-		{"third wide rune wraps", "界界界", []string{"界界\n", "界\n"}},
+		{"wide runes fill the row", "\u754c\u754c", []string{"\u754c\u754c\n"}},
+		{"wide rune wraps whole", "a\u754c\u754c", []string{"a\u754c\n", "\u754c\n"}},
+		{"third wide rune wraps", "\u754c\u754c\u754c", []string{"\u754c\u754c\n", "\u754c\n"}},
 		{"multibyte at boundary", "abcdé", []string{"abcd\n", "é\n"}},
 		{"combining mark stays", "abcdéf", []string{"abcd\n", "éf\n"}},
 		{"exact width then newline", "abcd\nef", []string{"abcd\n", "ef\n"}},
@@ -300,8 +300,8 @@ func TestViewportWrapsByTerminalColumns(t *testing.T) {
 
 func TestViewportPadsByTerminalColumns(t *testing.T) {
 	v := &viewport{width: 4, height: 10}
-	v.appendToLinebuffer([]byte("界"))
-	assert.Equal(t, []string{"界  \n"}, []string{string(v.lines[0])})
+	v.appendToLinebuffer([]byte("\u754c"))
+	assert.Equal(t, []string{"\u754c  \n"}, []string{string(v.lines[0])})
 }
 
 func TestViewportKeepsRuneSplitAcrossWrites(t *testing.T) {
@@ -316,7 +316,7 @@ func TestViewportKeepsRuneSplitAcrossWrites(t *testing.T) {
 	_, err := v.WriteTo(&buf)
 	assert.NoError(t, err)
 	assert.True(t, utf8.ValidString(buf.String()))
-	assert.Equal(t, "\rab  \n\r界cd\n", buf.String())
+	assert.Equal(t, "\rab  \n\r\u754ccd\n", buf.String())
 }
 
 func TestViewportJoinsSplitWrites(t *testing.T) {
@@ -325,7 +325,7 @@ func TestViewportJoinsSplitWrites(t *testing.T) {
 		writes []string
 		out    []string
 	}{
-		{"rune", []string{"ab\xe7", "\x95", "\x8ccd"}, []string{"ab\n", "界cd\n"}},
+		{"rune", []string{"ab\xe7", "\x95", "\x8ccd"}, []string{"ab\n", "\u754ccd\n"}},
 		{"CSI", []string{"ab\x1b[1", ";31", "mcdéfg"}, []string{"ab\n", "\x1b[1;31mcdéf\n", "g\n"}},
 		{"lone ESC", []string{"ab\x1b", "[0mcd"}, []string{"ab\n", "\x1b[0mcd\n"}},
 		{"OSC 8 link", []string{"\x1b]8;;http://a", "\x1b", "\\link"}, []string{"\x1b]8;;http://a\x1b\\link\n"}},

@@ -234,7 +234,7 @@ func DropdownLazy[V any](ctx context.Context, label string, itemFn iter.Seq2[V, 
 			}
 		}
 	})
-	i, err := d.selectIndex()
+	i, err := d.selectIndex(ctx)
 	if err != nil {
 		return zero, err
 	}
@@ -282,14 +282,14 @@ func DropdownIndex(ctx context.Context, label string, items []any, o ...opt) (in
 	if err != nil {
 		return -1, err
 	}
-	return d.pick(label, items)
+	return d.pick(ctx, label, items)
 }
 
 // pick runs a configured dropdown over items and shows the answer.
-func (d *dropdown) pick(label string, items []any) (int, error) {
+func (d *dropdown) pick(ctx context.Context, label string, items []any) (int, error) {
 	d.Label = label
 	d.Items = items
-	i, err := d.dropdownIndex()
+	i, err := d.dropdownIndex(ctx)
 	if err != nil {
 		return -1, err
 	}
@@ -319,27 +319,23 @@ func (d *dropdown) showAnswer(label string, item any) error {
 	return nil
 }
 
-func (d *dropdown) dropdownIndex(o ...opt) (int, error) {
-	err := opts(o).Apply(d)
-	if err != nil {
-		return -1, err
-	}
+func (d *dropdown) dropdownIndex(ctx context.Context) (int, error) {
 	// we must always parse templates, because we may still
 	// want to show the answer in the call after this one.
-	err = d.parseTemplates()
+	err := d.parseTemplates()
 	if err != nil {
 		return -1, fmt.Errorf("templates: %w", err)
 	}
-	return d.selectIndex()
+	return d.selectIndex(ctx)
 }
 
 // selectIndex runs a dropdown with parsed templates and returns the original
 // item index. [dropdown.run] returns a position in d.relevant instead.
-func (d *dropdown) selectIndex() (int, error) {
+func (d *dropdown) selectIndex(ctx context.Context) (int, error) {
 	if d.OneReturn && len(d.Items) == 1 {
 		return 0, nil
 	}
-	j, err := d.run()
+	j, err := d.run(ctx)
 	if err != nil {
 		return -1, err
 	}
@@ -447,7 +443,7 @@ func WithAnswerTemplate(tmpl string) opt {
 }
 
 func newDropdown(ctx context.Context) *dropdown {
-	in, out := defaultStreams()
+	in, out := defaultStreams(ctx)
 	return &dropdown{
 		in:                   in,
 		out:                  out,
@@ -1062,7 +1058,7 @@ func (d *dropdown) decodeInputEvent(key rune) dropdownInputEvent {
 var ErrNoSpace = errors.New("no space in terminal")
 
 // run returns the position of the chosen item in d.relevant, not its original index.
-func (d *dropdown) run() (int, error) {
+func (d *dropdown) run(ctx context.Context) (int, error) {
 	io, err := d.makeTermIO(d.in, d.out)
 	if err != nil {
 		return -1, fmt.Errorf("raw term: %w", err)
@@ -1074,10 +1070,10 @@ func (d *dropdown) run() (int, error) {
 	frame := bytes.NewBuffer(make([]byte, d.height()*io.Width))
 	frame.Reset()
 	if d.itItems != nil {
-		return d.runLazy(io, frame)
+		return d.runLazy(ctx, io, frame)
 	}
 	for {
-		i, err := d.runRender(io, frame)
+		i, err := d.runRender(ctx, io, frame)
 		if err != nil {
 			return -1, err
 		}
@@ -1088,8 +1084,8 @@ func (d *dropdown) run() (int, error) {
 }
 
 // runLazy renders the dropdown while items are streamed in.
-func (d *dropdown) runLazy(tio *termIO, frame *bytes.Buffer) (int, error) {
-	ctx, cancel := context.WithCancel(d.Ctx)
+func (d *dropdown) runLazy(ctx context.Context, tio *termIO, frame *bytes.Buffer) (int, error) {
+	ctx, cancel := context.WithCancel(ctx)
 	keys := tio.readEvents(ctx, nil)
 	defer func() {
 		cancel()
@@ -1310,8 +1306,7 @@ func (d *dropdown) handleLazyKey(
 		return -1, false, io.EOF
 	}
 	if ev.err != nil {
-		_, ok := errors.AsType[*pasteTextError](ev.err)
-		if ok {
+		if isPasteText(ev.err) {
 			return -1, false, nil
 		}
 		readErr := fmt.Errorf("read: %w", ev.err)
@@ -1332,7 +1327,7 @@ func (d *dropdown) handleLazyKey(
 	return -1, true, nil
 }
 
-func (d *dropdown) runRender(io *termIO, frame *bytes.Buffer) (int, error) {
+func (d *dropdown) runRender(ctx context.Context, io *termIO, frame *bytes.Buffer) (int, error) {
 	err := d.render(io, frame)
 	if err != nil {
 		var oneMatch oneHatch
@@ -1363,14 +1358,13 @@ func (d *dropdown) runRender(io *termIO, frame *bytes.Buffer) (int, error) {
 		}
 		return -1, d.Ctx.Err()
 	default:
-		return d.runMain(io, frame, space, displayed)
+		return d.runMain(ctx, io, frame, space, displayed)
 	}
 }
 
-func (d *dropdown) runMain(io *termIO, frame *bytes.Buffer, space, displayed int) (int, error) {
-	i, err := d.pressKey(io, frame, space, displayed)
-	_, ok := errors.AsType[*pasteTextError](err)
-	if ok {
+func (d *dropdown) runMain(ctx context.Context, io *termIO, frame *bytes.Buffer, space, displayed int) (int, error) {
+	i, err := d.pressKey(ctx, io, frame, space, displayed)
+	if isPasteText(err) {
 		// Ctrl+V or CMD+V pressed
 		return -1, nil
 	} else if err != nil {
@@ -1544,11 +1538,16 @@ func (d *dropdown) pressKeyFromInput(tio *termIO, frame *bytes.Buffer, space, di
 
 // pressKey applies the next key, or clears the frame on resize so the caller
 // redraws with the new geometry.
-func (d *dropdown) pressKey(tio *termIO, frame *bytes.Buffer, space, displayed int) (i int, err error) {
+func (d *dropdown) pressKey(
+	ctx context.Context,
+	tio *termIO,
+	frame *bytes.Buffer,
+	space, displayed int,
+) (i int, err error) {
 	if d.input != nil {
 		return d.pressKeyFromInput(tio, frame, space, displayed)
 	}
-	ctx, cancel := context.WithCancel(d.Ctx)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	keys := tio.readEvents(ctx, nil)
 	var ev keyEvent

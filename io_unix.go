@@ -44,7 +44,7 @@ func resizeNotify() <-chan struct{} {
 
 // waitForReadableInput polls concrete files until input is ready or ctx is cancelled.
 // Other readers may buffer data independently of their descriptor and are not polled.
-func waitForReadableInput(ctx context.Context, in io.Reader) error {
+func (t *termIO) waitForReadableInput(ctx context.Context, in io.Reader) error {
 	// only a real file is backed by its fd; a wrapper exposing Fd() may buffer data the fd never sees
 	d, ok := in.(*os.File)
 	if !ok {
@@ -59,7 +59,7 @@ func waitForReadableInput(ctx context.Context, in io.Reader) error {
 			return ctx.Err()
 		}
 		// round up so that a sub-millisecond remainder does not spin
-		_, err := unix.Poll(pollFds, int((pollWait(ctx)+time.Millisecond-1)/time.Millisecond))
+		_, err := unix.Poll(pollFds, int((t.pollWait(ctx)+time.Millisecond-1)/time.Millisecond))
 		if errors.Is(err, unix.EINTR) {
 			continue
 		}

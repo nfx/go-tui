@@ -44,7 +44,7 @@ type multichoice struct {
 var DefaultMultichoiceItemTemplate = `[{{if .Selected}}x{{else}} {{end}}] {{.Value}}`
 
 func newMultichoice(ctx context.Context) *multichoice {
-	in, out := defaultStreams()
+	in, out := defaultStreams(ctx)
 	return &multichoice{
 		in:                in,
 		out:               out,

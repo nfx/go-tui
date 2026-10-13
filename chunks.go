@@ -17,7 +17,7 @@ const (
 )
 
 // text is text written to a terminal: UTF-8 with controls and escape sequences.
-type text []byte
+type text []byte //nolint:recvcheck // Write appends in place, the rest only read
 
 // String returns t as a string.
 func (t text) String() string {

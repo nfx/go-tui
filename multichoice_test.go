@@ -214,7 +214,7 @@ func TestMultichoiceClampDisplayKeepsActiveItemVisible(t *testing.T) {
 
 func TestMultichoiceRunRerendersOnResize(t *testing.T) {
 	keys, typing := io.Pipe()
-	t.Cleanup(func() { _ = typing.Close() })
+	t.Cleanup(func() { _ = typing.Close() }) //nolint:errcheck // test cleanup
 	resized := make(chan struct{})
 	out := &syncBuffer{}
 	var tio *termIO
@@ -292,10 +292,10 @@ func newPipeMultichoice(ctx context.Context, in io.Reader) *multichoice {
 func TestMultichoiceRunReadsPendingEnter(t *testing.T) {
 	pr, pw, err := os.Pipe()
 	assert.NoError(t, err)
-	defer pr.Close()
-	defer pw.Close()
+	defer pr.Close() //nolint:errcheck // test cleanup
+	defer pw.Close() //nolint:errcheck // test cleanup
 	m := newPipeMultichoice(t.Context(), pr)
-	_, err = pw.Write([]byte("\x1b[B\r"))
+	_, err = pw.WriteString("\x1b[B\r")
 	assert.NoError(t, err)
 	done := make(chan error, 1)
 	go func() { done <- m.run() }()
@@ -313,8 +313,8 @@ func TestMultichoiceRunReadsPendingEnter(t *testing.T) {
 func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	pr, pw, err := os.Pipe()
 	assert.NoError(t, err)
-	defer pr.Close()
-	defer pw.Close()
+	defer pr.Close() //nolint:errcheck // test cleanup
+	defer pw.Close() //nolint:errcheck // test cleanup
 	in := &notifyingReader{File: pr, started: make(chan struct{})}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -341,10 +341,17 @@ func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	defer cancel()
 	next.in, next.out = in, &bytes.Buffer{}
 	next.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{in: in, out: out, input: sharedInputState(in), Width: 20, Height: 2, Restore: func() error { return nil }}, nil
+		return &termIO{
+			in:      in,
+			out:     out,
+			input:   sharedInputState(in),
+			Width:   20,
+			Height:  2,
+			Restore: func() error { return nil },
+		}, nil
 	}
 	assert.NoError(t, next.parseTemplates())
-	got, err := next.run()
+	got, err := next.run(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
 }

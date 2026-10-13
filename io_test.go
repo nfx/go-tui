@@ -329,7 +329,7 @@ func TestStderrReturnsRawWriterWithoutTTY(t *testing.T) {
 	SetDefaultIO(in, out)
 
 	assert.Equal(t, out, Stderr())
-	_, defaultOut := defaultStreams()
+	_, defaultOut := defaultStreams(t.Context())
 	assert.Equal(t, out, defaultOut)
 }
 
@@ -353,7 +353,7 @@ func TestStderrReturnsCoordinatedWriterOnTTY(t *testing.T) {
 	fdw, ok := stderr.(interface{ Fd() uintptr })
 	assert.True(t, ok)
 	assert.Equal(t, uintptr(42), fdw.Fd())
-	_, defaultOut := defaultStreams()
+	_, defaultOut := defaultStreams(t.Context())
 	cio, ok := defaultOut.(*chanIO)
 	assert.True(t, ok)
 	assert.NotNil(t, cio)
@@ -380,7 +380,7 @@ func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
 	SetDefaultIO(in, out)
 	_ = Stderr()
 
-	_, defaultOut := defaultStreams()
+	_, defaultOut := defaultStreams(t.Context())
 	cio, ok := defaultOut.(*chanIO)
 	assert.True(t, ok)
 	assert.NotNil(t, cio)
@@ -1050,7 +1050,7 @@ func TestDefaultStreamsArePairedUnderSetDefaultIO(t *testing.T) {
 		}
 	}()
 	for range 1000 {
-		in, out := defaultStreams()
+		in, out := defaultStreams(t.Context())
 		paired := (in == io.Reader(in1) && out == io.Writer(out1)) ||
 			(in == io.Reader(in2) && out == io.Writer(out2))
 		if !paired {

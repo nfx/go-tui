@@ -68,7 +68,7 @@ var runtimeNumCPU = runtime.NumCPU
 func newProgressbar(ctx context.Context) *Progressbar {
 	ctx, cancel := context.WithCancelCause(ctx)
 	ticker := time.NewTicker(100 * time.Millisecond)
-	in, out := defaultStreams()
+	in, out := defaultStreams(ctx)
 	return &Progressbar{
 		ctx:        ctx,
 		in:         in,
@@ -114,7 +114,7 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, o ...o
 		Label: p.label.String(),
 		Max:   p.maxNum,
 	})
-	go p.start(p.ctx)
+	go p.start(p.ctx) //nolint:contextcheck // p.ctx derives from ctx and is canceled by Close
 	return p, nil
 }
 
@@ -169,7 +169,13 @@ func NewSliceProgressBar[T any](ctx context.Context, label string, slice []T, op
 }
 
 // NewParallelProgressBar executes yield in parallel while updating progress.
-func NewParallelProgressBar[T any](ctx context.Context, label string, slice []T, yield func(T) error, opts ...opt) error {
+func NewParallelProgressBar[T any](
+	ctx context.Context,
+	label string,
+	slice []T,
+	yield func(T) error,
+	opts ...opt,
+) error {
 	p, err := newStartedProgressBar(ctx, label, int64(len(slice)), opts...)
 	if err != nil {
 		return err
@@ -631,15 +637,17 @@ func (p *progressState) filledBarLine(width int, completion float64) string {
 		filledWidth = width
 	}
 	bar := "["
+	var barSb634 strings.Builder
 	for i := range width {
 		if i < filledWidth {
-			bar += "="
+			barSb634.WriteString("=")
 		} else if i == filledWidth {
 			bar += ">"
 		} else {
 			bar += " "
 		}
 	}
+	bar += barSb634.String()
 	bar += "]"
 	return bar
 }
@@ -714,7 +722,7 @@ func NewFileProgressReader(ctx context.Context, r io.Reader, label string, o ...
 		Label: p.label.String(),
 		Max:   p.maxNum,
 	})
-	go p.start(p.ctx)
+	go p.start(p.ctx) //nolint:contextcheck // p.ctx derives from ctx and is canceled by Close
 	return wrap, nil
 }
 
