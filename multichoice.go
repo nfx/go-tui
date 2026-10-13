@@ -53,7 +53,7 @@ func newMultichoice(ctx context.Context) *multichoice {
 		LabelTemplate:     DefaultLabelTemplate,
 		ItemTemplate:      DefaultMultichoiceItemTemplate,
 		MoreItemsTemplate: DefaultMoreItemsTemplate,
-		makeTermIO:        makeTermIO,
+		makeTermIO:        makePromptIO,
 	}
 }
 

@@ -46,7 +46,13 @@ in := strings.NewReader("alice\n")
 value, err := tui.Input(ctx, "Name", tui.WithInput(in))
 ```
 
-Useful for tests and scripted flows.
+Useful for tests and scripted flows. A reader that is not an `*os.File` is
+treated as scripted input: the prompt skips raw mode and the managed viewport,
+assumes an 80x24 terminal, and writes plain frames, including ANSI cursor
+sequences, to the output. Send keys as terminal bytes, for example `\r` for
+Enter and `\x1b[B` for Down. This applies to `Input`, `Password`, dropdowns,
+`Confirm` and `FilePicker`. Spinners and progress bars still need a terminal and
+stay silent without one.
 
 ## WithOutput
 

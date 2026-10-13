@@ -134,7 +134,7 @@ func newInput(ctx context.Context, label string) *input {
 		Label:          label,
 		LabelTemplate:  DefaultLabelTemplate,
 		AnswerTemplate: DefaultAnswerTemplate,
-		makeTermIO:     makeTermIO,
+		makeTermIO:     makePromptIO,
 	}
 }
 
