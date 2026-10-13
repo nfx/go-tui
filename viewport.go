@@ -112,39 +112,35 @@ func (v *viewport) WriteByte(b byte) error {
 	return err
 }
 
-// see https://notes.burke.libbey.me/ansi-escape-codes/
-// see https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
+// Write queues a copied frame for asynchronous viewport rendering.
 func (v *viewport) Write(chunk []byte) (n int, err error) {
-	return v.write(chunk, nil)
+	return v.write(chunk, nil, 0)
 }
 
-// write sends a chunk to the viewport's event loop,
-// optionally signaling done after the arbiter applies it.
-func (v *viewport) write(chunk []byte, done chan struct{}) (n int, err error) {
+// write queues an owned copy with its width update and optional acknowledgement.
+func (v *viewport) write(chunk []byte, done chan struct{}, width int) (n int, err error) {
 	select {
 	case <-v.ctx.Done():
 		return 0, io.EOF
 	// [viewport.loop] will handle the write, hence the copy
-	case v.inner <- viewportWrite{chunk: bytes.Clone(chunk), done: done}:
+	case v.inner <- viewportWrite{chunk: bytes.Clone(chunk), width: width, done: done}:
 		return len(chunk), nil
 	}
 }
 
-// writeWithWidth sends a chunk and updates the viewport width
-// atomically before line wrapping, used by widget renders.
+// writeWithWidth applies frame content and width together before wrapping.
 func (v *viewport) writeWithWidth(chunk []byte, width int) (n int, err error) {
-	select {
-	case <-v.ctx.Done():
-		return 0, io.EOF
-	case v.inner <- viewportWrite{chunk: bytes.Clone(chunk), width: width}:
-		return len(chunk), nil
-	}
+	return v.write(chunk, nil, width)
 }
 
-// writeAndWait blocks until the arbiter has applied this viewport update.
-func (v *viewport) writeAndWait(chunk []byte) error {
+// writeAndWait waits for the arbiter to apply the frame and optional width.
+func (v *viewport) writeAndWait(chunk []byte, width ...int) error {
+	w := 0
+	if len(width) > 0 {
+		w = width[0]
+	}
 	done := make(chan struct{})
-	if _, err := v.write(chunk, done); err != nil {
+	if _, err := v.write(chunk, done, w); err != nil {
 		return err
 	}
 	select {

@@ -327,14 +327,14 @@ func TestDropdownClampDisplayClampsOffset(t *testing.T) {
 	assert.True(t, d.offset+len(d.displayed) <= len(d.relevant))
 }
 
-func TestMultichoiceClampDisplayShrink(t *testing.T) {
+func TestMultichoiceClampRowsShrink(t *testing.T) {
 	m := &multichoice{
 		relevant:  []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
 		displayed: []int{0, 1, 2, 3, 4},
 		offset:    0,
 		active:    4,
 	}
-	m.clampDisplay(4)
+	m.clampRows(2)
 	assert.Equal(t, 2, len(m.displayed))
 	assert.True(t, m.active < len(m.displayed))
 }

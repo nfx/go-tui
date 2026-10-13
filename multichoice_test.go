@@ -6,12 +6,16 @@ package tui
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"os"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
-	"text/template"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
@@ -20,18 +24,9 @@ func TestMultichoiceRenderInitializes(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two"}
 	io := newTestTermIO(20, 6)
-	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
-	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf = text(m.Label + " ")
 
-	frame := &viewport{
-		ctx:      t.Context(),
-		inner:    make(chan viewportWrite, 16),
-		writeTos: make(chan *writeTo, 1),
-		notify:   make(chan viewportChanged, 1),
-		width:    io.Width,
-		height:   io.Height,
-	}
+	frame := &bytes.Buffer{}
+	assert.NoError(t, m.prepare(nil))
 
 	assert.NoError(t, m.render(io, frame))
 }
@@ -40,23 +35,16 @@ func TestMultichoiceRenderMoreItems(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"short", "veryverylong", "mid", "tail"}
 	m.active = 0
-	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
-	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf = text("longlabel ")
 	io := newTestTermIO(5, 4)
-	frame := &viewport{
-		ctx:      t.Context(),
-		inner:    make(chan viewportWrite, 16),
-		writeTos: make(chan *writeTo, 1),
-		notify:   make(chan viewportChanged, 16),
-		width:    io.Width,
-		height:   io.Height,
-	}
+	frame := &bytes.Buffer{}
+	assert.NoError(t, m.prepare(nil))
+
 	assert.NoError(t, m.render(io, frame))
 }
 
 func TestMultichoiceRunNoSpace(t *testing.T) {
 	m := newMultichoice(t.Context())
+	m.Items = []any{"one"}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{
 			in:      in,
@@ -66,7 +54,7 @@ func TestMultichoiceRunNoSpace(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	err := m.run()
+	err := m.run(m.Ctx)
 	assert.ErrorIs(t, err, ErrNoSpace)
 }
 
@@ -82,10 +70,6 @@ func TestMultichoiceRunHandlesKeys(t *testing.T) {
 	}}
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two", "three"}
-	m.selected = make([]bool, len(m.Items))
-	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
-	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf = text(m.Label + " ")
 	m.in = reader
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -97,7 +81,7 @@ func TestMultichoiceRunHandlesKeys(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	assert.NoError(t, m.run())
+	assert.NoError(t, m.run(m.Ctx))
 }
 
 func TestMultichoiceRunIgnoresSpecialKeys(t *testing.T) {
@@ -110,10 +94,6 @@ func TestMultichoiceRunIgnoresSpecialKeys(t *testing.T) {
 	}}
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two", "three"}
-	m.selected = make([]bool, len(m.Items))
-	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
-	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf = text(m.Label + " ")
 	m.in = reader
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -125,7 +105,7 @@ func TestMultichoiceRunIgnoresSpecialKeys(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	assert.NoError(t, m.run())
+	assert.NoError(t, m.run(m.Ctx))
 	assert.Equal(t, []bool{false, true, false}, m.selected)
 }
 
@@ -134,10 +114,6 @@ func TestMultichoiceRunContextDone(t *testing.T) {
 	cancel()
 	m := newMultichoice(ctx)
 	m.Items = []any{"one"}
-	m.selected = make([]bool, len(m.Items))
-	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
-	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf = text(m.Label + " ")
 	m.in = &chunkReader{chunks: [][]byte{{byte(keyEnter)}}}
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -149,17 +125,13 @@ func TestMultichoiceRunContextDone(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	err := m.run()
+	err := m.run(m.Ctx)
 	assert.Error(t, err)
 }
 
-func TestMultichoiceRunPasteIgnored(t *testing.T) {
+func TestMultichoiceRunCoalescedKeys(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one"}
-	m.selected = make([]bool, len(m.Items))
-	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
-	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf = text(m.Label + " ")
 	m.in = &chunkReader{chunks: [][]byte{{'a', 'b'}, {byte(keyEnter)}}}
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -171,16 +143,12 @@ func TestMultichoiceRunPasteIgnored(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	assert.NoError(t, m.run())
+	assert.NoError(t, m.run(m.Ctx))
 }
 
 func TestMultichoiceRunReadError(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one"}
-	m.selected = make([]bool, len(m.Items))
-	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
-	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf = text(m.Label + " ")
 	m.in = bytes.NewBuffer(nil)
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -192,17 +160,17 @@ func TestMultichoiceRunReadError(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	err := m.run()
+	err := m.run(m.Ctx)
 	assert.Error(t, err)
 }
 
-func TestMultichoiceClampDisplayKeepsActiveItemVisible(t *testing.T) {
+func TestMultichoiceClampRowsKeepsActiveItemVisible(t *testing.T) {
 	m := &multichoice{}
 	m.relevant = []int{0, 1, 2, 3, 4, 5, 6}
 	m.displayed = m.relevant[:5]
 	m.active = 4
 
-	m.clampDisplay(4) // two rows
+	m.clampRows(2) // two rows
 
 	if got := m.relevant[m.offset+m.active]; got != 4 {
 		t.Fatalf("active item changed: got %d, want 4", got)
@@ -220,10 +188,6 @@ func TestMultichoiceRunRerendersOnResize(t *testing.T) {
 	var tio *termIO
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two", "three", "four", "five", "six"}
-	m.selected = make([]bool, len(m.Items))
-	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}\n"))
-	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}} more"))
-	m.labelBuf = text(m.Label + " ")
 	m.in = keys
 	m.out = out
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -238,7 +202,7 @@ func TestMultichoiceRunRerendersOnResize(t *testing.T) {
 		return tio, nil
 	}
 	done := make(chan error, 1)
-	go func() { done <- m.run() }()
+	go func() { done <- m.run(m.Ctx) }()
 	waitBufferContains(t, out, "2 more")
 
 	// shrink the terminal without pressing a key
@@ -271,14 +235,10 @@ func waitBufferContains(t *testing.T, out *syncBuffer, part string) {
 	}
 }
 
-// newPipeMultichoice prepares a multichoice that reads keys from in.
+// newPipeMultichoice isolates reader handoff tests from real terminal setup.
 func newPipeMultichoice(ctx context.Context, in io.Reader) *multichoice {
 	m := newMultichoice(ctx)
 	m.Items = []any{"one", "two", "three"}
-	m.selected = make([]bool, len(m.Items))
-	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}\n"))
-	m.moreItemsTemplate = template.Must(template.New("more").Parse("{{.More}}"))
-	m.labelBuf = text(m.Label + " ")
 	m.in = in
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -287,8 +247,6 @@ func newPipeMultichoice(ctx context.Context, in io.Reader) *multichoice {
 	return m
 }
 
-// TestMultichoiceRunReadsPendingEnter covers an arrow and Enter arriving in one read:
-// Enter is left in termIO.pending and must not wait for the fd to become readable.
 func TestMultichoiceRunReadsPendingEnter(t *testing.T) {
 	pr, pw, err := os.Pipe()
 	assert.NoError(t, err)
@@ -298,7 +256,7 @@ func TestMultichoiceRunReadsPendingEnter(t *testing.T) {
 	_, err = pw.WriteString("\x1b[B\r")
 	assert.NoError(t, err)
 	done := make(chan error, 1)
-	go func() { done <- m.run() }()
+	go func() { done <- m.run(m.Ctx) }()
 	select {
 	case err := <-done:
 		assert.NoError(t, err)
@@ -308,8 +266,6 @@ func TestMultichoiceRunReadsPendingEnter(t *testing.T) {
 	assert.Equal(t, 1, m.active)
 }
 
-// TestMultichoiceRunCancelledWrappedReadKeepsNextKey verifies that a read blocked
-// in a wrapper that cannot be polled is handed to a fresh prompt.
 func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	pr, pw, err := os.Pipe()
 	assert.NoError(t, err)
@@ -320,7 +276,7 @@ func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	defer cancel()
 	m := newPipeMultichoice(ctx, in)
 	finished := make(chan error, 1)
-	go func() { finished <- m.run() }()
+	go func() { finished <- m.run(m.Ctx) }()
 	select {
 	case <-in.started:
 	case <-time.After(time.Second):
@@ -354,4 +310,1116 @@ func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	got, err := next.run(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
+}
+
+// preparedMultichoice builds item state for tests that bypass terminal interaction.
+func preparedMultichoice(t *testing.T, items []any, o ...opt) *multichoice {
+	t.Helper()
+	m := newMultichoice(t.Context())
+	m.Items = items
+	if err := m.prepare(o); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestMultichoiceStateAndGeometry(t *testing.T) {
+	m := preparedMultichoice(t, []any{"one", "two", "three", "four", "five", "six"})
+	m.clampRows(3)
+	for _, want := range []struct {
+		key            rune
+		offset, active int
+	}{{'↓', 0, 1}, {'↓', 0, 2}, {'↓', 1, 2}, {'↑', 1, 1}, {'↑', 1, 0}, {'↑', 0, 0}} {
+		m.handleKey(want.key)
+		m.clampRows(3)
+		if m.offset != want.offset || m.active != want.active {
+			t.Fatalf("%c: offset %d active %d", want.key, m.offset, m.active)
+		}
+	}
+	m.handleKey(' ')
+	m.filter("zz")
+	m.handleKey(' ')
+	if m.focused() != -1 || m.count != 1 || !m.handleKey(keyEnter) {
+		t.Fatal("empty filter must preserve hidden checked items")
+	}
+	m.filter("")
+	m.handleKey('↓')
+	m.clampRows(3)
+	source := m.focused()
+	m.clampRows(1)
+	m.clampRows(10)
+	if m.focused() != source || m.count != 1 {
+		t.Fatal("resize changed identity")
+	}
+	for _, query := range []string{"e\u0301", "👨‍👩‍👧", "🇺🇦", "👍🏽", "\u6f22"} {
+		m.filter(query)
+		m.handleKey(0x7f)
+		if m.typed != "" {
+			t.Fatalf("backspace left %q", m.typed)
+		}
+	}
+	for _, width := range []int{1, 2, 6, 20} {
+		m := preparedMultichoice(
+			t,
+			[]any{"\u6f22\u5b57", "👨‍👩‍👧 family", "e\u0301", "\x1b[31mred\x1b[0m", "first\nsecond"},
+		)
+		m.Label = "very long label"
+		m.labelBuf = text(m.Label)
+		tio := newTestTermIO(width, 6)
+		var frame bytes.Buffer
+		if err := m.render(tio, &frame); err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(frame.String(), "\n") {
+			if !utf8.ValidString(line) || text(line).width() > width {
+				t.Fatalf("width %d: %q", width, line)
+			}
+		}
+	}
+	m = preparedMultichoice(t, []any{"one"})
+	var frame bytes.Buffer
+	if err := m.render(newTestTermIO(0, 4), &frame); !errors.Is(err, ErrNoSpace) {
+		t.Fatal(err)
+	}
+	if err := m.render(newTestTermIO(20, 2), &frame); !errors.Is(err, ErrNoSpace) {
+		t.Fatal(err)
+	}
+}
+
+func TestMultichoicePreparationAndCapabilities(t *testing.T) {
+	m := preparedMultichoice(t, []any{"one", "two"}, WithDefault("one"), WithDefault("two"))
+	if m.typed != "" || !reflect.DeepEqual(m.indices(), []int{1}) {
+		t.Fatal(m.typed, m.indices())
+	}
+	m.handleKey(' ')
+	m.filter("one")
+	m.filter("")
+	if m.count != 0 {
+		t.Fatal("default was reapplied")
+	}
+	for _, option := range []opt{WithTemplate(".Name"), WithFieldTemplate("Name"), WithActiveItemTemplate("{{.}}"), WithInactiveItemTemplate("{{.}}"), WithMoreItemsTemplate("{{.More}}")} {
+		if err := option(newMultichoice(t.Context())); err != nil {
+			t.Fatal(err)
+		}
+		if err := option(newDropdown(t.Context())); err != nil {
+			t.Fatal(err)
+		}
+		if err := option(newInput(t.Context(), "Input")); !errors.Is(err, ErrWrongWidget) {
+			t.Fatalf("input accepted choice option: %v", err)
+		}
+	}
+	var out bytes.Buffer
+	invalid := newMultichoice(t.Context())
+	invalid.Items = []any{"one"}
+	invalid.in = strings.NewReader("\r")
+	invalid.out = &out
+	acquired := false
+	invalid.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { acquired = true; return nil, ErrNoTTY }
+	for _, option := range []opt{WithAnswerTemplate("{{"), WithInactiveItemTemplate("{{.Missing}}"), WithLabelTemplate("{{.Missing}}")} {
+		if err := invalid.prepare([]opt{option}); err == nil {
+			t.Fatal("invalid preparation passed")
+		}
+		if acquired || out.Len() != 0 {
+			t.Fatal("preparation acquired terminal")
+		}
+		invalid = newMultichoice(t.Context())
+		invalid.Items = []any{"one"}
+		invalid.out = &out
+	}
+}
+
+type choiceFailWriter struct {
+	err        error
+	short      bool
+	answerOnly bool
+}
+
+// Write injects output failures at frame or answer time for lifecycle tests.
+func (w choiceFailWriter) Write(p []byte) (int, error) {
+	if w.answerOnly && !bytes.HasPrefix(p, []byte("ANSWER")) {
+		return len(p), nil
+	}
+	if w.short {
+		return len(p) / 2, nil
+	}
+	return 0, w.err
+}
+
+func TestMultichoiceLifecycleFailures(t *testing.T) {
+	sentinel := errors.New("writer broke")
+	restoreErr := errors.New("restore broke")
+	for _, tc := range []struct {
+		name    string
+		writer  io.Writer
+		keys    string
+		height  int
+		restore error
+		want    error
+	}{
+		{"success", io.Discard, " \r", 8, nil, nil},
+		{"EOF", io.Discard, "", 8, nil, io.EOF},
+		{"writer", choiceFailWriter{err: sentinel}, "\r", 8, nil, sentinel},
+		{"short write", choiceFailWriter{short: true}, "\r", 8, nil, io.ErrShortWrite},
+		{"answer", choiceFailWriter{err: sentinel, answerOnly: true}, "\r", 8, nil, sentinel},
+		{"restore", io.Discard, "\r", 8, restoreErr, restoreErr},
+		{"no space", io.Discard, "\r", 2, nil, ErrNoSpace},
+		{"primary and cleanup", choiceFailWriter{err: sentinel}, "\r", 8, restoreErr, sentinel},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newMultichoice(t.Context())
+			m.Items = []any{"one"}
+			m.in = strings.NewReader(tc.keys)
+			m.out = tc.writer
+			m.AnswerTemplate = "ANSWER {{.Count}}"
+			restores := 0
+			m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+				return &termIO{
+					in:      in,
+					out:     out,
+					Width:   40,
+					Height:  tc.height,
+					Restore: func() error { restores++; return tc.restore },
+				}, nil
+			}
+			err := m.run(m.Ctx)
+			if !errors.Is(err, tc.want) || restores != 1 {
+				t.Fatalf("%v, restores %d", err, restores)
+			}
+			if tc.restore != nil && !errors.Is(err, tc.restore) {
+				t.Fatal(err)
+			}
+		})
+	}
+	for range 20 {
+		m := newMultichoice(t.Context())
+		m.Items = []any{"one"}
+		if err := m.run(m.Ctx, WithInput(strings.NewReader("\r")), WithOutput(io.Discard)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestMultichoiceBracketedPasteSplitsAndHandoff(t *testing.T) {
+	input := "\x1b[200~two\r\n\t\x03\x04\x1b[201~ \r \r"
+	for split := 1; split < len(input); split++ {
+		t.Run(strconv.Itoa(split), func(t *testing.T) {
+			in := io.MultiReader(strings.NewReader(input[:split]), strings.NewReader(input[split:]))
+			first, err := Multichoice(
+				t.Context(),
+				"First",
+				[]string{"one", "two"},
+				WithInput(in),
+				WithOutput(io.Discard),
+			)
+			if err != nil || !reflect.DeepEqual(first, []string{"two"}) {
+				t.Fatalf("%v, %v", first, err)
+			}
+			next, err := Multichoice(t.Context(), "Next", []string{"next"}, WithInput(in), WithOutput(io.Discard))
+			if err != nil || !reflect.DeepEqual(next, []string{"next"}) {
+				t.Fatalf("handoff: %v, %v", next, err)
+			}
+		})
+	}
+	// A legacy event produced by a cancelled old decoder must replay ordinary
+	// keys, including the bytes after confirmation, through the shared decoder.
+	in := strings.NewReader(" \r \r")
+	old := &termIO{in: in, input: sharedInputState(in)}
+	read, _ := old.startRead(t.Context())
+	<-read.done
+	first, err := Multichoice(t.Context(), "First", []string{"one"}, WithInput(in), WithOutput(io.Discard))
+	if err != nil || len(first) != 1 {
+		t.Fatal(first, err)
+	}
+	second, err := Multichoice(t.Context(), "Second", []string{"two"}, WithInput(in), WithOutput(io.Discard))
+	if err != nil || len(second) != 1 {
+		t.Fatal(second, err)
+	}
+}
+
+func TestMultichoiceCancelledPasteDiscardsPartialUpdate(t *testing.T) {
+	input, typing := io.Pipe()
+	defer func() { assert.NoError(t, input.Close()) }()
+	defer func() { assert.NoError(t, typing.Close()) }()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	in := newPromptReadNotifier(input)
+	m := newPipeMultichoice(ctx, in)
+	m.out = &syncBuffer{}
+	done := make(chan error, 1)
+	go func() { done <- m.run(m.Ctx) }()
+	waitPromptRead(t, in)
+	_, err := typing.Write([]byte("\x1b[200~one"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Wait until the opening frame is decoded and the payload read is blocked.
+	waitPromptRead(t, in)
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancel blocked")
+	}
+	if m.typed != "" {
+		t.Fatal("partial payload applied")
+	}
+	next := newPipeMultichoice(t.Context(), in)
+	next.Items = []any{"next"}
+	next.out = io.Discard
+	go func() { done <- next.run(next.Ctx) }()
+	_, err = typing.Write([]byte("\x1b[201~ \r"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("handoff blocked")
+	}
+	if !reflect.DeepEqual(next.indices(), []int{0}) || next.typed != "" {
+		t.Fatal(next.indices(), next.typed)
+	}
+}
+
+func TestMultichoiceLazyDefaultState(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		items   []any
+		hint    string
+		toggles []int
+		want    []int
+		err     error
+	}{
+		{"unique", []any{"other", "api"}, "api", nil, []int{1}, nil},
+		{"ambiguous later", []any{"api", "api server"}, "api", nil, []int{}, nil},
+		{"duplicate", []any{"api", "api"}, "api", nil, []int{}, nil},
+		{"manually unchecked", []any{"api", "other"}, "api", []int{0, 0}, []int{}, nil},
+		{"already checked", []any{"api", "other"}, "api", []int{0}, []int{0}, nil},
+		{"empty", nil, "api", nil, nil, ErrEmptyLazyResult},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newMultichoice(t.Context())
+			m.loading = true
+			m.hint = tc.hint
+			if err := m.prepare(nil); err != nil {
+				t.Fatal(err)
+			}
+			for _, item := range tc.items {
+				if err := m.addItem(item); err != nil {
+					t.Fatal(err)
+				}
+				if m.count != 0 {
+					t.Fatal("provisional default")
+				}
+			}
+			for _, i := range tc.toggles {
+				m.setFocus(i)
+				m.handleKey(' ')
+			}
+			m.filter("zzz")
+			if m.handleKey(keyEnter) {
+				t.Fatal("loading confirmed")
+			}
+			err := m.finishLoading()
+			if !errors.Is(err, tc.err) {
+				t.Fatal(err)
+			}
+			if err == nil && !reflect.DeepEqual(m.indices(), tc.want) {
+				t.Fatal(m.indices(), tc.want)
+			}
+		})
+	}
+}
+
+func TestMultichoiceLazyArrivalsAndFocus(t *testing.T) {
+	m := newMultichoice(t.Context())
+	m.loading = true
+	m.hint = "cat"
+	if err := m.prepare(nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []string{"xxxx", "yyyy", "bat"} {
+		if err := m.addItem(item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if m.focused() != 2 {
+		t.Fatal("focus did not follow best-ranked arrival")
+	}
+	m.handleKey('↓')
+	focused := m.focused()
+	if err := m.addItem("cat"); err != nil {
+		t.Fatal(err)
+	}
+	if m.focused() != focused {
+		t.Fatal("arrival changed manual focus")
+	}
+	m.filter("z")
+	if err := m.addItem("zoo"); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.relevant) != 1 || m.focused() != 4 {
+		t.Fatal(m.relevant)
+	}
+	if err := m.finishLoading(); err != nil {
+		t.Fatal(err)
+	}
+	if m.focused() != 4 || !reflect.DeepEqual(m.indices(), []int{3}) {
+		t.Fatal(m.focused(), m.indices())
+	}
+}
+
+func TestMultichoiceFilePendingKeysReachFreshPrompt(t *testing.T) {
+	input, typing, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { assert.NoError(t, input.Close()) }()
+	defer func() { assert.NoError(t, typing.Close()) }()
+	_, err = typing.WriteString(" \r \r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		m := newPipeMultichoice(t.Context(), input)
+		done := make(chan error, 1)
+		go func() { done <- m.run(m.Ctx) }()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("lost pending file keys")
+		}
+		if m.count != 1 {
+			t.Fatal(m.count)
+		}
+	}
+}
+
+type countedChecklistReader struct {
+	reader io.Reader
+	reads  int
+}
+
+// Read counts source access to detect reads started after confirmation.
+func (r *countedChecklistReader) Read(p []byte) (int, error) { r.reads++; return r.reader.Read(p) }
+
+func TestMultichoiceNoReadAfterEnterOrConsumedReplay(t *testing.T) {
+	in := &countedChecklistReader{reader: strings.NewReader(" \r")}
+	got, err := Multichoice(t.Context(), "Pick", []string{"one"}, WithInput(in), WithOutput(io.Discard))
+	if err != nil || len(got) != 1 {
+		t.Fatal(got, err)
+	}
+	if in.reads != 1 {
+		t.Fatal("read started after Enter", in.reads)
+	}
+	got, err = Multichoice(t.Context(), "Next", []string{"two"}, WithInput(in), WithOutput(io.Discard))
+	if !errors.Is(err, io.EOF) || got != nil {
+		t.Fatal("consumed keys replayed", got, err)
+	}
+	inputStates.Lock()
+	_, retained := inputStates.states[in]
+	inputStates.Unlock()
+	if retained {
+		t.Fatal("EOF retained reader")
+	}
+}
+
+func TestMultichoiceEnterDecodedBeforeExhaustionCannotConfirm(t *testing.T) {
+	m := newMultichoice(t.Context())
+	m.loading = true
+	if err := m.prepare(nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.addItem("one"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.finishLoading(); err != nil {
+		t.Fatal(err)
+	}
+	done, err := m.acceptEvent(&termIO{}, keyEvent{key: keyEnter, readAt: m.readyAt.Add(-time.Nanosecond)})
+	if done || err != nil {
+		t.Fatal(done, err)
+	}
+	done, err = m.acceptEvent(&termIO{}, keyEvent{key: keyEnter, readAt: m.readyAt})
+	if !done || err != nil {
+		t.Fatal(done, err)
+	}
+}
+
+func TestMultichoiceIndependentReaders(t *testing.T) {
+	firstInput, typing := io.Pipe()
+	defer func() { assert.NoError(t, firstInput.Close()) }()
+	defer func() { assert.NoError(t, typing.Close()) }()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	first := newPipeMultichoice(ctx, firstInput)
+	out := &syncBuffer{}
+	first.out = out
+	done := make(chan error, 1)
+	go func() { done <- first.run(first.Ctx) }()
+	waitBufferContains(t, out, "[ ] one")
+	got, err := Multichoice(
+		t.Context(),
+		"Independent",
+		[]string{"two"},
+		WithInput(strings.NewReader(" \r")),
+		WithOutput(io.Discard),
+	)
+	if err != nil || !reflect.DeepEqual(got, []string{"two"}) {
+		t.Fatal(got, err)
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first prompt did not cancel")
+	}
+	if first.count != 0 {
+		t.Fatal("selection crossed readers")
+	}
+}
+
+type choiceTemplateFailure struct{ err error }
+
+// Label exposes a sentinel error through template execution.
+func (x choiceTemplateFailure) Label() (string, error) { return "", x.err }
+
+func TestMultichoiceTemplateErrorPreservesUnderlyingCause(t *testing.T) {
+	cause := errors.New("label failed")
+	eager, err := Multichoice(
+		t.Context(),
+		"Eager",
+		[]choiceTemplateFailure{{cause}},
+		WithTemplate(".Label"),
+		WithOutput(io.Discard),
+	)
+	if eager != nil || !errors.Is(err, cause) {
+		t.Fatal(eager, err)
+	}
+	input, typing := io.Pipe()
+	defer func() { assert.NoError(t, input.Close()) }()
+	defer func() { assert.NoError(t, typing.Close()) }()
+	seq := func(yield func(choiceTemplateFailure, error) bool) { yield(choiceTemplateFailure{cause}, nil) }
+	lazy, err := MultichoiceLazy(
+		t.Context(),
+		"Lazy",
+		seq,
+		WithTemplate(".Label"),
+		WithInput(input),
+		WithOutput(io.Discard),
+	)
+	if lazy != nil || !errors.Is(err, cause) {
+		t.Fatal(lazy, err)
+	}
+}
+
+func TestMultichoiceLazyPublicLoading(t *testing.T) {
+	input, typing := io.Pipe()
+	defer func() { assert.NoError(t, input.Close()) }()
+	defer func() { assert.NoError(t, typing.Close()) }()
+	arrivals := make(chan string)
+	out := &syncBuffer{}
+	seq := func(yield func(string, error) bool) {
+		for item := range arrivals {
+			if !yield(item, nil) {
+				return
+			}
+		}
+	}
+	result := make(chan []string, 1)
+	failure := make(chan error, 1)
+	go func() {
+		got, err := MultichoiceLazy(t.Context(), "Lazy", seq, WithDefault("api"), WithInput(input), WithOutput(out))
+		result <- got
+		failure <- err
+	}()
+	waitBufferContains(t, out, "Lazy")
+	arrivals <- "api"
+	waitBufferContains(t, out, "[ ] api")
+	if _, err := typing.Write([]byte{'\r'}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := typing.Write([]byte{'x'}); err != nil {
+		t.Fatal(err)
+	}
+	waitBufferContains(t, out, "No matches")
+	if _, err := typing.Write([]byte{0x7f}); err != nil {
+		t.Fatal(err)
+	}
+	waitBufferContains(t, out, "[ ] api")
+	arrivals <- "worker"
+	close(arrivals)
+	waitBufferContains(t, out, "[x] api")
+	select {
+	case err := <-failure:
+		t.Fatalf("queued Enter confirmed after loading: %v", err)
+	default:
+	}
+	if _, err := typing.Write([]byte{'\r'}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-failure:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("fresh Enter failed")
+	}
+	if got := <-result; !reflect.DeepEqual(got, []string{"api"}) {
+		t.Fatal(got)
+	}
+}
+
+func TestMultichoiceLazyPublicFailures(t *testing.T) {
+	sentinel := errors.New("producer failed")
+	for _, tc := range []struct {
+		name string
+		seq  func(func(string, error) bool)
+		want error
+	}{
+		{"empty", func(func(string, error) bool) {}, ErrEmptyLazyResult},
+		{"error only", func(yield func(string, error) bool) { yield("", sentinel) }, sentinel},
+		{"late error", func(yield func(string, error) bool) {
+			if yield("api", nil) {
+				yield("", sentinel)
+			}
+		}, sentinel},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			input, typing := io.Pipe()
+			defer func() { assert.NoError(t, input.Close()) }()
+			defer func() { assert.NoError(t, typing.Close()) }()
+			got, err := MultichoiceLazy(ctx, "Lazy", tc.seq, WithInput(input), WithOutput(io.Discard))
+			if got != nil || !errors.Is(err, tc.want) {
+				t.Fatal(got, err)
+			}
+		})
+	}
+	got, err := MultichoiceLazy[string](t.Context(), "Nil", nil)
+	if got != nil || !errors.Is(err, ErrInvalidOption) {
+		t.Fatal(got, err)
+	}
+}
+
+func TestMultichoiceProducerStopsBlockedPublication(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	stopped := make(chan struct{})
+	started := make(chan struct{})
+	m := newMultichoice(t.Context())
+	m.loading = true
+	m.producer = func(yield func(any, error) bool) {
+		defer close(stopped)
+		close(started)
+		for i := 0; ; i++ {
+			if !yield(i, nil) {
+				return
+			}
+		}
+	}
+	publication := m.startProducer(ctx)
+	<-started
+	// No consumer can drain this bounded queue; cancellation must unblock yield.
+	cancel()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("yield did not return false")
+	}
+	if len(publication) > 16 {
+		t.Fatal("unbounded queue")
+	}
+}
+
+func TestMultichoiceStaticAndLazyLargeLists(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	items := make([]string, 10000)
+	for i := range items {
+		items[i] = fmt.Sprintf("item-%05d", i)
+	}
+	got, err := Multichoice(
+		ctx,
+		"Large",
+		items,
+		WithDefault("item-09999"),
+		WithInput(strings.NewReader("\r")),
+		WithOutput(io.Discard),
+	)
+	if err != nil || !reflect.DeepEqual(got, []string{"item-09999"}) {
+		t.Fatal(got, err)
+	}
+	m := newMultichoice(ctx)
+	m.loading = true
+	m.producer = func(yield func(any, error) bool) {
+		for _, item := range items {
+			if !yield(item, nil) {
+				return
+			}
+		}
+	}
+	if err := m.prepare(nil); err != nil {
+		t.Fatal(err)
+	}
+	publication := m.startProducer(ctx)
+	for pair := range publication {
+		if err := m.addItem(pair.item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.finishLoading(); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Items) != len(items) || len(m.relevant) != len(items) {
+		t.Fatal("lost burst arrivals")
+	}
+}
+
+func TestMultichoiceManagedCleanupAndOutputFailure(t *testing.T) {
+	for _, short := range []bool{false, true} {
+		t.Run(strconv.FormatBool(short), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			cio := newUnstartedIO(ctx, 40, 8, 0)
+			sentinel := errors.New("terminal failed")
+			go cio.handleViewports(ctx)
+			go cio.forwardTo(ctx, choiceFailWriter{err: sentinel, short: short})
+			m := newMultichoice(t.Context())
+			m.Items = []any{"one"}
+			m.in = strings.NewReader("\r")
+			m.out = cio
+			var vp *viewport
+			m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+				var err error
+				vp, err = cio.pushViewport()
+				if err != nil {
+					return nil, err
+				}
+				return withRestore(
+					&termIO{in: in, out: out, Width: 40, Height: 8, cio: cio, vp: vp},
+					func() error { return nil },
+				), nil
+			}
+			err := m.run(m.Ctx)
+			want := sentinel
+			if short {
+				want = io.ErrShortWrite
+			}
+			if !errors.Is(err, want) {
+				t.Fatal(err)
+			}
+			cio.chainMu.Lock()
+			released := true
+			for current := cio.head; current != nil; current = current.next {
+				if current == vp {
+					released = false
+				}
+			}
+			cio.chainMu.Unlock()
+			if !released {
+				t.Fatal("viewport not released")
+			}
+			cancel()
+			<-cio.done
+		})
+	}
+}
+
+func TestMultichoicePasteModeLifetime(t *testing.T) {
+	original := terminalInputChecker
+	terminalInputChecker = func(int) bool { return true }
+	t.Cleanup(func() { terminalInputChecker = original })
+	for _, keys := range []string{"\r", "\x03"} {
+		var out strings.Builder
+		in := &mockDescriptor{Reader: strings.NewReader(keys), fd: 1}
+		m := newMultichoice(t.Context())
+		m.Items = []any{"one"}
+		m.in = in
+		m.out = &out
+		restores := 0
+		m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			return &termIO{
+				in:      in,
+				out:     out,
+				Width:   40,
+				Height:  8,
+				Restore: func() error { restores++; return nil },
+			}, nil
+		}
+		err := m.run(m.Ctx)
+		if keys == "\r" && err != nil {
+			t.Fatal(err)
+		}
+		if keys != "\r" && !errors.Is(err, io.EOF) {
+			t.Fatal(err)
+		}
+		if restores != 1 || strings.Count(out.String(), "\x1b[?2004h") != 1 ||
+			strings.Count(out.String(), "\x1b[?2004l") != 1 {
+			t.Fatal(out.String(), restores)
+		}
+	}
+}
+
+// completionChecklistIO waits for the unique default to be checked after exhaustion.
+type completionChecklistIO struct {
+	ready chan struct{}
+	sent  bool
+	keys  *strings.Reader
+}
+
+// Write releases input once the exhausted sequence renders its checked default.
+func (s *completionChecklistIO) Write(p []byte) (int, error) {
+	if !s.sent && strings.Contains(string(p), "[x]") {
+		s.sent = true
+		close(s.ready)
+	}
+	return len(p), nil
+}
+
+// Read waits for the checked default before supplying confirmation keys.
+func (s *completionChecklistIO) Read(p []byte) (int, error) {
+	<-s.ready
+	if s.keys != nil {
+		return s.keys.Read(p)
+	}
+	p[0] = keyEnter
+	return 1, nil
+}
+
+func TestMultichoiceBurstyLazyPublicSmoke(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	seq := func(yield func(int, error) bool) {
+		for i := range 2000 {
+			if !yield(i, nil) {
+				return
+			}
+		}
+	}
+	stream := &completionChecklistIO{ready: make(chan struct{})}
+	got, err := MultichoiceLazy(
+		ctx,
+		"Burst",
+		seq,
+		WithDefault("1999"),
+		WithInput(stream),
+		WithOutput(stream),
+		WithHide(),
+	)
+	if err != nil || !reflect.DeepEqual(got, []int{1999}) {
+		t.Fatal(got, err)
+	}
+}
+
+func TestMultichoiceLazyDuplicateAndNilProjection(t *testing.T) {
+	stream := &completionChecklistIO{ready: make(chan struct{}), keys: strings.NewReader(" \x1b[B \x1b[B \r")}
+	seq := func(yield func([]int, error) bool) {
+		for _, item := range [][]int{{1}, {1}, {2}} {
+			if !yield(item, nil) {
+				return
+			}
+		}
+	}
+	got, err := MultichoiceLazy(
+		t.Context(),
+		"Equal",
+		seq,
+		WithDefault("[2]"),
+		WithInput(stream),
+		WithOutput(stream),
+		WithHide(),
+	)
+	if err != nil || !reflect.DeepEqual(got, [][]int{{1}, {1}}) {
+		t.Fatal(got, err)
+	}
+	stream = &completionChecklistIO{ready: make(chan struct{}), keys: strings.NewReader(" \x1b[B \x1b[B \r")}
+	nils := []any{nil, (*int)(nil)}
+	anySeq := func(yield func(any, error) bool) {
+		for _, item := range append(nils, "ready") {
+			if !yield(item, nil) {
+				return
+			}
+		}
+	}
+	values, err := MultichoiceLazy(
+		t.Context(),
+		"Nil",
+		anySeq,
+		WithDefault("ready"),
+		WithInput(stream),
+		WithOutput(stream),
+		WithHide(),
+	)
+	if err != nil || !reflect.DeepEqual(values, nils) {
+		t.Fatal(values, err)
+	}
+}
+
+// promptReadNotifier exposes source-read boundaries without changing buffering.
+type promptReadNotifier struct {
+	io.Reader
+	reads chan struct{}
+}
+
+// newPromptReadNotifier exposes read boundaries for deterministic handoff tests.
+func newPromptReadNotifier(in io.Reader) *promptReadNotifier {
+	return &promptReadNotifier{Reader: in, reads: make(chan struct{}, 16)}
+}
+
+// Read signals source access before blocking in the wrapped reader.
+func (r *promptReadNotifier) Read(p []byte) (int, error) {
+	r.reads <- struct{}{}
+	return r.Reader.Read(p)
+}
+
+// waitPromptRead synchronizes tests at source-read boundaries.
+func waitPromptRead(t *testing.T, in *promptReadNotifier) {
+	t.Helper()
+	select {
+	case <-in.reads:
+	case <-time.After(time.Second):
+		t.Fatal("prompt did not reach the next source read")
+	}
+}
+
+// cancelPromptRead leaves a blocked public-prompt read for its successor.
+func cancelPromptRead(t *testing.T, in *promptReadNotifier, run func(context.Context) error) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- run(ctx) }()
+	waitPromptRead(t, in)
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled prompt did not return")
+	}
+}
+
+type promptChoiceResult struct {
+	items []string
+	err   error
+}
+
+func TestMultichoiceLegacyHandoffPreservesPasteFraming(t *testing.T) {
+	for _, payload := range []string{" ", " \r", " \x03", " \x04", "\r\x03\x04 "} {
+		t.Run(strconv.Quote(payload), func(t *testing.T) {
+			pipe, typing := io.Pipe()
+			defer func() { assert.NoError(t, pipe.Close()) }()
+			defer func() { assert.NoError(t, typing.Close()) }()
+			in := newPromptReadNotifier(pipe)
+			cancelPromptRead(t, in, func(ctx context.Context) error {
+				_, err := Input(ctx, "Old", WithInput(in), WithOutput(io.Discard))
+				return err
+			})
+			ctx, stop := context.WithTimeout(t.Context(), time.Second)
+			defer stop()
+			out := &syncBuffer{}
+			done := make(chan promptChoiceResult, 1)
+			go func() {
+				items, err := Multichoice(ctx, "Next", []string{"one", "two"}, WithInput(in), WithOutput(out))
+				done <- promptChoiceResult{items, err}
+			}()
+			waitBufferContains(t, out, "[ ] one")
+			if _, err := typing.Write([]byte("\x1b[200~" + payload + "\x1b[201~")); err != nil {
+				t.Fatal(err)
+			}
+			// A new read proves the entire paste was accepted without confirming
+			// or treating Ctrl-C/D as EOF; no timing delay is needed.
+			select {
+			case got := <-done:
+				t.Fatalf("paste ended the prompt: %v, %v", got.items, got.err)
+			case <-in.reads:
+			case <-ctx.Done():
+				t.Fatal("paste did not reach the successor")
+			}
+			if _, err := typing.Write([]byte("\r")); err != nil {
+				t.Fatal(err)
+			}
+			got := <-done
+			if got.err != nil || got.items == nil || len(got.items) != 0 {
+				t.Fatalf("pasted Space checked an item: %v, %v", got.items, got.err)
+			}
+		})
+	}
+}
+
+func TestMultichoiceFreshPasteAfterCancelledRead(t *testing.T) {
+	pipe, typing := io.Pipe()
+	defer func() { assert.NoError(t, pipe.Close()) }()
+	defer func() { assert.NoError(t, typing.Close()) }()
+	in := newPromptReadNotifier(pipe)
+	cancelPromptRead(t, in, func(ctx context.Context) error {
+		_, err := Multichoice(ctx, "Old", []string{"old"}, WithInput(in), WithOutput(io.Discard))
+		return err
+	})
+	ctx, stop := context.WithTimeout(t.Context(), time.Second)
+	defer stop()
+	out := &syncBuffer{}
+	done := make(chan promptChoiceResult, 1)
+	go func() {
+		items, err := Multichoice(ctx, "Next", []string{"one", "two"}, WithInput(in), WithOutput(out))
+		done <- promptChoiceResult{items, err}
+	}()
+	waitBufferContains(t, out, "[ ] one")
+	if _, err := typing.Write([]byte("\x1b[200~two\x1b[201~ \r")); err != nil {
+		t.Fatal(err)
+	}
+	got := <-done
+	if got.err != nil || !reflect.DeepEqual(got.items, []string{"two"}) {
+		t.Fatalf("fresh paste was discarded: %v, %v", got.items, got.err)
+	}
+}
+
+func TestMultichoiceBufferedEnterRetainsArrival(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		split    bool
+		buffered int
+	}{
+		{"legacy replay", false, 2},
+		{"pending bytes", true, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newMultichoice(t.Context())
+			m.loading = true
+			if err := m.prepare(nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := m.addItem("one"); err != nil {
+				t.Fatal(err)
+			}
+			in := &chunkReader{chunks: [][]byte{[]byte("\t\r"), []byte("\r")}}
+			old := &termIO{in: in, splitKeys: tc.split}
+			read, accept := old.startRead(t.Context())
+			<-read.done
+			accept()
+			if read.event.readAt.IsZero() {
+				t.Fatal("source read has no arrival time")
+			}
+			if err := m.finishLoading(); err != nil {
+				t.Fatal(err)
+			}
+			if !tc.split {
+				if done, err := m.acceptEvent(old, read.event); done || err != nil {
+					t.Fatal(done, err)
+				}
+			}
+			// A fresh termIO must preserve both pending and replayed arrival times.
+			next := &termIO{in: in, splitKeys: true, bracketedPaste: true}
+			for range tc.buffered {
+				buffered, consume := next.startRead(t.Context())
+				<-buffered.done
+				consume()
+				if !buffered.event.readAt.Equal(read.event.readAt) {
+					t.Fatal("buffered bytes lost their source-read time")
+				}
+				if done, err := m.acceptEvent(next, buffered.event); done || err != nil {
+					t.Fatalf("old Enter confirmed after loading: %v, %v", done, err)
+				}
+			}
+			fresh, consume := next.startRead(t.Context())
+			<-fresh.done
+			consume()
+			if fresh.event.readAt.Before(m.readyAt) {
+				t.Fatal("fresh Enter retained an old arrival time")
+			}
+			if done, err := m.acceptEvent(next, fresh.event); !done || err != nil {
+				t.Fatalf("fresh Enter did not confirm: %v, %v", done, err)
+			}
+		})
+	}
+}
+
+func TestTermIOPasteTailRetainsFreshArrival(t *testing.T) {
+	pipe, typing := io.Pipe()
+	defer func() { assert.NoError(t, pipe.Close()) }()
+	defer func() { assert.NoError(t, typing.Close()) }()
+	in := newPromptReadNotifier(pipe)
+	old := &termIO{in: in, splitKeys: true, bracketedPaste: true}
+	read, accept := old.startRead(t.Context())
+	waitPromptRead(t, in)
+	if _, err := typing.Write([]byte("\x1b[200~one")); err != nil {
+		t.Fatal(err)
+	}
+	// The decoder has observed the opening frame and is waiting for its end.
+	waitPromptRead(t, in)
+	readyAt := time.Now()
+	if _, err := typing.Write([]byte("\x1b[201~\r")); err != nil {
+		t.Fatal(err)
+	}
+	<-read.done
+	accept()
+	if !read.event.bracketed || !read.event.readAt.Before(readyAt) {
+		t.Fatal("paste lost the arrival time of its opening frame")
+	}
+	next := &termIO{in: in, splitKeys: true, bracketedPaste: true}
+	tail, consume := next.startRead(t.Context())
+	<-tail.done
+	consume()
+	if tail.event.key != keyEnter || tail.event.readAt.Before(readyAt) {
+		t.Fatal("Enter after the closing frame retained the paste's old arrival time")
+	}
+}
+
+// acquireDefaultMultichoice inspects stream routing at terminal acquisition, after validation.
+func acquireDefaultMultichoice(t *testing.T) *multichoice {
+	t.Helper()
+	m := newMultichoice(t.Context())
+	m.Items = []any{"one"}
+	m.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { return nil, ErrNoTTY }
+	assert.ErrorIs(t, m.run(m.Ctx), ErrNoTTY)
+	return m
+}
+
+func TestMultichoiceDefaultStreams(t *testing.T) {
+	for _, tty := range []bool{false, true} {
+		t.Run(strconv.FormatBool(tty), func(t *testing.T) {
+			prevIn, prevOut := defaultIO.input(), defaultIO.rawOutput()
+			prevTTY, prevSize := terminalWriterChecker, termGetSize
+			t.Cleanup(func() {
+				terminalWriterChecker, termGetSize = prevTTY, prevSize
+				SetDefaultIO(prevIn, prevOut)
+			})
+			in := bytes.NewBufferString("in")
+			var out io.Writer = &bytes.Buffer{}
+			if tty {
+				out = &mockDescriptor{Writer: &bytes.Buffer{}, fd: 7}
+			}
+			terminalWriterChecker = func(int) bool { return tty }
+			termGetSize = func(int) (int, int, error) { return 80, 24, nil }
+			SetDefaultIO(in, out)
+			wantOut := out
+			if tty {
+				_ = Stderr()
+				_, wantOut = defaultStreams(t.Context())
+				cio, ok := wantOut.(*chanIO)
+				assert.True(t, ok)
+				assert.NotNil(t, cio)
+			}
+			m := acquireDefaultMultichoice(t)
+			assert.Equal(t, in, m.in)
+			assert.Equal(t, wantOut, m.out)
+		})
+	}
 }

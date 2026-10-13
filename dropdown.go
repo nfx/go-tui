@@ -76,6 +76,7 @@ type dropdownFilteredWith struct {
 }
 
 type dropdown struct {
+	choiceLabels
 	Ctx          context.Context
 	Label        string
 	Items        []any
@@ -369,40 +370,50 @@ func WithHide() opt {
 	})
 }
 
+// WithFieldTemplate uses named fields for choice rows and answers.
+//
 // Deprecated: use [WithTemplate] for simpler and more flexible approach.
 func WithFieldTemplate(fieldName ...string) opt {
-	return opT(func(d *dropdown) error {
-		var single, answer []string
-		for _, f := range fieldName {
-			single = append(single, "."+f)
-			answer = append(answer, ".Answer."+f)
-		}
-		a := strings.Join(single, ` ", " `)
-		b := strings.Join(answer, ` ", " `)
-		// d.LabelTemplate = fmt.Sprintf(`{{ "?" | green }} {{ .%s | bold }}`, fieldName)
-		d.ActiveItemTemplate = fmt.Sprintf(`{{ cyan "→ " %s }}`, a)
-		d.InactiveItemTemplate = fmt.Sprintf(`{{ dim "→ " %s }}`, a)
-		d.AnswerTemplate = fmt.Sprintf(`{{ dim "✔ " .Label " …" }} {{ bold %s }}`, b)
+	return opT(func(d withChoiceContent) error {
+		d.setFieldTemplate(fieldName...)
 		return nil
 	})
 }
 
-// WithTemplate defines main field that is visible across active, inactive,
-// and selected states; and activeDetails fields are visible in parentheses
-// for active items.
+// setFieldTemplate keeps row fields and the single-item answer in sync.
+func (d *dropdown) setFieldTemplate(fieldName ...string) {
+	var single, answer []string
+	for _, f := range fieldName {
+		single = append(single, "."+f)
+		answer = append(answer, ".Answer."+f)
+	}
+	a := strings.Join(single, ` ", " `)
+	b := strings.Join(answer, ` ", " `)
+	// d.LabelTemplate = fmt.Sprintf(`{{ "?" | green }} {{ .%s | bold }}`, fieldName)
+	d.ActiveItemTemplate = fmt.Sprintf(`{{ cyan "→ " %s }}`, a)
+	d.InactiveItemTemplate = fmt.Sprintf(`{{ dim "→ " %s }}`, a)
+	d.AnswerTemplate = fmt.Sprintf(`{{ dim "✔ " .Label " …" }} {{ bold %s }}`, b)
+}
+
+// WithTemplate shares main content across choice rows and answers; details appear only on the active row.
 func WithTemplate(main string, activeDetails ...string) opt {
-	return opT(func(d *dropdown) error {
-		details := ""
-		if len(activeDetails) > 0 {
-			details = strings.Join(activeDetails, `) ", " (`)
-			details = fmt.Sprintf(` {{ dim "(" (%s) ")" }}`, details)
-		}
-		// TODO: add template validation once we have a reflection on field structure
-		d.ActiveItemTemplate = fmt.Sprintf(`{{ cyan "→ " %s }}%s`, main, details)
-		d.InactiveItemTemplate = fmt.Sprintf(`{{ dim "→ " %s }}`, main)
-		d.AnswerTemplate = fmt.Sprintf(`{{ dim "✔ " .Label " …" }} {{ bold .Answer%s }}`, main)
+	return opT(func(d withChoiceContent) error {
+		d.setContentTemplate(main, activeDetails...)
 		return nil
 	})
+}
+
+// setContentTemplate keeps active-only details out of inactive rows and answers.
+func (d *dropdown) setContentTemplate(main string, activeDetails ...string) {
+	details := ""
+	if len(activeDetails) > 0 {
+		details = strings.Join(activeDetails, `) ", " (`)
+		details = fmt.Sprintf(` {{ dim "(" (%s) ")" }}`, details)
+	}
+	// TODO: add template validation once we have a reflection on field structure
+	d.ActiveItemTemplate = fmt.Sprintf(`{{ cyan "→ " %s }}%s`, main, details)
+	d.InactiveItemTemplate = fmt.Sprintf(`{{ dim "→ " %s }}`, main)
+	d.AnswerTemplate = fmt.Sprintf(`{{ dim "✔ " .Label " …" }} {{ bold .Answer%s }}`, main)
 }
 
 // WithLabelTemplate overrides the prompt label of a dropdown or an input.
@@ -413,23 +424,26 @@ func WithLabelTemplate(tmpl string) opt {
 	})
 }
 
+// WithActiveItemTemplate overrides content for the focused choice.
 func WithActiveItemTemplate(tmpl string) opt {
-	return opT(func(d *dropdown) error {
-		d.ActiveItemTemplate = tmpl
+	return opT(func(d withActiveItemTemplate) error {
+		d.setActiveItemTemplate(tmpl)
 		return nil
 	})
 }
 
+// WithInactiveItemTemplate overrides content for unfocused choices.
 func WithInactiveItemTemplate(tmpl string) opt {
-	return opT(func(d *dropdown) error {
-		d.InactiveItemTemplate = tmpl
+	return opT(func(d withInactiveItemTemplate) error {
+		d.setInactiveItemTemplate(tmpl)
 		return nil
 	})
 }
 
+// WithMoreItemsTemplate overrides the footer for choices outside the visible window.
 func WithMoreItemsTemplate(tmpl string) opt {
-	return opT(func(d *dropdown) error {
-		d.MoreItemsTemplate = tmpl
+	return opT(func(d withMoreItemsTemplate) error {
+		d.setMoreItemsTemplate(tmpl)
 		return nil
 	})
 }
@@ -460,16 +474,22 @@ func newDropdown(ctx context.Context) *dropdown {
 	}
 }
 
-// templateFuncs clones shared template funcs and injects dropdown-specific funcs.
-func (d *dropdown) templateFuncs() template.FuncMap {
+// templateFuncs supplies the shared label and color helpers.
+func (d *dropdown) templateFuncs() template.FuncMap { return choiceTemplateFuncs() }
+
+// choiceLabels owns the shared label contract without widget interaction state.
+type choiceLabels struct{}
+
+// choiceTemplateFuncs gives each template set its own shared label and color helpers.
+func choiceTemplateFuncs() template.FuncMap {
 	funcs := make(template.FuncMap, len(colorFns)+1)
 	maps.Copy(funcs, colorFns)
-	funcs["label"] = d.itemLabel
+	funcs["label"] = choiceLabels{}.itemLabel
 	return funcs
 }
 
-// itemLabel renders a stable human label for dropdown items.
-func (d *dropdown) itemLabel(item any) string {
+// itemLabel gives choice widgets a consistent label for display and search.
+func (d choiceLabels) itemLabel(item any) string {
 	label, ok := d.structLabel(item)
 	if ok {
 		return label
@@ -482,7 +502,7 @@ func (d *dropdown) itemLabel(item any) string {
 }
 
 // structLabel extracts a label from struct items using tags and common field names.
-func (d *dropdown) structLabel(item any) (string, bool) {
+func (d choiceLabels) structLabel(item any) (string, bool) {
 	value, ok := d.indirectValue(reflect.ValueOf(item))
 	if !ok || value.Kind() != reflect.Struct {
 		return "", false
@@ -495,7 +515,7 @@ func (d *dropdown) structLabel(item any) (string, bool) {
 }
 
 // stringerLabel returns String() output, including pointer-receiver methods on struct values.
-func (d *dropdown) stringerLabel(item any) (string, bool) {
+func (d choiceLabels) stringerLabel(item any) (string, bool) {
 	x, ok := item.(fmt.Stringer)
 	if ok {
 		return x.String(), true
@@ -514,7 +534,7 @@ func (d *dropdown) stringerLabel(item any) (string, bool) {
 }
 
 // annotatedStructLabel resolves fields explicitly marked as label.
-func (d *dropdown) annotatedStructLabel(value reflect.Value) (string, bool) {
+func (d choiceLabels) annotatedStructLabel(value reflect.Value) (string, bool) {
 	rt := value.Type()
 	for i := range rt.NumField() {
 		field := rt.Field(i)
@@ -530,7 +550,7 @@ func (d *dropdown) annotatedStructLabel(value reflect.Value) (string, bool) {
 }
 
 // heuristicStructLabel resolves labels from common field names.
-func (d *dropdown) heuristicStructLabel(value reflect.Value) (string, bool) {
+func (d choiceLabels) heuristicStructLabel(value reflect.Value) (string, bool) {
 	rt := value.Type()
 	for _, want := range []string{
 		"label",
@@ -558,7 +578,7 @@ func (d *dropdown) heuristicStructLabel(value reflect.Value) (string, bool) {
 }
 
 // valueLabel stringifies an annotated or heuristic field and skips empty values.
-func (d *dropdown) valueLabel(value reflect.Value) (string, bool) {
+func (d choiceLabels) valueLabel(value reflect.Value) (string, bool) {
 	value, ok := d.indirectValue(value)
 	if !ok {
 		return "", false
@@ -595,15 +615,15 @@ func (d *dropdown) valueLabel(value reflect.Value) (string, bool) {
 	return "", false
 }
 
-// isLabelTag recognizes supported struct-tag annotations for dropdown labels.
-func (d *dropdown) isLabelTag(tag reflect.StructTag) bool {
+// isLabelTag recognizes explicit label annotations shared by choice widgets.
+func (d choiceLabels) isLabelTag(tag reflect.StructTag) bool {
 	return strings.EqualFold(strings.TrimSpace(tag.Get("header")), "label") ||
 		d.hasLabelOption(tag.Get("tui")) ||
 		strings.EqualFold(strings.TrimSpace(tag.Get("label")), "true")
 }
 
 // hasLabelOption checks whether a comma-separated tag contains "label".
-func (d *dropdown) hasLabelOption(tag string) bool {
+func (d choiceLabels) hasLabelOption(tag string) bool {
 	for option := range strings.SplitSeq(tag, ",") {
 		if strings.EqualFold(strings.TrimSpace(option), "label") {
 			return true
@@ -613,7 +633,7 @@ func (d *dropdown) hasLabelOption(tag string) bool {
 }
 
 // indirectValue dereferences interface/pointer wrappers and rejects nil values.
-func (d *dropdown) indirectValue(value reflect.Value) (reflect.Value, bool) {
+func (d choiceLabels) indirectValue(value reflect.Value) (reflect.Value, bool) {
 	if !value.IsValid() {
 		return reflect.Value{}, false
 	}
@@ -655,8 +675,9 @@ func (d *dropdown) parseTemplates() error {
 	return nil
 }
 
+// mustEndWith ensures a terminator even when the template is empty.
 func mustEndWith(base string, r byte) string {
-	if base[len(base)-1] != r {
+	if len(base) == 0 || base[len(base)-1] != r {
 		base += string(r)
 	}
 	return base
@@ -810,32 +831,28 @@ func (d *dropdown) sortRelevantByLevenstein(match string) {
 // comparison costs at most maxRankRunes² steps and linear memory.
 const maxRankRunes = 256
 
-// rankByLevenstein orders relevant by edit distance between the lowercased
-// item labels and match, keeping item order for ties. Ranking stops early
-// when the context is cancelled, leaving the remaining items unranked.
+// rankByLevenstein ranks by hint similarity, breaking ties by input order.
+// Cancellation leaves the current order unchanged.
 func (d *dropdown) rankByLevenstein(relevant []int, match string) {
 	want := []rune(strings.ToLower(match))
-	lookup := make(map[int]int, len(relevant))
+	scores := make(map[int]int, len(relevant))
 	for _, i := range relevant {
 		if d.Ctx.Err() != nil {
 			return
 		}
-		label := []rune(strings.ToLower(d.itemLabel(d.Items[i])))
-		lookup[i] = d.levenstein(label, want)
+		scores[i] = choiceScore(d.itemLabel(d.Items[i]), want)
 	}
 	sort.SliceStable(relevant, func(i, j int) bool {
-		left := relevant[i]
-		right := relevant[j]
-		if lookup[left] == lookup[right] {
-			return left < right
+		a, b := relevant[i], relevant[j]
+		if scores[a] == scores[b] {
+			return a < b
 		}
-		return lookup[left] < lookup[right]
+		return scores[a] < scores[b]
 	})
 }
 
-// levenstein is the edit distance over runes using two rolling rows,
-// as wide as the shorter input, over at most [maxRankRunes] runes each.
-func (*dropdown) levenstein(a, b []rune) int {
+// choiceDistance bounds Unicode edit-distance work for interactive ranking.
+func choiceDistance(a, b []rune) int {
 	a = a[:min(len(a), maxRankRunes)]
 	b = b[:min(len(b), maxRankRunes)]
 	if len(b) > len(a) {
@@ -863,6 +880,9 @@ func (*dropdown) levenstein(a, b []rune) int {
 	}
 	return prev[len(b)]
 }
+
+// levenstein keeps dropdown ranking on the shared choice-distance contract.
+func (*dropdown) levenstein(a, b []rune) int { return choiceDistance(a, b) }
 
 // setItem renders and indexes item at i.
 func (d *dropdown) setItem(i int, item any) error {
@@ -1678,4 +1698,18 @@ func (d *dropdown) pressAny(key rune, displayed, space int) bool {
 	d.offset = 0
 	d.moved = false
 	return false
+}
+
+// setActiveItemTemplate supports the shared focused-choice option.
+func (d *dropdown) setActiveItemTemplate(tmpl string) { d.ActiveItemTemplate = tmpl }
+
+// setInactiveItemTemplate supports the shared unfocused-choice option.
+func (d *dropdown) setInactiveItemTemplate(tmpl string) { d.InactiveItemTemplate = tmpl }
+
+// setMoreItemsTemplate supports the shared overflow-footer option.
+func (d *dropdown) setMoreItemsTemplate(tmpl string) { d.MoreItemsTemplate = tmpl }
+
+// choiceScore compares labels case-insensitively with an already normalized hint.
+func choiceScore(label string, hint []rune) int {
+	return choiceDistance([]rune(strings.ToLower(label)), hint)
 }

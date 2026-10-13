@@ -298,10 +298,6 @@ func TestSetDefaultIO(t *testing.T) {
 	assert.Equal(t, in, input.in)
 	assert.Equal(t, out, input.out)
 
-	multichoice := newMultichoice(t.Context())
-	assert.Equal(t, in, multichoice.in)
-	assert.Equal(t, out, multichoice.out)
-
 	s := newSpinners(t.Context())
 	assert.Equal(t, in, s.in)
 	assert.Equal(t, out, s.out)
@@ -392,10 +388,6 @@ func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
 	input := newInput(t.Context(), "label")
 	assert.Equal(t, in, input.in)
 	assert.Equal(t, cio, input.out)
-
-	multichoice := newMultichoice(t.Context())
-	assert.Equal(t, in, multichoice.in)
-	assert.Equal(t, cio, multichoice.out)
 
 	s := newSpinners(t.Context())
 	assert.Equal(t, in, s.in)
@@ -865,7 +857,6 @@ func waitOutputContains(t *testing.T, out <-chan string, parts ...string) string
 	}
 }
 
-// https://github.com/nfx/go-tui/issues/104
 func TestChanIOWriteAndWaitCompletesWithoutCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
