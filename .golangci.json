@@ -158,12 +158,6 @@
          "copyloopvar": {
             "check-alias": true
          },
-         "custom": {
-            "ownfunc": {
-               "description": "reports unexported package functions used exclusively by methods of a single receiver type",
-               "type": "module"
-            }
-         },
          "depguard": {
             "rules": {
                "main": {
