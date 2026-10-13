@@ -1042,18 +1042,18 @@ func (t *table) columnRenderTemplate(meta *fieldMetadata) string {
 	}
 	fnName, ok := t.columnNameFormats[meta.name]
 	if ok {
-		return formatterTemplate(fnName, meta)
+		return t.formatterTemplate(fnName, meta)
 	}
 	fnName, ok = t.columnTypeFormats[meta.typ]
 	if ok {
-		return formatterTemplate(fnName, meta)
+		return t.formatterTemplate(fnName, meta)
 	}
 	return meta.Template()
 }
 
 // formatterTemplate calls the formatter, rendering nil pointer fields as empty
 // because text/template cannot dereference nil before the formatter runs.
-func formatterTemplate(fnName string, meta *fieldMetadata) string {
+func (t *table) formatterTemplate(fnName string, meta *fieldMetadata) string {
 	call := "{{" + fnName + " ." + meta.name + "}}"
 	if meta.pointer {
 		return "{{if ." + meta.name + "}}" + call + "{{end}}"
@@ -1490,7 +1490,6 @@ func reflectStructFields(rt reflect.Type, stack map[reflect.Type]struct{}) (stru
 	defer delete(stack, rt)
 	var out structFields
 	for f := range rt.Fields() {
-		f := f
 		if !f.IsExported() {
 			continue
 		}

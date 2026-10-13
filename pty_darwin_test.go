@@ -36,7 +36,7 @@ func openPty() (master, slave *os.File, err error) {
 		slave, err = os.OpenFile(unix.ByteSliceToString(name[:]), os.O_RDWR|unix.O_NOCTTY, 0)
 	}
 	if err != nil {
-		master.Close()
+		master.Close() //nolint:errcheck // test cleanup
 		return nil, nil, err
 	}
 	return master, slave, nil

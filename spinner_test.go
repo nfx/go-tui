@@ -87,8 +87,8 @@ func testLongRunningWithNewSpinners(t *testing.T, cb func(context.Context, ...op
 
 func TestLongRunningShowsMessageWhileCbRuns(t *testing.T) {
 	cio, tick, spinnerOpts := testIOforSpinners(t, 24, 5)
-	testLongRunningWithNewSpinners(t, func(_ context.Context, opt ...opt) (*Spinners, error) {
-		return NewSpinners(cio.ctx, append(opts{spinnerOpts}, opt...)...)
+	testLongRunningWithNewSpinners(t, func(ctx context.Context, opt ...opt) (*Spinners, error) {
+		return NewSpinners(ctx, append(opts{spinnerOpts}, opt...)...)
 	})
 	started := make(chan struct{})
 	release := make(chan struct{})

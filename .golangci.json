@@ -1,0 +1,340 @@
+{
+   "formatters": {
+      "enable": [
+         "golines"
+      ],
+      "settings": {
+         "golines": {
+            "max-len": 120,
+            "reformat-tags": false,
+            "shorten-comments": true
+         }
+      },
+      "exclusions": {
+         "paths": [
+            "examples"
+         ]
+      }
+   },
+   "linters": {
+      "default": "standard",
+      "disable": [
+         "gocyclo",
+         "godox",
+         "nonamedreturns",
+         "paralleltest",
+         "prealloc",
+         "testpackage",
+         "tagalign",
+         "varnamelen",
+         "zerologlint",
+         "wsl",
+         "nlreturn",
+         "exhaustruct",
+         "ireturn",
+         "dupword",
+         "containedctx",
+         "fatcontext",
+         "forbidigo",
+         "gocritic",
+         "gosec",
+         "mnd",
+         "wrapcheck",
+         "gochecknoglobals",
+         "revive",
+         "testableexamples",
+         "err113",
+         "tagliatelle",
+         "wastedassign",
+         "unused",
+         "nlreturn",
+         "funcorder",
+         "cyclop",
+         "gocognit"
+      ],
+      "enable": [
+         "asasalint",
+         "asciicheck",
+         "bidichk",
+         "bodyclose",
+         "canonicalheader",
+         "containedctx",
+         "contextcheck",
+         "copyloopvar",
+         "decorder",
+         "depguard",
+         "dogsled",
+         "dupl",
+         "dupword",
+         "durationcheck",
+         "err113",
+         "errcheck",
+         "errchkjson",
+         "errname",
+         "errorlint",
+         "exhaustive",
+         "exptostd",
+         "fatcontext",
+         "forbidigo",
+         "forcetypeassert",
+         "funlen",
+         "ginkgolinter",
+         "gocheckcompilerdirectives",
+         "gochecknoglobals",
+         "gochecknoinits",
+         "gochecksumtype",
+         "gocritic",
+         "godot",
+         "goheader",
+         "gomodguard_v2",
+         "gomoddirectives",
+         "goprintffuncname",
+         "gosec",
+         "gosmopolitan",
+         "govet",
+         "grouper",
+         "iface",
+         "importas",
+         "inamedparam",
+         "ineffassign",
+         "interfacebloat",
+         "intrange",
+         "lll",
+         "loggercheck",
+         "maintidx",
+         "makezero",
+         "mirror",
+         "misspell",
+         "musttag",
+         "nakedret",
+         "nestif",
+         "nilerr",
+         "nilnesserr",
+         "nilnil",
+         "noctx",
+         "nolintlint",
+         "nosprintfhostport",
+         "ownfunc",
+         "perfsprint",
+         "predeclared",
+         "promlinter",
+         "protogetter",
+         "reassign",
+         "recvcheck",
+         "revive",
+         "rowserrcheck",
+         "sloglint",
+         "spancheck",
+         "sqlclosecheck",
+         "staticcheck",
+         "testableexamples",
+         "testifylint",
+         "thelper",
+         "tparallel",
+         "unconvert",
+         "unparam",
+         "unused",
+         "usestdlibvars",
+         "usetesting",
+         "wastedassign",
+         "whitespace",
+         "wrapcheck"
+      ],
+      "exclusions": {
+         "rules": [
+            {
+               "linters": [
+                  "funlen",
+                  "gocognit",
+                  "lll",
+                  "goconst",
+                  "mnd",
+                  "bodyclose"
+               ],
+               "path": "(.+)_test\\.go"
+            }
+         ]
+      },
+      "settings": {
+         "copyloopvar": {
+            "check-alias": true
+         },
+         "custom": {
+            "ownfunc": {
+               "description": "reports unexported package functions used exclusively by methods of a single receiver type",
+               "type": "module"
+            }
+         },
+         "depguard": {
+            "rules": {
+               "main": {
+                  "allow": [
+                     "github.com/nfx/go-tui",
+                     "github.com/lmittmann/tint",
+                     "golang.org/x",
+                     "$gostd"
+                  ],
+                  "list-mode": "strict"
+               }
+            }
+         },
+         "errcheck": {
+            "check-blank": true,
+            "check-type-assertions": true,
+            "disable-default-exclusions": false
+         },
+         "exhaustive": {
+            "check": [
+               "switch",
+               "map"
+            ],
+            "default-signifies-exhaustive": true
+         },
+         "fatcontext": {
+            "check-struct-pointers": true
+         },
+         "forbidigo": {
+            "analyze-types": true,
+            "exclude-godoc-examples": true,
+            "forbid": [
+               {
+                  "pattern": "^(fmt\\.Print(|f|ln)|print|println)$"
+               },
+               {
+                  "pattern": "^log\\."
+               },
+               {
+                  "pattern": "^panic$"
+               },
+               {
+                  "pattern": "^os\\.(HomeDir|GetEnv|SetEnv)$"
+               },
+               {
+                  "pattern": "^exec.(Command|CommandContext)$",
+                  "pkg": "^os/exec$"
+               }
+            ]
+         },
+         "gochecksumtype": {
+            "include-shared-interfaces": true
+         },
+         "gocognit": {
+            "min-complexity": 30
+         },
+         "goconst": {
+            "eval-const-expressions": true,
+            "find-duplicates": true,
+            "match-constant": true,
+            "max": 2,
+            "min": 2,
+            "min-len": 3,
+            "min-occurrences": 3,
+            "numbers": true
+         },
+         "gocritic": {
+            "disabled-checks": [
+               "emptyStringTest",
+               "hugeParam",
+               "rangeValCopy"
+            ],
+            "enable-all": true
+         },
+         "mnd": {
+            "ignored-functions": [
+               "strconv.ParseComplex",
+               "strings.SplitN"
+            ]
+         },
+         "revive": {
+            "enable-all-rules": true,
+            "rules": [
+               {
+                  "disabled": true,
+                  "name": "line-length-limit"
+               },
+               {
+                  "disabled": true,
+                  "name": "cyclomatic"
+               },
+               {
+                  "disabled": true,
+                  "name": "cognitive-complexity"
+               },
+               {
+                  "disabled": true,
+                  "name": "max-control-nesting"
+               },
+               {
+                  "disabled": true,
+                  "name": "max-public-structs"
+               },
+               {
+                  "disabled": true,
+                  "name": "add-constant"
+               },
+               {
+                  "disabled": true,
+                  "name": "function-length"
+               },
+               {
+                  "disabled": true,
+                  "name": "package-naming"
+               },
+               {
+                  "disabled": true,
+                  "name": "unhandled-error"
+               },
+               {
+                  "disabled": true,
+                  "name": "unused-receiver"
+               },
+               {
+                  "exclude": [
+                     "^.*_test\\.go$"
+                  ],
+                  "name": "unused-parameter"
+               },
+               {
+                  "arguments": [
+                     "check-private-receivers",
+                     "disable-stuttering-check",
+                     "say-repetitive-instead-of-stutters"
+                  ],
+                  "name": "exported"
+               },
+               {
+                  "disabled": true,
+                  "name": "flag-parameter"
+               },
+               {
+                  "disabled": true,
+                  "name": "enforce-switch-style"
+               },
+               {
+                  "disabled": true,
+                  "name": "exported"
+               },
+               {
+                  "disabled": true,
+                  "name": "package-comments"
+               }
+            ]
+         },
+         "wrapcheck": {
+            "extra-ignore-sigs": [
+               "io.Writer",
+               "io.ReadAll",
+               "os.Open",
+               "os.Stat",
+               "strconv.Parse",
+               "strconv.Atoi",
+               "net"
+            ]
+         }
+      }
+   },
+   "run": {
+      "allow-parallel-runners": true
+   },
+   "version": "2"
+}

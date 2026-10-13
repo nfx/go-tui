@@ -24,8 +24,8 @@ import (
 func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 	pr, pw, err := os.Pipe()
 	assert.NoError(t, err)
-	defer pr.Close()
-	defer pw.Close()
+	defer pr.Close() //nolint:errcheck // test cleanup
+	defer pw.Close() //nolint:errcheck // test cleanup
 	in := &notifyingReader{File: pr, started: make(chan struct{})}
 	d := newDropdown(t.Context())
 	ctx, cancel := context.WithCancel(t.Context())
@@ -34,7 +34,7 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 	tio := &termIO{in: in, out: &bytes.Buffer{}}
 	finished := make(chan error, 1)
 	go func() {
-		_, err := d.pressKey(tio, &bytes.Buffer{}, 1, 1)
+		_, err := d.pressKey(d.Ctx, tio, &bytes.Buffer{}, 1, 1)
 		finished <- err
 	}()
 	select {
@@ -59,7 +59,7 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
 	}
 	assert.NoError(t, next.parseTemplates())
-	got, err := next.run()
+	got, err := next.run(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
 }
@@ -485,7 +485,7 @@ func TestDropdownRunSelectsWithArrow(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	idx, err := d.dropdownIndex()
+	idx, err := d.dropdownIndex(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, idx)
 }
@@ -510,7 +510,7 @@ func TestDropdownRunIgnoresSpecialKeys(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	idx, err := d.dropdownIndex()
+	idx, err := d.dropdownIndex(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, idx)
 	assert.Equal(t, "", string(d.typed))
@@ -534,7 +534,7 @@ func TestDropdownRunConsumesInputEvents(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	idx, err := d.dropdownIndex()
+	idx, err := d.dropdownIndex(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, idx)
 }
@@ -557,7 +557,7 @@ func TestDropdownRunOneReturn(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	idx, err := d.dropdownIndex()
+	idx, err := d.dropdownIndex(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, idx)
 }
@@ -991,7 +991,7 @@ func TestDropdownRunMainConsumesInputChannel(t *testing.T) {
 	d.input = input
 	io := newTestTermIO(10, 4)
 	frame := bytes.NewBuffer(nil)
-	i, err := d.runMain(io, frame, 1, 1)
+	i, err := d.runMain(d.Ctx, io, frame, 1, 1)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, i)
 }
@@ -1006,7 +1006,7 @@ func TestDropdownRunMainRejectsInvalidConfirmedIndex(t *testing.T) {
 	d.input = input
 	io := newTestTermIO(10, 4)
 	frame := bytes.NewBuffer(nil)
-	i, err := d.runMain(io, frame, 1, 1)
+	i, err := d.runMain(d.Ctx, io, frame, 1, 1)
 	assert.NoError(t, err)
 	assert.Equal(t, -1, i)
 }
@@ -1170,7 +1170,7 @@ func TestDropdownRunRenderLoadsItem(t *testing.T) {
 	ch <- itPair{item: "next"}
 	close(ch)
 	d.itItems = ch
-	_, err := d.runRender(tio, frame)
+	_, err := d.runRender(d.Ctx, tio, frame)
 	assert.NoError(t, err)
 }
 
@@ -1277,7 +1277,7 @@ func TestDropdownRunRenderWriteError(t *testing.T) {
 		Restore: func() error { return nil },
 	}
 	frame := bytes.NewBuffer(nil)
-	_, err := d.runRender(tio, frame)
+	_, err := d.runRender(d.Ctx, tio, frame)
 	assert.Error(t, err)
 }
 
@@ -1301,7 +1301,7 @@ func TestDropdownRunRenderUsesMain(t *testing.T) {
 		Restore: func() error { return nil },
 	}
 	frame := bytes.NewBuffer(nil)
-	i, err := d.runRender(tio, frame)
+	i, err := d.runRender(d.Ctx, tio, frame)
 	assert.NoError(t, err)
 	assert.True(t, i >= 0)
 }
@@ -1316,7 +1316,7 @@ func TestDropdownRunMainPasteIgnored(t *testing.T) {
 		Restore: func() error { return nil },
 	}
 	frame := bytes.NewBuffer(nil)
-	_, err := d.runMain(tio, frame, 1, 1)
+	_, err := d.runMain(d.Ctx, tio, frame, 1, 1)
 	assert.NoError(t, err)
 }
 
@@ -1330,7 +1330,7 @@ func TestDropdownRunMainReadError(t *testing.T) {
 		Restore: func() error { return nil },
 	}
 	frame := bytes.NewBuffer(nil)
-	_, err := d.runMain(tio, frame, 1, 1)
+	_, err := d.runMain(d.Ctx, tio, frame, 1, 1)
 	assert.Error(t, err)
 }
 
@@ -1349,7 +1349,7 @@ func TestDropdownRunRenderContextDone(t *testing.T) {
 		Restore: func() error { return nil },
 	}
 	frame := bytes.NewBuffer(nil)
-	_, err := d.runRender(tio, frame)
+	_, err := d.runRender(d.Ctx, tio, frame)
 	assert.Error(t, err)
 }
 
@@ -1868,10 +1868,10 @@ func TestDropdownLazyOneReturnSingleItem(t *testing.T) {
 	}
 }
 
-func fixedTermOpt(width, height int) opt {
+func fixedTermOpt() opt {
 	return opT(func(d *dropdown) error {
 		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-			return &termIO{in: in, out: out, Width: width, Height: height, Restore: func() error { return nil }}, nil
+			return &termIO{in: in, out: out, Width: 20, Height: 6, Restore: func() error { return nil }}, nil
 		}
 		return nil
 	})
@@ -1880,13 +1880,13 @@ func fixedTermOpt(width, height int) opt {
 func TestDropdownIndexUniqueDefaultReturnsOriginalIndex(t *testing.T) {
 	i, err := DropdownIndex(t.Context(), "pick", []any{"xxx", "b", "a"},
 		WithInput(bytes.NewBuffer(nil)), WithOutput(io.Discard),
-		fixedTermOpt(20, 6), WithDefault("a"))
+		fixedTermOpt(), WithDefault("a"))
 	assert.NoError(t, err)
 	assert.Equal(t, 2, i)
 
 	v, err := Dropdown(t.Context(), "pick", []string{"xxx", "b", "a"},
 		WithInput(bytes.NewBuffer(nil)), WithOutput(io.Discard),
-		fixedTermOpt(20, 6), WithDefault("a"))
+		fixedTermOpt(), WithDefault("a"))
 	assert.NoError(t, err)
 	assert.Equal(t, "a", v)
 }
@@ -1975,7 +1975,7 @@ func TestDropdownRenderRemembersLongestWidth(t *testing.T) {
 	var buf bytes.Buffer
 	assert.NoError(t, d.render(tio, &buf))
 	assert.True(t, d.LabelNewLine)
-	_ = d.addItem(6, "x")
+	_ = d.addItem(6, "x") //nolint:errcheck // test cleanup
 	assert.Equal(t, first, d.longest)
 }
 
@@ -1988,7 +1988,7 @@ func TestDropdownLazyStopsProducerOnEarlyError(t *testing.T) {
 	}
 	_, err := DropdownLazy(t.Context(), "pick", seq,
 		WithInput(bytes.NewBuffer(nil)), WithOutput(io.Discard),
-		fixedTermOpt(20, 6), WithActiveItemTemplate("{{"))
+		fixedTermOpt(), WithActiveItemTemplate("{{"))
 	assert.Error(t, err)
 	time.Sleep(50 * time.Millisecond)
 	assert.Equal(t, int32(0), started.Load())
@@ -2026,13 +2026,13 @@ func TestDropdownLazyStopsProducerAfterSelection(t *testing.T) {
 	}
 	in, w, err := os.Pipe()
 	assert.NoError(t, err)
-	t.Cleanup(func() { in.Close(); w.Close() })
+	t.Cleanup(func() { in.Close(); w.Close() }) //nolint:errcheck // test cleanup
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		w.Write([]byte{keyEnter}) //nolint:errcheck // test helper
 	}()
 	_, err = DropdownLazy(t.Context(), "pick", seq,
-		WithInput(in), WithOutput(io.Discard), fixedTermOpt(20, 6))
+		WithInput(in), WithOutput(io.Discard), fixedTermOpt())
 	assert.NoError(t, err)
 	select {
 	case <-done:
@@ -2105,14 +2105,14 @@ func TestDropdownEagerRedrawsOnResizeWhileIdle(t *testing.T) {
 	reader, writer := io.Pipe()
 	t.Cleanup(func() {
 		cancel()
-		_ = reader.Close()
-		_ = writer.Close()
+		_ = reader.Close() //nolint:errcheck // test cleanup
+		_ = writer.Close() //nolint:errcheck // test cleanup
 	})
 	out := &lockedBuffer{}
 	resize := make(chan struct{})
 	resCh := make(chan string, 1)
 	go func() {
-		value, _ := Dropdown(ctx, "Pick", []string{"a", "b"}, WithOptions(
+		value, _ := Dropdown(ctx, "Pick", []string{"a", "b"}, WithOptions( //nolint:errcheck // test cleanup
 			WithInput(reader),
 			WithOutput(out),
 			opT(func(d *dropdown) error {

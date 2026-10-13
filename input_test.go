@@ -166,7 +166,7 @@ func TestInputOptWrongType(t *testing.T) {
 func (p *input) pressKey(tio *termIO) (string, error) {
 	ev, ok := <-tio.readEvents(context.Background(), nil)
 	tio.awaitReader()
-	done, err := p.handleKeyEvent(ev, ok)
+	done, err := p.handleKeyEvent(p.ctx, ev, ok)
 	if err != nil {
 		return "", err
 	}
@@ -209,7 +209,7 @@ func TestInputPressKeyEOF(t *testing.T) {
 func TestInputReadTemplateError(t *testing.T) {
 	i := newInput(t.Context(), "Label")
 	i.LabelTemplate = "{{"
-	_, err := i.read()
+	_, err := i.read(t.Context())
 	assert.Error(t, err)
 }
 
@@ -311,7 +311,7 @@ func TestInputRunEmitsLifecycleEvents(t *testing.T) {
 	i.eventSink = func(ev inputOutgoing) {
 		events = append(events, ev)
 	}
-	got, err := i.run()
+	got, err := i.run(i.ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
 	assert.Equal(t, 2, len(events))
@@ -343,7 +343,7 @@ func TestInputRunConsumesInputChannelEvents(t *testing.T) {
 	i.eventSink = func(ev inputOutgoing) {
 		events = append(events, ev)
 	}
-	got, err := i.run()
+	got, err := i.run(i.ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "remote", got)
 	assert.Equal(t, "remote", i.typed)
@@ -380,7 +380,7 @@ func TestInputRunWithNonEmptyIgnoresEmptyConfirmation(t *testing.T) {
 	i.eventSink = func(ev inputOutgoing) {
 		events = append(events, ev)
 	}
-	got, err := i.run()
+	got, err := i.run(i.ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "remote", got)
 	assert.Equal(t, 2, len(events))
@@ -412,7 +412,7 @@ func TestInputRunPasteFollowedByEnter(t *testing.T) {
 		}, nil
 	}
 	assert.NoError(t, i.parseTemplates())
-	got, err := i.run()
+	got, err := i.run(i.ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "hi", got)
 }
@@ -440,7 +440,7 @@ func TestInputRunTypeAndPaste(t *testing.T) {
 		}, nil
 	}
 	assert.NoError(t, i.parseTemplates())
-	got, err := i.run()
+	got, err := i.run(i.ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "hello", got)
 }
@@ -472,16 +472,16 @@ func TestInputCursorActions(t *testing.T) {
 
 func TestInputCursorActionsMultiByte(t *testing.T) {
 	i := &input{
-		typed:  "日本語",
+		typed:  "\u65e5\u672c\u8a9e",
 		cursor: 3,
 	}
 	i.pressLeft()
 	pressBackspace(i)
-	assert.Equal(t, "日語", i.typed)
+	assert.Equal(t, "\u65e5\u8a9e", i.typed)
 	assert.Equal(t, 1, i.cursor)
 
 	i.pressAny('é')
-	assert.Equal(t, "日é語", i.typed)
+	assert.Equal(t, "\u65e5é\u8a9e", i.typed)
 	assert.Equal(t, 2, i.cursor)
 	i.pressRight()
 	i.pressRight()
@@ -490,14 +490,14 @@ func TestInputCursorActionsMultiByte(t *testing.T) {
 
 func TestInputPasteMultiByte(t *testing.T) {
 	i := &input{typed: "a", cursor: 1}
-	paste := []byte("日本é")
-	done, err := i.handleKeyEvent(keyEvent{
+	paste := []byte("\u65e5\u672cé")
+	done, err := i.handleKeyEvent(t.Context(), keyEvent{
 		err:   &pasteTextError{buf: paste},
 		paste: paste,
 	}, true)
 	assert.NoError(t, err)
 	assert.True(t, !done)
-	assert.Equal(t, "a日本é", i.typed)
+	assert.Equal(t, "a\u65e5\u672cé", i.typed)
 	assert.Equal(t, 4, i.cursor)
 }
 
@@ -627,7 +627,7 @@ func TestInputRunContextDone(t *testing.T) {
 		}, nil
 	}
 	assert.NoError(t, i.parseTemplates())
-	_, err := i.run()
+	_, err := i.run(i.ctx)
 	assert.Error(t, err)
 }
 
@@ -635,8 +635,8 @@ func TestInputRunContextDone(t *testing.T) {
 func TestInputRunCancelledReadKeepsNextKey(t *testing.T) {
 	pr, pw, err := os.Pipe()
 	assert.NoError(t, err)
-	defer pr.Close()
-	defer pw.Close()
+	defer pr.Close() //nolint:errcheck // test cleanup
+	defer pw.Close() //nolint:errcheck // test cleanup
 	mk := func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
 	}
@@ -648,16 +648,16 @@ func TestInputRunCancelledReadKeepsNextKey(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		cancel()
 		time.Sleep(50 * time.Millisecond)
-		_, _ = pw.Write([]byte{'x'})
-		_, _ = pw.Write([]byte{keyEnter})
+		_, _ = pw.Write([]byte{'x'})      //nolint:errcheck // test cleanup
+		_, _ = pw.Write([]byte{keyEnter}) //nolint:errcheck // test cleanup
 	}()
-	_, err = i.run()
+	_, err = i.run(i.ctx)
 	assert.Error(t, err)
 
 	j := newInput(t.Context(), "second")
 	j.in, j.out, j.makeTermIO = pr, &bytes.Buffer{}, mk
 	assert.NoError(t, j.parseTemplates())
-	got, err := j.run()
+	got, err := j.run(j.ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
 }
@@ -679,11 +679,18 @@ func (r *notifyingReader) Read(p []byte) (int, error) {
 func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	pr, pw, err := os.Pipe()
 	assert.NoError(t, err)
-	defer pr.Close()
-	defer pw.Close()
+	defer pr.Close() //nolint:errcheck // test cleanup
+	defer pw.Close() //nolint:errcheck // test cleanup
 	in := &notifyingReader{File: pr, started: make(chan struct{})}
 	mk := func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{in: in, out: out, input: sharedInputState(in), Width: 20, Height: 2, Restore: func() error { return nil }}, nil
+		return &termIO{
+			in:      in,
+			out:     out,
+			input:   sharedInputState(in),
+			Width:   20,
+			Height:  2,
+			Restore: func() error { return nil },
+		}, nil
 	}
 	first := newInput(t.Context(), "first")
 	ctx, cancel := context.WithCancel(t.Context())
@@ -692,7 +699,7 @@ func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	assert.NoError(t, first.parseTemplates())
 	finished := make(chan error, 1)
 	go func() {
-		_, err := first.run()
+		_, err := first.run(first.ctx)
 		finished <- err
 	}()
 	select {
@@ -715,7 +722,7 @@ func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	defer cancel()
 	second.in, second.out, second.makeTermIO = in, &bytes.Buffer{}, mk
 	assert.NoError(t, second.parseTemplates())
-	got, err := second.run()
+	got, err := second.run(second.ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
 }
@@ -724,8 +731,8 @@ func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 func TestInputRunBufferedWrappedReader(t *testing.T) {
 	pr, pw, err := os.Pipe()
 	assert.NoError(t, err)
-	defer pr.Close()
-	defer pw.Close()
+	defer pr.Close() //nolint:errcheck // test cleanup
+	defer pw.Close() //nolint:errcheck // test cleanup
 	in := &mockDescriptor{Reader: bytes.NewBufferString("x\r"), fd: pr.Fd()}
 	prompt := newInput(t.Context(), "buffered")
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
@@ -735,7 +742,7 @@ func TestInputRunBufferedWrappedReader(t *testing.T) {
 		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
 	}
 	assert.NoError(t, prompt.parseTemplates())
-	got, err := prompt.run()
+	got, err := prompt.run(prompt.ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
 }
@@ -747,7 +754,7 @@ func pasteEvent(text string) keyEvent {
 // regression: keys returned by one read keep their meaning
 func TestInputHandleBufferedKeys(t *testing.T) {
 	i := &input{typed: "x", cursor: 1}
-	done, err := i.handleKeyEvent(pasteEvent("ab\x7f\x1b[Dc\rd"), true)
+	done, err := i.handleKeyEvent(t.Context(), pasteEvent("ab\x7f\x1b[Dc\rd"), true)
 	assert.NoError(t, err)
 	assert.True(t, done)
 	assert.Equal(t, "xca", i.typed)
@@ -763,7 +770,7 @@ func runInputOn(t *testing.T, in io.Reader, option ...opt) (string, error) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	i.ctx = ctx
-	return i.read(option...)
+	return i.read(t.Context(), option...)
 }
 
 // regression: a, b, Backspace and Enter typed together must submit "a"
@@ -775,9 +782,9 @@ func TestInputRunBufferedKeystrokes(t *testing.T) {
 
 func TestInputRunBufferedKeysInTheMiddle(t *testing.T) {
 	in := &chunkReader{chunks: [][]byte{[]byte("\x1b[Da\x1b[Cé\x1b[D\x1b[D"), []byte("é\r")}}
-	got, err := runInputOn(t, in, WithDefault("日本"))
+	got, err := runInputOn(t, in, WithDefault("\u65e5\u672c"))
 	assert.NoError(t, err)
-	assert.Equal(t, "日aé本é", got)
+	assert.Equal(t, "\u65e5aé\u672cé", got)
 }
 
 // regression: keys after a confirming Enter stay for the next prompt
@@ -792,7 +799,13 @@ func TestInputRunKeepsKeysAfterEnter(t *testing.T) {
 }
 
 func TestInputRendersPastedControlsSafely(t *testing.T) {
-	i := &input{Label: "L", typed: "a\rb\x1b[2J\x7f\u009b", cursor: 1, LabelTemplate: "{{.}} ", AnswerTemplate: "{{.Answer}}"}
+	i := &input{
+		Label:          "L",
+		typed:          "a\rb\x1b[2J\x7f\u009b",
+		cursor:         1,
+		LabelTemplate:  "{{.}} ",
+		AnswerTemplate: "{{.Answer}}",
+	}
 	assert.NoError(t, i.parseTemplates())
 	var out bytes.Buffer
 	err := i.render(&termIO{out: &out}, &bytes.Buffer{})
@@ -812,7 +825,7 @@ func TestInputShowAnswerRendersControlsSafely(t *testing.T) {
 // regression: a backspace that deletes nothing must not move the cursor
 func TestInputBackspaceAtStartKeepsCursor(t *testing.T) {
 	i := &input{typed: "abc", cursor: 0}
-	done, err := i.handleKeyEvent(keyEvent{key: 0x7f}, true)
+	done, err := i.handleKeyEvent(t.Context(), keyEvent{key: 0x7f}, true)
 	assert.NoError(t, err)
 	assert.True(t, !done)
 	assert.Equal(t, "abc", i.typed)
@@ -846,12 +859,12 @@ func renderInput(t *testing.T, i *input, termWidth int) string {
 // regression: wide runes must be clipped by terminal columns, not rune count
 func TestInputRenderClipsWideRunesByWidth(t *testing.T) {
 	// "L " takes two of six columns, leaving four for two wide runes
-	got := renderInput(t, &input{Label: "L", typed: "界界界界", cursor: 4}, 6)
-	assert.Equal(t, "\rL 界界\x1b[K", got)
-	got = renderInput(t, &input{Label: "L", typed: "界界界界", cursor: 0}, 6)
-	assert.Equal(t, "\rL 界界\x1b[K\x1b[4D", got)
-	got = renderInput(t, &input{Label: "L", typed: "a界界界", cursor: 2}, 6)
-	assert.Equal(t, "\rL 界界\x1b[K\x1b[2D", got)
+	got := renderInput(t, &input{Label: "L", typed: "\u754c\u754c\u754c\u754c", cursor: 4}, 6)
+	assert.Equal(t, "\rL \u754c\u754c\x1b[K", got)
+	got = renderInput(t, &input{Label: "L", typed: "\u754c\u754c\u754c\u754c", cursor: 0}, 6)
+	assert.Equal(t, "\rL \u754c\u754c\x1b[K\x1b[4D", got)
+	got = renderInput(t, &input{Label: "L", typed: "a\u754c\u754c\u754c", cursor: 2}, 6)
+	assert.Equal(t, "\rL \u754c\u754c\x1b[K\x1b[2D", got)
 }
 
 func TestInputRenderMovesOverCombiningRunes(t *testing.T) {
@@ -866,7 +879,7 @@ func TestInputRenderClipsWithoutOrphanCombiningRune(t *testing.T) {
 }
 
 // regression: a combining mark at the cursor must not render without its base,
-// a cursor inside of a cluster stands on the whole cluster
+// a cursor inside of a cluster stands on the whole cluster.
 func TestInputRenderClipsOrphanCombiningRuneAtCursor(t *testing.T) {
 	i := &input{typed: "は\u3099ab", cursor: 1}
 	start, end := i.visibleWindow(text(i.typed).clusters(), 2)
@@ -877,7 +890,7 @@ func TestInputRenderClipsOrphanCombiningRuneAtCursor(t *testing.T) {
 }
 
 func TestInputRenderMasksPasswordByRune(t *testing.T) {
-	got := renderInput(t, &input{Label: "L", typed: "界e\u0301", cursor: 1, Password: true}, 0)
+	got := renderInput(t, &input{Label: "L", typed: "\u754ce\u0301", cursor: 1, Password: true}, 0)
 	assert.Equal(t, "\rL ***\x1b[K\x1b[2D", got)
 }
 
@@ -908,7 +921,14 @@ func TestInputRunResizeDoesNotReadAhead(t *testing.T) {
 	i := newInput(t.Context(), "Label")
 	i.in, i.out = in, &bytes.Buffer{}
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{in: in, out: out, Width: 20, Height: 2, onResize: resized, Restore: func() error { return nil }}, nil
+		return &termIO{
+			in:       in,
+			out:      out,
+			Width:    20,
+			Height:   2,
+			onResize: resized,
+			Restore:  func() error { return nil },
+		}, nil
 	}
 	secondRead := make(chan bool, 1)
 	// confirmation waits for a read started after Enter
@@ -924,7 +944,7 @@ func TestInputRunResizeDoesNotReadAhead(t *testing.T) {
 	assert.NoError(t, i.parseTemplates())
 	finished := make(chan error, 1)
 	go func() {
-		_, err := i.run()
+		_, err := i.run(i.ctx)
 		finished <- err
 	}()
 	select {

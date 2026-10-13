@@ -99,7 +99,7 @@ type Spinners struct {
 func newSpinners(ctx context.Context) *Spinners {
 	ctx, cancel := context.WithCancel(ctx)
 	ticker := time.NewTicker(100 * time.Millisecond)
-	in, out := defaultStreams()
+	in, out := defaultStreams(ctx)
 	return &Spinners{
 		ctx:        ctx,
 		in:         in,
@@ -130,7 +130,7 @@ func NewSpinners(ctx context.Context, opt ...opt) (*Spinners, error) {
 		return nil, fmt.Errorf("restore: %w", err)
 	}
 	s.emit(spinnerGroupInit{})
-	go s.start(s.ctx)
+	go s.start(s.ctx) //nolint:contextcheck // s.ctx derives from ctx and is canceled by Close
 	return s, nil
 }
 

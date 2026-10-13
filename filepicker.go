@@ -153,7 +153,7 @@ func FilePicker(ctx context.Context, title string, o ...opt) (string, error) {
 		for i, e := range entries {
 			items[i] = e
 		}
-		i, err := d.pick(title, items)
+		i, err := d.pick(ctx, title, items)
 		if err != nil {
 			return "", err
 		}

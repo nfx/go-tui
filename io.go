@@ -93,8 +93,8 @@ func SetDefaultIO(in io.Reader, out io.Writer) {
 
 // defaultStreams returns the default reader and writer as one snapshot, so a
 // concurrent [SetDefaultIO] cannot pair the old reader with the new writer.
-func defaultStreams() (io.Reader, io.Writer) {
-	return defaultIO.streams()
+func defaultStreams(ctx context.Context) (io.Reader, io.Writer) {
+	return defaultIO.streams(ctx)
 }
 
 // Flush drains all buffered terminal output without shutting down the arbiter.
@@ -138,22 +138,22 @@ func (t *tio) rawOutput() io.Writer {
 }
 
 // streams takes the exclusive lock because [tio.outputLocked] may start the arbiter.
-func (t *tio) streams() (io.Reader, io.Writer) {
+func (t *tio) streams(ctx context.Context) (io.Reader, io.Writer) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.reader, t.outputLocked()
+	return t.reader, t.outputLocked(ctx)
 }
 
 // outputLocked resolves the effective writer,
 // upgrading to arbiter for TTY outputs.
-func (t *tio) outputLocked() io.Writer {
+func (t *tio) outputLocked(ctx context.Context) io.Writer {
 	if cio, ok := t.writer.(*chanIO); ok {
 		return cio
 	}
 	if !t.isTerminalWriter(t.writer) {
 		return t.writer
 	}
-	cio := t.ensureArbiterLocked()
+	cio := t.ensureArbiterLocked(ctx)
 	if cio == nil {
 		return t.writer
 	}
@@ -172,7 +172,7 @@ func (t *tio) stderrWriter() io.Writer {
 	if !t.isTerminalWriter(t.writer) {
 		return t.writer
 	}
-	cio = t.ensureArbiterLocked()
+	cio = t.ensureArbiterLocked(context.Background())
 	if cio == nil {
 		return t.writer
 	}
@@ -186,7 +186,7 @@ func (t *tio) stderrWriter() io.Writer {
 // falls back to the raw writer.
 func (t *tio) writeExternal(p []byte) (int, error) {
 	t.mu.Lock()
-	cio := t.ensureArbiterLocked()
+	cio := t.ensureArbiterLocked(context.Background())
 	raw := t.writer
 	t.mu.Unlock()
 	if cio != nil {
@@ -244,7 +244,7 @@ func (t *tio) resetArbiterLocked() {
 
 // ensureArbiterLocked lazily creates
 // the channel-based IO arbiter for TTY outputs.
-func (t *tio) ensureArbiterLocked() *chanIO {
+func (t *tio) ensureArbiterLocked(ctx context.Context) *chanIO {
 	if cio, ok := t.writer.(*chanIO); ok {
 		return cio
 	}
@@ -254,8 +254,9 @@ func (t *tio) ensureArbiterLocked() *chanIO {
 	if !t.isTerminalWriter(t.writer) {
 		return nil
 	}
-	ctx, cancel := context.WithCancelCause(context.Background())
-	cio, err := startIO(ctx, t.writer)
+	// the arbiter is shared by the whole process, so it must outlive the first caller's cancellation.
+	arbiterCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	cio, err := startIO(arbiterCtx, t.writer)
 	if err != nil {
 		cancel(err)
 		return nil
@@ -909,7 +910,7 @@ const maxPollWait = 50 * time.Millisecond
 
 // pollWait returns how long the next readiness check may block:
 // [maxPollWait], or less when the context deadline comes sooner.
-func pollWait(ctx context.Context) time.Duration {
+func (t *termIO) pollWait(ctx context.Context) time.Duration {
 	deadline, ok := ctx.Deadline()
 	if !ok {
 		return maxPollWait

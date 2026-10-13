@@ -24,7 +24,7 @@ import (
 )
 
 func TestDropdownDefaultSelectsClosestMatch(t *testing.T) {
-	term := newTerminal(t, 40, 12)
+	term := newTerminal(t, 12)
 	res := prompt(func() (string, error) {
 		return tui.Dropdown(t.Context(), "Pick", []string{"apple pie", "banana", "apple"},
 			plain, tui.WithDefault("apple"))
@@ -37,7 +37,7 @@ func TestDropdownDefaultSelectsClosestMatch(t *testing.T) {
 }
 
 func TestDropdownLazyDefaultSelectsBestRankedArrival(t *testing.T) {
-	term := newTerminal(t, 40, 12)
+	term := newTerminal(t, 12)
 	items := make(chan string)
 	res := prompt(func() (string, error) {
 		return tui.DropdownLazy(t.Context(), "Pick", feed(items), plain, tui.WithDefault("cat"))
@@ -57,7 +57,7 @@ func TestDropdownLazyDefaultSelectsBestRankedArrival(t *testing.T) {
 }
 
 func TestDropdownLazyDefaultKeepsNavigatedSelection(t *testing.T) {
-	term := newTerminal(t, 40, 12)
+	term := newTerminal(t, 12)
 	items := make(chan string)
 	res := prompt(func() (string, error) {
 		return tui.DropdownLazy(t.Context(), "Pick", feed(items), plain, tui.WithDefault("cat"))
@@ -77,7 +77,7 @@ func TestDropdownLazyDefaultKeepsNavigatedSelection(t *testing.T) {
 }
 
 func TestDropdownLazyFilterAppliesToLaterItems(t *testing.T) {
-	term := newTerminal(t, 40, 12)
+	term := newTerminal(t, 12)
 	items := make(chan string)
 	res := prompt(func() (string, error) {
 		return tui.DropdownLazy(t.Context(), "Pick", feed(items), plain)
@@ -106,7 +106,7 @@ func TestDropdownLazyFilterAppliesToLaterItems(t *testing.T) {
 // new height, keep the selected item, and receive the key from that same read.
 func testResizeWhileReading(t *testing.T, run func() (string, error)) {
 	t.Helper()
-	term := newTerminal(t, 40, 12)
+	term := newTerminal(t, 12)
 	res := prompt(run)
 	term.waitRows(t, "Pick * a", "- b", "- c", "- d", "- e")
 	term.press(t, keyDown)
@@ -134,7 +134,7 @@ func TestDropdownLazyResizeWhileReadingKeepsSelection(t *testing.T) {
 }
 
 func TestWidgetsShareTerminal(t *testing.T) {
-	term := newTerminal(t, 40, 12)
+	term := newTerminal(t, 12)
 	p, err := tui.NewMaxProgressBar(t.Context(), "Download", 4)
 	assert.NoError(t, err)
 	p.Add(1)
@@ -210,7 +210,7 @@ func TestTableAutoScaleColorsFollowMultilineRows(t *testing.T) {
 }
 
 func TestProgressbarUpdatesAfterCompletion(t *testing.T) {
-	term := newTerminal(t, 40, 6)
+	term := newTerminal(t, 6)
 	p, err := tui.NewMaxProgressBar(t.Context(), "Copy", 4)
 	assert.NoError(t, err)
 	p.Add(2)
@@ -238,7 +238,7 @@ func TestProgressbarUpdatesAfterCompletion(t *testing.T) {
 }
 
 func TestSpinnerUpdatesAfterCompletion(t *testing.T) {
-	term := newTerminal(t, 40, 6)
+	term := newTerminal(t, 6)
 	s, err := tui.NewSpinners(t.Context())
 	assert.NoError(t, err)
 	t.Cleanup(s.Close)
@@ -279,6 +279,7 @@ type keyboard struct {
 }
 
 func newKeyboard(t *testing.T) *keyboard {
+	t.Helper()
 	k := &keyboard{
 		reads:  make(chan chan<- string),
 		closed: make(chan struct{}),
@@ -503,8 +504,9 @@ type terminal struct {
 
 // newTerminal makes a terminal of the given size the package default for
 // input and output, like the stdin and stderr of a CLI.
-func newTerminal(t *testing.T, width, height int) *terminal {
+func newTerminal(t *testing.T, height int) *terminal {
 	t.Helper()
+	const width = 40
 	tty := openTTY(t, width, height)
 	term := &terminal{keyboard: newKeyboard(t), screen: newScreen(width), tty: tty}
 	tui.SetDefaultIO(term.keyboard, &ttyWriter{fd: tty.Fd(), screen: term.screen})

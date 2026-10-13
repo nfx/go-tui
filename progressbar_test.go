@@ -530,39 +530,49 @@ func TestWithWorkersSetsConfiguredValue(t *testing.T) {
 }
 
 func TestNewParallelProgressBarRunsConcurrently(t *testing.T) {
-	var active int64
-	var maxActive int64
-	items := []int{1, 2, 3, 4, 5, 6}
-	ready := make(chan struct{})
-	var once sync.Once
-	err := NewParallelProgressBar(t.Context(), "parallel", items, func(v int) error {
-		curr := atomic.AddInt64(&active, 1)
-		for {
-			prev := atomic.LoadInt64(&maxActive)
-			if curr <= prev || atomic.CompareAndSwapInt64(&maxActive, prev, curr) {
-				break
-			}
-		}
-		if curr >= 3 {
-			once.Do(func() {
-				close(ready)
-			})
-		}
-		select {
-		case <-ready:
-		case <-time.After(time.Second):
-			return errors.New("timeout waiting for parallel start")
-		}
-		atomic.AddInt64(&active, -1)
-		return nil
-	}, WithWorkers(3), opT(func(p *Progressbar) error {
-		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-			return nil, ErrNoTTY
-		}
-		return nil
-	}))
-	assert.NoError(t, err)
-	assert.True(t, maxActive > 1)
+	tests := []struct {
+		name    string
+		items   []int
+		workers int
+	}{
+		{name: "three workers", items: []int{1, 2, 3, 4, 5, 6}, workers: 3},
+		{name: "no tty", items: []int{1, 2, 3}, workers: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var active, maxActive int64
+			ready := make(chan struct{})
+			var once sync.Once
+			err := NewParallelProgressBar(t.Context(), "parallel", tt.items, func(v int) error {
+				curr := atomic.AddInt64(&active, 1)
+				for {
+					prev := atomic.LoadInt64(&maxActive)
+					if curr <= prev || atomic.CompareAndSwapInt64(&maxActive, prev, curr) {
+						break
+					}
+				}
+				if curr >= int64(tt.workers) {
+					once.Do(func() {
+						close(ready)
+					})
+				}
+				select {
+				case <-ready:
+				case <-time.After(time.Second):
+					return errors.New("timeout waiting for parallel start")
+				}
+				atomic.AddInt64(&active, -1)
+				return nil
+			}, WithWorkers(tt.workers), opT(func(pb *Progressbar) error {
+				pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+					return nil, ErrNoTTY
+				}
+				return nil
+			}))
+			assert.NoError(t, err)
+			assert.True(t, maxActive > 1)
+		})
+	}
 }
 
 func TestNewParallelProgressBarStopsOnParentCancel(t *testing.T) {
@@ -677,42 +687,6 @@ func TestNewParallelProgressBarRecoversPanicsAsBug(t *testing.T) {
 	assert.Contains(t, err.Error(), "panic: boom")
 	var pe *panicError
 	assert.True(t, errors.As(err, &pe))
-}
-
-func TestNewParallelProgressBarNoTTYStillParallel(t *testing.T) {
-	var active int64
-	var maxActive int64
-	ready := make(chan struct{})
-	var once sync.Once
-	items := []int{1, 2, 3}
-	err := NewParallelProgressBar(t.Context(), "parallel", items, func(v int) error {
-		curr := atomic.AddInt64(&active, 1)
-		for {
-			prev := atomic.LoadInt64(&maxActive)
-			if curr <= prev || atomic.CompareAndSwapInt64(&maxActive, prev, curr) {
-				break
-			}
-		}
-		if curr >= 2 {
-			once.Do(func() {
-				close(ready)
-			})
-		}
-		select {
-		case <-ready:
-		case <-time.After(time.Second):
-			return errors.New("timeout waiting for parallel start")
-		}
-		atomic.AddInt64(&active, -1)
-		return nil
-	}, WithWorkers(2), opT(func(pb *Progressbar) error {
-		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-			return nil, ErrNoTTY
-		}
-		return nil
-	}))
-	assert.NoError(t, err)
-	assert.True(t, maxActive > 1)
 }
 
 func TestNewParallelProgressBarPropagatesCloseError(t *testing.T) {

@@ -70,19 +70,18 @@ func TestBeforeNewline(t *testing.T) {
 }
 
 func TestWidthUnicode(t *testing.T) {
-	//nolint:gosmopolitan // intent is to verify width handling on specific scripts.
 	for _, tt := range []struct {
 		in   string
 		want int
 	}{
 		{"abc", 3},
 		{"åäö", 3},
-		{"a\u0308", 1},            // combining diaeresis
-		{"\x1b[31må\x1b[0m", 1},   // colored single rune
-		{"\x1b[31måäö\x1b[0m", 3}, // colored multi-byte runes
-		{"界面", 4},                 // wide runes
-		{"\x1b[32m界面\x1b[0m", 4},  // wide runes with color
-		{"界\u0308", 2},            // wide rune plus combining mark
+		{"a\u0308", 1},                     // combining diaeresis
+		{"\x1b[31må\x1b[0m", 1},            // colored single rune
+		{"\x1b[31måäö\x1b[0m", 3},          // colored multi-byte runes
+		{"\u754c\u9762", 4},                // wide runes
+		{"\x1b[32m\u754c\u9762\x1b[0m", 4}, // wide runes with color
+		{"\u754c\u0308", 2},                // wide rune plus combining mark
 	} {
 		t.Run(tt.in, func(t *testing.T) {
 			assert.Equal(t, tt.want, text(tt.in).width())
@@ -157,8 +156,8 @@ func TestTruncateVisible(t *testing.T) {
 		{"hello", 6, ' ', "hello "},
 		{"hello ", 6, ' ', "hell… "},
 		{"hello world\nnext", 6, '\n', "hell…\n"},
-		{"界界界界", 6, ' ', "界界… "},
-		{"界界界界", 5, ' ', "界… "},
+		{"\u754c\u754c\u754c\u754c", 6, ' ', "\u754c\u754c… "},
+		{"\u754c\u754c\u754c\u754c", 5, ' ', "\u754c… "},
 		{"abc", 1, ' ', ""},
 		{"abc", 0, ' ', ""},
 		{"a\xffb", 10, ' ', "a\ufffdb "},
@@ -193,7 +192,7 @@ func TestScan(t *testing.T) {
 		{"\x1b", segment{isIncomplete: true}, 1, 0},
 		{"\x1bx", segment{isEscape: true}, 2, 0},       // two-byte
 		{"\x1b\x1b[0m", segment{isBroken: true}, 1, 0}, // a lone ESC
-		{"\x1b界", segment{isBroken: true}, 1, 0},
+		{"\x1b\u754c", segment{isBroken: true}, 1, 0},
 		{"\x1b[31m", segment{isEscape: true}, 5, 0},
 		{"\x1b[?25h", segment{isEscape: true}, 6, 0},
 		{"\x1b[31", segment{isIncomplete: true}, 4, 0},
@@ -211,7 +210,7 @@ func TestScan(t *testing.T) {
 		{"\xffa", segment{isInvalid: true}, 1, 1},
 		{"\xe4", segment{isInvalid: true}, 1, 1},
 		{"\xe4\xb8", segment{isInvalid: true}, 1, 1},
-		{"界", segment{}, 3, 2},
+		{"\u754c", segment{}, 3, 2},
 		{"é", segment{}, 2, 1},
 		{"e\u0301", segment{}, 3, 1},
 		{"e\u0301\u0302x", segment{}, 5, 1},
@@ -244,7 +243,7 @@ func TestScan(t *testing.T) {
 
 // regression: a segment sequence starts from the beginning every time it is iterated
 func TestTokensIterateTwice(t *testing.T) {
-	seq := text("a\x1b[31m界").segments()
+	seq := text("a\x1b[31m\u754c").segments()
 	var first, second []segment
 	for seg := range seq {
 		first = append(first, seg)
@@ -255,7 +254,7 @@ func TestTokensIterateTwice(t *testing.T) {
 	assert.Equal(t, []segment{
 		{text: []byte("a"), width: 1},
 		{isEscape: true, text: []byte("\x1b[31m")},
-		{text: []byte("界"), width: 2},
+		{text: []byte("\u754c"), width: 2},
 	}, first)
 	assert.Equal(t, first, second)
 }
@@ -276,7 +275,7 @@ func TestIncompleteTail(t *testing.T) {
 		{"\x1b[0m\x1b]0;ti", 6},
 		{"ab\xe4", 1},
 		{"ab\xe4\xb8", 2},
-		{"ab界", 0},
+		{"ab\u754c", 0},
 		{"ab\xff", 0},
 		{"\x1b]" + strings.Repeat("x", maxHeldBytes), 0}, // never terminated
 	} {
@@ -287,7 +286,7 @@ func TestIncompleteTail(t *testing.T) {
 }
 
 func TestClusters(t *testing.T) {
-	got := text("ae\u0301界\x1b[0m👍🏽").clusters()
+	got := text("ae\u0301\u754c\x1b[0m👍🏽").clusters()
 	assert.Equal(t, clusters{
 		{0, 1, 1}, {1, 3, 1}, {3, 4, 2}, {4, 8, 0}, {8, 10, 2},
 	}, got)
@@ -314,7 +313,7 @@ func TestWidthEmoji(t *testing.T) {
 
 // fuzz seeds that cover every kind of segment.
 var fuzzSeeds = []string{
-	"", "plain", "\x1b[31mred\x1b[0m text", "界面 wide", "e\u0301 combining", "👨\u200d👩\u200d👧 family",
+	"", "plain", "\x1b[31mred\x1b[0m text", "\u754c\u9762 wide", "e\u0301 combining", "👨\u200d👩\u200d👧 family",
 	"🇺🇦 flag", "❤\ufe0f", "1\ufe0f\u20e3", "\x1b]8;;http://a\x07link\x1b]8;;\x07", "\x1b]0;title\x1b\\",
 	"\x1b[", "\x1b", "\xff\xfe", "\xe4\xb8", "a\tb\rc\nd", "\x1b(B", "\u1100\u1161\u11a8", "\x9b31m",
 }

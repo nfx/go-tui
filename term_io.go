@@ -223,6 +223,12 @@ const (
 // for another key.
 var escapeTimeout = 50 * time.Millisecond
 
+// isPasteText reports whether err carries buffered keys reported as a paste.
+func isPasteText(err error) bool {
+	target, ok := errors.AsType[*pasteTextError](err)
+	return ok && target != nil
+}
+
 type pasteTextError struct {
 	buf []byte
 }
@@ -251,8 +257,8 @@ func (t *termIO) ReadKey() (rune, error) {
 
 // readRune reads and decodes a full rune, including
 // multi-byte escape sequences for arrow keys.
-func (t *termIO) readRune() (rune, int, error) {
-	buf, n, err := t.readRuneBytes()
+func (t *termIO) readRune(ctx context.Context) (rune, int, error) {
+	buf, n, err := t.readRuneBytes(ctx)
 	if err != nil {
 		return 0, n, err
 	}
@@ -292,7 +298,7 @@ func (t *termIO) readEvents(ctx context.Context, permits <-chan struct{}) <-chan
 			}
 			// Buffered bytes never reach the fd again, so do not poll for them.
 			if !t.hasInput() && len(t.pending) == 0 {
-				if err := waitForReadableInput(ctx, t.in); err != nil {
+				if err := t.waitForReadableInput(ctx, t.in); err != nil {
 					select {
 					case <-ctx.Done():
 					case ch <- keyEvent{err: err}:
@@ -303,7 +309,7 @@ func (t *termIO) readEvents(ctx context.Context, permits <-chan struct{}) <-chan
 			if ctx.Err() != nil {
 				return
 			}
-			read, consumed := t.startRead()
+			read, consumed := t.startRead(ctx)
 			select {
 			case <-ctx.Done():
 				return
@@ -360,7 +366,7 @@ func (t *termIO) refreshSize() {
 
 // readRuneBytes reads raw bytes and continues reading
 // through escape sequences until a complete sequence is buffered.
-func (t *termIO) readRuneBytes() ([]byte, int, error) {
+func (t *termIO) readRuneBytes(ctx context.Context) ([]byte, int, error) {
 	buf := make([]byte, 16)
 	n, err := t.Read(buf)
 	if n == 0 {
@@ -370,7 +376,7 @@ func (t *termIO) readRuneBytes() ([]byte, int, error) {
 		return nil, n, err
 	}
 	if n > 0 && buf[0] == keyEscape {
-		n, err = t.readEscape(buf, n, err)
+		n, err = t.readEscape(ctx, buf, n, err)
 		if err != nil {
 			if n == 0 {
 				return nil, n, err
@@ -379,15 +385,15 @@ func (t *termIO) readRuneBytes() ([]byte, int, error) {
 		}
 		return buf, n, nil
 	}
-	n = t.readRuneTail(buf, n, err)
+	n = t.readRuneTail(ctx, buf, n, err)
 	return buf, n, nil
 }
 
 // readRuneTail reads the remaining bytes of a multi-byte UTF-8 rune
 // that was split across reads, one byte at a time.
-func (t *termIO) readRuneTail(buf []byte, n int, readErr error) int {
+func (t *termIO) readRuneTail(ctx context.Context, buf []byte, n int, readErr error) int {
 	for readErr == nil && n > 0 && n < len(buf) && text(buf[:n]).partialRuneTail() > 0 {
-		if !t.nextByteReady() {
+		if !t.nextByteReady(ctx) {
 			return n
 		}
 		m, err := t.Read(buf[n : n+1])
@@ -448,12 +454,12 @@ func (t *termIO) holdPartialRune(buf []byte, n int) int {
 // readEscape reads additional bytes one at a time until the escape
 // sequence is complete, no next byte arrives within [escapeTimeout],
 // or the buffer fills.
-func (t *termIO) readEscape(buf []byte, n int, readErr error) (int, error) {
+func (t *termIO) readEscape(ctx context.Context, buf []byte, n int, readErr error) (int, error) {
 	for n < len(buf) {
 		if _, complete := t.escapeSequenceLen(buf[:n]); complete {
 			return n, readErr
 		}
-		if !t.nextByteReady() {
+		if !t.nextByteReady(ctx) {
 			return n, readErr
 		}
 		m, err := t.Read(buf[n : n+1])
@@ -470,13 +476,13 @@ func (t *termIO) readEscape(buf []byte, n int, readErr error) (int, error) {
 
 // nextByteReady waits up to [escapeTimeout] for the next byte of an escape
 // sequence or rune. Readers that cannot be polled always report ready and block in Read.
-func (t *termIO) nextByteReady() bool {
+func (t *termIO) nextByteReady(ctx context.Context) bool {
 	if len(t.pending) > 0 {
 		return true
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), escapeTimeout)
+	ctx, cancel := context.WithTimeout(ctx, escapeTimeout)
 	defer cancel()
-	err := waitForReadableInput(ctx, t.in)
+	err := t.waitForReadableInput(ctx, t.in)
 	return !errors.Is(err, context.DeadlineExceeded)
 }
 
@@ -666,7 +672,7 @@ func (t *termIO) hasInput() bool {
 }
 
 // startRead adopts a previous prompt's read before starting another one.
-func (t *termIO) startRead() (*inputRead, func()) {
+func (t *termIO) startRead(ctx context.Context) (*inputRead, func()) {
 	state := t.inputState()
 	inputStates.Lock()
 	defer inputStates.Unlock()
@@ -685,9 +691,10 @@ func (t *termIO) startRead() (*inputRead, func()) {
 	}
 	// The read owns its decoder even after its original prompt returns.
 	decoder := &termIO{in: t.in, pending: pending, splitKeys: t.splitKeys}
+	readCtx := context.WithoutCancel(ctx)
 	go func() {
 		defer close(read.done)
-		key, n, err := decoder.readRune()
+		key, n, err := decoder.readRune(readCtx)
 		read.event = keyEvent{key: key, err: err}
 		var more *pasteTextError
 		if errors.As(err, &more) {
