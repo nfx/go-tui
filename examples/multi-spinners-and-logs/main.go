@@ -21,7 +21,7 @@ func main() {
 		panic(err)
 	}
 
-	s, err := tui.NewSpinners(tui.WithOutput(w), tui.WithContext(ctx))
+	s, err := tui.NewSpinners(ctx, tui.WithOutput(w))
 	if err != nil {
 		panic(err)
 	}
@@ -92,7 +92,7 @@ func main() {
 		}
 	}()
 
-	// tui.Confirm("Do you want to continue?", tui.WithOutput(w), tui.WithContext(ctx))
+	// tui.Confirm(ctx, "Do you want to continue?", tui.WithOutput(w))
 
 	<-done
 }

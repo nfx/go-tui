@@ -15,13 +15,15 @@ Minimal dropdown:
 package main
 
 import (
+	"context"
 	"log"
 
 	tui "github.com/nfx/go-tui"
 )
 
 func main() {
-	choice, err := tui.Dropdown("Select environment", []string{"dev", "staging", "prod"})
+	ctx := context.Background()
+	choice, err := tui.Dropdown(ctx, "Select environment", []string{"dev", "staging", "prod"})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -29,5 +31,5 @@ func main() {
 }
 ```
 
-Most widgets accept shared options such as `WithContext`, `WithTimeout`, `WithInput`, and `WithOutput`.
+Most widgets accept shared options such as `WithInput` and `WithOutput`; interactive widgets take a `context.Context` as the first argument.
 Start with [Shared Options and Helpers](options-and-helpers.md), then see each widget page.

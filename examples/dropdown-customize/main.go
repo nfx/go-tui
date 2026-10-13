@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,12 +18,14 @@ func main() {
 	}
 	slog.Info("got terminal", "w", width, "h", height)
 
-	v, err := tui.Dropdown("Samples", []Sample{
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	v, err := tui.Dropdown(ctx, "Samples", []Sample{
 		{Name: "Alice", Age: 20},
 		{Name: "Bob", Age: 30},
 		{Name: "Василь", Age: 50},
 		{Name: "Charlie", Age: 40},
-	}, tui.WithTimeout(60*time.Second),
+	},
 		tui.WithActiveItemTemplate(`→ {{.Name}} {{ dim "(age: " .Age ")" }}`),
 		tui.WithInactiveItemTemplate(`~ {{.Name}}`),
 		tui.WithHide(),

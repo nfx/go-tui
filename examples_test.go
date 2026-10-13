@@ -4,6 +4,7 @@
 package tui_test
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math/rand/v2"
@@ -19,12 +20,14 @@ func ExampleDropdown_withStructs() {
 		Name string
 		Age  int
 	}
-	v, err := tui.Dropdown("Samples", []Sample{
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	v, err := tui.Dropdown(ctx, "Samples", []Sample{
 		{Name: "Alice", Age: 20},
 		{Name: "Bob", Age: 30},
 		{Name: "Василь", Age: 50}, // supports Unicode
 		{Name: "Charlie", Age: 40},
-	}, tui.WithTimeout(60*time.Second),
+	},
 		// template overrides allow rendering different struct fields and methods
 		tui.WithActiveItemTemplate(`→ {{.Name}} {{ dim "(age: " .Age ")" }}`),
 		tui.WithInactiveItemTemplate(`~ {{.Name}}`),
@@ -46,8 +49,9 @@ func ExampleDropdown_withLargeList() {
 	// tens of thousands of words would nicely fit into a dropdown,
 	// because of ".. more items" feature. It's also possible to
 	// search for a word by typing its prefix.
-	v, err := tui.Dropdown("Select a word", words,
-		tui.WithTimeout(30*time.Second),
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	v, err := tui.Dropdown(ctx, "Select a word", words,
 		tui.WithOneReturn())
 	if err != nil {
 		log.Fatal(err)

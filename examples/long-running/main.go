@@ -8,8 +8,9 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
 	// shows a spinner with the message for as long as the callback runs.
-	err := tui.LongRunning(context.Background(), "Warming up the cache…", func(ctx context.Context) error {
+	err := tui.LongRunning(ctx, "Warming up the cache…", func(ctx context.Context) error {
 		select {
 		case <-time.After(3 * time.Second):
 			return nil

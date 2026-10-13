@@ -65,8 +65,8 @@ func WithWorkers(workers int) opt {
 
 var runtimeNumCPU = runtime.NumCPU
 
-func newProgressbar() *Progressbar {
-	ctx, cancel := context.WithCancelCause(context.Background())
+func newProgressbar(ctx context.Context) *Progressbar {
+	ctx, cancel := context.WithCancelCause(ctx)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	in, out := defaultStreams()
 	return &Progressbar{
@@ -84,14 +84,14 @@ func newProgressbar() *Progressbar {
 	}
 }
 
-func newStartedProgressBar(label string, size int64, o ...opt) (*Progressbar, error) {
+func newStartedProgressBar(ctx context.Context, label string, size int64, o ...opt) (*Progressbar, error) {
 	var err error
-	p := newProgressbar()
+	p := newProgressbar(ctx)
 	err = opts(o).Apply(p)
 	if err != nil {
+		p.cancel(err)
 		return nil, fmt.Errorf("apply option: %w", err)
 	}
-	p.ctx, p.cancel = context.WithCancelCause(p.ctx)
 	p.showRate = true
 	p.showEstimate = true
 	p.maxNum = size
@@ -99,10 +99,12 @@ func newStartedProgressBar(label string, size int64, o ...opt) (*Progressbar, er
 	if errors.Is(err, ErrNoTTY) {
 		return p, nil // continue like nothing happens
 	} else if err != nil {
+		p.cancel(err)
 		return nil, fmt.Errorf("make io: %w", err)
 	}
 	err = p.io.restoreMode()
 	if err != nil {
+		p.cancel(err)
 		return nil, fmt.Errorf("restore: %w", err)
 	}
 	p.label = text(label)
@@ -136,15 +138,15 @@ type Progressbar struct {
 }
 
 // NewMaxProgressBar returns progress bar towards the max number.
-func NewMaxProgressBar(label string, size int64, opts ...opt) (*Progressbar, error) {
-	return newStartedProgressBar(label, size, opts...)
+func NewMaxProgressBar(ctx context.Context, label string, size int64, opts ...opt) (*Progressbar, error) {
+	return newStartedProgressBar(ctx, label, size, opts...)
 }
 
 // NewSliceProgressBar returns progress bar that updates as long as iterator consumed.
-func NewSliceProgressBar[T any](label string, slice []T, opts ...opt) iter.Seq2[T, error] {
+func NewSliceProgressBar[T any](ctx context.Context, label string, slice []T, opts ...opt) iter.Seq2[T, error] {
 	return func(yield func(T, error) bool) {
 		var zero T
-		p, err := newStartedProgressBar(label, int64(len(slice)), opts...)
+		p, err := newStartedProgressBar(ctx, label, int64(len(slice)), opts...)
 		if err != nil {
 			yield(zero, err)
 			return
@@ -167,8 +169,8 @@ func NewSliceProgressBar[T any](label string, slice []T, opts ...opt) iter.Seq2[
 }
 
 // NewParallelProgressBar executes yield in parallel while updating progress.
-func NewParallelProgressBar[T any](label string, slice []T, yield func(T) error, opts ...opt) error {
-	p, err := newStartedProgressBar(label, int64(len(slice)), opts...)
+func NewParallelProgressBar[T any](ctx context.Context, label string, slice []T, yield func(T) error, opts ...opt) error {
+	p, err := newStartedProgressBar(ctx, label, int64(len(slice)), opts...)
 	if err != nil {
 		return err
 	}
@@ -682,13 +684,13 @@ type wrapReader struct {
 	p *Progressbar
 }
 
-func NewFileProgressReader(r io.Reader, label string, o ...opt) (*wrapReader, error) {
-	p := newProgressbar()
+func NewFileProgressReader(ctx context.Context, r io.Reader, label string, o ...opt) (*wrapReader, error) {
+	p := newProgressbar(ctx)
 	err := opts(o).Apply(p)
 	if err != nil {
+		p.cancel(err)
 		return nil, fmt.Errorf("apply option: %w", err)
 	}
-	p.ctx, p.cancel = context.WithCancelCause(p.ctx)
 	wrap := &wrapReader{r, p}
 	size, err := wrap.Size()
 	if err != nil {

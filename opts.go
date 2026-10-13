@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"time"
 )
 
 // opt configures a widget. Every option supports a fixed set of widgets and
@@ -124,47 +123,10 @@ type withPrompt interface {
 	setDefault(d string)
 }
 
-type withContext interface {
-	setContext(ctx context.Context)
-	getContext() context.Context
-}
-
-// WithContext sets the context of an interactive widget.
-//
-// design tradeoff - we're not passing context as the first argument, because we don't always need it.
-func WithContext(ctx context.Context) opt {
-	return opT(func(x withContext) error {
-		x.setContext(ctx)
-		return nil
-	})
-}
-
-// WithTimeout wraps the current context of an interactive widget.
-func WithTimeout(timeout time.Duration) opt {
-	return opT(func(x withContext) error {
-		ctx := x.getContext()
-		// at the moment our interfaces don't care about cancellation,
-		// but we may want to revisit this later.
-		ctx, _ = context.WithTimeout(ctx, timeout) //nolint:govet // ...
-		x.setContext(ctx)
-		return nil
-	})
-}
-
 type config struct {
-	ctx context.Context // TODO: wrap with context.WithCancelClause
+	ctx context.Context
 	in  io.Reader
 	out io.Writer
-}
-
-// implement [withContext] interface.
-func (c *config) setContext(ctx context.Context) {
-	c.ctx = ctx
-}
-
-// implement [withContext] interface.
-func (c *config) getContext() context.Context {
-	return c.ctx
 }
 
 // implement [withIO] interface.

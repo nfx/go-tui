@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 
@@ -9,6 +10,7 @@ import (
 
 // Usage: go run ./progress-reader <file>
 func main() {
+	ctx := context.Background()
 	if len(os.Args) < 2 {
 		println("usage: progress-reader <file>")
 		return
@@ -20,7 +22,7 @@ func main() {
 	defer f.Close()
 
 	// the reader reports its size via Stat(), and shows rate and estimate
-	r, err := tui.NewFileProgressReader(f, "Reading")
+	r, err := tui.NewFileProgressReader(ctx, f, "Reading")
 	if err != nil {
 		panic(err)
 	}

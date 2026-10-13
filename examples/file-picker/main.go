@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -8,11 +9,12 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
 	home, err := os.UserHomeDir()
 	if err != nil {
 		panic(err)
 	}
-	path, err := tui.FilePicker("Pick a Go or Markdown file",
+	path, err := tui.FilePicker(ctx, "Pick a Go or Markdown file",
 		tui.WithStartDir(home),           // where to start browsing
 		tui.WithExtensions(".go", ".md"), // only show matching files (directories stay)
 		tui.WithShowHidden(),             // include dotfiles

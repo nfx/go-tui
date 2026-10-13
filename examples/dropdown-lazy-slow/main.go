@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
 	emu := func(yield func(string, error) bool) {
 		for i := 1; i <= 30; i++ {
 			time.Sleep(150 * time.Millisecond)
@@ -16,7 +18,7 @@ func main() {
 			}
 		}
 	}
-	_, err := tui.DropdownLazy("Select (slow)", emu)
+	_, err := tui.DropdownLazy(ctx, "Select (slow)", emu)
 	if err != nil {
 		panic(err)
 	}

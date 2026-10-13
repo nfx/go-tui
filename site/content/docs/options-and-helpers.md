@@ -9,7 +9,7 @@ misplaced option fails instead of silently doing nothing.
 
 | Option | Supported by |
 |---|---|
-| `WithContext`, `WithTimeout`, `WithInput`, `WithOutput` | `Input`, `Password`, dropdowns, `Confirm`, `FilePicker`, `NewSpinners`, progress bars |
+| `WithInput`, `WithOutput` | `Input`, `Password`, dropdowns, `Confirm`, `FilePicker`, `NewSpinners`, progress bars |
 | `WithDefault`, `WithHide`, `WithLabelTemplate`, `WithAnswerTemplate` | `Input`, `Password`, dropdowns, `Confirm`, `FilePicker` |
 | `WithNonEmpty` | `Input`, `Password` |
 | other `With*Template`, `WithTemplate`, `WithOneReturn` | dropdowns, `Confirm`, `FilePicker` |
@@ -22,28 +22,20 @@ Tables take their writer as an argument, so they accept none of the shared
 options below. Column options only shape auto-generated templates and have no
 effect when you pass an explicit row template.
 
-## WithContext
+## Context
 
-Sets widget context directly.
+Interactive and long-running widgets (`Input`, `Password`, dropdowns, `Confirm`,
+`FilePicker`, `NewSpinners` and progress bars) take a `context.Context` as the
+first argument. Cancelling it, for example on Ctrl-C or a parent shutdown,
+stops the widget and its workers. For an upper bound on interaction time,
+derive the context with `context.WithTimeout` and cancel it when done.
 
 ```go
-ctx, cancel := context.WithCancel(context.Background())
+ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 defer cancel()
 
-value, err := tui.Input("Name", tui.WithContext(ctx))
+value, err := tui.Input(ctx, "Name")
 ```
-
-Use this when widget lifetime should follow your context tree.
-
-## WithTimeout
-
-Wraps current widget context with `context.WithTimeout`.
-
-```go
-value, err := tui.Input("Name", tui.WithTimeout(15*time.Second))
-```
-
-Use this to enforce an upper bound on interaction time.
 
 ## WithInput
 
@@ -51,7 +43,7 @@ Overrides input source for a widget.
 
 ```go
 in := strings.NewReader("alice\n")
-value, err := tui.Input("Name", tui.WithInput(in))
+value, err := tui.Input(ctx, "Name", tui.WithInput(in))
 ```
 
 Useful for tests and scripted flows.
@@ -62,7 +54,7 @@ Overrides output destination.
 
 ```go
 var out bytes.Buffer
-_, err := tui.Input("Name", tui.WithOutput(&out))
+_, err := tui.Input(ctx, "Name", tui.WithOutput(&out))
 ```
 
 Useful for tests and custom terminal routing.
@@ -96,11 +88,10 @@ Invalid values, such as `WithWorkers(0)`, are always reported.
 
 ```go
 common := tui.WithOptions(
-	tui.WithTimeout(20*time.Second),
 	tui.WithOutput(os.Stderr),
 )
 
-_, err := tui.Input("Name", common)
+_, err := tui.Input(ctx, "Name", common)
 ```
 
 ## WithFn

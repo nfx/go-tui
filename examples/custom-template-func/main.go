@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"strings"
 
@@ -13,6 +14,7 @@ type Pet struct {
 }
 
 func main() {
+	ctx := context.Background()
 	// WithFn registers a function usable in every template (tables, dropdowns).
 	tui.WithFn("shout", func(s string) string { return strings.ToUpper(s) + "!" })
 
@@ -21,7 +23,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	pet, err := tui.Dropdown("Pet", pets,
+	pet, err := tui.Dropdown(ctx, "Pet", pets,
 		tui.WithActiveItemTemplate(`→ {{ shout .Name | bold }}`))
 	if err != nil {
 		panic(err)

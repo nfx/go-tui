@@ -25,7 +25,7 @@ var longRunningNewSpinners = NewSpinners
 
 // LongRunning shows a spinner with the provided message while cb executes.
 func LongRunning(ctx context.Context, message string, cb func(context.Context) error) error {
-	spinners, err := longRunningNewSpinners(WithContext(ctx))
+	spinners, err := longRunningNewSpinners(ctx)
 	if err != nil {
 		return cb(ctx)
 	}
@@ -96,8 +96,8 @@ type Spinners struct {
 	eventSink  func(spinnerEvent)
 }
 
-func newSpinners() *Spinners {
-	ctx, cancel := context.WithCancel(context.Background())
+func newSpinners(ctx context.Context) *Spinners {
+	ctx, cancel := context.WithCancel(ctx)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	in, out := defaultStreams()
 	return &Spinners{
@@ -115,8 +115,8 @@ func newSpinners() *Spinners {
 	}
 }
 
-func NewSpinners(opt ...opt) (*Spinners, error) {
-	s := newSpinners()
+func NewSpinners(ctx context.Context, opt ...opt) (*Spinners, error) {
+	s := newSpinners(ctx)
 	err := opts(opt).Apply(s)
 	if err != nil {
 		return nil, err
@@ -218,10 +218,6 @@ func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 			return spinner, nil
 		}
 	}
-}
-
-func (s *Spinners) setContext(ctx context.Context) {
-	s.ctx, s.cancel = context.WithCancel(ctx)
 }
 
 func (s *Spinners) emit(ev spinnerEvent) {

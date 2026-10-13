@@ -26,7 +26,7 @@ import (
 func TestDropdownDefaultSelectsClosestMatch(t *testing.T) {
 	term := newTerminal(t, 40, 12)
 	res := prompt(func() (string, error) {
-		return tui.Dropdown("Pick", []string{"apple pie", "banana", "apple"},
+		return tui.Dropdown(t.Context(), "Pick", []string{"apple pie", "banana", "apple"},
 			plain, tui.WithDefault("apple"))
 	})
 	// two items share the prefix, so the closest one is ranked first and selected
@@ -40,7 +40,7 @@ func TestDropdownLazyDefaultSelectsBestRankedArrival(t *testing.T) {
 	term := newTerminal(t, 40, 12)
 	items := make(chan string)
 	res := prompt(func() (string, error) {
-		return tui.DropdownLazy("Pick", feed(items), plain, tui.WithDefault("cat"))
+		return tui.DropdownLazy(t.Context(), "Pick", feed(items), plain, tui.WithDefault("cat"))
 	})
 	read := term.blockedRead(t)
 	items <- "xxxx"
@@ -60,7 +60,7 @@ func TestDropdownLazyDefaultKeepsNavigatedSelection(t *testing.T) {
 	term := newTerminal(t, 40, 12)
 	items := make(chan string)
 	res := prompt(func() (string, error) {
-		return tui.DropdownLazy("Pick", feed(items), plain, tui.WithDefault("cat"))
+		return tui.DropdownLazy(t.Context(), "Pick", feed(items), plain, tui.WithDefault("cat"))
 	})
 	items <- "xxxx"
 	items <- "yyyy"
@@ -80,7 +80,7 @@ func TestDropdownLazyFilterAppliesToLaterItems(t *testing.T) {
 	term := newTerminal(t, 40, 12)
 	items := make(chan string)
 	res := prompt(func() (string, error) {
-		return tui.DropdownLazy("Pick", feed(items), plain)
+		return tui.DropdownLazy(t.Context(), "Pick", feed(items), plain)
 	})
 	items <- "alpha"
 	items <- "beta"
@@ -123,25 +123,25 @@ func testResizeWhileReading(t *testing.T, run func() (string, error)) {
 
 func TestDropdownResizeWhileReadingKeepsSelection(t *testing.T) {
 	testResizeWhileReading(t, func() (string, error) {
-		return tui.Dropdown("Pick", []string{"a", "b", "c", "d", "e"}, plain)
+		return tui.Dropdown(t.Context(), "Pick", []string{"a", "b", "c", "d", "e"}, plain)
 	})
 }
 
 func TestDropdownLazyResizeWhileReadingKeepsSelection(t *testing.T) {
 	testResizeWhileReading(t, func() (string, error) {
-		return tui.DropdownLazy("Pick", values("a", "b", "c", "d", "e"), plain)
+		return tui.DropdownLazy(t.Context(), "Pick", values("a", "b", "c", "d", "e"), plain)
 	})
 }
 
 func TestWidgetsShareTerminal(t *testing.T) {
 	term := newTerminal(t, 40, 12)
-	p, err := tui.NewMaxProgressBar("Download", 4)
+	p, err := tui.NewMaxProgressBar(t.Context(), "Download", 4)
 	assert.NoError(t, err)
 	p.Add(1)
 	term.waitRows(t, "Download 25%...")
 
 	res := prompt(func() (string, error) {
-		return tui.Dropdown("Pick", []string{"a", "b"}, plain)
+		return tui.Dropdown(t.Context(), "Pick", []string{"a", "b"}, plain)
 	})
 	// the background overlay stays above the prompt that started later
 	term.waitRows(t, "Download 25%...", "Pick * a", "- b")
@@ -161,7 +161,7 @@ func TestWidgetsShareTerminal(t *testing.T) {
 
 	// the next prompt reads from the same keyboard and draws on the same screen
 	res = prompt(func() (string, error) {
-		return tui.Input("Name")
+		return tui.Input(t.Context(), "Name")
 	})
 	term.press(t, "x")
 	term.press(t, keyEnter)
@@ -211,7 +211,7 @@ func TestTableAutoScaleColorsFollowMultilineRows(t *testing.T) {
 
 func TestProgressbarUpdatesAfterCompletion(t *testing.T) {
 	term := newTerminal(t, 40, 6)
-	p, err := tui.NewMaxProgressBar("Copy", 4)
+	p, err := tui.NewMaxProgressBar(t.Context(), "Copy", 4)
 	assert.NoError(t, err)
 	p.Add(2)
 	term.waitRows(t, "Copy 50%...")
@@ -239,7 +239,7 @@ func TestProgressbarUpdatesAfterCompletion(t *testing.T) {
 
 func TestSpinnerUpdatesAfterCompletion(t *testing.T) {
 	term := newTerminal(t, 40, 6)
-	s, err := tui.NewSpinners()
+	s, err := tui.NewSpinners(t.Context())
 	assert.NoError(t, err)
 	t.Cleanup(s.Close)
 	frames := tui.WithFrames([]string{"-"})

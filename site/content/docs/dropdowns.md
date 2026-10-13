@@ -9,7 +9,7 @@ Selects a value from a typed list.
 
 ```go
 cities := []string{"Amsterdam", "Berlin", "Paris"}
-city, err := tui.Dropdown("City", cities)
+city, err := tui.Dropdown(ctx, "City", cities)
 if err != nil {
 	return err
 }
@@ -24,7 +24,7 @@ Like `Dropdown`, but returns the selected index in `[]any`.
 
 ```go
 items := []any{"dev", "staging", "prod"}
-idx, err := tui.DropdownIndex("Environment", items)
+idx, err := tui.DropdownIndex(ctx, "Environment", items)
 if err != nil {
 	return err
 }
@@ -42,7 +42,7 @@ ports := map[string]int{
 	"http":  80,
 	"https": 443,
 }
-name, port, err := tui.DropdownKV("Port", ports)
+name, port, err := tui.DropdownKV(ctx, "Port", ports)
 if err != nil {
 	return err
 }
@@ -63,7 +63,7 @@ seq := func(yield func(string, error) bool) {
 		}
 	}
 }
-selected, err := tui.DropdownLazy("Pick one", seq)
+selected, err := tui.DropdownLazy(ctx, "Pick one", seq)
 if err != nil {
 	return err
 }
@@ -77,7 +77,7 @@ Use this for large or slow data sources.
 Renders a yes/no dropdown and returns `true` for "yes".
 
 ```go
-ok := tui.Confirm("Delete cache?")
+ok := tui.Confirm(ctx, "Delete cache?")
 if !ok {
 	return nil
 }
@@ -88,7 +88,7 @@ if !ok {
 Formatted variant of `Confirm`.
 
 ```go
-ok := tui.Confirmf("Delete %d files?", 12)
+ok := tui.Confirmf(ctx, "Delete %d files?", 12)
 if !ok {
 	return nil
 }
@@ -99,7 +99,7 @@ if !ok {
 Sets a match hint, not a pre-filled filter. The dropdown ranks items by similarity to the hint and returns early only when exactly one item matches it as a prefix; the typed filter stays empty. Also useful with `WithOneReturn`.
 
 ```go
-city, err := tui.Dropdown("City", cities,
+city, err := tui.Dropdown(ctx, "City", cities,
 	tui.WithDefault("am"),
 )
 ```
@@ -109,7 +109,7 @@ city, err := tui.Dropdown("City", cities,
 Returns immediately if exactly one item is available.
 
 ```go
-city, err := tui.Dropdown("City", []string{"Amsterdam"},
+city, err := tui.Dropdown(ctx, "City", []string{"Amsterdam"},
 	tui.WithOneReturn(),
 )
 ```
@@ -119,7 +119,7 @@ city, err := tui.Dropdown("City", []string{"Amsterdam"},
 Hides the final answer line after selection.
 
 ```go
-city, err := tui.Dropdown("City", cities,
+city, err := tui.Dropdown(ctx, "City", cities,
 	tui.WithHide(),
 )
 ```
@@ -134,7 +134,7 @@ type City struct {
 	Country string
 }
 
-city, err := tui.Dropdown("City", data,
+city, err := tui.Dropdown(ctx, "City", data,
 	tui.WithTemplate(".Name", ".Country"),
 )
 ```
@@ -146,7 +146,7 @@ Use this as the preferred template override.
 Overrides prompt label rendering.
 
 ```go
-city, err := tui.Dropdown("City", cities,
+city, err := tui.Dropdown(ctx, "City", cities,
 	tui.WithLabelTemplate(`{{ cyan "Select:" }} {{ . | bold }}`),
 )
 ```
@@ -156,7 +156,7 @@ city, err := tui.Dropdown("City", cities,
 Overrides active row template.
 
 ```go
-city, err := tui.Dropdown("City", cities,
+city, err := tui.Dropdown(ctx, "City", cities,
 	tui.WithActiveItemTemplate(`{{ green "> " (label .) }}`),
 )
 ```
@@ -166,7 +166,7 @@ city, err := tui.Dropdown("City", cities,
 Overrides inactive row template.
 
 ```go
-city, err := tui.Dropdown("City", cities,
+city, err := tui.Dropdown(ctx, "City", cities,
 	tui.WithInactiveItemTemplate(`{{ dim "  " (label .) }}`),
 )
 ```
@@ -176,7 +176,7 @@ city, err := tui.Dropdown("City", cities,
 Overrides the "more items" footer row.
 
 ```go
-city, err := tui.Dropdown("City", cities,
+city, err := tui.Dropdown(ctx, "City", cities,
 	tui.WithMoreItemsTemplate(`{{ dim .More " hidden, " .Total " total" }}`),
 )
 ```
@@ -186,7 +186,7 @@ city, err := tui.Dropdown("City", cities,
 Overrides rendered confirmation line.
 
 ```go
-city, err := tui.Dropdown("City", cities,
+city, err := tui.Dropdown(ctx, "City", cities,
 	tui.WithAnswerTemplate(`{{ green "selected:" }} {{ label .Answer }}`),
 )
 ```
@@ -196,39 +196,19 @@ city, err := tui.Dropdown("City", cities,
 Deprecated helper for field-based templates.
 
 ```go
-city, err := tui.Dropdown("City", data,
+city, err := tui.Dropdown(ctx, "City", data,
 	tui.WithFieldTemplate("Name"),
 )
 ```
 
 Prefer `WithTemplate` for new code.
 
-## WithContext
-
-Sets dropdown context.
-
-```go
-city, err := tui.Dropdown("City", cities,
-	tui.WithContext(ctx),
-)
-```
-
-## WithTimeout
-
-Adds timeout cancellation.
-
-```go
-city, err := tui.Dropdown("City", cities,
-	tui.WithTimeout(30*time.Second),
-)
-```
-
 ## WithInput
 
 Overrides input source.
 
 ```go
-city, err := tui.Dropdown("City", cities,
+city, err := tui.Dropdown(ctx, "City", cities,
 	tui.WithInput(in),
 )
 ```
@@ -238,7 +218,7 @@ city, err := tui.Dropdown("City", cities,
 Overrides output target.
 
 ```go
-city, err := tui.Dropdown("City", cities,
+city, err := tui.Dropdown(ctx, "City", cities,
 	tui.WithOutput(out),
 )
 ```
@@ -249,11 +229,10 @@ Bundles multiple options for reuse.
 
 ```go
 opts := tui.WithOptions(
-	tui.WithTimeout(30*time.Second),
 	tui.WithHide(),
 )
 
-city, err := tui.Dropdown("City", cities, opts)
+city, err := tui.Dropdown(ctx, "City", cities, opts)
 ```
 
 ## Default templates

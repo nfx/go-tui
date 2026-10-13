@@ -8,7 +8,7 @@ weight: 50
 Creates a mutable progress bar with explicit max size.
 
 ```go
-p, err := tui.NewMaxProgressBar("Upload", 100)
+p, err := tui.NewMaxProgressBar(ctx, "Upload", 100)
 if err != nil {
 	return err
 }
@@ -26,7 +26,7 @@ Use this when your total work count is known.
 Wraps slice iteration and auto-advances progress as items are consumed.
 
 ```go
-for item, err := range tui.NewSliceProgressBar("Items", items) {
+for item, err := range tui.NewSliceProgressBar(ctx, "Items", items) {
 	if err != nil {
 		return err
 	}
@@ -41,7 +41,7 @@ Use this for sequential processing loops.
 Processes slice items concurrently and updates one shared progress bar.
 
 ```go
-err := tui.NewParallelProgressBar("Jobs", jobs, func(job Job) error {
+err := tui.NewParallelProgressBar(ctx, "Jobs", jobs, func(job Job) error {
 	return run(job)
 }, tui.WithWorkers(8))
 if err != nil {
@@ -56,7 +56,7 @@ Returns the first worker error and cancels remaining work.
 Wraps a reader and advances progress by bytes read.
 
 ```go
-wrapped, err := tui.NewFileProgressReader(file, "Download")
+wrapped, err := tui.NewFileProgressReader(ctx, file, "Download")
 if err != nil {
 	return err
 }
@@ -72,7 +72,7 @@ Requires size discovery through `Stat().Size()` or `Size() int64`.
 Customizes per-second rate formatting.
 
 ```go
-p, err := tui.NewMaxProgressBar("Upload", 100,
+p, err := tui.NewMaxProgressBar(ctx, "Upload", 100,
 	tui.WithFormatRate(func(v float64) string {
 		return fmt.Sprintf("%.1f items", v)
 	}),
@@ -84,39 +84,19 @@ p, err := tui.NewMaxProgressBar("Upload", 100,
 Sets worker count for `NewParallelProgressBar`.
 
 ```go
-err := tui.NewParallelProgressBar("Jobs", jobs, runJob,
+err := tui.NewParallelProgressBar(ctx, "Jobs", jobs, runJob,
 	tui.WithWorkers(8),
 )
 ```
 
 Value must be greater than zero.
 
-## WithContext
-
-Sets progress context.
-
-```go
-p, err := tui.NewMaxProgressBar("Upload", 100,
-	tui.WithContext(ctx),
-)
-```
-
-## WithTimeout
-
-Adds timeout cancellation.
-
-```go
-p, err := tui.NewMaxProgressBar("Upload", 100,
-	tui.WithTimeout(30*time.Second),
-)
-```
-
 ## WithInput
 
 Overrides input reader for widget internals.
 
 ```go
-p, err := tui.NewMaxProgressBar("Upload", 100,
+p, err := tui.NewMaxProgressBar(ctx, "Upload", 100,
 	tui.WithInput(in),
 )
 ```
@@ -126,7 +106,7 @@ p, err := tui.NewMaxProgressBar("Upload", 100,
 Overrides output destination.
 
 ```go
-p, err := tui.NewMaxProgressBar("Upload", 100,
+p, err := tui.NewMaxProgressBar(ctx, "Upload", 100,
 	tui.WithOutput(out),
 )
 ```
@@ -138,10 +118,9 @@ Composes multiple progress options.
 ```go
 opts := tui.WithOptions(
 	tui.WithOutput(out),
-	tui.WithTimeout(30*time.Second),
 )
 
-p, err := tui.NewMaxProgressBar("Upload", 100, opts)
+p, err := tui.NewMaxProgressBar(ctx, "Upload", 100, opts)
 ```
 
 ## Behavior notes

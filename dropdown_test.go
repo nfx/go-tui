@@ -27,7 +27,7 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 	defer pr.Close()
 	defer pw.Close()
 	in := &notifyingReader{File: pr, started: make(chan struct{})}
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	d.Ctx = ctx
@@ -51,7 +51,7 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 	}
 	_, err = pw.Write([]byte{'x', keyEnter})
 	assert.NoError(t, err)
-	next := newInput("next")
+	next := newInput(t.Context(), "next")
 	next.ctx, cancel = context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	next.in, next.out = in, &bytes.Buffer{}
@@ -184,7 +184,6 @@ func testIOforDropdown(t *testing.T, width, height int, o ...opt) (*chanIO, opt)
 	return cio, WithOptions(append(opts{
 		WithInput(cio),
 		WithOutput(cio),
-		WithContext(ctx),
 		opT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{
@@ -212,7 +211,7 @@ func confirmForTest(t *testing.T) (in, out chan string, result chan bool) {
 	result = make(chan bool)
 	go func() {
 		defer close(result)
-		result <- Confirm("Are you sure?", opts)
+		result <- Confirm(cio.ctx, "Are you sure?", opts)
 	}()
 	return cio.In, cio.Out, result
 }
@@ -264,7 +263,7 @@ func overflowForTest(t *testing.T) (in, out chan string, result chan string) {
 	result = make(chan string)
 	go func() {
 		defer close(result)
-		v, err := Dropdown("Pick letter", []string{
+		v, err := Dropdown(cio.ctx, "Pick letter", []string{
 			"A", "B", "C", "D", "E",
 		}, opts)
 		assert.NoError(t, err)
@@ -337,7 +336,7 @@ func otherDropdownForTest(t *testing.T) (in, out chan string, result chan string
 	result = make(chan string)
 	go func() {
 		defer close(result)
-		v, err := Dropdown("Neque porro", []string{
+		v, err := Dropdown(cio.ctx, "Neque porro", []string{
 			"Lorem ipsum",
 			"dolor sit amet",
 			"adipiscing elit",
@@ -395,7 +394,7 @@ func dropdownKVForTest(t *testing.T, items map[string]int) (in, out chan string,
 	})
 	go func() {
 		defer close(result)
-		key, value, err := DropdownKV("Select item", items, opts)
+		key, value, err := DropdownKV(cio.ctx, "Select item", items, opts)
 		result <- struct {
 			key   string
 			value int
@@ -444,7 +443,7 @@ func TestDropdownKVMultipleItems(t *testing.T) {
 }
 
 func TestDropdownLazyClearsOnlyRenderedArea(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	assert.NoError(t, d.parseTemplates())
 	d.trie = newTrie()
 
@@ -473,7 +472,7 @@ func TestDropdownRunSelectsWithArrow(t *testing.T) {
 		{0x1b, 0x5b, 0x42},
 		{byte(keyEnter)},
 	}}
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"one", "two"}
 	d.in = reader
 	d.out = &bytes.Buffer{}
@@ -498,7 +497,7 @@ func TestDropdownRunIgnoresSpecialKeys(t *testing.T) {
 		{0x1b, 0x1b, 0x5b, 0x42}, // Esc, then down
 		{byte(keyEnter)},
 	}}
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"one", "two"}
 	d.in = reader
 	d.out = &bytes.Buffer{}
@@ -518,7 +517,7 @@ func TestDropdownRunIgnoresSpecialKeys(t *testing.T) {
 }
 
 func TestDropdownRunConsumesInputEvents(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"one", "two"}
 	d.in = bytes.NewBuffer(nil)
 	d.out = &bytes.Buffer{}
@@ -544,7 +543,7 @@ func TestDropdownRunOneReturn(t *testing.T) {
 	reader := &chunkReader{chunks: [][]byte{
 		{'b'},
 	}}
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"alpha", "beta"}
 	d.OneReturn = true
 	d.in = reader
@@ -564,7 +563,7 @@ func TestDropdownRunOneReturn(t *testing.T) {
 }
 
 func TestDropdownPressKeyRuneAndRenderMore(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"alpha", "beta"}
 	d.relevant = []int{0, 1}
 	d.displayed = d.relevant
@@ -606,7 +605,7 @@ func TestDropdownPressKeyRuneAndRenderMore(t *testing.T) {
 }
 
 func TestDropdownRenderInitAndItems(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"alpha", "beta", "gamma"}
 	d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return newTestTermIO(20, 6), nil
@@ -624,7 +623,7 @@ func TestDropdownRenderInitAndItems(t *testing.T) {
 }
 
 func TestDropdownRenderInit_activeItemOverflowTriggersLabelNewLine(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"ab", "cd"}
 	// active template is much wider than inactive
 	d.ActiveItemTemplate = `{{ cyan "→ selected: " (label .) " (details)" }}`
@@ -643,7 +642,7 @@ func TestDropdownRenderInit_activeItemOverflowTriggersLabelNewLine(t *testing.T)
 }
 
 func TestDropdownRenderInitEmitsEvents(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"alpha", "beta"}
 	assert.NoError(t, d.parseTemplates())
 	io := newTestTermIO(20, 6)
@@ -664,7 +663,7 @@ func TestDropdownRenderInitEmitsEvents(t *testing.T) {
 }
 
 func TestDropdownRenderMoreAndHeight(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = make([]any, 10)
 	for i := range d.Items {
 		d.Items[i] = i
@@ -682,7 +681,7 @@ func TestDropdownRenderMoreAndHeight(t *testing.T) {
 }
 
 func TestDropdownPressKeys(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.relevant = []int{0, 1, 2, 3}
 	d.displayed = []int{0, 1, 2}
 	d.selected = 1
@@ -702,7 +701,7 @@ func TestDropdownPressKeys(t *testing.T) {
 }
 
 func TestDropdownClearFrame(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	io := newTestTermIO(10, 4)
 	frame := &bytes.Buffer{}
 	assert.NoError(t, d.clearFrame(io, frame, 2))
@@ -712,7 +711,7 @@ func TestDropdownClearFrame(t *testing.T) {
 }
 
 func TestDropdownOptionHelpers(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 
 	for _, opt := range []opt{
 		WithOneReturn(),
@@ -732,7 +731,7 @@ func TestDropdownOptionHelpers(t *testing.T) {
 }
 
 func TestShowAnswerWritesWhenVisible(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Label = "Test"
 	d.out = &bytes.Buffer{}
 	assert.NoError(t, d.parseTemplates())
@@ -740,7 +739,7 @@ func TestShowAnswerWritesWhenVisible(t *testing.T) {
 }
 
 func TestDropdownPressAnyOneReturn(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.OneReturn = true
 	d.trie = newTrie()
 	d.trie.Add(text("ok"), 0)
@@ -751,12 +750,12 @@ func TestDropdownPressAnyOneReturn(t *testing.T) {
 func TestConfirmfRunsWithFormattedAction(t *testing.T) {
 	orig := confirmRunner
 	defer func() { confirmRunner = orig }()
-	confirmRunner = func(action string, opts ...opt) bool {
+	confirmRunner = func(ctx context.Context, action string, opts ...opt) bool {
 		assert.Equal(t, "Proceed with task?", action)
 		return true
 	}
 
-	assert.True(t, Confirmf("Proceed with %s?", "task"))
+	assert.True(t, Confirmf(t.Context(), "Proceed with %s?", "task"))
 }
 
 func TestDefaultConfirmRunnerReturnsTrue(t *testing.T) {
@@ -774,7 +773,7 @@ func TestDefaultConfirmRunnerReturnsTrue(t *testing.T) {
 		}
 		return nil
 	})
-	assert.True(t, defaultConfirmRunner("Proceed?", WithInput(in), WithOutput(out), opt))
+	assert.True(t, defaultConfirmRunner(t.Context(), "Proceed?", WithInput(in), WithOutput(out), opt))
 }
 
 func TestDefaultConfirmRunnerReturnsFalseOnError(t *testing.T) {
@@ -785,11 +784,11 @@ func TestDefaultConfirmRunnerReturnsFalseOnError(t *testing.T) {
 
 		return nil
 	})
-	assert.True(t, !defaultConfirmRunner("Proceed?", opt))
+	assert.True(t, !defaultConfirmRunner(t.Context(), "Proceed?", opt))
 }
 
 func TestWithTemplateSetsTemplates(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	assert.NoError(t, WithTemplate(".Name")(d))
 	assert.Equal(t, `{{ cyan "→ " .Name }}`, d.ActiveItemTemplate)
 	assert.Equal(t, `{{ dim "→ " .Name }}`, d.InactiveItemTemplate)
@@ -797,50 +796,50 @@ func TestWithTemplateSetsTemplates(t *testing.T) {
 }
 
 func TestWithTemplateAddsActiveDetails(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	assert.NoError(t, WithTemplate(".Name", ".Type", ".Owner")(d))
 	expected := `{{ cyan "→ " .Name }} {{ dim "(" (.Type) ", " (.Owner) ")" }}`
 	assert.Equal(t, expected, d.ActiveItemTemplate)
 }
 
 func TestDropdownItemLabelUsesHeuristicField(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	item := dropdownHeuristicLabelItem{ID: 42, Name: "alpha"}
 	assert.Equal(t, "alpha", d.itemLabel(item))
 }
 
 func TestDropdownItemLabelUsesDisplayNameHeuristic(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	item := dropdownDisplayNameLabelItem{DisplayName: "service-a"}
 	assert.Equal(t, "service-a", d.itemLabel(item))
 }
 
 func TestDropdownItemLabelUsesFullNameHeuristic(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	item := dropdownFullNameLabelItem{FullName: "Example Service"}
 	assert.Equal(t, "Example Service", d.itemLabel(item))
 }
 
 func TestDropdownItemLabelUsesSummaryHeuristic(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	item := dropdownSummaryLabelItem{Summary: "concise summary"}
 	assert.Equal(t, "concise summary", d.itemLabel(item))
 }
 
 func TestDropdownItemLabelUsesTextHeuristic(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	item := dropdownTextLabelItem{Text: "plaintext value"}
 	assert.Equal(t, "plaintext value", d.itemLabel(item))
 }
 
 func TestDropdownItemLabelUsesSubjectHeuristic(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	item := dropdownSubjectLabelItem{Subject: "subject line"}
 	assert.Equal(t, "subject line", d.itemLabel(item))
 }
 
 func TestDropdownItemLabelUsesAnnotation(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	item := dropdownAnnotatedLabelItem{
 		Name:        "fallback",
 		Description: "annotated",
@@ -849,19 +848,19 @@ func TestDropdownItemLabelUsesAnnotation(t *testing.T) {
 }
 
 func TestDropdownItemLabelFallsBackToStringer(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	item := dropdownStringerLabelItem{ID: 7}
 	assert.Equal(t, "stringer-7", d.itemLabel(item))
 }
 
 func TestDropdownItemLabelFallsBackToPointerStringer(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	item := dropdownPointerStringerLabelItem{ID: 11}
 	assert.Equal(t, "ptr-stringer-11", d.itemLabel(item))
 }
 
 func TestDropdownSetItemUsesResolvedLabelForTrie(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	item := dropdownHeuristicLabelItem{ID: 3, Name: "omega"}
 	d.active = make([]text, 1)
 	d.activeWidths = make([]int, 1)
@@ -876,7 +875,7 @@ func TestDropdownSetItemUsesResolvedLabelForTrie(t *testing.T) {
 }
 
 func TestDropdownShowAnswerUsesResolvedLabel(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	out := &bytes.Buffer{}
 	d.out = out
 	assert.NoError(t, d.parseTemplates())
@@ -886,10 +885,7 @@ func TestDropdownShowAnswerUsesResolvedLabel(t *testing.T) {
 }
 
 func TestDropdownContextAndIOSetters(t *testing.T) {
-	d := newDropdown()
-	ctx := t.Context()
-	d.setContext(ctx)
-	assert.Equal(t, ctx, d.getContext())
+	d := newDropdown(t.Context())
 	in := bytes.NewBufferString("input")
 	d.setReader(in)
 	assert.Equal(t, in, d.in)
@@ -902,14 +898,14 @@ func TestDropdownSetWriterUsesTuiViewport(t *testing.T) {
 	ctx := t.Context()
 	cio := newUnstartedIO(ctx, 10, 2, 0)
 	tui := &Tui{ctx: ctx, termIO: &termIO{out: cio}}
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.setWriter(tui)
 	_, ok := d.out.(*viewport)
 	assert.True(t, ok)
 }
 
 func TestDropdownPressKeyRuneEnter(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"a", "b"}
 	d.relevant = []int{0, 1}
 	d.displayed = []int{0, 1}
@@ -927,7 +923,7 @@ func TestDropdownPressKeyRuneEnter(t *testing.T) {
 }
 
 func TestDropdownPressKeyRuneBackspace(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.trie = newTrie()
 	d.trie.Add(text("a"), 0)
 	d.relevant = []int{0}
@@ -946,33 +942,33 @@ func (errWriterDropdown) Write(p []byte) (int, error) {
 }
 
 func TestDropdownParseTemplatesError(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.LabelTemplate = "{{"
 	assert.Error(t, d.parseTemplates())
 }
 
 func TestDropdownParseTemplatesLabelExecuteError(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.LabelTemplate = "{{ call . }}"
 	assert.Error(t, d.parseTemplates())
 }
 
 func TestDropdownParseTemplatesActiveError(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.LabelTemplate = "{{.}} "
 	d.ActiveItemTemplate = "{{"
 	assert.Error(t, d.parseTemplates())
 }
 
 func TestDropdownShowAnswerWriteError(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.out = errWriterDropdown{}
 	assert.NoError(t, d.parseTemplates())
 	assert.Error(t, d.showAnswer("Label", "Value"))
 }
 
 func TestDropdownPressKeyRuneArrows(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.relevant = []int{0, 1}
 	d.displayed = []int{0, 1}
 	d.selected = 0
@@ -984,7 +980,7 @@ func TestDropdownPressKeyRuneArrows(t *testing.T) {
 }
 
 func TestDropdownRunMainConsumesInputChannel(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.trie = newTrie()
 	d.trie.Add(text("a"), 0)
 	d.Items = []any{"a"}
@@ -1001,7 +997,7 @@ func TestDropdownRunMainConsumesInputChannel(t *testing.T) {
 }
 
 func TestDropdownRunMainRejectsInvalidConfirmedIndex(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"a"}
 	d.relevant = []int{0}
 	d.displayed = []int{0}
@@ -1016,7 +1012,7 @@ func TestDropdownRunMainRejectsInvalidConfirmedIndex(t *testing.T) {
 }
 
 func TestDropdownPressKeyRuneDefault(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.trie = newTrie()
 	d.trie.Add(text("a"), 0)
 	d.Items = []any{"a"}
@@ -1028,7 +1024,7 @@ func TestDropdownPressKeyRuneDefault(t *testing.T) {
 }
 
 func TestDropdownPressKeyRuneEmitsStateEvents(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.trie = newTrie()
 	d.trie.Add(text("alpha"), 0)
 	d.trie.Add(text("beta"), 1)
@@ -1053,7 +1049,7 @@ func TestDropdownPressKeyRuneEmitsStateEvents(t *testing.T) {
 }
 
 func TestDropdownPressKeyRuneOneReturn(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.OneReturn = true
 	d.trie = newTrie()
 	d.trie.Add(text("a"), 0)
@@ -1075,7 +1071,7 @@ func TestDropdownPressKeyRuneOneReturn(t *testing.T) {
 }
 
 func TestDropdownHandleLazyItemEmpty(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 6)
 	frame := &bytes.Buffer{}
@@ -1084,7 +1080,7 @@ func TestDropdownHandleLazyItemEmpty(t *testing.T) {
 }
 
 func TestDropdownHandleLazyItemError(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 6)
 	frame := &bytes.Buffer{}
@@ -1093,7 +1089,7 @@ func TestDropdownHandleLazyItemError(t *testing.T) {
 }
 
 func TestDropdownHandleLazyItemAdds(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 6)
 	frame := &bytes.Buffer{}
@@ -1103,7 +1099,7 @@ func TestDropdownHandleLazyItemAdds(t *testing.T) {
 }
 
 func TestDropdownHandleLazyItemOneReturnWhenDone(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.OneReturn = true
 	d.Items = []any{"one"}
 	d.relevant = []int{0}
@@ -1125,7 +1121,7 @@ func TestDropdownHandleLazyItemOneReturnWhenDone(t *testing.T) {
 }
 
 func TestDropdownAddItemPreservesFilter(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.trie = newTrie()
 	assert.NoError(t, d.parseTemplates())
 	assert.NoError(t, d.addItem(6, "alpha"))
@@ -1137,7 +1133,7 @@ func TestDropdownAddItemPreservesFilter(t *testing.T) {
 }
 
 func TestDropdownHandleLazyKeyEOF(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	tio := newTestTermIO(20, 6)
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyKey(tio, frame, 1, 1, keyEvent{}, false)
@@ -1145,7 +1141,7 @@ func TestDropdownHandleLazyKeyEOF(t *testing.T) {
 }
 
 func TestDropdownHandleLazyKeyPasteIgnored(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	tio := newTestTermIO(20, 6)
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyKey(tio, frame, 1, 1, keyEvent{err: &pasteTextError{buf: []byte("a")}}, true)
@@ -1153,7 +1149,7 @@ func TestDropdownHandleLazyKeyPasteIgnored(t *testing.T) {
 }
 
 func TestDropdownHandleLazyKeyEnter(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"one"}
 	d.relevant = []int{0}
 	d.displayed = []int{0}
@@ -1165,7 +1161,7 @@ func TestDropdownHandleLazyKeyEnter(t *testing.T) {
 }
 
 func TestDropdownRunRenderLoadsItem(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"seed"}
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 6)
@@ -1179,7 +1175,7 @@ func TestDropdownRunRenderLoadsItem(t *testing.T) {
 }
 
 func TestDropdownLoadItemDone(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	tio := newTestTermIO(20, 6)
 	frame := bytes.NewBuffer(nil)
 	d.itItems = make(chan itPair)
@@ -1190,7 +1186,7 @@ func TestDropdownLoadItemDone(t *testing.T) {
 }
 
 func TestDropdownAddItemEmitsAppendEvent(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"seed"}
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 2)
@@ -1211,7 +1207,7 @@ func TestDropdownAddItemEmitsAppendEvent(t *testing.T) {
 }
 
 func TestDropdownLoadItemError(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	tio := newTestTermIO(20, 6)
 	frame := bytes.NewBuffer(nil)
 	err := d.loadItem(tio, frame, itPair{err: io.EOF}, true, 1)
@@ -1219,7 +1215,7 @@ func TestDropdownLoadItemError(t *testing.T) {
 }
 
 func TestDropdownLoadItemWriteError(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"seed"}
 	assert.NoError(t, d.parseTemplates())
 	initIO := newTestTermIO(20, 6)
@@ -1238,7 +1234,7 @@ func TestDropdownLoadItemWriteError(t *testing.T) {
 }
 
 func TestDropdownRenderLazyFrameClears(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"item"}
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 6)
@@ -1252,7 +1248,7 @@ func TestDropdownRenderLazyFrameClears(t *testing.T) {
 }
 
 func TestDropdownRenderLazyFrameWriteError(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"item"}
 	assert.NoError(t, d.parseTemplates())
 	tio := &termIO{
@@ -1270,7 +1266,7 @@ func TestDropdownRenderLazyFrameWriteError(t *testing.T) {
 }
 
 func TestDropdownRunRenderWriteError(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"item"}
 	assert.NoError(t, d.parseTemplates())
 	tio := &termIO{
@@ -1286,7 +1282,7 @@ func TestDropdownRunRenderWriteError(t *testing.T) {
 }
 
 func TestDropdownHandleLazyKeyReadError(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	tio := newTestTermIO(20, 6)
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyKey(tio, frame, 1, 1, keyEvent{err: io.EOF}, true)
@@ -1294,7 +1290,7 @@ func TestDropdownHandleLazyKeyReadError(t *testing.T) {
 }
 
 func TestDropdownRunRenderUsesMain(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"item"}
 	assert.NoError(t, d.parseTemplates())
 	tio := &termIO{
@@ -1311,7 +1307,7 @@ func TestDropdownRunRenderUsesMain(t *testing.T) {
 }
 
 func TestDropdownRunMainPasteIgnored(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	tio := &termIO{
 		in:      bytes.NewBufferString("ab"),
 		out:     &bytes.Buffer{},
@@ -1325,7 +1321,7 @@ func TestDropdownRunMainPasteIgnored(t *testing.T) {
 }
 
 func TestDropdownRunMainReadError(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	tio := &termIO{
 		in:      bytes.NewBuffer(nil),
 		out:     &bytes.Buffer{},
@@ -1339,7 +1335,7 @@ func TestDropdownRunMainReadError(t *testing.T) {
 }
 
 func TestDropdownRunRenderContextDone(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"item"}
 	assert.NoError(t, d.parseTemplates())
 	ctx, cancel := context.WithCancel(t.Context())
@@ -1358,7 +1354,7 @@ func TestDropdownRunRenderContextDone(t *testing.T) {
 }
 
 func TestDropdownNextLazyActionItem(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"seed"}
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 6)
@@ -1373,7 +1369,7 @@ func TestDropdownNextLazyActionItem(t *testing.T) {
 }
 
 func TestDropdownNextLazyActionKey(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"seed"}
 	d.relevant = []int{0}
 	d.displayed = []int{0}
@@ -1391,7 +1387,7 @@ func TestDropdownNextLazyActionKey(t *testing.T) {
 func TestDropdownNextLazyActionContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Ctx = ctx
 	tio := newTestTermIO(20, 6)
 	frame := bytes.NewBuffer(nil)
@@ -1400,7 +1396,7 @@ func TestDropdownNextLazyActionContextDone(t *testing.T) {
 }
 
 func TestDropdownHandleLazyItemDoneWithItems(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"item"}
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 6)
@@ -1411,7 +1407,7 @@ func TestDropdownHandleLazyItemDoneWithItems(t *testing.T) {
 }
 
 func TestDropdownHandleLazyItemAddError(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.activeItemTemplate = template.Must(template.New("active").Parse("{{ . }}"))
 	d.inactiveItemTemplate = template.Must(template.New("inactive").Parse("{{call .}}"))
 	d.trie = newTrie()
@@ -1422,7 +1418,7 @@ func TestDropdownHandleLazyItemAddError(t *testing.T) {
 }
 
 func TestDropdownAddItemDeduplicatesLazyRelevantIndexes(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 6)
 	_, err := d.renderInit(tio)
@@ -1531,7 +1527,7 @@ func TestDropdownLazySelectsItem(t *testing.T) {
 		err   error
 	}, 1)
 	go func() {
-		value, err := DropdownLazy("Select", lazySeq("red", "green", "blue"), opts)
+		value, err := DropdownLazy(cio.ctx, "Select", lazySeq("red", "green", "blue"), opts)
 		resCh <- struct {
 			value string
 			err   error
@@ -1557,7 +1553,6 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 	opts := WithOptions(
 		WithInput(in),
 		WithOutput(io.Discard),
-		WithContext(ctx),
 		opT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{
@@ -1577,7 +1572,7 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 		err   error
 	}, 1)
 	go func() {
-		value, err := DropdownLazy("Select", lazySeq("red", "green"), opts)
+		value, err := DropdownLazy(ctx, "Select", lazySeq("red", "green"), opts)
 		resCh <- struct {
 			value string
 			err   error
@@ -1611,7 +1606,6 @@ func TestDropdownLazyDoesNotStartProducerWhenContextAlreadyCanceled(t *testing.T
 	opts := WithOptions(
 		WithInput(in),
 		WithOutput(io.Discard),
-		WithContext(ctx),
 		opT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{
@@ -1625,7 +1619,7 @@ func TestDropdownLazyDoesNotStartProducerWhenContextAlreadyCanceled(t *testing.T
 			return nil
 		}),
 	)
-	_, err := DropdownLazy("Select", func(yield func(string, error) bool) {
+	_, err := DropdownLazy(ctx, "Select", func(yield func(string, error) bool) {
 		started.Store(true)
 		<-release
 	}, opts)
@@ -1657,7 +1651,6 @@ func TestDropdownLazyCtrlCNotLostAfterPreviousLazyExit(t *testing.T) {
 	opts := WithOptions(
 		WithInput(in),
 		WithOutput(io.Discard),
-		WithContext(ctx),
 		opT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{
@@ -1672,13 +1665,13 @@ func TestDropdownLazyCtrlCNotLostAfterPreviousLazyExit(t *testing.T) {
 		}),
 		itemsLoaded,
 	)
-	_, err = DropdownLazy("First", func(yield func(string, error) bool) {
+	_, err = DropdownLazy(ctx, "First", func(yield func(string, error) bool) {
 		yield("", io.EOF)
 	}, opts)
 	assert.Error(t, err)
 	resCh := make(chan error, 1)
 	go func() {
-		_, err := DropdownLazy("Second", lazySeq("a", "b"), opts)
+		_, err := DropdownLazy(ctx, "Second", lazySeq("a", "b"), opts)
 		resCh <- err
 	}()
 	waitForItems(t, ready)
@@ -1709,7 +1702,6 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 	opts := WithOptions(
 		WithInput(in),
 		WithOutput(io.Discard),
-		WithContext(ctx),
 		opT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{
@@ -1724,7 +1716,7 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 		}),
 		itemsLoaded,
 	)
-	_, err = DropdownLazy("First", func(yield func(string, error) bool) {
+	_, err = DropdownLazy(ctx, "First", func(yield func(string, error) bool) {
 		yield("", io.EOF)
 	}, opts)
 	assert.Error(t, err)
@@ -1733,7 +1725,7 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 		err   error
 	}, 1)
 	go func() {
-		value, err := DropdownLazy("Second", lazySeq("a", "b"), opts)
+		value, err := DropdownLazy(ctx, "Second", lazySeq("a", "b"), opts)
 		resCh <- struct {
 			value string
 			err   error
@@ -1755,14 +1747,14 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 }
 
 func TestWithOneMatch_setsValue(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	err := WithDefault("alpha")(d)
 	assert.NoError(t, err)
 	assert.Equal(t, "alpha", d.oneMatch)
 }
 
 func TestWithOneMatch_singlePrefixMatchReturnsIndex(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{
 		dropdownHeuristicLabelItem{ID: 1, Name: "alpha"},
 		dropdownHeuristicLabelItem{ID: 2, Name: "beta"},
@@ -1781,7 +1773,7 @@ func TestWithOneMatch_singlePrefixMatchReturnsIndex(t *testing.T) {
 }
 
 func TestWithOneMatch_noMatchKeepsDropdown(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{
 		dropdownHeuristicLabelItem{ID: 1, Name: "alpha"},
 		dropdownHeuristicLabelItem{ID: 2, Name: "beta"},
@@ -1796,7 +1788,7 @@ func TestWithOneMatch_noMatchKeepsDropdown(t *testing.T) {
 }
 
 func TestWithOneMatch_sortsByLevensteinDistance(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{
 		dropdownHeuristicLabelItem{ID: 1, Name: "zeta"},
 		dropdownHeuristicLabelItem{ID: 2, Name: "alpha"},
@@ -1813,7 +1805,7 @@ func TestWithOneMatch_sortsByLevensteinDistance(t *testing.T) {
 }
 
 func TestWithOneMatch_multipleMatchesKeepDropdown(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{
 		dropdownHeuristicLabelItem{ID: 1, Name: "same"},
 		dropdownHeuristicLabelItem{ID: 2, Name: "same"},
@@ -1828,7 +1820,7 @@ func TestWithOneMatch_multipleMatchesKeepDropdown(t *testing.T) {
 }
 
 func TestDropdownLevenstein(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	assert.Equal(t, 3, d.levenstein([]rune("kitten"), []rune("sitting")))
 	assert.Equal(t, 0, d.levenstein([]rune("alpha"), []rune("alpha")))
 	assert.Equal(t, 1, d.levenstein([]rune("alpa"), []rune("alpha")))
@@ -1842,7 +1834,7 @@ func TestDropdownLazyEmptySequence(t *testing.T) {
 		err   error
 	}, 1)
 	go func() {
-		value, err := DropdownLazy("Empty", func(yield func(string, error) bool) {}, opts)
+		value, err := DropdownLazy(cio.ctx, "Empty", func(yield func(string, error) bool) {}, opts)
 		resCh <- struct {
 			value string
 			err   error
@@ -1861,7 +1853,7 @@ func TestDropdownLazyOneReturnSingleItem(t *testing.T) {
 		err   error
 	}, 1)
 	go func() {
-		value, err := DropdownLazy("Single", lazySeq("only"), opts)
+		value, err := DropdownLazy(cio.ctx, "Single", lazySeq("only"), opts)
 		resCh <- struct {
 			value string
 			err   error
@@ -1886,13 +1878,13 @@ func fixedTermOpt(width, height int) opt {
 }
 
 func TestDropdownIndexUniqueDefaultReturnsOriginalIndex(t *testing.T) {
-	i, err := DropdownIndex("pick", []any{"xxx", "b", "a"},
+	i, err := DropdownIndex(t.Context(), "pick", []any{"xxx", "b", "a"},
 		WithInput(bytes.NewBuffer(nil)), WithOutput(io.Discard),
 		fixedTermOpt(20, 6), WithDefault("a"))
 	assert.NoError(t, err)
 	assert.Equal(t, 2, i)
 
-	v, err := Dropdown("pick", []string{"xxx", "b", "a"},
+	v, err := Dropdown(t.Context(), "pick", []string{"xxx", "b", "a"},
 		WithInput(bytes.NewBuffer(nil)), WithOutput(io.Discard),
 		fixedTermOpt(20, 6), WithDefault("a"))
 	assert.NoError(t, err)
@@ -1910,7 +1902,7 @@ func TestDropdownLazyAppendAfterFilter(t *testing.T) {
 		{"alpi", []int{2}},   // zero matches before, one after
 		{"a", []int{0, 1, 2}},
 	} {
-		d := newDropdown()
+		d := newDropdown(t.Context())
 		assert.NoError(t, d.parseTemplates())
 		for _, item := range []string{"alpha", "beta"} {
 			_, _, err := d.handleLazyItem(tio, frame, 0, itPair{item: item}, true)
@@ -1932,7 +1924,7 @@ func TestDropdownLazyAppendAfterFilter(t *testing.T) {
 }
 
 func TestDropdownLazyKeepsDefaultRanking(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	assert.NoError(t, WithDefault("cat")(d))
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 6)
@@ -1949,7 +1941,7 @@ func TestDropdownLazyKeepsDefaultRanking(t *testing.T) {
 }
 
 func TestDropdownLazyRankingKeepsSelectedItem(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	assert.NoError(t, WithDefault("cat")(d))
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 10)
@@ -1966,7 +1958,7 @@ func TestDropdownLazyRankingKeepsSelectedItem(t *testing.T) {
 }
 
 func TestDropdownRenderRemembersLongestWidth(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.Items = []any{"short", "a considerably longer item"}
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(40, 6)
@@ -1994,7 +1986,7 @@ func TestDropdownLazyStopsProducerOnEarlyError(t *testing.T) {
 		for i := 0; yield(i, nil); i++ {
 		}
 	}
-	_, err := DropdownLazy("pick", seq,
+	_, err := DropdownLazy(t.Context(), "pick", seq,
 		WithInput(bytes.NewBuffer(nil)), WithOutput(io.Discard),
 		fixedTermOpt(20, 6), WithActiveItemTemplate("{{"))
 	assert.Error(t, err)
@@ -2003,7 +1995,7 @@ func TestDropdownLazyStopsProducerOnEarlyError(t *testing.T) {
 }
 
 func TestDropdownLazyProducerStopsOnCancel(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	d.IterBatchSize = 1
 	done := make(chan struct{})
 	seq := func(yield func(int, error) bool) {
@@ -2039,7 +2031,7 @@ func TestDropdownLazyStopsProducerAfterSelection(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		w.Write([]byte{keyEnter}) //nolint:errcheck // test helper
 	}()
-	_, err = DropdownLazy("pick", seq,
+	_, err = DropdownLazy(t.Context(), "pick", seq,
 		WithInput(in), WithOutput(io.Discard), fixedTermOpt(20, 6))
 	assert.NoError(t, err)
 	select {
@@ -2050,7 +2042,7 @@ func TestDropdownLazyStopsProducerAfterSelection(t *testing.T) {
 }
 
 func TestDropdownFilterEventsIgnoreRankingOrder(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	assert.NoError(t, WithDefault("ap")(d))
 	assert.NoError(t, d.parseTemplates())
 	tio := newTestTermIO(20, 6)
@@ -2076,7 +2068,7 @@ func TestDropdownFilterEventsIgnoreRankingOrder(t *testing.T) {
 }
 
 func TestDropdownLevensteinCountsRunes(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	assert.Equal(t, 1, d.levenstein([]rune("é"), []rune("a")))
 	assert.Equal(t, 1, d.levenstein([]rune("é"), []rune("è")))
 	assert.Equal(t, 3, d.levenstein([]rune("sitting"), []rune("kitten")))
@@ -2085,7 +2077,7 @@ func TestDropdownLevensteinCountsRunes(t *testing.T) {
 }
 
 func TestDropdownLevensteinBoundedWork(t *testing.T) {
-	d := newDropdown()
+	d := newDropdown(t.Context())
 	long := strings.Repeat("a", 100_000)
 	assert.Equal(t, 0, d.levenstein([]rune(long), []rune(long)))
 	assert.Equal(t, maxRankRunes, d.levenstein([]rune(long), []rune(strings.Repeat("b", 100_000))))
@@ -2120,10 +2112,9 @@ func TestDropdownEagerRedrawsOnResizeWhileIdle(t *testing.T) {
 	resize := make(chan struct{})
 	resCh := make(chan string, 1)
 	go func() {
-		value, _ := Dropdown("Pick", []string{"a", "b"}, WithOptions(
+		value, _ := Dropdown(ctx, "Pick", []string{"a", "b"}, WithOptions(
 			WithInput(reader),
 			WithOutput(out),
-			WithContext(ctx),
 			opT(func(d *dropdown) error {
 				d.makeTermIO = func(in io.Reader, w io.Writer) (*termIO, error) {
 					return &termIO{

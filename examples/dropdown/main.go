@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/nfx/go-tui"
 )
 
 func main() {
+	ctx := context.Background()
 	// Items use terminal columns and remain whole clusters when clipped or filtered.
 	items := []string{
 		"1", "2", "3",
@@ -24,7 +26,7 @@ func main() {
 	for i := 21; i <= 30; i++ {
 		items = append(items, fmt.Sprint(i))
 	}
-	_, err := tui.Dropdown("Select", items)
+	_, err := tui.Dropdown(ctx, "Select", items)
 	if err != nil {
 		panic(err)
 	}

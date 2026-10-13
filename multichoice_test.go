@@ -17,7 +17,7 @@ import (
 )
 
 func TestMultichoiceRenderInitializes(t *testing.T) {
-	m := newMultichoice()
+	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two"}
 	io := newTestTermIO(20, 6)
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
@@ -37,7 +37,7 @@ func TestMultichoiceRenderInitializes(t *testing.T) {
 }
 
 func TestMultichoiceRenderMoreItems(t *testing.T) {
-	m := newMultichoice()
+	m := newMultichoice(t.Context())
 	m.Items = []any{"short", "veryverylong", "mid", "tail"}
 	m.active = 0
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
@@ -56,7 +56,7 @@ func TestMultichoiceRenderMoreItems(t *testing.T) {
 }
 
 func TestMultichoiceRunNoSpace(t *testing.T) {
-	m := newMultichoice()
+	m := newMultichoice(t.Context())
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{
 			in:      in,
@@ -80,7 +80,7 @@ func TestMultichoiceRunHandlesKeys(t *testing.T) {
 		{0x1b, 0x5b, 0x41},
 		{keyEnter},
 	}}
-	m := newMultichoice()
+	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two", "three"}
 	m.selected = make([]bool, len(m.Items))
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
@@ -108,7 +108,7 @@ func TestMultichoiceRunIgnoresSpecialKeys(t *testing.T) {
 		{' '},
 		{keyEnter},
 	}}
-	m := newMultichoice()
+	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two", "three"}
 	m.selected = make([]bool, len(m.Items))
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
@@ -132,8 +132,7 @@ func TestMultichoiceRunIgnoresSpecialKeys(t *testing.T) {
 func TestMultichoiceRunContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	m := newMultichoice()
-	m.Ctx = ctx
+	m := newMultichoice(ctx)
 	m.Items = []any{"one"}
 	m.selected = make([]bool, len(m.Items))
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
@@ -155,7 +154,7 @@ func TestMultichoiceRunContextDone(t *testing.T) {
 }
 
 func TestMultichoiceRunPasteIgnored(t *testing.T) {
-	m := newMultichoice()
+	m := newMultichoice(t.Context())
 	m.Items = []any{"one"}
 	m.selected = make([]bool, len(m.Items))
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
@@ -176,7 +175,7 @@ func TestMultichoiceRunPasteIgnored(t *testing.T) {
 }
 
 func TestMultichoiceRunReadError(t *testing.T) {
-	m := newMultichoice()
+	m := newMultichoice(t.Context())
 	m.Items = []any{"one"}
 	m.selected = make([]bool, len(m.Items))
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}"))
@@ -219,7 +218,7 @@ func TestMultichoiceRunRerendersOnResize(t *testing.T) {
 	resized := make(chan struct{})
 	out := &syncBuffer{}
 	var tio *termIO
-	m := newMultichoice()
+	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two", "three", "four", "five", "six"}
 	m.selected = make([]bool, len(m.Items))
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}\n"))
@@ -274,8 +273,7 @@ func waitBufferContains(t *testing.T, out *syncBuffer, part string) {
 
 // newPipeMultichoice prepares a multichoice that reads keys from in.
 func newPipeMultichoice(ctx context.Context, in io.Reader) *multichoice {
-	m := newMultichoice()
-	m.Ctx = ctx
+	m := newMultichoice(ctx)
 	m.Items = []any{"one", "two", "three"}
 	m.selected = make([]bool, len(m.Items))
 	m.itemTemplate = template.Must(template.New("item").Parse("{{.}}\n"))
@@ -338,7 +336,7 @@ func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	// the blocked read completes only now, after its prompt is gone
 	_, err = pw.Write([]byte{'x', keyEnter})
 	assert.NoError(t, err)
-	next := newInput("next")
+	next := newInput(t.Context(), "next")
 	next.ctx, cancel = context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	next.in, next.out = in, &bytes.Buffer{}

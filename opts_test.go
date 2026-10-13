@@ -8,7 +8,6 @@ import (
 	"errors"
 	"io"
 	"testing"
-	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
@@ -36,29 +35,6 @@ func TestWithIOOptions(t *testing.T) {
 	}
 }
 
-func TestWithContextAndTimeout(t *testing.T) {
-	base := t.Context()
-	d := &optsDummy{}
-
-	if err := WithContext(base)(d); err != nil {
-		t.Fatalf("WithContext failed: %v", err)
-	}
-	if d.ctx != base {
-		t.Fatalf("context not set")
-	}
-
-	if err := WithTimeout(10 * time.Millisecond)(d); err != nil {
-		t.Fatalf("WithTimeout failed: %v", err)
-	}
-	deadline, ok := d.ctx.Deadline()
-	if !ok {
-		t.Fatalf("expected deadline set on context")
-	}
-	if deadline.Before(time.Now()) {
-		t.Fatalf("deadline should be in the future")
-	}
-}
-
 func TestOptTRejectsWrongWidget(t *testing.T) {
 	err := WithOutput(&bytes.Buffer{})("nope")
 	assert.ErrorIs(t, err, ErrWrongWidget)
@@ -83,33 +59,33 @@ func TestWithOptionsEmptyIsNoop(t *testing.T) {
 }
 
 func TestWithOptionsPropagatesInvalidValues(t *testing.T) {
-	err := WithOptions(WithWorkers(0))(newProgressbar())
+	err := WithOptions(WithWorkers(0))(newProgressbar(t.Context()))
 	assert.ErrorIs(t, err, ErrInvalidState)
 	assert.True(t, !errors.Is(err, ErrWrongWidget))
 }
 
 func TestEntryPointsRejectOptionsOfOtherWidgets(t *testing.T) {
-	_, err := Input("Name", WithWorkers(2))
+	_, err := Input(t.Context(), "Name", WithWorkers(2))
 	assert.ErrorIs(t, err, ErrWrongWidget)
 
-	_, err = Dropdown("Pick", []string{"a"}, WithNonEmpty())
+	_, err = Dropdown(t.Context(), "Pick", []string{"a"}, WithNonEmpty())
 	assert.ErrorIs(t, err, ErrWrongWidget)
 
-	_, err = NewMaxProgressBar("bar", 1, WithHide())
+	_, err = NewMaxProgressBar(t.Context(), "bar", 1, WithHide())
 	assert.ErrorIs(t, err, ErrWrongWidget)
 
-	_, err = NewSpinners(WithPrefixf("group"))
+	_, err = NewSpinners(t.Context(), WithPrefixf("group"))
 	assert.ErrorIs(t, err, ErrWrongWidget)
 
-	_, err = newSpinners().Add(t.Context(), WithContext(t.Context()))
+	_, err = newSpinners(t.Context()).Add(t.Context(), WithHide())
 	assert.ErrorIs(t, err, ErrWrongWidget)
 
-	_, err = FilePicker("Pick", WithWorkers(2))
+	_, err = FilePicker(t.Context(), "Pick", WithWorkers(2))
 	assert.ErrorIs(t, err, ErrWrongWidget)
 }
 
 func TestSharedTemplateOptionsConfigureInput(t *testing.T) {
-	i := newInput("Name")
+	i := newInput(t.Context(), "Name")
 	err := opts{
 		WithHide(),
 		WithLabelTemplate("label"),
@@ -123,7 +99,7 @@ func TestSharedTemplateOptionsConfigureInput(t *testing.T) {
 
 func TestFilePickerSplitsOptionsBetweenParts(t *testing.T) {
 	writer := &bytes.Buffer{}
-	f, d, err := newFilePicker(
+	f, d, err := newFilePicker(t.Context(),
 		WithStartDir(t.TempDir()),
 		WithOutput(writer),
 		WithOptions(WithShowHidden(), WithHide()),
