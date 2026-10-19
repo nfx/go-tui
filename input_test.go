@@ -711,7 +711,7 @@ func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	cancel()
 	select {
 	case err := <-finished:
-		assert.True(t, errors.Is(err, context.Canceled))
+		assert.ErrorIs(t, err, context.Canceled)
 	case <-time.After(time.Second):
 		t.Fatal("cancelled prompt did not return")
 	}
@@ -1084,39 +1084,43 @@ func TestInputValidatorRejectsThenAccepts(t *testing.T) {
 }
 
 func TestInputValidatorEOFAfterRejectionReturnsNoValue(t *testing.T) {
-	got, _, err := runValidated(t, false, "a\r", WithValidation(func(context.Context, string) error { return errors.New("no") }))
+	reject := WithValidation(func(context.Context, string) error { return errors.New("no") })
+	got, _, err := runValidated(t, false, "a\r", reject)
 	assert.Equal(t, "", got)
-	assert.True(t, errors.Is(err, io.EOF))
+	assert.ErrorIs(t, err, io.EOF)
 }
 
 func TestInputValidatorsRunInOrderAndStopAtFirstFailure(t *testing.T) {
 	var calls []string
 	first := WithValidation(func(context.Context, string) error { calls = append(calls, "first"); return errors.New("one") })
 	second := WithValidation(func(context.Context, string) error { calls = append(calls, "second"); return errors.New("two") })
-	_, out, _ := runValidated(t, false, "a\r", first, second)
+	_, out, err := runValidated(t, false, "a\r", first, second)
+	assert.ErrorIs(t, err, io.EOF)
 	assert.Equal(t, []string{"first"}, calls)
 	assert.Contains(t, out, "one")
 	assert.True(t, !strings.Contains(out, "two"))
 }
 
 func TestInputValidatorEmptyMessageFallsBack(t *testing.T) {
-	_, out, _ := runValidated(t, false, "a\r", WithValidation(func(context.Context, string) error { return errors.New("") }))
+	blank := WithValidation(func(context.Context, string) error { return errors.New("") })
+	_, out, err := runValidated(t, false, "a\r", blank)
+	assert.ErrorIs(t, err, io.EOF)
 	assert.Contains(t, out, "Invalid value")
 }
 
 func TestInputValidatorNilIsInvalidOption(t *testing.T) {
 	err := WithValidation(nil)(newInput(t.Context(), "x"))
-	assert.True(t, errors.Is(err, ErrInvalidOption))
+	assert.ErrorIs(t, err, ErrInvalidOption)
 }
 
 func TestInputValidatorWrongWidget(t *testing.T) {
 	err := WithValidation(func(context.Context, string) error { return nil })(newDropdown(t.Context()))
-	assert.True(t, errors.Is(err, ErrWrongWidget))
+	assert.ErrorIs(t, err, ErrWrongWidget)
 }
 
 func TestInputValidatesDefault(t *testing.T) {
 	_, out, err := runValidated(t, false, "\r", WithDefault("bad"), WithRegex(`[0-9]+`, "digits only"))
-	assert.True(t, errors.Is(err, io.EOF))
+	assert.ErrorIs(t, err, io.EOF)
 	assert.Contains(t, out, "Error: ")
 	assert.Contains(t, out, "digits only")
 	got, _, err := runValidated(t, false, "\r", WithDefault("42"), WithRegex(`[0-9]+`, "digits only"))
@@ -1136,7 +1140,8 @@ func TestInputRegexMatchesWholeString(t *testing.T) {
 	got, _, err := runValidated(t, false, "ab\x7fb\x7f\x7fa\r", re)
 	assert.NoError(t, err)
 	assert.Equal(t, "a", got)
-	_, out, _ := runValidated(t, false, "ab\r", re)
+	_, out, err := runValidated(t, false, "ab\r", re)
+	assert.ErrorIs(t, err, io.EOF)
 	assert.Contains(t, out, "a or b")
 	// matches empty without a separate non-empty rule
 	got, _, err = runValidated(t, false, "\r", WithRegex(`a*`, "a's"))
@@ -1145,8 +1150,8 @@ func TestInputRegexMatchesWholeString(t *testing.T) {
 }
 
 func TestInputRegexMalformedOrBlankMessage(t *testing.T) {
-	assert.True(t, errors.Is(WithRegex(`(`, "m")(newInput(t.Context(), "x")), ErrInvalidOption))
-	assert.True(t, errors.Is(WithRegex(`a`, "  ")(newInput(t.Context(), "x")), ErrInvalidOption))
+	assert.ErrorIs(t, WithRegex(`(`, "m")(newInput(t.Context(), "x")), ErrInvalidOption)
+	assert.ErrorIs(t, WithRegex(`a`, "  ")(newInput(t.Context(), "x")), ErrInvalidOption)
 }
 
 func TestInputRejectionClearsOnEditAndKeepsText(t *testing.T) {
@@ -1194,7 +1199,7 @@ func TestPasswordRejectionStaysMasked(t *testing.T) {
 func TestFeedbackTemplateRejectedByOtherWidgets(t *testing.T) {
 	for _, w := range []any{newDropdown(t.Context()), newMultichoice(t.Context())} {
 		err := WithFeedbackTemplate(`{{ .Message }}`)(w)
-		assert.True(t, errors.Is(err, ErrWrongWidget))
+		assert.ErrorIs(t, err, ErrWrongWidget)
 	}
 }
 
@@ -1208,5 +1213,5 @@ func TestInputNeedsTwoRowsForFeedback(t *testing.T) {
 	assert.NoError(t, WithValidation(func(context.Context, string) error { return errors.New("no") })(i))
 	assert.NoError(t, i.parseTemplates())
 	_, err := i.run(i.ctx)
-	assert.True(t, errors.Is(err, ErrNoSpace))
+	assert.ErrorIs(t, err, ErrNoSpace)
 }

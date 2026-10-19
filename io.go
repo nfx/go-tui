@@ -835,6 +835,13 @@ func (i *chanIO) writeManaged(w io.Writer) (int, error) {
 			break
 		}
 		curr, height = curr.next, budget
+		if res.up > 0 && curr != nil && i.isManagedViewport(curr) {
+			// return from the caret row, so the next viewport starts below this one
+			if _, err := fmt.Fprintf(w, "\x1b[%dB", res.up); err != nil {
+				return totalLines, err
+			}
+			i.cursorUp = 0
+		}
 	}
 	i.trimTrailingNewline(w)
 	return totalLines, nil

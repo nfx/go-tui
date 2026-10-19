@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"regexp"
 	"strings"
 	"text/template"
@@ -67,8 +68,9 @@ func WithDefault(d string) opt {
 	})
 }
 
-// WithNonEmpty forces the prompt to continue until the confirmed input is not
-// non-blank. Empty and whitespace-only input are rejected.
+// WithNonEmpty forces the prompt to continue until the confirmed input contains
+// at least one non-whitespace character. Empty and whitespace-only input are
+// rejected.
 func WithNonEmpty() opt {
 	return opT(func(i *input) error {
 		i.rules = append(i.rules, func(_ context.Context, s string) error {
@@ -442,7 +444,12 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 			return ErrNoSpace
 		}
 		var err error
-		feedback, err = i.formatFeedback(i.rejection, max(io.Width-1, 1))
+		// unknown width is unbounded; a known one leaves the last column free
+		limit := math.MaxInt
+		if io.Width > 0 {
+			limit = max(io.Width-1, 1)
+		}
+		feedback, err = i.formatFeedback(i.rejection, limit)
 		collect(err)
 	}
 	switch {

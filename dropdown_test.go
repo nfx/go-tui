@@ -45,7 +45,7 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 	cancel()
 	select {
 	case err := <-finished:
-		assert.True(t, errors.Is(err, context.Canceled))
+		assert.ErrorIs(t, err, context.Canceled)
 	case <-time.After(time.Second):
 		t.Fatal("cancelled dropdown did not return")
 	}

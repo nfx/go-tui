@@ -44,7 +44,7 @@ func TestMakeTermIO_NoChanIO_NoDescriptor(t *testing.T) {
 	_, err := makeTermIO(in, out)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "stderr")
-	assert.True(t, errors.Is(err, ErrNoTTY))
+	assert.ErrorIs(t, err, ErrNoTTY)
 }
 
 func TestMakeTermIO_NoDescriptorInput(t *testing.T) {
@@ -54,7 +54,7 @@ func TestMakeTermIO_NoDescriptorInput(t *testing.T) {
 	_, err := makeTermIO(in, out)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "stdin")
-	assert.True(t, errors.Is(err, ErrNoTTY))
+	assert.ErrorIs(t, err, ErrNoTTY)
 }
 
 func TestMakeTermIO_WithChanIO(t *testing.T) {
@@ -293,7 +293,7 @@ func TestTermIO_ReadKey(t *testing.T) {
 			r, err := termIO.ReadKey()
 			if tt.wantErr {
 				assert.Error(t, err)
-				assert.True(t, errors.Is(err, io.EOF))
+				assert.ErrorIs(t, err, io.EOF)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expected, r)
@@ -327,7 +327,7 @@ func TestTermIO_ReadRune(t *testing.T) {
 			r, n, err := termIO.readRune(t.Context())
 			if tt.wantErr {
 				assert.Error(t, err)
-				assert.True(t, errors.Is(err, io.EOF))
+				assert.ErrorIs(t, err, io.EOF)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expected, r)
@@ -621,7 +621,7 @@ func TestTermIO_ReadEventsAdoptsUnacceptedRead(t *testing.T) {
 	assert.Equal(t, rune(keyEnter), ev.key)
 	ev = <-second.readEvents(t.Context(), nil)
 	second.awaitReader()
-	assert.True(t, errors.Is(ev.err, io.EOF))
+	assert.ErrorIs(t, ev.err, io.EOF)
 }
 
 func TestDropdownPressKeyReadsSharedPendingEnter(t *testing.T) {
@@ -649,7 +649,7 @@ func TestDropdownPressKeyReadsSharedPendingEnter(t *testing.T) {
 			assert.Equal(t, 0, i)
 			ev = <-second.readEvents(t.Context(), nil)
 			second.awaitReader()
-			assert.True(t, errors.Is(ev.err, io.EOF))
+			assert.ErrorIs(t, ev.err, io.EOF)
 		})
 	}
 }
@@ -665,7 +665,7 @@ func TestSharedInputState_UnacceptedCtrlCRetained(t *testing.T) {
 	second := &termIO{in: in}
 	ev := <-second.readEvents(t.Context(), nil)
 	second.awaitReader()
-	assert.True(t, errors.Is(ev.err, io.EOF))
+	assert.ErrorIs(t, ev.err, io.EOF)
 }
 
 func TestSharedInputState_CancelledClosedReaderReleased(t *testing.T) {

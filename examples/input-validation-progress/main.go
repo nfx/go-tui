@@ -12,7 +12,6 @@ import (
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	// a progress bar keeps advancing in the background while the user types
 	// and while the validator below is busy.
 	done := make(chan struct{})
@@ -26,7 +25,6 @@ func main() {
 			}
 		}
 	}()
-
 	// validators receive the prompt context, so a call to an external service
 	// is cancelled together with the prompt.
 	username, err := tui.Input(ctx, "Username:",
@@ -48,15 +46,13 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
 	password, err := tui.Password(ctx, "Confirmation code:",
 		tui.WithRegex(`[a-z0-9]{8,10}`, "Confirmation code between 8 and 10 alphanumeric characters"),
 	)
 	if err != nil {
 		panic(err)
 	}
-	println(username, password)
-
+	println(username, "entered a confirmation code of", len([]rune(password)), "runes")
 	cancel()
 	<-done
 }
