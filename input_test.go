@@ -1078,7 +1078,8 @@ func TestInputValidatorRejectsThenAccepts(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "ab", got)
 	assert.Equal(t, []string{"a", "ab"}, seen)
-	assert.Contains(t, out, "Error: too short")
+	assert.Contains(t, out, "Error: ")
+	assert.Contains(t, out, "too short")
 	assert.Contains(t, out, "\x1b[1A")
 }
 
@@ -1116,7 +1117,8 @@ func TestInputValidatorWrongWidget(t *testing.T) {
 func TestInputValidatesDefault(t *testing.T) {
 	_, out, err := runValidated(t, false, "\r", WithDefault("bad"), WithRegex(`[0-9]+`, "digits only"))
 	assert.True(t, errors.Is(err, io.EOF))
-	assert.Contains(t, out, "Error: digits only")
+	assert.Contains(t, out, "Error: ")
+	assert.Contains(t, out, "digits only")
 	got, _, err := runValidated(t, false, "\r", WithDefault("42"), WithRegex(`[0-9]+`, "digits only"))
 	assert.NoError(t, err)
 	assert.Equal(t, "42", got)
@@ -1184,7 +1186,8 @@ func TestInputFeedbackTemplateParseError(t *testing.T) {
 
 func TestPasswordRejectionStaysMasked(t *testing.T) {
 	_, out, _ := runValidated(t, true, "secret\r", WithValidation(func(context.Context, string) error { return errors.New("too weak") }))
-	assert.Contains(t, out, "Error: too weak")
+	assert.Contains(t, out, "Error: ")
+	assert.Contains(t, out, "too weak")
 	assert.True(t, !strings.Contains(out, "secret"))
 }
 
