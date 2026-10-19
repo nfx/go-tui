@@ -342,6 +342,9 @@ type chanIO struct {
 	notify     chan viewportChanged
 	fd         int // terminal fd for resize refresh, 0 if unavailable
 	rendered   []int
+	// cursorUp is the number of rows above the last rendered line that the
+	// cursor was left on, e.g. by an input that shows a message below its caret.
+	cursorUp int
 }
 
 // Deprecated: use [Stderr].
@@ -759,13 +762,17 @@ func (*chanIO) splitCompletedLines(p []byte) (flush []byte, rest []byte) {
 	return flush, rest
 }
 
-// clearManaged emits ANSI escape sequences to erase
-// previously rendered managed lines.
+// clearManaged erases the previous frame from its bottom row, accounting for
+// wrapping and a caret left above the final line.
 func (i *chanIO) clearManaged(buf *bytes.Buffer) {
 	width, _ := i.size()
 	lines := i.wrappedRows(i.rendered, width)
 	if lines <= 0 {
 		return
+	}
+	if up := i.cursorUp; up > 0 {
+		// clearing walks up from the last line
+		fmt.Fprintf(buf, "\x1b[%dB", up)
 	}
 	for i := range lines {
 		fmt.Fprint(buf, "\r")
@@ -798,12 +805,13 @@ func (i *chanIO) redrawManaged(w io.Writer, prevH int, released *viewport) (int,
 	return lines, err
 }
 
-// writeManaged renders all managed viewports into
-// the writer within the terminal height budget.
+// writeManaged renders managed viewports within the terminal height budget
+// and records row widths and the final caret offset for clearing.
 func (i *chanIO) writeManaged(w io.Writer) (int, error) {
 	i.chainMu.Lock()
 	defer i.chainMu.Unlock()
 	i.rendered = i.rendered[:0]
+	i.cursorUp = 0
 	if i.head == nil {
 		return 0, nil
 	}
@@ -821,6 +829,7 @@ func (i *chanIO) writeManaged(w io.Writer) (int, error) {
 		}
 		totalLines += res.lines
 		i.rendered = append(i.rendered, res.widths...)
+		i.cursorUp = res.up
 		budget -= res.lines
 		if budget <= 0 {
 			break

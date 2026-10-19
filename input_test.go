@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -108,7 +109,7 @@ func TestInputWithNonEmpty(t *testing.T) {
 	i := newInput(t.Context(), "label")
 	err := WithNonEmpty()(i)
 	assert.NoError(t, err)
-	assert.True(t, i.CheckFn != nil)
+	assert.Equal(t, 1, len(i.rules))
 }
 
 func TestInputShowAnswerVisibility(t *testing.T) {
@@ -932,15 +933,15 @@ func TestInputRunResizeDoesNotReadAhead(t *testing.T) {
 	}
 	secondRead := make(chan bool, 1)
 	// confirmation waits for a read started after Enter
-	i.CheckFn = func(s string) (string, bool) {
+	i.rules = append(i.rules, func(context.Context, string) error {
 		select {
 		case <-in.started:
 			secondRead <- true
 		case <-time.After(200 * time.Millisecond):
 			secondRead <- false
 		}
-		return s, true
-	}
+		return nil
+	})
 	assert.NoError(t, i.parseTemplates())
 	finished := make(chan error, 1)
 	go func() {
@@ -1037,4 +1038,172 @@ func FuzzInputWindow(f *testing.F) {
 			t.Fatalf("backspace broke UTF-8: %q", i.typed)
 		}
 	})
+}
+
+// runValidated drives validation with scripted keys and captures output on a 40x3 terminal.
+func runValidated(t *testing.T, password bool, keys string, o ...opt) (string, string, error) {
+	t.Helper()
+	i := newInput(t.Context(), "Label")
+	i.Password = password
+	var chunks [][]byte
+	for _, k := range keys {
+		chunks = append(chunks, []byte(string(k)))
+	}
+	i.in = &chunkReader{chunks: chunks}
+	var out bytes.Buffer
+	i.out = &out
+	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{in: in, out: out, Width: 40, Height: 3, Restore: func() error { return nil }}, nil
+	}
+	if err := opts(o).Apply(i); err != nil {
+		return "", "", err
+	}
+	if err := i.parseTemplates(); err != nil {
+		return "", "", err
+	}
+	got, err := i.run(i.ctx)
+	return got, out.String(), err
+}
+
+func TestInputValidatorRejectsThenAccepts(t *testing.T) {
+	var seen []string
+	check := WithValidation(func(_ context.Context, s string) error {
+		seen = append(seen, s)
+		if len(s) < 2 {
+			return errors.New("too short")
+		}
+		return nil
+	})
+	got, out, err := runValidated(t, false, "a\rb\r", check)
+	assert.NoError(t, err)
+	assert.Equal(t, "ab", got)
+	assert.Equal(t, []string{"a", "ab"}, seen)
+	assert.Contains(t, out, "Error: too short")
+	assert.Contains(t, out, "\x1b[1A")
+}
+
+func TestInputValidatorEOFAfterRejectionReturnsNoValue(t *testing.T) {
+	got, _, err := runValidated(t, false, "a\r", WithValidation(func(context.Context, string) error { return errors.New("no") }))
+	assert.Equal(t, "", got)
+	assert.True(t, errors.Is(err, io.EOF))
+}
+
+func TestInputValidatorsRunInOrderAndStopAtFirstFailure(t *testing.T) {
+	var calls []string
+	first := WithValidation(func(context.Context, string) error { calls = append(calls, "first"); return errors.New("one") })
+	second := WithValidation(func(context.Context, string) error { calls = append(calls, "second"); return errors.New("two") })
+	_, out, _ := runValidated(t, false, "a\r", first, second)
+	assert.Equal(t, []string{"first"}, calls)
+	assert.Contains(t, out, "one")
+	assert.True(t, !strings.Contains(out, "two"))
+}
+
+func TestInputValidatorEmptyMessageFallsBack(t *testing.T) {
+	_, out, _ := runValidated(t, false, "a\r", WithValidation(func(context.Context, string) error { return errors.New("") }))
+	assert.Contains(t, out, "Invalid value")
+}
+
+func TestInputValidatorNilIsInvalidOption(t *testing.T) {
+	err := WithValidation(nil)(newInput(t.Context(), "x"))
+	assert.True(t, errors.Is(err, ErrInvalidOption))
+}
+
+func TestInputValidatorWrongWidget(t *testing.T) {
+	err := WithValidation(func(context.Context, string) error { return nil })(newDropdown(t.Context()))
+	assert.True(t, errors.Is(err, ErrWrongWidget))
+}
+
+func TestInputValidatesDefault(t *testing.T) {
+	_, out, err := runValidated(t, false, "\r", WithDefault("bad"), WithRegex(`[0-9]+`, "digits only"))
+	assert.True(t, errors.Is(err, io.EOF))
+	assert.Contains(t, out, "Error: digits only")
+	got, _, err := runValidated(t, false, "\r", WithDefault("42"), WithRegex(`[0-9]+`, "digits only"))
+	assert.NoError(t, err)
+	assert.Equal(t, "42", got)
+}
+
+func TestInputNonEmptyRejectsBlank(t *testing.T) {
+	got, out, err := runValidated(t, false, " \r\x7fa\r", WithNonEmpty())
+	assert.NoError(t, err)
+	assert.Equal(t, "a", got)
+	assert.Contains(t, out, "a value is required")
+}
+
+func TestInputRegexMatchesWholeString(t *testing.T) {
+	re := WithRegex(`a|b`, "a or b")
+	got, _, err := runValidated(t, false, "ab\x7fb\x7f\x7fa\r", re)
+	assert.NoError(t, err)
+	assert.Equal(t, "a", got)
+	_, out, _ := runValidated(t, false, "ab\r", re)
+	assert.Contains(t, out, "a or b")
+	// matches empty without a separate non-empty rule
+	got, _, err = runValidated(t, false, "\r", WithRegex(`a*`, "a's"))
+	assert.NoError(t, err)
+	assert.Equal(t, "", got)
+}
+
+func TestInputRegexMalformedOrBlankMessage(t *testing.T) {
+	assert.True(t, errors.Is(WithRegex(`(`, "m")(newInput(t.Context(), "x")), ErrInvalidOption))
+	assert.True(t, errors.Is(WithRegex(`a`, "  ")(newInput(t.Context(), "x")), ErrInvalidOption))
+}
+
+func TestInputRejectionClearsOnEditAndKeepsText(t *testing.T) {
+	_, out, _ := runValidated(t, false, "ab\rc", WithValidation(func(context.Context, string) error { return errors.New("nope") }))
+	// the stale row is erased by the next frame
+	assert.Contains(t, out, "\n\r\x1b[K\x1b[1A\x1b[")
+	assert.Contains(t, out, "abc")
+}
+
+func TestInputFeedbackSanitizesMessage(t *testing.T) {
+	bad := errors.New("line1\nline2\x1b[31m\rtail")
+	_, out, _ := runValidated(t, false, "a\r", WithValidation(func(context.Context, string) error { return bad }))
+	assert.Contains(t, out, "line1 line2[31m tail")
+	assert.True(t, !strings.Contains(out, "\x1b[31mtail"))
+}
+
+func TestInputFeedbackClippedToOneRow(t *testing.T) {
+	_, out, _ := runValidated(t, false, "a\r",
+		WithValidation(func(context.Context, string) error { return errors.New(strings.Repeat("é", 60)) }),
+		WithFeedbackTemplate(`{{ .Message }}`))
+	assert.Contains(t, out, strings.Repeat("é", 38)+"…")
+	assert.True(t, !strings.Contains(out, strings.Repeat("é", 39)))
+}
+
+func TestInputFeedbackTemplateIsPlain(t *testing.T) {
+	_, out, _ := runValidated(t, false, "a\r",
+		WithValidation(func(context.Context, string) error { return errors.New("bad") }),
+		WithFeedbackTemplate(`!! {{ .Message }}`))
+	assert.Contains(t, out, "!! bad")
+	assert.True(t, !strings.Contains(out, "\x1b[31m"))
+}
+
+func TestInputFeedbackTemplateParseError(t *testing.T) {
+	_, _, err := runValidated(t, false, "", WithFeedbackTemplate(`{{`))
+	assert.Error(t, err)
+}
+
+func TestPasswordRejectionStaysMasked(t *testing.T) {
+	_, out, _ := runValidated(t, true, "secret\r", WithValidation(func(context.Context, string) error { return errors.New("too weak") }))
+	assert.Contains(t, out, "Error: too weak")
+	assert.True(t, !strings.Contains(out, "secret"))
+}
+
+func TestFeedbackTemplateRejectedByOtherWidgets(t *testing.T) {
+	for _, w := range []any{newDropdown(t.Context()), newMultichoice(t.Context())} {
+		err := WithFeedbackTemplate(`{{ .Message }}`)(w)
+		assert.True(t, errors.Is(err, ErrWrongWidget))
+	}
+}
+
+func TestInputNeedsTwoRowsForFeedback(t *testing.T) {
+	i := newInput(t.Context(), "Label")
+	i.in = &chunkReader{chunks: [][]byte{{'a'}, {keyEnter}}}
+	i.out = &bytes.Buffer{}
+	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		return &termIO{in: in, out: out, Width: 20, Height: 1, Restore: func() error { return nil }}, nil
+	}
+	assert.NoError(t, WithValidation(func(context.Context, string) error { return errors.New("no") })(i))
+	assert.NoError(t, i.parseTemplates())
+	_, err := i.run(i.ctx)
+	assert.True(t, errors.Is(err, ErrNoSpace))
 }

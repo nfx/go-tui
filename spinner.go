@@ -96,6 +96,7 @@ type Spinners struct {
 	eventSink  func(spinnerEvent)
 }
 
+// newSpinners initializes spinner updates without taking ownership of terminal mode.
 func newSpinners(ctx context.Context) *Spinners {
 	ctx, cancel := context.WithCancel(ctx)
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -108,7 +109,7 @@ func newSpinners(ctx context.Context) *Spinners {
 		ticks:      ticker.C,
 		cancel:     cancel,
 		stopped:    make(chan struct{}),
-		makeTermIO: makeTermIO,
+		makeTermIO: makeOutputIO,
 		creates:    make(chan createSpinner),
 		updates:    make(chan updateOffset),
 		stops:      make(chan int),

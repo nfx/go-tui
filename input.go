@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"text/template"
 	"unicode"
@@ -66,20 +67,53 @@ func WithDefault(d string) opt {
 	})
 }
 
-// WithNonEmpty forces the prompt to continue until the confirmed input is not empty.
+// WithNonEmpty forces the prompt to continue until the confirmed input is not
+// non-blank. Empty and whitespace-only input are rejected.
 func WithNonEmpty() opt {
 	return opT(func(i *input) error {
-		prev := i.CheckFn
-		i.CheckFn = func(rawInput string) (string, bool) {
-			if prev != nil {
-				next, ok := prev(rawInput)
-				if !ok {
-					return next, false
-				}
-				rawInput = next
+		i.rules = append(i.rules, func(_ context.Context, s string) error {
+			if strings.TrimSpace(s) == "" {
+				return errors.New("a value is required")
 			}
-			return rawInput, rawInput != ""
+			return nil
+		})
+		return nil
+	})
+}
+
+// WithValidation validates confirmed input in option order; the first error is shown
+// below the input. fn receives the prompt context and blocks key handling while it
+// runs. Errors must not expose the typed value, especially for [Password].
+func WithValidation(fn func(context.Context, string) error) opt {
+	return opT(func(i *input) error {
+		if fn == nil {
+			return fmt.Errorf("%w: validator is nil", ErrInvalidOption)
 		}
+		i.rules = append(i.rules, fn)
+		return nil
+	})
+}
+
+// WithRegex rejects a confirmed input that is not fully matched by pattern and
+// shows message instead. A pattern that matches the empty string accepts it;
+// combine with [WithNonEmpty] to require a value.
+func WithRegex(pattern, message string) opt {
+	return opT(func(i *input) error {
+		if strings.TrimSpace(message) == "" {
+			return fmt.Errorf("%w: regex message is empty", ErrInvalidOption)
+		}
+		// the non-capturing group keeps alternations like `a|b` from
+		// escaping the \A and \z anchors.
+		re, err := regexp.Compile(`\A(?:` + pattern + `)\z`)
+		if err != nil {
+			return fmt.Errorf("%w: regex: %w", ErrInvalidOption, err)
+		}
+		i.rules = append(i.rules, func(_ context.Context, s string) error {
+			if !re.MatchString(s) {
+				return errors.New(message)
+			}
+			return nil
+		})
 		return nil
 	})
 }
@@ -91,14 +125,22 @@ type input struct {
 	Hide     bool
 	Password bool
 
-	LabelTemplate  string
-	labelTemplate  *template.Template
-	AnswerTemplate string
-	answerTemplate *template.Template
-	typed          string
-	cursor         int
+	LabelTemplate    string
+	labelTemplate    *template.Template
+	AnswerTemplate   string
+	answerTemplate   *template.Template
+	FeedbackTemplate string
+	feedbackTmpl     *template.Template
 
-	CheckFn func(rawInput string) (string, bool)
+	// rules validate the confirmed text in order; the first error rejects it.
+	rules []func(context.Context, string) error
+	// rejection is the message of the last rejected confirmation.
+	rejection string
+
+	// rows is the height of the last drawn frame: the input and optional feedback.
+	rows   int
+	typed  string
+	cursor int
 
 	// TODO: special case for testing?..
 	makeTermIO func(in io.Reader, out io.Writer) (*termIO, error)
@@ -363,7 +405,7 @@ func (i *input) safeText(text string) string {
 	return strings.Map(i.safeRune, text)
 }
 
-// render draws one input row and restores the cursor position.
+// render draws the input and optional feedback, then restores the caret on the input row.
 func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 	io.refreshSize()
 	frame.Reset()
@@ -394,7 +436,19 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 	// a cursor inside of a cluster stands on its first rune
 	at := min(max(cells.at(i.cursor), first), last)
 	moveLeft := cells[at:last].width()
-	if moveLeft > 0 {
+	var feedback text
+	if i.rejection != "" {
+		if io.Height > 0 && io.Height < 2 {
+			return ErrNoSpace
+		}
+		var err error
+		feedback, err = i.formatFeedback(i.rejection, max(io.Width-1, 1))
+		collect(err)
+	}
+	switch {
+	case len(feedback) > 0 || i.rows > 1:
+		i.renderFeedback(frame, feedback, collect, cells, labelW, first, at)
+	case moveLeft > 0:
 		// move the cursor left by the difference between
 		// the end and the desired position
 		_, err = fmt.Fprintf(frame, "\x1b[%dD", moveLeft)
@@ -405,13 +459,29 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 	return errors.Join(errs...)
 }
 
-func (*input) clear(io *termIO) error {
+// renderFeedback row (or erase a stale one) and return to the caret column.
+func (i *input) renderFeedback(frame *bytes.Buffer, feedback text,
+	collect func(err error), cells clusters, labelW, first, at int) {
+	_, err := fmt.Fprintf(frame, "\n\r\x1b[K%s\x1b[1A", feedback)
+	collect(err)
+	// an absolute column, as a managed viewport drops the carriage return
+	_, err = fmt.Fprintf(frame, "\x1b[%dG", labelW+cells[first:at].width()+1)
+	collect(err)
+	i.rows = 1
+	if len(feedback) > 0 {
+		i.rows = 2
+	}
+}
+
+// clear erases the input and any feedback row before the prompt exits.
+func (i *input) clear(io *termIO) error {
 	var errs []error
-	_, err := fmt.Fprintln(io)
+	rows := max(i.rows, 1)
+	_, err := fmt.Fprint(io, strings.Repeat("\n", rows))
 	if err != nil {
 		errs = append(errs, fmt.Errorf("newline: %w", err))
 	}
-	err = io.clear(1, io)
+	err = io.clear(rows, io)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("clear: %w", err))
 	}
@@ -516,9 +586,13 @@ func (p *input) applyInputEvent(ev inputIncoming) bool {
 	return false
 }
 
+// applyInputChanged updates text and caret, clearing rejection feedback only when text changes.
 func (p *input) applyInputChanged(ev inputChanged) {
 	prevLen := utf8.RuneCountInString(p.typed)
 	prevCursor := p.cursor
+	if ev.Text != p.typed {
+		p.rejection = ""
+	}
 	p.typed = ev.Text
 	nextLen := utf8.RuneCountInString(p.typed)
 	if ev.Cursor != nil {
@@ -543,15 +617,26 @@ func (p *input) applyInputChanged(ev inputChanged) {
 	}
 }
 
+// confirmInput accepts the typed text when every rule passes. A rejection keeps
+// the text and shows the reason; cancellation is reported by the event loop.
 func (p *input) confirmInput() bool {
-	if p.CheckFn != nil {
-		next, ok := p.CheckFn(p.typed)
-		if !ok {
+	for _, rule := range p.rules {
+		if p.ctx.Err() != nil {
 			return false
 		}
-		p.typed = next
-		p.cursor = min(p.cursor, utf8.RuneCountInString(p.typed))
+		err := rule(p.ctx, p.typed)
+		if p.ctx.Err() != nil {
+			return false
+		}
+		if err != nil {
+			p.rejection = err.Error()
+			if p.rejection == "" {
+				p.rejection = "Invalid value"
+			}
+			return false
+		}
 	}
+	p.rejection = ""
 	p.emit(inputComplete{Value: p.typed})
 	return true
 }
@@ -574,6 +659,7 @@ func (p *input) pressAny(key rune) {
 	p.applyInputChanged(p.insertAtCursor(string(key)))
 }
 
+// parseTemplates prepares label, answer, and feedback templates before interaction.
 func (p *input) parseTemplates() (err error) {
 	tmpl := template.New("dropdown").Funcs(colorFns)
 	p.labelTemplate, err = tmpl.New("label").Parse(mustEndWith(p.LabelTemplate, ' '))
@@ -584,5 +670,57 @@ func (p *input) parseTemplates() (err error) {
 	if err != nil {
 		return fmt.Errorf("answer: %w", err)
 	}
+	return p.parseFeedback()
+}
+
+// DefaultFeedbackTemplate renders the message shown below an input whose answer
+// was rejected. It receives the sanitized .Message.
+var DefaultFeedbackTemplate = `{{ red (bold "Error: ") .Message }}`
+
+// WithFeedbackTemplate overrides the one-row message shown below an [Input] or
+// [Password] for a rejected answer. An empty template restores the default.
+// The template sees only .Message.
+func WithFeedbackTemplate(tmpl string) opt {
+	return opT(func(i *input) error {
+		i.FeedbackTemplate = tmpl
+		return nil
+	})
+}
+
+// parseFeedback prepares the feedback template, using the default for an empty override.
+func (p *input) parseFeedback() error {
+	source := p.FeedbackTemplate
+	if source == "" {
+		source = DefaultFeedbackTemplate
+	}
+	parsed, err := template.New("feedback").Funcs(colorFns).Parse(source)
+	if err != nil {
+		return fmt.Errorf("feedback: %w", err)
+	}
+	p.feedbackTmpl = parsed
 	return nil
+}
+
+// feedbackSafe drops line breaks and terminal controls, so that a message
+// cannot move the cursor or start an escape sequence.
+func (p *input) feedbackSafe(message string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\r' || r == '\n' || r == '\t':
+			return ' '
+		case unicode.IsControl(r):
+			return -1
+		}
+		return r
+	}, strings.ToValidUTF8(message, "�"))
+}
+
+// formatFeedback renders one row that fits into width columns.
+func (p *input) formatFeedback(message string, width int) (text, error) {
+	var buf text
+	err := p.feedbackTmpl.Execute(&buf, struct{ Message string }{p.feedbackSafe(message)})
+	if err != nil {
+		return nil, fmt.Errorf("feedback: %w", err)
+	}
+	return buf.beforeNewline().truncateColumns(width), nil
 }

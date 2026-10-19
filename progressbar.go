@@ -65,6 +65,7 @@ func WithWorkers(workers int) opt {
 
 var runtimeNumCPU = runtime.NumCPU
 
+// newProgressbar initializes progress updates without taking ownership of terminal mode.
 func newProgressbar(ctx context.Context) *Progressbar {
 	ctx, cancel := context.WithCancelCause(ctx)
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -76,7 +77,7 @@ func newProgressbar(ctx context.Context) *Progressbar {
 		ticker:     ticker,
 		ticks:      ticker.C,
 		cancel:     cancel,
-		makeTermIO: makeTermIO,
+		makeTermIO: makeOutputIO,
 		increments: make(chan int64),
 		stopped:    make(chan struct{}),
 		now:        time.Now,

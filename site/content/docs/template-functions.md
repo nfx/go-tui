@@ -96,6 +96,19 @@ Example:
 tui.WithActiveItemTemplate(`{{ green "> " (label .) }}`)
 ```
 
+## Input feedback templates
+
+`Input` and `Password` accept `WithFeedbackTemplate`. Its data contains only
+`.Message`, the sanitized validation error; it does not include the typed answer.
+Color and style helpers work here too:
+
+```go
+tui.WithFeedbackTemplate(`{{ yellow (bold "Check: ") .Message }}`)
+```
+
+Feedback occupies one row. See [Input and Password](input.md#withfeedbacktemplate)
+for the default template and clipping behavior.
+
 ## Adding custom functions
 
 Use `WithFn(name, fn)` to register your own global helper.
