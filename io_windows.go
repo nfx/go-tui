@@ -9,6 +9,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -154,4 +155,35 @@ func (t *termIO) waitForConsoleReadable(ctx context.Context, h windows.Handle) e
 			return nil
 		}
 	}
+}
+
+var (
+	vtMu    sync.Mutex
+	vtState = map[uintptr]bool{}
+)
+
+func init() { consoleVT = enableConsoleVT }
+
+// enableConsoleVT adds ENABLE_VIRTUAL_TERMINAL_PROCESSING to a console output
+// handle and reports whether it is on. The mode stays set for the console's
+// lifetime, as Go offers no exit hook. Never called for pipes: callers check
+// for a terminal first.
+func enableConsoleVT(w io.Writer) bool {
+	fdw, ok := w.(descriptor)
+	if !ok {
+		return false
+	}
+	fd := fdw.Fd()
+	vtMu.Lock()
+	defer vtMu.Unlock()
+	if on, seen := vtState[fd]; seen {
+		return on
+	}
+	h := windows.Handle(fd)
+	var mode uint32
+	on := windows.GetConsoleMode(h, &mode) == nil &&
+		(mode&windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING != 0 ||
+			windows.SetConsoleMode(h, mode|windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING) == nil)
+	vtState[fd] = on
+	return on
 }

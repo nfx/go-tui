@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 )
 
 type jsonState int
@@ -39,20 +40,45 @@ var valDepthShades = []string{ // shades of green
 	"\x1b[38;5;22m",
 }
 
+// keyDepthBasic and valDepthBasic are the hand-picked ansi16 counterparts of
+// the depth shades: nearest-color matching turns some blues gray.
+var (
+	keyDepthBasic = []string{blue, brightBlue, brightCyan, cyan, brightCyan}
+	valDepthBasic = []string{brightGreen, brightGreen, green, green, green}
+)
+
 // PrettyJSON pretty-prints JSON data with depth-aware coloring.
 func PrettyJSON(w io.Writer, src any) error {
 	identBuf, err := jsonIndent(src)
 	if err != nil {
 		return err
 	}
-	if !isTerminal() {
+	profile := defaultIO.profileFor(w)
+	if !profile.attrs() {
 		_, err = identBuf.WriteTo(w)
 		return err
 	}
 	outBuf := bytes.NewBuffer(nil)
 	prettyJsonRecolor(identBuf, outBuf)
-	_, err = outBuf.WriteTo(w)
+	_, err = io.WriteString(w, jsonReduce(profile, outBuf.String()))
 	return err
+}
+
+// jsonReduce maps the 256-color depth shades onto what the destination
+// accepts: basic colors for ansi16, and bold only for attrs.
+func jsonReduce(p colorProfile, s string) string {
+	if p >= profileANSI256 {
+		return s
+	}
+	var pairs []string
+	for i := range keyDepthShades {
+		k, v := keyDepthBasic[i], valDepthBasic[i]
+		if p == profileAttrs {
+			k, v = "", ""
+		}
+		pairs = append(pairs, keyDepthShades[i], k, valDepthShades[i], v)
+	}
+	return strings.NewReplacer(pairs...).Replace(s)
 }
 
 func jsonIndent(src any) (*bytes.Buffer, error) {

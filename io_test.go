@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -1058,4 +1059,154 @@ func TestDefaultStreamsArePairedUnderSetDefaultIO(t *testing.T) {
 	}
 	close(stop)
 	<-swapped
+}
+
+var regexpSGR = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+// withEnv installs an output environment fixture built from KEY=VALUE pairs.
+func withEnv(t *testing.T, pairs ...string) {
+	t.Helper()
+	vars := map[string]string{}
+	for _, p := range pairs {
+		k, v, _ := strings.Cut(p, "=")
+		vars[k] = v
+	}
+	prev := defaultIO.env
+	defaultIO.env = readOutputEnv(func(k string) (string, bool) { v, ok := vars[k]; return v, ok })
+	t.Cleanup(func() { defaultIO.env = prev })
+}
+
+func ttyWriter(t *testing.T) *mockDescriptor {
+	t.Helper()
+	prev := terminalWriterChecker
+	terminalWriterChecker = func(int) bool { return true }
+	prevVT := consoleVT
+	consoleVT = func(io.Writer) bool { return true }
+	t.Cleanup(func() {
+		terminalWriterChecker = prev
+		consoleVT = prevVT
+	})
+	return &mockDescriptor{Reader: &bytes.Buffer{}, Writer: &bytes.Buffer{}, fd: 7}
+}
+
+func TestProfileFor(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  []string
+		tty  bool
+		want colorProfile
+	}{
+		{"tty truecolor", []string{"COLORTERM=truecolor"}, true, profileTrueColor},
+		{"tty 24bit", []string{"COLORTERM=24bit"}, true, profileTrueColor},
+		{"tty 256", []string{"TERM=xterm-256color"}, true, profileANSI256},
+		{"tty bare", nil, true, profileANSI16},
+		{"tty windows terminal", []string{"WT_SESSION=x"}, true, profileTrueColor},
+		{"pipe force 3", []string{"FORCE_COLOR=3"}, false, profileTrueColor},
+		{"pipe force 2", []string{"FORCE_COLOR=2"}, false, profileANSI256},
+		{"pipe force 1", []string{"FORCE_COLOR=1"}, false, profileANSI16},
+		{"pipe force empty", []string{"FORCE_COLOR="}, false, profileANSI16},
+		{"pipe force garbage", []string{"FORCE_COLOR=banana"}, false, profileANSI16},
+		{"tty force 0", []string{"FORCE_COLOR=0"}, true, profilePlain},
+		{"tty force false", []string{"FORCE_COLOR=false"}, true, profilePlain},
+		{"unknown non-tty", nil, false, profilePlain},
+		{"clicolor force", []string{"CLICOLOR_FORCE=1"}, false, profileANSI16},
+		{"clicolor force 0", []string{"CLICOLOR_FORCE=0"}, false, profilePlain},
+		{"clicolor force depth", []string{"CLICOLOR_FORCE=1", "COLORTERM=truecolor"}, false, profileTrueColor},
+		{"no color tty", []string{"NO_COLOR=1"}, true, profileAttrs},
+		{"no color pipe", []string{"NO_COLOR=1"}, false, profilePlain},
+		{"force beats no color", []string{"NO_COLOR=1", "FORCE_COLOR=3"}, true, profileTrueColor},
+		{"dumb", []string{"TERM=dumb"}, true, profilePlain},
+		{"ci tty", []string{"CI=true", "COLORTERM=truecolor"}, true, profileAttrs},
+		{"ci pipe", []string{"CI=true"}, false, profilePlain},
+		{"ci 1", []string{"CI=1"}, true, profileAttrs},
+		{"ci false", []string{"CI=false"}, true, profileANSI16},
+		{"ci 0", []string{"CI=0"}, true, profileANSI16},
+		{"ci clicolor force", []string{"CI=true", "CLICOLOR_FORCE=1"}, false, profileANSI16},
+		{"ci force color", []string{"CI=true", "FORCE_COLOR=3"}, false, profileTrueColor},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			withEnv(t, tc.env...)
+			var w io.Writer = &bytes.Buffer{}
+			if tc.tty {
+				w = ttyWriter(t)
+			}
+			assert.Equal(t, tc.want, defaultIO.profileFor(w))
+		})
+	}
+}
+
+func TestProfileConsoleWithoutVTIsPlain(t *testing.T) {
+	withEnv(t, "COLORTERM=truecolor")
+	tty := ttyWriter(t)
+	consoleVT = func(io.Writer) bool { return false }
+	assert.Equal(t, profilePlain, defaultIO.profileFor(tty))
+}
+
+func TestProfileConsoleVTNotCalledForPipe(t *testing.T) {
+	withEnv(t, "FORCE_COLOR=3")
+	prev := consoleVT
+	consoleVT = func(io.Writer) bool {
+		t.Fatal("pipe must not reach SetConsoleMode")
+		return false
+	}
+	t.Cleanup(func() { consoleVT = prev })
+	assert.Equal(t, profileTrueColor, defaultIO.profileFor(&bytes.Buffer{}))
+}
+
+func TestProfileBold(t *testing.T) {
+	assert.Equal(t, "x", profilePlain.bold("x"))
+	assert.Equal(t, "\x1b[1mx\x1b[0m", profileAttrs.bold("x"))
+	assert.Equal(t, "\x1b[1mx\x1b[0m", profileTrueColor.bold("x"))
+}
+
+func TestProfileForManagedWriterUsesRawOutput(t *testing.T) {
+	withEnv(t, "COLORTERM=truecolor")
+	tty := ttyWriter(t)
+	managed := &tio{writer: tty, env: defaultIO.env}
+	assert.Equal(t, profileTrueColor, managed.profileFor(&chanIO{}))
+	piped := &tio{writer: &bytes.Buffer{}, env: defaultIO.env}
+	assert.Equal(t, profilePlain, piped.profileFor(&chanIO{}))
+}
+
+func TestTableHeadersFollowProfile(t *testing.T) {
+	type row struct{ Name string }
+	for _, tc := range []struct {
+		env  []string
+		bold bool
+	}{{nil, false}, {[]string{"FORCE_COLOR=1"}, true}} {
+		withEnv(t, tc.env...)
+		var out bytes.Buffer
+		assert.NoError(t, TableAuto(&out, []row{{"a"}}))
+		assert.Equal(t, tc.bold, strings.Contains(out.String(), "\x1b[1m"))
+	}
+}
+
+func TestFactsFollowProfile(t *testing.T) {
+	type row struct{ Name string }
+	withEnv(t)
+	var out bytes.Buffer
+	assert.NoError(t, Facts(&out, row{"a"}))
+	assert.NotContains(t, out.String(), "\x1b[")
+	withEnv(t, "FORCE_COLOR=1")
+	out.Reset()
+	assert.NoError(t, Facts(&out, row{"a"}))
+	assert.Contains(t, out.String(), "\x1b[1m")
+}
+
+func TestPrettyJSONLevels(t *testing.T) {
+	src := `{"a":{"b":"c"}}`
+	render := func(env string) string {
+		withEnv(t, env)
+		var out bytes.Buffer
+		assert.NoError(t, PrettyJSON(&out, src))
+		return out.String()
+	}
+	assert.NotContains(t, render("FORCE_COLOR=0"), "\x1b[")
+	attrs := render("FORCE_COLOR=1")
+	assert.Contains(t, attrs, "\x1b[34m")
+	assert.NotContains(t, attrs, "38;5;")
+	assert.Contains(t, render("FORCE_COLOR=2"), "38;5;")
+	assert.Contains(t, render("FORCE_COLOR=3"), "38;5;")
+	stripped := regexpSGR.ReplaceAllString(render("FORCE_COLOR=1"), "")
+	assert.Equal(t, "{\n  \"a\": {\n    \"b\": \"c\"\n  }\n}\n", stripped)
 }

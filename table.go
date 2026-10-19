@@ -570,7 +570,7 @@ func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 		if err != nil {
 			return nil, fmt.Errorf("column %q render: %w", meta.name, err)
 		}
-		header := mkBold(strings.ReplaceAll(meta.header, "\t", " "))
+		header := f.mkBold(strings.ReplaceAll(meta.header, "\t", " "))
 		value := text(bytes.ReplaceAll(bytes.TrimRight(buf, "\r\n"), []byte{'\t'}, []byte{' '}))
 		cellWidth := max(
 			max(header.width(), value.width())+f.cellPad+1,
@@ -963,7 +963,7 @@ func (t *table) headers() error {
 			Header: meta.header,
 			Kind:   meta.kind.String(),
 		}
-		bold[i] = mkBold(meta.header)
+		bold[i] = t.mkBold(meta.header)
 	}
 	if t.suppressHeaders {
 		return nil
@@ -988,7 +988,7 @@ func (t *table) autoHeaders() error {
 			Header: meta.header,
 			Kind:   meta.kind.String(),
 		}
-		headers[i] = mkBold(meta.header)
+		headers[i] = t.mkBold(meta.header)
 	}
 	if t.suppressHeaders {
 		return nil
@@ -1423,8 +1423,9 @@ func (t *table) extractFromList(n *parse.ListNode) ([]string, error) {
 	return headers, nil
 }
 
-func mkBold(s string) text {
-	return text("\x1b[1m" + s + "\x1b[0m")
+// mkBold emphasizes a heading when the destination accepts text attributes.
+func (t *table) mkBold(s string) text {
+	return defaultIO.profileFor(t.w).bold(s)
 }
 
 // theoretically we could make this public with additional options.
