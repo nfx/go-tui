@@ -90,11 +90,10 @@ type Spinners struct {
 	ticker  *time.Ticker
 	ticks   <-chan time.Time
 
-	state       []*spinnerState
-	displayed   int
-	makeTermIO  func(io.Reader, io.Writer) (*termIO, error)
-	eventSink   func(spinnerEvent)
-	logFallback bool
+	state      []*spinnerState
+	displayed  int
+	makeTermIO func(io.Reader, io.Writer) (*termIO, error)
+	eventSink  func(spinnerEvent)
 }
 
 // newSpinners initializes spinner updates without taking ownership of terminal mode.
@@ -132,7 +131,7 @@ func NewSpinners(ctx context.Context, opt ...opt) (*Spinners, error) {
 	}
 	s.io, err = s.makeTermIO(s.in, s.out)
 	if err != nil {
-		if !s.logFallback || !errors.Is(err, ErrNoTTY) {
+		if !errors.Is(err, ErrNoTTY) {
 			return nil, err
 		}
 		s.io = nil
@@ -147,16 +146,10 @@ func NewSpinners(ctx context.Context, opt ...opt) (*Spinners, error) {
 	return s, nil
 }
 
-// WithLogFallback logs spinner stage changes through slog.Default when output has no TTY.
-// It applies to NewSpinners and leaves terminal rendering unchanged.
-func WithLogFallback() opt {
-	return opT(func(s *Spinners) error {
-		s.logFallback = true
-		return nil
-	})
-}
-
 func (s *Spinners) Close() {
+	if s == nil {
+		return // NewSpinners failed
+	}
 	s.cancel()
 	if s.stopped != nil {
 		<-s.stopped
@@ -520,7 +513,7 @@ func (s *Spinners) newSpinner(ns createSpinner) {
 
 // logStage runs on the group loop, preserving update order without logging animation frames.
 func (s *Spinners) logStage(level slog.Level, message string, offset int, status string) {
-	if !s.logFallback || s.io != nil {
+	if s.io != nil {
 		return
 	}
 	slog.Default().Log(s.ctx, level, message,

@@ -104,6 +104,47 @@ city, err := tui.Dropdown(ctx, "City", cities,
 )
 ```
 
+A default can also be a typed value. It is kept as is, never turned into a
+label: `Dropdown[T]`, `DropdownLazy[T]` and `DropdownIndex` take the item,
+`DropdownKV` takes the **key** (a value of the map is not looked up). It must be
+assignable to the item type, without conversions, and is compared with `==`, or
+with `reflect.DeepEqual` for slices and maps; pointers compare by identity. It
+must identify exactly one item: a value that is missing, repeated, a non-nil
+function or `NaN` fails with `ErrInvalidOption`. An untyped `nil` matches a nil
+item. Items with identical labels stay distinct.
+
+```go
+type Server struct{ Name, Region string }
+
+srv, err := tui.Dropdown(ctx, "Server", servers,
+	tui.WithDefault(Server{"api", "eu"}),
+)
+key, value, err := tui.DropdownKV(ctx, "Port", ports, tui.WithDefault("https"))
+```
+
+With a terminal the typed item is the first row and Enter confirms it. A string
+that is not an item keeps working as the hint above.
+
+### Without a terminal
+
+When the output is not a terminal, every dropdown answers from [`WithDefault`](options-and-helpers.md#defaults-without-a-terminal)
+without reading input or printing anything, and fails otherwise:
+
+- no default: an error wrapping `ErrNoTTY`; `DropdownLazy` does not start its
+  producer;
+- a missing, ambiguous or wrongly typed default: `ErrInvalidOption`;
+- a string is first an exact item, so `"a"` selects `"a"` even when `"ab"` exists;
+  otherwise it is a word-prefix hint that must match exactly one label;
+- with [`WithOneReturn`](#withonereturn), a single item is returned without a default, ahead of any hint.
+
+`DropdownLazy` consumes the whole sequence first, so a later duplicate or a late
+producer error is not hidden; an empty sequence is `ErrEmptyLazyResult`.
+
+`Confirm` keeps its `bool` result and cannot show errors: [`WithDefault(true)`](options-and-helpers.md#defaults-without-a-terminal) or
+`"Yes"` returns true, `WithDefault(false)` or `"No"` false, and no default, an
+invalid default or any error returns false. Call `Dropdown` with `"Yes"` and
+`"No"` to see `ErrNoTTY`.
+
 ## WithOneReturn
 
 Returns immediately if exactly one item is available.

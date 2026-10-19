@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -21,11 +22,17 @@ import (
 // checking the focused item; a successful empty selection is a non-nil slice.
 // Items are shallowly copied. Use one active prompt per shared input reader.
 func Multichoice[T any](ctx context.Context, label string, items []T, o ...opt) ([]T, error) {
+	return pickMultichoice(ctx, label, items, targetOf[T](), o)
+}
+
+// pickMultichoice runs a multichoice whose typed defaults have the type of target.
+func pickMultichoice[T any](ctx context.Context, label string, items []T, target choiceTarget, o []opt) ([]T, error) {
 	if len(items) == 0 {
 		return nil, ErrNoItems
 	}
 	snapshot := slices.Clone(items)
 	m := newMultichoice(ctx)
+	m.target = target
 	m.Label = label
 	for _, item := range snapshot {
 		m.Items = append(m.Items, item)
@@ -45,7 +52,11 @@ func Multichoice[T any](ctx context.Context, label string, items []T, o ...opt) 
 // Equal formatted keys have unspecified relative order. Templates receive
 // entries with Key and Value, including every element of the answer collection.
 func MultichoiceKVK[K comparable, V any](ctx context.Context, label string, items map[K]V, o ...opt) ([]K, error) {
-	entries, err := multichoiceMap(ctx, label, items, o)
+	target := choiceTarget{
+		typ:  reflect.TypeFor[K](),
+		proj: mapKey[K, V],
+	}
+	entries, err := multichoiceMap(ctx, label, items, target, o)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +70,11 @@ func MultichoiceKVK[K comparable, V any](ctx context.Context, label string, item
 // MultichoiceKVV returns values in the same entry order as MultichoiceKVK.
 // Duplicate and non-comparable values remain independently selectable.
 func MultichoiceKVV[K comparable, V any](ctx context.Context, label string, items map[K]V, o ...opt) ([]V, error) {
-	entries, err := multichoiceMap(ctx, label, items, o)
+	target := choiceTarget{
+		typ:  reflect.TypeFor[V](),
+		proj: mapValue[K, V],
+	}
+	entries, err := multichoiceMap(ctx, label, items, target, o)
 	if err != nil {
 		return nil, err
 	}
@@ -75,6 +90,7 @@ func multichoiceMap[K comparable, V any](
 	ctx context.Context,
 	label string,
 	items map[K]V,
+	target choiceTarget,
 	o []opt,
 ) ([]mapKV[K, V], error) {
 	entries := make([]mapKV[K, V], 0, len(items))
@@ -83,7 +99,7 @@ func multichoiceMap[K comparable, V any](
 	}
 	sort.SliceStable(entries, func(i, j int) bool { return fmt.Sprint(entries[i].Key) < fmt.Sprint(entries[j].Key) })
 	defaults := []opt{WithTemplate(".Key")}
-	return Multichoice(ctx, label, entries, append(defaults, o...)...)
+	return pickMultichoice(ctx, label, entries, target, append(defaults, o...))
 }
 
 // MultichoiceLazy displays a finite sequence progressively and enables Enter
@@ -95,6 +111,7 @@ func MultichoiceLazy[T any](ctx context.Context, label string, items iter.Seq2[T
 		return nil, fmt.Errorf("%w: MultichoiceLazy sequence is nil", ErrInvalidOption)
 	}
 	m := newMultichoice(ctx)
+	m.target = targetOf[T]()
 	m.Label = label
 	m.loading = true
 	m.producer = func(yield func(any, error) bool) {
@@ -163,6 +180,8 @@ type multichoice struct {
 	offset      int
 	count       int
 	hint        string
+	def         defaultValue
+	target      choiceTarget
 	typed       string
 	Hide        bool
 	loading     bool
@@ -211,8 +230,12 @@ func (m *multichoice) setLabelTemplate(t string) { m.LabelTemplate = t }
 // setAnswerTemplate configures the confirmed collection summary.
 func (m *multichoice) setAnswerTemplate(t string) { m.AnswerTemplate, m.answerSet = t, true }
 
-// setDefault records a selection hint without pre-filling the filter.
-func (m *multichoice) setDefault(hint string) { m.hint = hint }
+// setDefault records the default; a string is also a selection hint that
+// does not pre-fill the filter.
+func (m *multichoice) setDefault(d any) {
+	m.def = defaultValue{set: true, raw: d}
+	m.hint, _ = d.(string) //nolint:errcheck // not a string is no hint
+}
 
 // setActiveItemTemplate configures focused content independently of the checkbox wrapper.
 func (m *multichoice) setActiveItemTemplate(t string) { m.ActiveItemTemplate = t }
@@ -283,9 +306,6 @@ func (m *multichoice) prepare(o []opt) error {
 		if err := m.addItem(item); err != nil {
 			return err
 		}
-	}
-	if !m.loading {
-		m.resolveDefault()
 	}
 	return m.Ctx.Err()
 }
@@ -403,22 +423,89 @@ func (m *multichoice) setFocus(i int) {
 }
 
 // resolveDefault checks a unique match without overriding manual toggles or focus.
-func (m *multichoice) resolveDefault() {
-	if m.hint == "" {
-		return
+// A typed default checks every entry it identifies, and must identify them.
+func (m *multichoice) resolveDefault() error {
+	var picked []int
+	switch {
+	case m.def.set && m.hint == "":
+		if _, isHint := m.def.raw.(string); !isHint {
+			var err error
+			picked, err = m.resolveTyped()
+			if err != nil {
+				return err
+			}
+		}
+	case m.hint != "":
+		matches := m.trie.Prefix(m.hint)
+		if len(matches) == 1 {
+			picked = matches
+		}
 	}
-	matches := m.trie.Prefix(m.hint)
-	if len(matches) != 1 {
-		return
+	for _, i := range picked {
+		if !m.selected[i] && !m.toggled[i] {
+			m.selected[i] = true
+			m.count++
+		}
 	}
-	i := matches[0]
-	if !m.selected[i] && !m.toggled[i] {
+	if len(picked) > 0 && !m.manualFocus {
+		m.setFocus(picked[0])
+	}
+	return nil
+}
+
+// resolveTyped resolves the default against the entries collected so far.
+func (m *multichoice) resolveTyped() ([]int, error) {
+	return m.target.resolveSelection(m.def.raw, m.Items, hintFromTrie(m.trie))
+}
+
+// answerFromDefault checks the entries of the default without a terminal.
+// It reads no input and prints nothing. A lazy producer starts only when there
+// is a default, and is consumed to the end before the default is resolved.
+func (m *multichoice) answerFromDefault(ctx context.Context) error {
+	err := ctx.Err()
+	if err != nil {
+		return err
+	}
+	if !m.def.set {
+		return errNoDefault(m.Label)
+	}
+	if m.loading {
+		// the channel lets cancellation return while the iterator is blocked
+		pctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		ch := m.startProducer(pctx)
+	drain:
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case pair, more := <-ch:
+				if !more {
+					break drain
+				}
+				if pair.err != nil {
+					return fmt.Errorf("producer: %w", pair.err)
+				}
+				err = m.addItem(pair.item)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		m.loading = false
+		if len(m.Items) == 0 {
+			return ErrEmptyLazyResult
+		}
+	}
+	picked, err := m.resolveTyped()
+	if err != nil {
+		return err
+	}
+	for _, i := range picked {
 		m.selected[i] = true
 		m.count++
 	}
-	if !m.manualFocus {
-		m.setFocus(i)
-	}
+	return ctx.Err()
 }
 
 // filter preserves checked items and retains focus when that item still matches.
@@ -638,7 +725,10 @@ func (m *multichoice) finishLoading() error {
 	if len(m.Items) == 0 {
 		return ErrEmptyLazyResult
 	}
-	m.resolveDefault()
+	err := m.resolveDefault()
+	if err != nil {
+		return err
+	}
 	m.readyOrder = nextInputOrder()
 	return nil
 }
@@ -683,6 +773,23 @@ func (m *multichoice) clearMultichoiceFrame(tio *termIO, space int) error {
 func (m *multichoice) run(ctx context.Context, o ...opt) error {
 	if err := m.prepare(o); err != nil {
 		return err
+	}
+	if m.in == nil || m.out == nil {
+		in, out := defaultStreams(ctx)
+		if m.in == nil {
+			m.in = in
+		}
+		if m.out == nil {
+			m.out = out
+		}
+	}
+	if !outputIsTerminal(m.out) {
+		return m.answerFromDefault(ctx) // an automatic answer prints nothing
+	}
+	if !m.loading {
+		if err := m.resolveDefault(); err != nil {
+			return err
+		}
 	}
 	if err := m.interact(ctx); err != nil {
 		return err
@@ -847,4 +954,71 @@ func (m *multichoice) setPasteMode(t *termIO, enabled bool) error {
 		err = t.cio.Flush()
 	}
 	return err
+}
+
+// selection reports whether d is a slice of the target type, and returns its members.
+func (c choiceTarget) selection(d any) ([]any, bool) {
+	if d == nil {
+		return nil, false
+	}
+	rv := reflect.ValueOf(d)
+	if rv.Kind() != reflect.Slice || !rv.Type().AssignableTo(reflect.SliceOf(c.elem())) {
+		return nil, false
+	}
+	members := make([]any, rv.Len())
+	for i := range members {
+		members[i] = rv.Index(i).Interface()
+	}
+	return members, true
+}
+
+// resolveSelection resolves a default of a multichoice to checked indexes in
+// source order: one entry, a slice of entries of the target type, or a string hint.
+func (c choiceTarget) resolveSelection(d any, items []any, hint func(string) ([]int, error)) ([]int, error) {
+	if c.accepts(d) {
+		// the whole value is one entry first, as T may itself be a slice
+		matches, err := c.matches(d, items)
+		if err != nil {
+			return nil, err
+		}
+		if len(matches) > 0 {
+			i, err := uniqueMatch(matches, fmt.Sprintf("%T value", d))
+			if err != nil {
+				return nil, err
+			}
+			return []int{i}, nil
+		}
+	}
+	if members, ok := c.selection(d); ok {
+		picked := make([]int, 0, len(members))
+		for _, member := range members {
+			matches, err := c.matches(member, items)
+			if err != nil {
+				return nil, err
+			}
+			i, err := uniqueMatch(matches, "selection member")
+			if err != nil {
+				return nil, err
+			}
+			if slices.Contains(picked, i) {
+				return nil, errBadDefault("selection repeats an entry")
+			}
+			picked = append(picked, i)
+		}
+		slices.Sort(picked)
+		return picked, nil
+	}
+	s, ok := d.(string)
+	if !ok {
+		return nil, errBadDefault("%T matches no entry", d)
+	}
+	matches, err := hint(s)
+	if err != nil {
+		return nil, err
+	}
+	i, err := uniqueMatch(matches, fmt.Sprintf("hint %q", s))
+	if err != nil {
+		return nil, err
+	}
+	return []int{i}, nil
 }

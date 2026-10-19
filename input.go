@@ -56,12 +56,24 @@ type inputConfirmed struct {
 	inputIncomingMarker
 }
 
-// WithDefault pre-fills the typed text of an input. For a dropdown it is only a
-// match hint, not a pre-filled filter: items are ranked by similarity to d, and
-// the dropdown returns early only when exactly one item matches d as a prefix.
-// Multichoice checks a unique word-prefix match once and still requires Enter.
-// Lazy multichoice resolves the hint after successful exhaustion.
-func WithDefault(d string) opt {
+// WithDefault supplies the answer of a prompt. Without a terminal the prompt
+// returns it without reading input or printing; with a default missing, invalid
+// or ambiguous it fails with [ErrInvalidOption], and without any default with
+// [ErrNoTTY]. A default of nil, "", 0 or false is still a default.
+//
+// [Input] and [Password] pre-fill fmt.Sprint(d). [Number] pre-fills d in plain
+// decimal notation. Choice widgets keep d as a typed value: the item for
+// [Dropdown], the key for [DropdownKV] and [MultichoiceKVK], the value for
+// [MultichoiceKVV]; a multichoice also takes a slice of them. Values are
+// matched by equality, never by label, and must identify exactly one entry. A
+// string that is not an item is a word-prefix hint on the labels.
+//
+// With a terminal, a dropdown treats a string as a match hint, not a pre-filled
+// filter: items are ranked by similarity to d, and the dropdown returns early
+// only when exactly one item matches d as a prefix. Multichoice checks a unique
+// word-prefix match once and still requires Enter. Lazy choices resolve the
+// default after successful exhaustion. [Confirm] takes a bool or "Yes"/"No".
+func WithDefault(d any) opt {
 	return opT(func(x withDefault) error {
 		x.setDefault(d)
 		return nil
@@ -134,6 +146,7 @@ type input struct {
 	FeedbackTemplate string
 	feedbackTmpl     *template.Template
 
+	def defaultValue
 	// rules validate the confirmed text in order; the first error rejects it.
 	rules []func(context.Context, string) error
 	// rejection is the message of the last rejected confirmation.
@@ -168,9 +181,10 @@ func (i *input) setAnswerTemplate(tmpl string) {
 }
 
 // implement [withPrompt] interface.
-func (i *input) setDefault(typed string) {
-	i.typed = typed
-	i.cursor = utf8.RuneCountInString(typed)
+func (i *input) setDefault(d any) {
+	i.def = defaultValue{set: true, raw: d}
+	i.typed = fmt.Sprint(d)
+	i.cursor = utf8.RuneCountInString(i.typed)
 }
 
 func newInput(ctx context.Context, label string) *input {
@@ -206,6 +220,9 @@ func (i *input) read(ctx context.Context, option ...opt) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if !outputIsTerminal(i.out) {
+		return i.answerFromDefault(ctx)
+	}
 	out, err := i.run(ctx)
 	if err != nil {
 		return "", err
@@ -215,6 +232,29 @@ func (i *input) read(ctx context.Context, option ...opt) (string, error) {
 		return "", err
 	}
 	return out, nil
+}
+
+// answerFromDefault answers without a terminal: it reads no input and prints
+// nothing. The default goes through the rules once, and a rejection is an error.
+func (i *input) answerFromDefault(ctx context.Context) (string, error) {
+	err := ctx.Err()
+	if err != nil {
+		return "", err
+	}
+	if !i.def.set {
+		return "", errNoDefault(i.Label)
+	}
+	for _, rule := range i.rules {
+		err = rule(ctx, i.typed)
+		if cerr := ctx.Err(); cerr != nil {
+			return "", cerr
+		}
+		if err != nil {
+			// the text itself stays out of the error, it may be a secret
+			return "", errBadDefault("is rejected: %w", err)
+		}
+	}
+	return i.typed, nil
 }
 
 func (i *input) showAnswer() error {

@@ -144,6 +144,14 @@ func TestNewIOWithStubError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error")
 	}
+	if !errors.Is(err, ErrNoTTY) {
+		t.Fatalf("expected ErrNoTTY, got %v", err)
+	}
+}
+
+func TestSpinnersCloseNil(t *testing.T) {
+	var s *Spinners
+	s.Close()
 }
 
 func TestChanIOReadWrite(t *testing.T) {

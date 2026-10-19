@@ -13,14 +13,14 @@ type Port uint16
 func main() {
 	ctx := context.Background()
 	workers, err := tui.Number[int](ctx, "Workers",
-		tui.WithDefault("4"),
+		tui.WithDefault(4),
 		tui.WithAtLeast(1),
 		tui.WithAtMost(64))
 	if err != nil {
 		panic(err)
 	}
 	port, err := tui.Number[Port](ctx, "Port",
-		tui.WithDefault("8080"),
+		tui.WithDefault(Port(8080)),
 		tui.WithAtLeast(Port(1024)),
 		tui.WithAtMost(Port(65535)))
 	if err != nil {

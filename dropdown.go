@@ -117,6 +117,14 @@ type dropdown struct {
 	moved    bool
 	typed    []rune
 	oneMatch string // see [WithDefault]
+	// def is the raw default; target types it; normalize adapts it first.
+	def       defaultValue
+	target    choiceTarget
+	normalize func(any) any
+	// seedIdx is the entry a typed default selects when seeded is set.
+	seedIdx  int
+	seeded   bool
+	seedLazy bool
 	// rankHint keeps the [WithDefault] value for ranking every candidate set,
 	// including items that are added lazily, after oneMatch is consumed.
 	rankHint string
@@ -154,17 +162,51 @@ func Confirm(ctx context.Context, action string, opts ...opt) bool {
 	return confirmRunner(ctx, action, opts...)
 }
 
-func defaultConfirmRunner(ctx context.Context, action string, opts ...opt) bool {
-	res, err := Dropdown(ctx, action, []string{"Yes", "No"}, opts...)
+func defaultConfirmRunner(ctx context.Context, action string, o ...opt) bool {
+	d := newDropdown(ctx)
+	d.target = targetOf[string]()
+	d.normalize = confirmDefault
+	err := opts(o).Apply(d)
 	if err != nil {
 		return false
 	}
-	return strings.EqualFold(res, "yes")
+	i, err := d.pick(ctx, action, []any{"Yes", "No"}) // Yes is first
+	if err != nil {
+		return false
+	}
+	return i == 0
+}
+
+// confirmDefault turns a boolean default into the text of its choice.
+func confirmDefault(d any) any {
+	if d == nil {
+		return d
+	}
+	rv := reflect.ValueOf(d)
+	if rv.Kind() != reflect.Bool {
+		return d
+	}
+	if rv.Bool() {
+		return "Yes"
+	}
+	return "No"
 }
 
 type mapKV[K comparable, V any] struct {
 	Key   K
 	Value V
+}
+
+// mapKey projects the key of a map entry that the map widgets built.
+func mapKey[K comparable, V any](item any) any {
+	kv, _ := item.(mapKV[K, V]) //nolint:errcheck // the widget only holds its own entries
+	return kv.Key
+}
+
+// mapValue projects the value of a map entry that the map widgets built.
+func mapValue[K comparable, V any](item any) any {
+	kv, _ := item.(mapKV[K, V]) //nolint:errcheck // the widget only holds its own entries
+	return kv.Value
 }
 
 func DropdownKV[K comparable, V any](ctx context.Context, label string, items map[K]V, opts ...opt) (K, V, error) {
@@ -186,11 +228,19 @@ func DropdownKV[K comparable, V any](ctx context.Context, label string, items ma
 		WithInactiveItemTemplate(`~ {{ dim .Key }}`),
 		WithAnswerTemplate(`{{ dim "✔ " .Label " …" }} {{ .Answer.Key | bold }}`),
 	}, opts...)
-	item, err := Dropdown(ctx, label, kvs, opts...)
+	anyKVs := make([]any, len(kvs))
+	for i, kv := range kvs {
+		anyKVs[i] = kv
+	}
+	target := choiceTarget{
+		typ:  reflect.TypeFor[K](),
+		proj: mapKey[K, V],
+	}
+	i, err := pickIndex(ctx, label, anyKVs, target, opts)
 	if err != nil {
 		return zeroK, zeroV, err
 	}
-	return item.Key, item.Value, nil
+	return kvs[i].Key, kvs[i].Value, nil
 }
 
 func Dropdown[T any](ctx context.Context, label string, items []T, opts ...opt) (T, error) {
@@ -203,7 +253,7 @@ func Dropdown[T any](ctx context.Context, label string, items []T, opts ...opt) 
 	for i, v := range items {
 		anyItems[i] = v
 	}
-	i, err := DropdownIndex(ctx, label, anyItems, opts...)
+	i, err := pickIndex(ctx, label, anyItems, targetOf[T](), opts)
 	if err != nil {
 		return zero, err
 	}
@@ -215,6 +265,7 @@ func DropdownLazy[V any](ctx context.Context, label string, itemFn iter.Seq2[V, 
 	var zero V
 	d := newDropdown(ctx)
 	d.Label = label
+	d.target = targetOf[V]()
 	err := opts(o).Apply(d)
 	if err != nil {
 		return zero, err
@@ -224,31 +275,86 @@ func DropdownLazy[V any](ctx context.Context, label string, itemFn iter.Seq2[V, 
 	if err != nil {
 		return zero, fmt.Errorf("templates: %w", err)
 	}
-	// the producer is owned by this call: it stops on every return path
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	d.Ctx = ctx
-	d.startLazyProducer(ctx, func(yield func(any, error) bool) {
+	seq := iter.Seq2[any, error](func(yield func(any, error) bool) {
 		for v, err := range itemFn {
 			if !yield(v, err) {
 				return
 			}
 		}
 	})
-	i, err := d.selectIndex(ctx)
+	terminal := outputIsTerminal(d.out)
+	// the producer is owned by this call: it stops on every return path
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	d.Ctx = ctx
+	var i int
+	if terminal {
+		d.startLazyProducer(ctx, seq)
+		i, err = d.selectIndex(ctx)
+	} else {
+		i, err = d.answerLazyFromDefault(ctx, seq)
+	}
 	if err != nil {
 		return zero, err
 	}
 	item := d.Items[i]
-	err = d.showAnswer(label, item)
-	if err != nil {
-		return zero, fmt.Errorf("answer: %w", err)
+	if terminal {
+		err = d.showAnswer(label, item)
+		if err != nil {
+			return zero, fmt.Errorf("answer: %w", err)
+		}
 	}
 	valid, ok := item.(V)
-	if !ok { // should never happen
+	if !ok && item != nil { // should never happen
 		return zero, fmt.Errorf("%w: expected %T, got %T", ErrInvalidState, valid, item)
 	}
 	return valid, nil
+}
+
+// answerLazyFromDefault answers without a terminal. The producer starts only
+// when a default or the single-item shortcut can answer, and is then consumed
+// to the end, so that a later item cannot hide an ambiguity.
+func (d *dropdown) answerLazyFromDefault(ctx context.Context, seq iter.Seq2[any, error]) (int, error) {
+	err := ctx.Err()
+	if err != nil {
+		return -1, err
+	}
+	if !d.def.set && !d.OneReturn {
+		return -1, errNoDefault(d.Label)
+	}
+	// consume through the producer channel so that cancellation returns
+	// even while the iterator is blocked between yields
+	d.startLazyProducer(ctx, seq)
+	var items []any
+loop:
+	for {
+		select {
+		case <-ctx.Done():
+			return -1, ctx.Err()
+		case it, more := <-d.itItems:
+			if !more {
+				break loop
+			}
+			if it.err != nil {
+				return -1, it.err
+			}
+			items = append(items, it.item)
+		}
+	}
+	d.itItems = nil
+	err = ctx.Err()
+	if err != nil {
+		return -1, err
+	}
+	if len(items) == 0 {
+		return -1, ErrEmptyLazyResult
+	}
+	d.Items = items
+	i, err := d.resolveAutomatic(items)
+	if err != nil {
+		return -1, err
+	}
+	return i, ctx.Err()
 }
 
 // startLazyProducer streams itemFn into the dropdown until it is done
@@ -278,7 +384,13 @@ func (d *dropdown) startLazyProducer(ctx context.Context, itemFn iter.Seq2[any, 
 }
 
 func DropdownIndex(ctx context.Context, label string, items []any, o ...opt) (int, error) {
+	return pickIndex(ctx, label, items, choiceTarget{}, o)
+}
+
+// pickIndex runs a dropdown whose typed defaults have the type of target.
+func pickIndex(ctx context.Context, label string, items []any, target choiceTarget, o []opt) (int, error) {
 	d := newDropdown(ctx)
+	d.target = target
 	err := opts(o).Apply(d)
 	if err != nil {
 		return -1, err
@@ -293,6 +405,9 @@ func (d *dropdown) pick(ctx context.Context, label string, items []any) (int, er
 	i, err := d.dropdownIndex(ctx)
 	if err != nil {
 		return -1, err
+	}
+	if !outputIsTerminal(d.out) {
+		return i, nil // an automatic answer prints nothing
 	}
 	err = d.showAnswer(label, items[i])
 	if err != nil {
@@ -333,14 +448,97 @@ func (d *dropdown) dropdownIndex(ctx context.Context) (int, error) {
 // selectIndex runs a dropdown with parsed templates and returns the original
 // item index. [dropdown.run] returns a position in d.relevant instead.
 func (d *dropdown) selectIndex(ctx context.Context) (int, error) {
+	if !outputIsTerminal(d.out) {
+		err := ctx.Err()
+		if err != nil {
+			return -1, err
+		}
+		i, err := d.resolveAutomatic(d.Items)
+		if err != nil {
+			return -1, err
+		}
+		return i, ctx.Err()
+	}
 	if d.OneReturn && len(d.Items) == 1 {
 		return 0, nil
+	}
+	err := d.seedDefault()
+	if err != nil {
+		return -1, err
 	}
 	j, err := d.run(ctx)
 	if err != nil {
 		return -1, err
 	}
 	return d.relevant[j], nil
+}
+
+// resolveAutomatic picks the entry that answers without a terminal. The
+// single-item shortcut of [WithOneReturn] wins over a default.
+func (d *dropdown) resolveAutomatic(items []any) (int, error) {
+	if d.OneReturn && len(items) == 1 {
+		return 0, nil
+	}
+	if !d.def.set {
+		return -1, errNoDefault(d.Label)
+	}
+	return d.target.resolveSingle(d.def.raw, items, d.hintMatches(items))
+}
+
+// hintMatches looks up prefix hints in the labels of items without drawing them.
+func (d *dropdown) hintMatches(items []any) func(string) ([]int, error) {
+	return func(hint string) ([]int, error) {
+		t := newTrie()
+		for i, item := range items {
+			var label text
+			err := d.inactiveItemTemplate.Execute(&label, item)
+			if err != nil {
+				return nil, fmt.Errorf("inactive: %w", err)
+			}
+			t.Add(label, i)
+		}
+		return hintFromTrie(t)(hint)
+	}
+}
+
+// seedDefault makes a typed default the first and selected row of an
+// interactive dropdown. String hints keep their own ranking.
+func (d *dropdown) seedDefault() error {
+	if !d.def.set {
+		return nil
+	}
+	if _, isHint := d.def.raw.(string); isHint {
+		return nil
+	}
+	if !d.target.accepts(d.def.raw) {
+		return errBadDefault("%T has the wrong type", d.def.raw)
+	}
+	if d.itItems != nil {
+		d.seedLazy = true // the entry may arrive later
+		return nil
+	}
+	matches, err := d.target.matches(d.def.raw, d.Items)
+	if err != nil {
+		return err
+	}
+	i, err := uniqueMatch(matches, fmt.Sprintf("%T value", d.def.raw))
+	if err != nil {
+		return err
+	}
+	d.seedIdx, d.seeded = i, true
+	return nil
+}
+
+// seedFirst moves the seeded entry to the front of relevant.
+func (d *dropdown) seedFirst(relevant []int) {
+	if !d.seeded {
+		return
+	}
+	pos := slices.Index(relevant, d.seedIdx)
+	if pos > 0 {
+		copy(relevant[1:pos+1], relevant[:pos])
+		relevant[0] = d.seedIdx
+	}
 }
 
 var DefaultLabelTemplate = `{{ "?" | green }} {{ . | bold }}`
@@ -699,7 +897,12 @@ func (d *dropdown) setAnswerTemplate(tmpl string) {
 }
 
 // implement [withPrompt] interface.
-func (d *dropdown) setDefault(hint string) {
+func (d *dropdown) setDefault(v any) {
+	if d.normalize != nil {
+		v = d.normalize(v)
+	}
+	d.def = defaultValue{set: true, raw: v}
+	hint, _ := v.(string) //nolint:errcheck // not a string is no hint
 	d.oneMatch = hint
 	d.rankHint = hint
 }
@@ -818,6 +1021,7 @@ func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 		}
 		d.sortRelevantByLevenstein(match)
 	}
+	d.seedFirst(d.relevant)
 	d.displayed = d.relevant[:min(len(d.relevant), io.Height/2)]
 	return d.longest, nil
 }
@@ -1242,6 +1446,14 @@ func (d *dropdown) finishLazyItems(tio *termIO, frame *bytes.Buffer, space int) 
 		}
 		return -1, false, ErrEmptyLazyResult
 	}
+	err := d.validateLazySeed()
+	if err != nil {
+		clearErr := d.clearFrame(tio, frame, space)
+		if clearErr != nil {
+			return -1, false, errors.Join(err, clearErr)
+		}
+		return -1, false, err
+	}
 	if d.OneReturn && len(d.relevant) == 1 {
 		d.emit(dropdownConfirmed{Selected: d.relevant[0]})
 		err := d.clearFrame(tio, frame, space)
@@ -1251,6 +1463,24 @@ func (d *dropdown) finishLazyItems(tio *termIO, frame *bytes.Buffer, space int) 
 		return 0, false, nil
 	}
 	return -1, false, nil
+}
+
+// validateLazySeed checks a typed default against the complete sequence: it
+// must select exactly one entry, however many arrived after the first match.
+func (d *dropdown) validateLazySeed() error {
+	if !d.seedLazy {
+		return nil
+	}
+	matches, err := d.target.matches(d.def.raw, d.Items)
+	if err != nil {
+		return err
+	}
+	i, err := uniqueMatch(matches, fmt.Sprintf("%T value", d.def.raw))
+	if err != nil {
+		return err
+	}
+	d.seedIdx, d.seeded = i, true
+	return nil
 }
 
 // handleLazyItem updates the dropdown for a streamed item.
@@ -1454,6 +1684,11 @@ func (d *dropdown) addItem(height int, item any) error {
 	if err != nil {
 		return fmt.Errorf("set item: %w", err)
 	}
+	if d.seedLazy && !d.seeded {
+		matches, err := d.target.matches(d.def.raw, []any{item})
+		d.seeded = err == nil && len(matches) == 1
+		d.seedIdx = len(d.Items) - 1
+	}
 	d.relevant = d.matching(string(d.typed))
 	capacity := max(1, height/2)
 	if pos := slices.Index(d.relevant, current); current >= 0 && pos >= 0 {
@@ -1476,6 +1711,7 @@ func (d *dropdown) matching(prefix string) []int {
 	if d.rankHint != "" {
 		d.rankByLevenstein(relevant, d.rankHint)
 	}
+	d.seedFirst(relevant)
 	return relevant
 }
 
@@ -1712,4 +1948,139 @@ func (d *dropdown) setMoreItemsTemplate(tmpl string) { d.MoreItemsTemplate = tmp
 // choiceScore compares labels case-insensitively with an already normalized hint.
 func choiceScore(label string, hint []rune) int {
 	return choiceDistance([]rune(strings.ToLower(label)), hint)
+}
+
+var anyType = reflect.TypeFor[any]()
+
+// choiceTarget describes the type a typed default of a choice widget has: the
+// type of the returned item, key or value, and how to project it from a source
+// entry. A zero target accepts any value and matches whole entries.
+type choiceTarget struct {
+	typ  reflect.Type
+	proj func(item any) any
+}
+
+// targetOf is the target of a widget returning T.
+func targetOf[T any]() choiceTarget { return choiceTarget{typ: reflect.TypeFor[T]()} }
+
+func (c choiceTarget) elem() reflect.Type {
+	if c.typ == nil {
+		return anyType
+	}
+	return c.typ
+}
+
+func (c choiceTarget) project(item any) any {
+	if c.proj == nil {
+		return item
+	}
+	return c.proj(item)
+}
+
+// nilable reports whether values of typ can be nil.
+func (c choiceTarget) nilable(typ reflect.Type) bool {
+	switch typ.Kind() { //nolint:exhaustive // only these kinds can be nil
+	case reflect.Interface, reflect.Pointer, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan,
+		reflect.UnsafePointer:
+		return true
+	}
+	return false
+}
+
+func (c choiceTarget) isNil(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	return c.nilable(rv.Type()) && rv.IsNil()
+}
+
+// accepts reports whether d is assignable to the target type. It does not coerce.
+func (c choiceTarget) accepts(d any) bool {
+	if d == nil {
+		return c.nilable(c.elem())
+	}
+	return reflect.TypeOf(d).AssignableTo(c.elem())
+}
+
+// matches returns the indexes of entries whose projection equals d. The caller
+// has checked [choiceTarget.accepts].
+func (c choiceTarget) matches(d any, items []any) ([]int, error) {
+	want := d
+	if d != nil {
+		rv := reflect.ValueOf(d)
+		if rv.Kind() == reflect.Func && !rv.IsNil() {
+			return nil, errBadDefault("%T is a function, which cannot be identified", d)
+		}
+		if typ := c.elem(); typ.Kind() != reflect.Interface {
+			// assignable types may differ, e.g. a named slice and an unnamed one
+			nv := reflect.New(typ).Elem()
+			nv.Set(rv)
+			want = nv.Interface()
+		}
+	}
+	var out []int
+	for i, item := range items {
+		got := c.project(item)
+		if d == nil {
+			if c.isNil(got) {
+				out = append(out, i)
+			}
+			continue
+		}
+		if c.equalValues(want, got) {
+			out = append(out, i)
+		}
+	}
+	return out, nil
+}
+
+// equalValues compares with Go equality when that is safe for the dynamic
+// values, and structurally otherwise. Pointers compare by identity.
+func (c choiceTarget) equalValues(a, b any) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	va, vb := reflect.ValueOf(a), reflect.ValueOf(b)
+	if va.Type() != vb.Type() {
+		return false
+	}
+	if va.Comparable() && vb.Comparable() {
+		return a == b
+	}
+	return reflect.DeepEqual(a, b)
+}
+
+// unique returns the only match, or the reason there is none.
+func uniqueMatch(matches []int, what string) (int, error) {
+	switch len(matches) {
+	case 0:
+		return -1, errBadDefault("%s matches no entry", what)
+	case 1:
+		return matches[0], nil
+	}
+	return -1, errBadDefault("%s matches %d entries", what, len(matches))
+}
+
+// resolveSingle finds the one entry a default identifies. A value of the target
+// type is matched exactly first; a string without an exact match is a prefix hint.
+func (c choiceTarget) resolveSingle(d any, items []any, hint func(string) ([]int, error)) (int, error) {
+	if c.accepts(d) {
+		matches, err := c.matches(d, items)
+		if err != nil {
+			return -1, err
+		}
+		if len(matches) > 0 {
+			return uniqueMatch(matches, fmt.Sprintf("%T value", d))
+		}
+	}
+	s, ok := d.(string)
+	if !ok {
+		return -1, errBadDefault("%T matches no entry", d)
+	}
+	matches, err := hint(s)
+	if err != nil {
+		return -1, err
+	}
+	return uniqueMatch(matches, fmt.Sprintf("hint %q", s))
 }

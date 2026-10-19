@@ -77,3 +77,67 @@ func TestDirEntryString(t *testing.T) {
 	assert.Equal(t, "d folder"+string(os.PathSeparator), (&dirEntry{name: "folder", isDir: true}).String())
 	assert.Equal(t, "- file"+string(os.PathSeparator), (&dirEntry{name: "file", isDir: false}).String())
 }
+
+func TestFilePickerDefaults(t *testing.T) {
+	io := quiet(t)
+	ctx := t.Context()
+	root := t.TempDir()
+	assert.NoError(t, os.MkdirAll(filepath.Join(root, "sub"), 0o755))
+	for _, name := range []string{"main.go", "main_test.go", "sub/inner.txt", "notes.md"} {
+		assert.NoError(t, os.WriteFile(filepath.Join(root, name), nil, 0o600))
+	}
+	dir := WithStartDir(root)
+
+	got, err := FilePicker(ctx, "File", io, dir, WithDefault("notes.md"))
+	assert.NoError(t, err)
+	assert.Equal(t, filepath.Join(root, "notes.md"), got)
+
+	// exact beats prefix
+	got, err = FilePicker(ctx, "File", io, dir, WithDefault("main.go"))
+	assert.NoError(t, err)
+	assert.Equal(t, filepath.Join(root, "main.go"), got)
+
+	got, err = FilePicker(ctx, "File", io, dir, WithDefault("notes"))
+	assert.NoError(t, err)
+	assert.Equal(t, filepath.Join(root, "notes.md"), got)
+
+	_, err = FilePicker(ctx, "File", io, dir, WithDefault("main"))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = FilePicker(ctx, "File", io, dir, WithDefault("missing"))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = FilePicker(ctx, "File", io, dir, WithDefault(42))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = FilePicker(ctx, "File", io, dir)
+	assert.ErrorIs(t, err, ErrNoTTY)
+
+	// filters apply before resolution
+	_, err = FilePicker(ctx, "File", io, dir, WithExtensions(".md"), WithDefault("main.go"))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+
+	// a typed directory entry continues the traversal; it never returns a directory
+	entries, err := os.ReadDir(root)
+	assert.NoError(t, err)
+	var sub os.DirEntry
+	for _, e := range entries {
+		if e.IsDir() {
+			sub = e
+		}
+	}
+	_, err = FilePicker(ctx, "File", io, dir, WithDefault(sub))
+	assert.ErrorIs(t, err, ErrInvalidOption) // the same default is missing inside of sub
+
+	// singleton navigation
+	only := t.TempDir()
+	assert.NoError(t, os.MkdirAll(filepath.Join(only, "a", "b"), 0o755))
+	assert.NoError(t, os.WriteFile(filepath.Join(only, "a", "b", "f.txt"), nil, 0o600))
+	got, err = FilePicker(ctx, "File", io, WithStartDir(only), WithOneReturn())
+	assert.NoError(t, err)
+	assert.Equal(t, filepath.Join(only, "a", "b", "f.txt"), got)
+
+	_, err = FilePicker(ctx, "File", io, WithStartDir(filepath.Join(only, "gone")), WithOneReturn())
+	assert.Error(t, err)
+
+	// a cycle is rejected instead of looping
+	_, err = FilePicker(ctx, "File", io, WithStartDir(only), WithDefault(".."))
+	assert.Error(t, err)
+}

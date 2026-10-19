@@ -146,7 +146,7 @@ func TestInputReadOptionError(t *testing.T) {
 }
 
 func TestInputReadRunError(t *testing.T) {
-	_, err := Input(t.Context(), "Label", opT(func(i *input) error {
+	_, err := Input(t.Context(), "Label", WithOutput(io.Discard), opT(func(i *input) error {
 		i.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
 			return nil, io.EOF
 		}
@@ -1233,4 +1233,70 @@ func TestInputNeedsTwoRowsForFeedback(t *testing.T) {
 	assert.NoError(t, i.parseTemplates())
 	_, err := i.run(i.ctx)
 	assert.ErrorIs(t, err, ErrNoSpace)
+}
+
+func TestInputDefaults(t *testing.T) {
+	io := quiet(t)
+	ctx := t.Context()
+
+	got, err := Input(ctx, "Name", io, WithDefault("bob"))
+	assert.NoError(t, err)
+	assert.Equal(t, "bob", got)
+
+	got, err = Input(ctx, "Name", io, WithDefault(""))
+	assert.NoError(t, err)
+	assert.Equal(t, "", got)
+
+	got, err = Input(ctx, "Name", io, WithDefault(0))
+	assert.NoError(t, err)
+	assert.Equal(t, "0", got)
+
+	got, err = Input(ctx, "Name", io, WithDefault(nil))
+	assert.NoError(t, err)
+	assert.Equal(t, "<nil>", got)
+
+	got, err = Input(ctx, "Name", io, WithDefault("first"), WithDefault("last"))
+	assert.NoError(t, err)
+	assert.Equal(t, "last", got)
+
+	_, err = Input(ctx, "Name", io)
+	assert.ErrorIs(t, err, ErrNoTTY)
+}
+
+func TestInputDefaultValidation(t *testing.T) {
+	io := quiet(t)
+	ctx := t.Context()
+
+	_, err := Input(ctx, "Name", io, WithNonEmpty(), WithDefault(""))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+
+	cause := errors.New("nope")
+	_, err = Input(ctx, "Name", io, WithDefault("x"),
+		WithValidation(func(context.Context, string) error { return cause }))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	assert.ErrorIs(t, err, cause)
+
+	_, err = Input(ctx, "Name", io, WithDefault("abc"), WithRegex(`\d+`, "digits"))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+
+	got, err := Input(ctx, "Name", io, WithDefault("123"), WithRegex(`\d+`, "digits"))
+	assert.NoError(t, err)
+	assert.Equal(t, "123", got)
+
+	cctx, cancel := context.WithCancel(ctx)
+	_, err = Input(cctx, "Name", io, WithDefault("x"),
+		WithValidation(func(context.Context, string) error { cancel(); return nil }))
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestPasswordDefaultKeepsSecretOut(t *testing.T) {
+	io := quiet(t)
+	got, err := Password(t.Context(), "Secret", io, WithDefault("hunter2"))
+	assert.NoError(t, err)
+	assert.Equal(t, "hunter2", got)
+
+	_, err = Password(t.Context(), "Secret", io, WithDefault("hunter2"),
+		WithValidation(func(context.Context, string) error { return errors.New("too weak") }))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	assert.True(t, !strings.Contains(err.Error(), "hunter2"))
 }

@@ -160,6 +160,15 @@ path, err := tui.FilePicker(ctx, "Pick file",
 )
 ```
 
+Without a terminal the picker answers at every directory level from the
+default, after the extension, hidden and directory filters. A string is an entry
+name first and a prefix hint second; an `os.DirEntry` is found by name and kind.
+Other types, and missing or ambiguous entries, fail with `ErrInvalidOption`; a
+hint is never taken as a path. A directory continues the walk and only a file is
+returned. A directory seen twice is an error, not a loop. Without a default or
+[`WithOneReturn`](#withonereturn) the call fails with `ErrNoTTY` before listing anything;
+filesystem errors are returned.
+
 ## WithOptions
 
 Bundles picker and forwarded dropdown options.

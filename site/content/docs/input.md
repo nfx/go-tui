@@ -23,12 +23,29 @@ or [WithValidation](#withvalidation), and customize rejection feedback with
 
 ## WithDefault
 
-Sets initial text and cursor position.
+Sets initial text and cursor position. The text is `fmt.Sprint(d)`, so strings
+keep their content exactly; `""`, `0` and `nil` are defaults too (`nil` is
+`<nil>`).
 
 ```go
 value, err := tui.Input(ctx, "Project name",
 	tui.WithDefault("demo-service"),
 )
+```
+
+### Without a terminal
+
+When the output is not a terminal (a pipe, a redirected file, a `bytes.Buffer`),
+wrapping the input in a `strings.Reader` does not make it one. `Input` and
+`Password` then read nothing, print nothing and return the default after
+running the validation rules once with the call context. A rejection is an
+error wrapping `ErrInvalidOption` and the validator's own error, so
+`errors.Is` finds both; it never loops. `Password` keeps the secret out of its
+errors. Without a default the error wraps `ErrNoTTY`.
+
+```go
+name, err := tui.Input(ctx, "Project name",
+	tui.WithDefault("demo-service"), tui.WithNonEmpty())
 ```
 
 ## WithNonEmpty

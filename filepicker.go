@@ -127,12 +127,17 @@ func FilePicker(ctx context.Context, title string, o ...opt) (string, error) {
 	stack := []os.DirEntry{
 		&dirEntry{name: f.start, isDir: true},
 	}
+	terminal := outputIsTerminal(d.out)
+	if !terminal && !d.canAnswer() {
+		// nothing can answer, so no directory is walked
+		return "", errNoDefault(title)
+	}
+	visited := walked{}
 	for stack[len(stack)-1].IsDir() {
-		parts := []string{}
-		for _, e := range stack {
-			parts = append(parts, e.Name())
+		dirName := joinStack(stack)
+		if !terminal && visited.revisits(dirName) {
+			return "", errBadDefault("walks %s again", dirName)
 		}
-		dirName := filepath.Join(parts...)
 		entries, err := f.list(dirName)
 		if err != nil {
 			return "", err
@@ -141,11 +146,8 @@ func FilePicker(ctx context.Context, title string, o ...opt) (string, error) {
 			return "", ErrNoItems
 		}
 		if d == nil {
-			// options were validated by newFilePicker, so the bundle
-			// may only skip the ones that configure the picker itself.
-			d = newDropdown(ctx)
-			err = WithOptions(o...)(d)
-			if err != nil && !errors.Is(err, ErrWrongWidget) {
+			d, err = f.nextDropdown(ctx, o)
+			if err != nil {
 				return "", err
 			}
 		}
@@ -153,7 +155,7 @@ func FilePicker(ctx context.Context, title string, o ...opt) (string, error) {
 		for i, e := range entries {
 			items[i] = e
 		}
-		i, err := d.pick(ctx, title, items)
+		i, err := f.choose(ctx, d, title, entries, items)
 		if err != nil {
 			return "", err
 		}
@@ -166,12 +168,134 @@ func FilePicker(ctx context.Context, title string, o ...opt) (string, error) {
 			continue
 		}
 		if !entry.IsDir() {
-			parts = append(parts, entry.Name())
-			return filepath.Join(parts...), nil
+			return filepath.Join(dirName, entry.Name()), nil
 		}
 		stack = append(stack, entry)
 	}
 	return stack[len(stack)-1].Name(), nil
+}
+
+// nextDropdown configures the dropdown of the next directory. Options were
+// validated by newFilePicker, so the bundle may only skip the ones that
+// configure the picker itself.
+func (f *filePicker) nextDropdown(ctx context.Context, o []opt) (*dropdown, error) {
+	d := newDropdown(ctx)
+	err := WithOptions(o...)(d)
+	if err != nil && !errors.Is(err, ErrWrongWidget) {
+		return nil, err
+	}
+	return d, nil
+}
+
+// canAnswer reports whether a default or the single-entry shortcut is set.
+func (d *dropdown) canAnswer() bool { return d.def.set || d.OneReturn }
+
+// joinStack is the path of the directory on top of the stack.
+func joinStack(stack []os.DirEntry) string {
+	parts := make([]string, len(stack))
+	for i, e := range stack {
+		parts[i] = e.Name()
+	}
+	return filepath.Join(parts...)
+}
+
+// walked remembers the directories visited without a terminal.
+type walked map[string]bool
+
+// revisits records dir and reports whether it was visited before.
+func (w walked) revisits(dir string) bool {
+	again := w[dir]
+	w[dir] = true
+	return again
+}
+
+// choose asks for an entry of one directory, or answers from the default.
+func (f *filePicker) choose(
+	ctx context.Context,
+	d *dropdown,
+	title string,
+	entries []os.DirEntry,
+	items []any,
+) (int, error) {
+	if outputIsTerminal(d.out) {
+		return d.pick(ctx, title, items)
+	}
+	return f.answerFromDefault(ctx, d, title, entries, items)
+}
+
+// soleEntry returns the only entry that is not the way up.
+func (f *filePicker) soleEntry(entries []os.DirEntry) (int, bool) {
+	found := -1
+	for i, e := range entries {
+		if e == os.DirEntry(upEntry) {
+			continue
+		}
+		if found >= 0 {
+			return -1, false
+		}
+		found = i
+	}
+	return found, found >= 0
+}
+
+// answerFromDefault picks an entry of one directory without a terminal. A
+// string names an entry, exactly or as a prefix hint; an [os.DirEntry] is
+// identified by name and kind. The entries are already filtered.
+func (f *filePicker) answerFromDefault(
+	ctx context.Context,
+	d *dropdown,
+	title string,
+	entries []os.DirEntry,
+	items []any,
+) (int, error) {
+	err := ctx.Err()
+	if err != nil {
+		return -1, err
+	}
+	d.Label = title
+	d.Items = items
+	err = d.parseTemplates()
+	if err != nil {
+		return -1, fmt.Errorf("templates: %w", err)
+	}
+	if i, ok := f.soleEntry(entries); ok && d.OneReturn {
+		return i, nil
+	}
+	if !d.def.set {
+		return -1, errNoDefault(title)
+	}
+	var matches []int
+	switch want := d.def.raw.(type) {
+	case os.DirEntry:
+		for i, e := range entries {
+			if e.Name() == want.Name() && e.IsDir() == want.IsDir() {
+				matches = append(matches, i)
+			}
+		}
+		i, err := uniqueMatch(matches, fmt.Sprintf("entry %q", want.Name()))
+		if err != nil {
+			return -1, err
+		}
+		return i, ctx.Err()
+	case string:
+		for i, e := range entries {
+			if e.Name() == want {
+				matches = append(matches, i)
+			}
+		}
+		if len(matches) == 0 {
+			matches, err = d.hintMatches(items)(want)
+			if err != nil {
+				return -1, err
+			}
+		}
+		i, err := uniqueMatch(matches, fmt.Sprintf("name %q", want))
+		if err != nil {
+			return -1, err
+		}
+		return i, ctx.Err()
+	}
+	return -1, errBadDefault("%T is neither a name nor an os.DirEntry", d.def.raw)
 }
 
 type dirEntry struct {

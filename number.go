@@ -113,7 +113,24 @@ func numberRat[B numberType](v B) (*big.Rat, string) {
 }
 
 // setDefault seeds the editable number text.
-func (n *number[T]) setDefault(d string) { n.prompt.setDefault(d) }
+func (n *number[T]) setDefault(d any) { n.prompt.setDefault(n.format(d)) }
+
+// format writes numeric values in plain decimal notation at their own width,
+// and anything else as text, which the numeric rules then judge.
+func (n *number[T]) format(d any) string {
+	if d != nil {
+		rv := reflect.ValueOf(d)
+		switch rv.Kind() { //nolint:exhaustive // other kinds use the text form
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return strconv.FormatInt(rv.Int(), 10)
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+			return strconv.FormatUint(rv.Uint(), 10)
+		case reflect.Float32, reflect.Float64:
+			return strconv.FormatFloat(rv.Float(), 'f', -1, rv.Type().Bits())
+		}
+	}
+	return fmt.Sprint(d)
+}
 
 // setReader routes prompt input through r.
 func (n *number[T]) setReader(r io.Reader) { n.prompt.setReader(r) }

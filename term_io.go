@@ -143,7 +143,11 @@ const plainWidth, plainHeight = 80, 24
 // descriptor, e.g. a [strings.Reader] passed to WithInput, cannot be a terminal,
 // so prompts then read it as scripted input and write frames to out as plain
 // text without raw mode or a managed viewport. Real descriptors still require a terminal.
+// Output that cannot host a terminal is never a prompt, whatever the input is.
 func makePromptIO(in io.Reader, out io.Writer) (*termIO, error) {
+	if !outputIsTerminal(out) {
+		return nil, fmt.Errorf("stderr: %w", ErrNoTTY)
+	}
 	_, isInFD := in.(descriptor)
 	_, isOutFD := out.(descriptor)
 	_, isOutChanIO := out.(*chanIO)
@@ -868,4 +872,23 @@ func (t *termIO) replayKeys(event keyEvent) {
 	if state.source != nil {
 		inputStates.states[state.source] = state
 	}
+}
+
+// outputIsTerminal reports whether prompts can draw on out. Without a terminal
+// every prompt answers from its default or fails with [ErrNoTTY]. Tests that
+// drive the interactive path with in-memory writers replace it.
+var outputIsTerminal = hostsTerminal
+
+// hostsTerminal accepts a managed terminal or a descriptor of a real one. A
+// writer without terminal capabilities, such as [bytes.Buffer], a pipe or a
+// redirected file, is not a terminal, however the input is wrapped.
+func hostsTerminal(out io.Writer) bool {
+	switch w := out.(type) {
+	case *chanIO, *viewport, *Tui:
+		return true
+	case descriptor:
+		_, _, err := termGetSize(int(w.Fd()))
+		return err == nil
+	}
+	return false
 }

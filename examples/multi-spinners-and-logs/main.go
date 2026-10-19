@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"io"
 	"log/slog"
 	"math/rand"
 	"os"
@@ -16,8 +18,12 @@ import (
 //nolint:funlen,gocognit,cyclop // example
 func main() {
 	ctx := context.Background()
-	w, err := tui.NewIO(ctx) //nolint:all // ...
-	if err != nil {
+	// without a terminal, spinner stages and logs go to plain stderr via slog
+	var w io.Writer = os.Stderr
+	cio, err := tui.NewIO(ctx) //nolint:all // ...
+	if err == nil {
+		w = cio
+	} else if !errors.Is(err, tui.ErrNoTTY) {
 		panic(err)
 	}
 

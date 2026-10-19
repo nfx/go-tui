@@ -8,9 +8,23 @@ or float type, including defined types such as `type Port uint16`; `uintptr`
 is unsupported.
 
 ```go
-count, err := tui.Number[int](ctx, "Workers", tui.WithDefault("4"))
+count, err := tui.Number[int](ctx, "Workers", tui.WithDefault(4))
 gain, err := tui.Number[float32](ctx, "Gain", tui.WithDefault("1.00"))
-port, err := tui.Number[Port](ctx, "Port", tui.WithDefault("8080"))
+port, err := tui.Number[Port](ctx, "Port", tui.WithDefault(8080))
+```
+
+## Without a terminal
+
+When the output is not a terminal, `Number` reads no input, prints nothing and
+returns [`WithDefault`](options-and-helpers.md#defaults-without-a-terminal) after the usual checks. A numeric default, including a
+defined type, is written in plain decimal notation at its own width (never
+`1e+21`), then parsed as `T` and checked against the range and the bounds.
+Anything else is used as text. A default that is not a valid `T`, overflows it
+or is out of bounds fails with `ErrInvalidOption` and returns the zero value;
+no default fails with `ErrNoTTY`.
+
+```go
+port, err := tui.Number[Port](ctx, "Port", tui.WithDefault(8080)) // 8080 in a CI job
 ```
 
 ## Up and Down
@@ -43,7 +57,7 @@ Cancellation or errors return T's zero value.
 
 ## Options
 
-Only `WithDefault`, `WithAtLeast`, `WithAtMost`, `WithInput` and `WithOutput` apply;
+Only [`WithDefault`](options-and-helpers.md#defaults-without-a-terminal), `WithAtLeast`, `WithAtMost`, `WithInput` and `WithOutput` apply;
 other [input](../input/) options, such as `WithValidation` and `WithRegex`,
 fail with `ErrWrongWidget`.
 

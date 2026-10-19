@@ -25,8 +25,11 @@ func main() {
 	}()
 
 	spinners, err := tui.NewSpinners(ctx)
-	if errors.Is(err, io.EOF) {
+	if errors.Is(err, io.EOF) || errors.Is(err, tui.ErrNoTTY) {
 		return
+	}
+	if err != nil {
+		panic(err)
 	}
 	defer spinners.Close()
 
