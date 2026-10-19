@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"log/slog"
 	"os"
 	"runtime"
 	"runtime/debug"
@@ -347,6 +348,12 @@ func (p *Progressbar) Add(num int64) {
 
 func (p *Progressbar) Close() error {
 	if p.io == nil {
+		if p.cancel != nil {
+			p.cancel(nil)
+		}
+		if p.ticker != nil {
+			p.ticker.Stop()
+		}
 		return nil // most likely no TTY
 	}
 	p.cancel(nil) // p.err is owned by the renderer until it closes p.stopped
@@ -689,18 +696,28 @@ type sized interface {
 var errNoSize = errors.New("unable to determine size of reader")
 
 type wrapReader struct {
-	r io.Reader
-	p *Progressbar
+	r             io.Reader
+	p             *Progressbar
+	progressMu    sync.Mutex
+	read          int64
+	loggedPercent int
 }
 
 func NewFileProgressReader(ctx context.Context, r io.Reader, label string, o ...opt) (*wrapReader, error) {
 	p := newProgressbar(ctx)
+	started := false
+	defer func() {
+		if !started {
+			p.cancel(nil)
+			p.ticker.Stop()
+		}
+	}()
 	err := opts(o).Apply(p)
 	if err != nil {
 		p.cancel(err)
 		return nil, fmt.Errorf("apply option: %w", err)
 	}
-	wrap := &wrapReader{r, p}
+	wrap := &wrapReader{r: r, p: p}
 	size, err := wrap.Size()
 	if err != nil {
 		return nil, fmt.Errorf("size: %w", err)
@@ -708,7 +725,14 @@ func NewFileProgressReader(ctx context.Context, r io.Reader, label string, o ...
 	p.showRate = true
 	p.showEstimate = true
 	p.maxNum = size
+	p.label = text(label)
 	p.io, err = p.makeTermIO(p.in, p.out)
+	if errors.Is(err, ErrNoTTY) {
+		p.io = nil
+		p.ticker.Stop()
+		started = true
+		return wrap, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("make io: %w", err)
 	}
@@ -716,13 +740,13 @@ func NewFileProgressReader(ctx context.Context, r io.Reader, label string, o ...
 	if err != nil {
 		return nil, fmt.Errorf("restore: %w", err)
 	}
-	p.label = text(label)
 	p.startedAt = p.now()
 	p.redrawAt = p.startedAt
 	p.emit(progressInit{
 		Label: p.label.String(),
 		Max:   p.maxNum,
 	})
+	started = true
 	go p.start(p.ctx) //nolint:contextcheck // p.ctx derives from ctx and is canceled by Close
 	return wrap, nil
 }
@@ -745,13 +769,39 @@ func (w *wrapReader) Size() (int64, error) {
 
 func (w *wrapReader) Read(p []byte) (n int, err error) {
 	n, err = w.r.Read(p)
+	if w.p.io == nil {
+		w.logProgress(n, errors.Is(err, io.EOF))
+	}
 	if n > 0 {
 		w.p.Add(int64(n))
 	}
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		w.p.cancel(nil)
 	}
 	return n, err
+}
+
+// logProgress reports the latest decile reached by a read, without replaying skipped milestones.
+func (w *wrapReader) logProgress(n int, eof bool) {
+	w.progressMu.Lock()
+	defer w.progressMu.Unlock()
+	w.read += int64(n)
+	percent := 0
+	if w.p.maxNum > 0 {
+		percent = int(min(100, float64(w.read)/float64(w.p.maxNum)*100)) / 10 * 10
+	} else if w.p.maxNum == 0 && w.read == 0 && eof {
+		percent = 100
+	}
+	if percent <= w.loggedPercent {
+		return
+	}
+	w.loggedPercent = percent
+	slog.Default().InfoContext(w.p.ctx, "file progress",
+		"label", w.p.label.String(),
+		"percent", percent,
+		"read", w.read,
+		"size", w.p.maxNum,
+	)
 }
 
 func (w *wrapReader) Close() error {

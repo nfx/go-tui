@@ -6,9 +6,12 @@ package tui
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -448,6 +451,84 @@ func TestWrapReaderSizeFallback(t *testing.T) {
 func TestWrapReaderSizeUnknown(t *testing.T) {
 	_, err := NewFileProgressReader(t.Context(), bytes.NewBufferString("no size"), "file")
 	assert.ErrorIs(t, err, errNoSize)
+}
+
+type progressSizedReader struct {
+	io.Reader
+	size int64
+}
+
+func (r *progressSizedReader) Size() int64 { return r.size }
+
+func TestFileProgressReaderLogsWithoutTTY(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		data  string
+		size  int64
+		chunk int
+		want  []int
+	}{
+		{"each decile", strings.Repeat("x", 100), 100, 1, []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100}},
+		{"large reads", strings.Repeat("x", 100), 100, 55, []int{50, 100}},
+		{"single read", strings.Repeat("x", 100), 100, 100, []int{100}},
+		{"empty file", "", 0, 1, []int{100}},
+		{"truncated file", strings.Repeat("x", 20), 100, 10, []int{10, 20}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs, out bytes.Buffer
+			previous := slog.Default()
+			slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+			t.Cleanup(func() { slog.SetDefault(previous) })
+			r, err := NewFileProgressReader(t.Context(), &progressSizedReader{
+				Reader: strings.NewReader(tc.data), size: tc.size,
+			}, "Download", WithOutput(&out))
+			assert.NoError(t, err)
+			defer func() { assert.NoError(t, r.Close()) }()
+			var data bytes.Buffer
+			buf := make([]byte, tc.chunk)
+			for {
+				n, readErr := r.Read(buf)
+				_, err = data.Write(buf[:n])
+				assert.NoError(t, err)
+				if errors.Is(readErr, io.EOF) {
+					break
+				}
+				assert.NoError(t, readErr)
+			}
+			_, err = r.Read(buf)
+			assert.ErrorIs(t, err, io.EOF)
+			assert.NoError(t, r.Close())
+			assert.ErrorIs(t, r.p.ctx.Err(), context.Canceled)
+			assert.Equal(t, tc.data, data.String())
+			assert.Equal(t, "", out.String())
+			var percentages []int
+			decoder := json.NewDecoder(&logs)
+			for decoder.More() {
+				var entry struct {
+					Level   string `json:"level"`
+					Label   string `json:"label"`
+					Percent int    `json:"percent"`
+				}
+				assert.NoError(t, decoder.Decode(&entry))
+				assert.Equal(t, "INFO", entry.Level)
+				assert.Equal(t, "Download", entry.Label)
+				percentages = append(percentages, entry.Percent)
+			}
+			assert.Equal(t, tc.want, percentages)
+		})
+	}
+}
+
+func TestFileProgressReaderReturnsTerminalErrors(t *testing.T) {
+	_, err := NewFileProgressReader(t.Context(), strings.NewReader("data"), "Download",
+		opT(func(p *Progressbar) error {
+			p.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
+				return nil, io.ErrClosedPipe
+			}
+			return nil
+		}),
+	)
+	assert.ErrorIs(t, err, io.ErrClosedPipe)
 }
 
 func TestNewSliceProgressBar(t *testing.T) {
