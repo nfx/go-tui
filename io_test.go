@@ -1080,7 +1080,12 @@ func ttyWriter(t *testing.T) *mockDescriptor {
 	t.Helper()
 	prev := terminalWriterChecker
 	terminalWriterChecker = func(int) bool { return true }
-	t.Cleanup(func() { terminalWriterChecker = prev })
+	prevVT := consoleVT
+	consoleVT = func(io.Writer) bool { return true }
+	t.Cleanup(func() {
+		terminalWriterChecker = prev
+		consoleVT = prevVT
+	})
 	return &mockDescriptor{Reader: &bytes.Buffer{}, Writer: &bytes.Buffer{}, fd: 7}
 }
 
@@ -1132,10 +1137,9 @@ func TestProfileFor(t *testing.T) {
 
 func TestProfileConsoleWithoutVTIsPlain(t *testing.T) {
 	withEnv(t, "COLORTERM=truecolor")
-	prev := consoleVT
+	tty := ttyWriter(t)
 	consoleVT = func(io.Writer) bool { return false }
-	t.Cleanup(func() { consoleVT = prev })
-	assert.Equal(t, profilePlain, defaultIO.profileFor(ttyWriter(t)))
+	assert.Equal(t, profilePlain, defaultIO.profileFor(tty))
 }
 
 func TestProfileConsoleVTNotCalledForPipe(t *testing.T) {
