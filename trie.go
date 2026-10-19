@@ -160,3 +160,14 @@ func (t *trie) dfs(s string) []string {
 	}
 	return out
 }
+
+// hintFromTrie looks up a word-prefix hint. A hint without letters or digits
+// would match everything, so it matches nothing.
+func hintFromTrie(t *trie) func(string) ([]int, error) {
+	return func(s string) ([]int, error) {
+		if len(t.queryWords(s)) == 0 {
+			return nil, nil
+		}
+		return t.Prefix(s), nil
+	}
+}
