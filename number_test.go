@@ -300,6 +300,12 @@ func TestNumberBounds(t *testing.T) {
 	f, _, err := runNumber[float32](t, "0.1\r", WithAtMost(0.1))
 	assert.NoError(t, err)
 	assert.Equal(t, float32(0.1), f)
+
+	// a range that leaves no value of T is rejected up front
+	_, _, err = runNumber[int8](t, "\r", WithAtLeast(1000))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, _, err = runNumber[uint](t, "\r", WithAtMost(-1))
+	assert.ErrorIs(t, err, ErrInvalidOption)
 }
 
 func TestNumberBoundsLimitSteps(t *testing.T) {

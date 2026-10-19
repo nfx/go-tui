@@ -141,10 +141,32 @@ func (n *number[T]) checkBounds() error {
 		}
 		b.rat = r
 	}
+	if !n.float {
+		// a bound may exceed T as long as part of T's range remains
+		lo, hi := n.intRange()
+		if n.min != nil && n.min.rat.Cmp(new(big.Rat).SetInt(hi)) > 0 {
+			return fmt.Errorf("%w: min %s is above the largest %s", ErrInvalidOption, n.min.text, n.kind)
+		}
+		if n.max != nil && n.max.rat.Cmp(new(big.Rat).SetInt(lo)) < 0 {
+			return fmt.Errorf("%w: max %s is below the smallest %s", ErrInvalidOption, n.max.text, n.kind)
+		}
+	}
 	if n.min != nil && n.max != nil && n.min.rat.Cmp(n.max.rat) > 0 {
 		return fmt.Errorf("%w: min %s is above max %s", ErrInvalidOption, n.min.text, n.max.text)
 	}
 	return nil
+}
+
+// intRange returns the smallest and largest value of an integer T.
+func (n *number[T]) intRange() (lo, hi *big.Int) {
+	one := big.NewInt(1)
+	if n.signed {
+		hi = new(big.Int).Lsh(one, uint(n.bits-1))
+		lo = new(big.Int).Neg(hi)
+		return lo, hi.Sub(hi, one)
+	}
+	hi = new(big.Int).Lsh(one, uint(n.bits))
+	return big.NewInt(0), hi.Sub(hi, one)
 }
 
 // cmp compares a typed value with a bound without losing precision.
