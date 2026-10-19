@@ -45,6 +45,7 @@ func TestMultichoiceRenderMoreItems(t *testing.T) {
 func TestMultichoiceRunNoSpace(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one"}
+	m.out = io.Discard
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{
 			in:      in,
@@ -318,6 +319,9 @@ func preparedMultichoice(t *testing.T, items []any, o ...opt) *multichoice {
 	m := newMultichoice(t.Context())
 	m.Items = items
 	if err := m.prepare(o); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.resolveDefault(); err != nil {
 		t.Fatal(err)
 	}
 	return m
@@ -1439,5 +1443,142 @@ func TestExplicitAnswerTemplateSurvivesContentTemplates(t *testing.T) {
 				t.Fatalf("%s answerFirst=%v: %q", name, answerFirst, m.AnswerTemplate)
 			}
 		}
+	}
+}
+
+func TestMultichoiceDefaults(t *testing.T) {
+	io := quiet(t)
+	ctx := t.Context()
+	items := []string{"a", "b", "c", "d"}
+
+	got, err := Multichoice(ctx, "Pick", items, io, WithDefault("b"))
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"b"}, got)
+
+	// source order, not default order
+	got, err = Multichoice(ctx, "Pick", items, io, WithDefault([]string{"d", "b"}))
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"b", "d"}, got)
+
+	got, err = Multichoice(ctx, "Pick", items, io, WithDefault([]string{}))
+	assert.NoError(t, err)
+	assert.Equal(t, []string{}, got)
+	assert.True(t, got != nil)
+
+	got, err = Multichoice(ctx, "Pick", items, io, WithDefault([]string(nil)))
+	assert.NoError(t, err)
+	assert.True(t, got != nil && len(got) == 0)
+
+	for _, bad := range []any{[]string{"x"}, []string{"a", "a"}, []int{1}, 5} {
+		_, err = Multichoice(ctx, "Pick", items, io, WithDefault(bad))
+		assert.ErrorIs(t, err, ErrInvalidOption)
+	}
+	_, err = Multichoice(ctx, "Pick", []string{"a", "a"}, io, WithDefault([]string{"a"}))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+
+	// a sole item is not consent
+	_, err = Multichoice(ctx, "Pick", []string{"a"}, io)
+	assert.ErrorIs(t, err, ErrNoTTY)
+	_, err = Multichoice(ctx, "Pick", []string{"a"}, io, WithOneReturn())
+	assert.ErrorIs(t, err, ErrWrongWidget)
+
+	// when T is a slice, the whole value is one item first
+	groups := [][]string{{"a"}, {"b", "c"}}
+	grp, err := Multichoice(ctx, "Pick", groups, io, WithDefault([]string{"b", "c"}))
+	assert.NoError(t, err)
+	assert.Equal(t, [][]string{{"b", "c"}}, grp)
+	grp, err = Multichoice(ctx, "Pick", groups, io, WithDefault([][]string{{"b", "c"}, {"a"}}))
+	assert.NoError(t, err)
+	assert.Equal(t, groups, grp)
+
+	structs := []server{{"alpha", 1}, {"beta", 2}}
+	st, err := Multichoice(ctx, "Pick", structs, io, WithDefault(server{"beta", 2}))
+	assert.NoError(t, err)
+	assert.Equal(t, structs[1:], st)
+}
+
+func TestMultichoiceMapDefaults(t *testing.T) {
+	io := quiet(t)
+	ctx := t.Context()
+	items := map[string]int{"one": 1, "two": 2, "three": 3}
+
+	keys, err := MultichoiceKVK(ctx, "Pick", items, io, WithDefault([]string{"two", "one"}))
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"one", "two"}, keys)
+
+	values, err := MultichoiceKVV(ctx, "Pick", items, io, WithDefault([]int{3, 1}))
+	assert.NoError(t, err)
+	assert.Equal(t, []int{1, 3}, values)
+
+	value, err := MultichoiceKVV(ctx, "Pick", items, io, WithDefault(2))
+	assert.NoError(t, err)
+	assert.Equal(t, []int{2}, value)
+
+	// the API decides the projection when K == V
+	same := map[int]int{1: 2, 2: 1}
+	k, err := MultichoiceKVK(ctx, "Pick", same, io, WithDefault(1))
+	assert.NoError(t, err)
+	assert.Equal(t, []int{1}, k)
+	v, err := MultichoiceKVV(ctx, "Pick", same, io, WithDefault(1))
+	assert.NoError(t, err)
+	assert.Equal(t, []int{1}, v)
+
+	_, err = MultichoiceKVV(ctx, "Pick", map[string]int{"a": 1, "b": 1}, io, WithDefault(1))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = MultichoiceKVK(ctx, "Pick", items, io, WithDefault([]int{1}))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+}
+
+func TestMultichoiceLazyDefaults(t *testing.T) {
+	io := quiet(t)
+	ctx := t.Context()
+	var started bool
+
+	_, err := MultichoiceLazy(ctx, "Pick", seq(&started, nil, "a"), io)
+	assert.ErrorIs(t, err, ErrNoTTY)
+	assert.True(t, !started)
+
+	got, err := MultichoiceLazy(ctx, "Pick", seq(&started, nil, "a", "b", "c"), io, WithDefault([]string{"c", "a"}))
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"a", "c"}, got)
+
+	_, err = MultichoiceLazy(ctx, "Pick", seq(&started, nil, "a", "a"), io, WithDefault([]string{"a"}))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+
+	late := errors.New("late")
+	_, err = MultichoiceLazy(ctx, "Pick", seq(&started, late, "a"), io, WithDefault("a"))
+	assert.ErrorIs(t, err, late)
+
+	_, err = MultichoiceLazy(ctx, "Pick", seq[string](&started, nil), io, WithDefault("a"))
+	assert.ErrorIs(t, err, ErrEmptyLazyResult)
+}
+
+func TestTypedDefaultChecksInteractiveMultichoice(t *testing.T) {
+	var out bytes.Buffer
+	got, err := Multichoice(t.Context(), "Pick", []string{"a", "b", "c"},
+		WithInput(strings.NewReader("\r")), WithOutput(&out), WithDefault([]string{"c", "a"}))
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"a", "c"}, got)
+	assert.Contains(t, out.String(), "[x] c")
+}
+
+func TestMultichoiceLazyAutomaticAnswerCancelsWhileProducerBlocked(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	release := make(chan struct{})
+	defer close(release)
+	seq := func(_ func(string, error) bool) {
+		<-release
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := MultichoiceLazy(ctx, "Pick", seq, WithDefault("a"), WithOutput(&bytes.Buffer{}))
+		done <- err
+	}()
+	cancel()
+	select {
+	case err := <-done:
+		assert.Error(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("prompt stayed blocked after cancellation")
 	}
 }
