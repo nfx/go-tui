@@ -1062,3 +1062,11 @@ func TestProgressbarAddAfterStoppedDoesNotBlock(t *testing.T) {
 		t.Fatal("Add blocked after renderer stopped")
 	}
 }
+
+func TestProgressStateFilledBarLineOrdersHeadAfterFill(t *testing.T) {
+	ps := &progressState{}
+	assert.Equal(t, "[>         ]", ps.filledBarLine(10, 0))
+	assert.Equal(t, "[====>     ]", ps.filledBarLine(10, 0.4))
+	assert.Equal(t, "[=========>]", ps.filledBarLine(10, 0.95))
+	assert.Equal(t, "[==========]", ps.filledBarLine(10, 1))
+}
