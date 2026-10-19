@@ -1092,8 +1092,12 @@ func TestInputValidatorEOFAfterRejectionReturnsNoValue(t *testing.T) {
 
 func TestInputValidatorsRunInOrderAndStopAtFirstFailure(t *testing.T) {
 	var calls []string
-	first := WithValidation(func(context.Context, string) error { calls = append(calls, "first"); return errors.New("one") })
-	second := WithValidation(func(context.Context, string) error { calls = append(calls, "second"); return errors.New("two") })
+	first := WithValidation(
+		func(context.Context, string) error { calls = append(calls, "first"); return errors.New("one") },
+	)
+	second := WithValidation(
+		func(context.Context, string) error { calls = append(calls, "second"); return errors.New("two") },
+	)
 	_, out, err := runValidated(t, false, "a\r", first, second)
 	assert.ErrorIs(t, err, io.EOF)
 	assert.Equal(t, []string{"first"}, calls)
@@ -1155,7 +1159,13 @@ func TestInputRegexMalformedOrBlankMessage(t *testing.T) {
 }
 
 func TestInputRejectionClearsOnEditAndKeepsText(t *testing.T) {
-	_, out, _ := runValidated(t, false, "ab\rc", WithValidation(func(context.Context, string) error { return errors.New("nope") }))
+	_, out, err := runValidated(
+		t,
+		false,
+		"ab\rc",
+		WithValidation(func(context.Context, string) error { return errors.New("nope") }),
+	)
+	assert.ErrorIs(t, err, io.EOF)
 	// the stale row is erased by the next frame
 	assert.Contains(t, out, "\n\r\x1b[K\x1b[1A\x1b[")
 	assert.Contains(t, out, "abc")
@@ -1163,23 +1173,26 @@ func TestInputRejectionClearsOnEditAndKeepsText(t *testing.T) {
 
 func TestInputFeedbackSanitizesMessage(t *testing.T) {
 	bad := errors.New("line1\nline2\x1b[31m\rtail")
-	_, out, _ := runValidated(t, false, "a\r", WithValidation(func(context.Context, string) error { return bad }))
+	_, out, err := runValidated(t, false, "a\r", WithValidation(func(context.Context, string) error { return bad }))
+	assert.ErrorIs(t, err, io.EOF)
 	assert.Contains(t, out, "line1 line2[31m tail")
 	assert.True(t, !strings.Contains(out, "\x1b[31mtail"))
 }
 
 func TestInputFeedbackClippedToOneRow(t *testing.T) {
-	_, out, _ := runValidated(t, false, "a\r",
+	_, out, err := runValidated(t, false, "a\r",
 		WithValidation(func(context.Context, string) error { return errors.New(strings.Repeat("é", 60)) }),
 		WithFeedbackTemplate(`{{ .Message }}`))
+	assert.ErrorIs(t, err, io.EOF)
 	assert.Contains(t, out, strings.Repeat("é", 38)+"…")
 	assert.True(t, !strings.Contains(out, strings.Repeat("é", 39)))
 }
 
 func TestInputFeedbackTemplateIsPlain(t *testing.T) {
-	_, out, _ := runValidated(t, false, "a\r",
+	_, out, err := runValidated(t, false, "a\r",
 		WithValidation(func(context.Context, string) error { return errors.New("bad") }),
 		WithFeedbackTemplate(`!! {{ .Message }}`))
+	assert.ErrorIs(t, err, io.EOF)
 	assert.Contains(t, out, "!! bad")
 	assert.True(t, !strings.Contains(out, "\x1b[31m"))
 }
@@ -1190,7 +1203,13 @@ func TestInputFeedbackTemplateParseError(t *testing.T) {
 }
 
 func TestPasswordRejectionStaysMasked(t *testing.T) {
-	_, out, _ := runValidated(t, true, "secret\r", WithValidation(func(context.Context, string) error { return errors.New("too weak") }))
+	_, out, err := runValidated(
+		t,
+		true,
+		"secret\r",
+		WithValidation(func(context.Context, string) error { return errors.New("too weak") }),
+	)
+	assert.ErrorIs(t, err, io.EOF)
 	assert.Contains(t, out, "Error: ")
 	assert.Contains(t, out, "too weak")
 	assert.True(t, !strings.Contains(out, "secret"))

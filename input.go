@@ -438,20 +438,8 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 	// a cursor inside of a cluster stands on its first rune
 	at := min(max(cells.at(i.cursor), first), last)
 	moveLeft := cells[at:last].width()
-	var feedback text
-	if i.rejection != "" {
-		if io.Height > 0 && io.Height < 2 {
-			return ErrNoSpace
-		}
-		var err error
-		// unknown width is unbounded; a known one leaves the last column free
-		limit := math.MaxInt
-		if io.Width > 0 {
-			limit = max(io.Width-1, 1)
-		}
-		feedback, err = i.formatFeedback(i.rejection, limit)
-		collect(err)
-	}
+	feedback, err := i.wrapRejection(io)
+	collect(err)
 	switch {
 	case len(feedback) > 0 || i.rows > 1:
 		i.renderFeedback(frame, feedback, collect, cells, labelW, first, at)
@@ -464,6 +452,22 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 	_, err = frame.WriteTo(io)
 	collect(err)
 	return errors.Join(errs...)
+}
+
+func (i *input) wrapRejection(io *termIO) (text, error) {
+	var feedback text
+	if i.rejection == "" {
+		return feedback, nil
+	}
+	if io.Height > 0 && io.Height < 2 {
+		return nil, ErrNoSpace
+	}
+	// unknown width is unbounded; a known one leaves the last column free
+	limit := math.MaxInt
+	if io.Width > 0 {
+		limit = max(io.Width-1, 1)
+	}
+	return i.formatFeedback(i.rejection, limit)
 }
 
 // renderFeedback row (or erase a stale one) and return to the caret column.
