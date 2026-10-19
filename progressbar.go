@@ -637,20 +637,20 @@ func (p *progressState) filledBarLine(width int, completion float64) string {
 	if filledWidth > width {
 		filledWidth = width
 	}
-	bar := "["
-	var barSb634 strings.Builder
+	var bar strings.Builder
+	bar.WriteString("[")
 	for i := range width {
-		if i < filledWidth {
-			barSb634.WriteString("=")
-		} else if i == filledWidth {
-			bar += ">"
-		} else {
-			bar += " "
+		switch {
+		case i < filledWidth:
+			bar.WriteString("=")
+		case i == filledWidth:
+			bar.WriteString(">")
+		default:
+			bar.WriteString(" ")
 		}
 	}
-	bar += barSb634.String()
-	bar += "]"
-	return bar
+	bar.WriteString("]")
+	return bar.String()
 }
 
 func (p *progressState) rollingRate() float64 {
