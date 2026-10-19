@@ -4,9 +4,13 @@
 package tui
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -516,4 +520,99 @@ func TestSpinnersAddRejectsEmptyFrames(t *testing.T) {
 	if _, err := s.Add(context.Background(), WithFrames(nil)); err == nil {
 		t.Fatal("expected error for empty frames")
 	}
+}
+
+func TestSpinnersLogFallback(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	out, err := os.CreateTemp(t.TempDir(), "spinner-output")
+	assert.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, out.Close()) })
+
+	_, err = NewSpinners(t.Context(), WithOutput(out))
+	assert.ErrorIs(t, err, ErrNoTTY)
+	s, err := NewSpinners(t.Context(), WithOutput(out), WithLogFallback())
+	assert.NoError(t, err)
+	defer s.Close()
+
+	first, err := s.Add(t.Context(), WithPrefixf("download"), WithKeep())
+	assert.NoError(t, err)
+	first.Update("fetching")
+	first.Update("fetching")
+	first.Updatef("processing %d files", 2)
+	assert.NoError(t, first.Close())
+	first.Update("ignored after close")
+	assert.NoError(t, first.Close())
+
+	second, err := s.Add(t.Context(), WithPrefixf("upload"))
+	assert.NoError(t, err)
+	second.Fail(errors.New("connection lost"))
+	second.Fail(errors.New("ignored duplicate failure"))
+	second.Update("ignored after failure")
+	assert.NoError(t, second.Close())
+
+	_, err = s.Add(t.Context(), WithPrefixf("pending"))
+	assert.NoError(t, err)
+	s.Close()
+	_, err = s.Add(t.Context())
+	assert.ErrorIs(t, err, context.Canceled)
+
+	type record struct {
+		Level   string `json:"level"`
+		Message string `json:"msg"`
+		Spinner int    `json:"spinner"`
+		Prefix  string `json:"prefix"`
+		Status  string `json:"status"`
+	}
+	var got []record
+	decoder := json.NewDecoder(&logs)
+	for decoder.More() {
+		var entry record
+		assert.NoError(t, decoder.Decode(&entry))
+		got = append(got, entry)
+	}
+	assert.Equal(t, []record{
+		{"INFO", "spinner started", 0, "download", "started"},
+		{"INFO", "fetching", 0, "download", "running"},
+		{"INFO", "processing 2 files", 0, "download", "running"},
+		{"INFO", "spinner stopped", 0, "download", "stopped"},
+		{"INFO", "spinner started", 1, "upload", "started"},
+		{"ERROR", "connection lost", 1, "upload", "failed"},
+		{"INFO", "spinner started", 2, "pending", "started"},
+		{"INFO", "spinner stopped", 2, "pending", "stopped"},
+	}, got)
+	info, err := out.Stat()
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), info.Size())
+}
+
+func TestSpinnersLogFallbackKeepsTerminalRendering(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	cio, tick, options := testIOforSpinners(t, 24, 5)
+	s, err := NewSpinners(t.Context(), options, WithLogFallback())
+	assert.NoError(t, err)
+	defer s.Close()
+	spinner, err := s.Add(t.Context())
+	assert.NoError(t, err)
+	spinner.Update("fetching")
+	tick()
+	assert.Contains(t, <-cio.Out, "fetching")
+	s.Close()
+	assert.Equal(t, "", logs.String())
+}
+
+func TestSpinnersLogFallbackRejectsOtherErrors(t *testing.T) {
+	_, err := NewSpinners(t.Context(), WithLogFallback(), opT(func(s *Spinners) error {
+		s.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
+			return nil, io.ErrClosedPipe
+		}
+		return nil
+	}))
+	assert.ErrorIs(t, err, io.ErrClosedPipe)
+	assert.ErrorIs(t, WithLogFallback()(newInput(t.Context(), "Name")), ErrWrongWidget)
 }

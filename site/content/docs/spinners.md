@@ -32,6 +32,39 @@ sp.Update("processing")
 sp.Close()
 ```
 
+## WithLogFallback
+
+Opts into logging stage changes through `slog.Default()` when spinner output has
+no TTY. On a TTY, the group renders animated spinners as usual and emits no
+fallback logs.
+
+```go
+group, err := tui.NewSpinners(ctx, tui.WithLogFallback())
+if err != nil {
+	return err
+}
+defer group.Close()
+
+sp, err := group.Add(ctx, tui.WithPrefixf("download"))
+if err != nil {
+	return err
+}
+sp.Update("fetching")
+sp.Update("processing")
+sp.Close()
+```
+
+Starts, changed `Update`/`Updatef` messages, and stops log at INFO; `Fail(err)`
+logs at ERROR. Records include `spinner` (the group's spinner index), `prefix`,
+and `status` (`started`, `running`, `stopped`, or `failed`). Repeated identical
+updates and animation ticks produce no logs. Failed spinners do not also log a
+stop. A stop can result from `Close` or context cancellation; it does not imply
+that the work succeeded. `WithKeep` affects terminal display only.
+
+The configured default logger controls the destination, format, and level
+filtering. Without this option, `NewSpinners` returns `ErrNoTTY` on non-TTY
+output. Other initialization errors are still returned with the option enabled.
+
 ## WithPrefixf
 
 Sets spinner prefix label (applies to `Add` and `MustAddBackground`).

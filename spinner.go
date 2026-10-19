@@ -90,10 +90,11 @@ type Spinners struct {
 	ticker  *time.Ticker
 	ticks   <-chan time.Time
 
-	state      []*spinnerState
-	displayed  int
-	makeTermIO func(io.Reader, io.Writer) (*termIO, error)
-	eventSink  func(spinnerEvent)
+	state       []*spinnerState
+	displayed   int
+	makeTermIO  func(io.Reader, io.Writer) (*termIO, error)
+	eventSink   func(spinnerEvent)
+	logFallback bool
 }
 
 // newSpinners initializes spinner updates without taking ownership of terminal mode.
@@ -118,21 +119,41 @@ func newSpinners(ctx context.Context) *Spinners {
 
 func NewSpinners(ctx context.Context, opt ...opt) (*Spinners, error) {
 	s := newSpinners(ctx)
+	started := false
+	defer func() {
+		if !started {
+			s.cancel()
+			s.ticker.Stop()
+		}
+	}()
 	err := opts(opt).Apply(s)
 	if err != nil {
 		return nil, err
 	}
 	s.io, err = s.makeTermIO(s.in, s.out)
 	if err != nil {
-		return nil, err
-	}
-	err = s.io.restoreMode() // spinners only draw, so they never need raw mode
-	if err != nil {
+		if !s.logFallback || !errors.Is(err, ErrNoTTY) {
+			return nil, err
+		}
+		s.io = nil
+		s.ticker.Stop()
+		s.ticks = nil // stage changes need no animation ticks
+	} else if err = s.io.restoreMode(); err != nil {
 		return nil, fmt.Errorf("restore: %w", err)
 	}
 	s.emit(spinnerGroupInit{})
+	started = true
 	go s.start(s.ctx) //nolint:contextcheck // s.ctx derives from ctx and is canceled by Close
 	return s, nil
+}
+
+// WithLogFallback logs spinner stage changes through slog.Default when output has no TTY.
+// It applies to NewSpinners and leaves terminal rendering unchanged.
+func WithLogFallback() opt {
+	return opT(func(s *Spinners) error {
+		s.logFallback = true
+		return nil
+	})
 }
 
 func (s *Spinners) Close() {
@@ -231,6 +252,10 @@ func (s *Spinners) emit(ev spinnerEvent) {
 func (s *Spinners) start(ctx context.Context) {
 	defer close(s.stopped)
 	// defer s.stop()
+	var onResize <-chan struct{}
+	if s.io != nil {
+		onResize = s.io.onResize
+	}
 	var prevActive int
 	for {
 		select {
@@ -257,7 +282,7 @@ func (s *Spinners) start(ctx context.Context) {
 		case <-s.ticks:
 			s.drainQueues()
 			prevActive = s.redraw(prevActive)
-		case <-s.io.onResize:
+		case <-onResize:
 			s.drainQueues()
 			prevActive = s.redraw(prevActive)
 		}
@@ -320,11 +345,15 @@ func (s *Spinners) updateSpinner(update updateOffset) {
 		update.message = update.err.Error()
 		s.state[update.offset].Failed = true
 		s.state[update.offset].Message = text(update.message)
+		s.logStage(slog.LevelError, update.message, update.offset, "failed")
 		s.emit(spinnerFailed{
 			Index: update.offset,
 			Error: update.message,
 		})
 		return
+	}
+	if s.state[update.offset].Message.String() != update.message {
+		s.logStage(slog.LevelInfo, update.message, update.offset, "running")
 	}
 	s.state[update.offset].Message = text(update.message)
 	s.emit(spinnerUpdated{
@@ -379,6 +408,9 @@ func (s *Spinners) markDone(offset int) {
 		return
 	}
 	spinner.Done = true
+	if !spinner.Failed {
+		s.logStage(slog.LevelInfo, "spinner stopped", offset, "stopped")
+	}
 	if spinner.cancel != nil {
 		spinner.cancel() // release the child context and its monitor
 	}
@@ -474,6 +506,7 @@ func (s *Spinners) newSpinner(ns createSpinner) {
 		keep:   ns.keep,
 	})
 	s.displayed++
+	s.logStage(slog.LevelInfo, "spinner started", offset, "started")
 	s.emit(spinnerAdded{
 		Name:  ns.prefix,
 		Index: offset,
@@ -483,6 +516,18 @@ func (s *Spinners) newSpinner(ns createSpinner) {
 		return
 	case ns.replyOffset <- offset:
 	}
+}
+
+// logStage runs on the group loop, preserving update order without logging animation frames.
+func (s *Spinners) logStage(level slog.Level, message string, offset int, status string) {
+	if !s.logFallback || s.io != nil {
+		return
+	}
+	slog.Default().Log(s.ctx, level, message,
+		"spinner", offset,
+		"prefix", s.state[offset].Prefix.String(),
+		"status", status,
+	)
 }
 
 type spinnerState struct {
