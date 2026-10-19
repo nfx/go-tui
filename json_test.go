@@ -30,11 +30,7 @@ func TestJSONIndentInvalidJSON(t *testing.T) {
 }
 
 func TestPrettyJSONColor(t *testing.T) {
-	origChecker := terminalChecker
-	t.Cleanup(func() {
-		terminalChecker = origChecker
-	})
-	terminalChecker = func() bool { return true }
+	withEnv(t, "FORCE_COLOR=2")
 
 	var out bytes.Buffer
 	err := PrettyJSON(&out, `{"hello":["world", "again"], "path":"a\\b"}`)
@@ -47,11 +43,7 @@ func TestPrettyJSONColor(t *testing.T) {
 }
 
 func TestPrettyJSONNoColor(t *testing.T) {
-	origChecker := terminalChecker
-	t.Cleanup(func() {
-		terminalChecker = origChecker
-	})
-	terminalChecker = func() bool { return false }
+	withEnv(t)
 
 	var out bytes.Buffer
 	err := PrettyJSON(&out, `{"flat":true}`)

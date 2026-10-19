@@ -299,35 +299,52 @@ func (c oklab) distance(o oklab) float64 {
 	return dl*dl + da*da + db*db
 }
 
-// colorProfile encodes c as a foreground or background SGR sequence for one
-// destination capability. Profiles without color return "".
-type colorProfile func(c sRGB, background bool) string
+// colorProfile is what SGR a destination accepts, ordered by capability.
+type colorProfile int
+
+const (
+	// profilePlain emits no SGR at all.
+	profilePlain colorProfile = iota
+	// profileAttrs emits bold/italic/underline/dim/strike, but no color.
+	profileAttrs
+	profileANSI16
+	profileANSI256
+	profileTrueColor
+)
 
 const (
 	fgDefault = "\x1b[39m"
 	bgDefault = "\x1b[49m"
 )
 
-var (
-	// profilePlain emits no SGR at all.
-	profilePlain colorProfile = func(sRGB, bool) string { return "" }
-	// profileAttrs emits text attributes (bold, ...) but no color; the
-	// attributes themselves are not part of the color encoder.
-	profileAttrs colorProfile = func(sRGB, bool) string { return "" }
+// attrs reports whether text attributes are accepted.
+func (p colorProfile) attrs() bool { return p >= profileAttrs }
 
-	profileANSI16 colorProfile = func(c sRGB, background bool) string {
-		return c.ansi16Escape(background)
+// bold wraps s in bold SGR when the profile allows attributes.
+func (p colorProfile) bold(s string) text {
+	if !p.attrs() {
+		return text(s)
 	}
-	profileANSI256 colorProfile = func(c sRGB, background bool) string {
-		return fmt.Sprintf("\x1b[%d;5;%dm", c.base(background), c.nearestIndex(256))
+	return text(bold + s + reset)
+}
+
+// encode returns the foreground or background SGR sequence for c, or nil for
+// profiles without color.
+func (p colorProfile) encode(c sRGB, background bool) text {
+	switch p {
+	case profileANSI16:
+		return text(c.ansi16Escape(background))
+	case profileANSI256:
+		return fmt.Appendf(nil, "\x1b[%d;5;%dm", c.base(background), c.nearestIndex(256))
+	case profileTrueColor:
+		return fmt.Appendf(nil, "\x1b[%d;2;%d;%d;%dm", c.base(background), c[0], c[1], c[2])
+	default:
+		return nil
 	}
-	profileTrueColor colorProfile = func(c sRGB, background bool) string {
-		return fmt.Sprintf("\x1b[%d;2;%d;%d;%dm", c.base(background), c[0], c[1], c[2])
-	}
-)
+}
 
 // fg returns the SGR sequence selecting c as foreground.
-func (p colorProfile) fg(c sRGB) string { return p(c, false) }
+func (p colorProfile) fg(c sRGB) text { return p.encode(c, false) }
 
 // bg returns the SGR sequence selecting c as background.
-func (p colorProfile) bg(c sRGB) string { return p(c, true) }
+func (p colorProfile) bg(c sRGB) text { return p.encode(c, true) }

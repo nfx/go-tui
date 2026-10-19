@@ -9,11 +9,60 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/term"
 )
+
+// outputEnv is the part of the process environment that decides about color.
+// [defaultIO] reads it once at startup; tests replace it with a fixture.
+type outputEnv struct {
+	forceColor      *string
+	noColor         bool
+	cliColorForce   bool
+	term, colorTerm string
+	windowsTerminal bool
+}
+
+func readOutputEnv(lookup func(string) (string, bool)) outputEnv {
+	get := func(k string) string { v, _ := lookup(k); return v }
+	truthy := func(k string) bool {
+		v := strings.ToLower(get(k))
+		return v != "" && v != "0" && v != "false"
+	}
+	cliColorForce := truthy("CLICOLOR_FORCE")
+	e := outputEnv{
+		// CI logs are rarely color-capable, unless the pipeline opts in.
+		noColor:         get("NO_COLOR") != "" || truthy("CI") && !cliColorForce,
+		cliColorForce:   cliColorForce,
+		term:            get("TERM"),
+		colorTerm:       strings.ToLower(get("COLORTERM")),
+		windowsTerminal: get("WT_SESSION") != "",
+	}
+	// FORCE_COLOR= (empty) is meant to force 16-color output.
+	if v, ok := lookup("FORCE_COLOR"); ok {
+		e.forceColor = &v
+	}
+	return e
+}
+
+// consoleVT enables VT output processing on a console writer and reports
+// whether the console accepts escape sequences. Only Windows consoles need
+// explicit enabling, see io_windows.go.
+var consoleVT = func(io.Writer) bool { return true }
+
+// depth derives color depth from terminal hints, defaulting to ansi16.
+func (e outputEnv) depth() colorProfile {
+	switch {
+	case e.colorTerm == "truecolor" || e.colorTerm == "24bit", e.windowsTerminal:
+		return profileTrueColor
+	case strings.Contains(e.term, "256color"):
+		return profileANSI256
+	}
+	return profileANSI16
+}
 
 // tio owns package-default terminal IO and lazily upgrades stderr to a shared
 // arbiter when the configured output is an interactive TTY.
@@ -24,6 +73,7 @@ type tio struct {
 	mu       sync.RWMutex
 	arbiter  *chanIO
 	cancel   context.CancelCauseFunc
+	env      outputEnv
 }
 
 type terminalStderr struct {
@@ -71,6 +121,7 @@ func (w *terminalStderr) Fd() uintptr {
 var defaultIO = &tio{
 	reader: os.Stdin,
 	writer: os.Stderr,
+	env:    readOutputEnv(os.LookupEnv),
 }
 
 // Stderr returns the package-default append-only terminal writer.
@@ -123,6 +174,50 @@ func (t *tio) Close() error {
 	}
 	<-arbiter.done
 	return arbiter.err
+}
+
+// profileFor resolves the color profile for one destination writer.
+// Managed writers (the arbiter, viewports, [Tui]) draw on t's raw output.
+// The first matching rule wins:
+//
+//  1. FORCE_COLOR: 0/false is plain, 2 is ansi256, 3 is truecolor, others ansi16.
+//  2. NO_COLOR, or CI without CLICOLOR_FORCE: attrs on a terminal, plain
+//     elsewhere.
+//  3. CLICOLOR_FORCE: color on any writer, depth from terminal hints.
+//  4. Non-terminal writers are plain.
+//  5. Terminal writers: TERM=dumb is plain, otherwise depth from
+//     COLORTERM, TERM and WT_SESSION.
+//
+// A forced profile never enables prompts, raw mode or redraw.
+func (t *tio) profileFor(w io.Writer) colorProfile {
+	e := t.env
+	if e.forceColor != nil {
+		switch strings.ToLower(*e.forceColor) {
+		case "0", "false":
+			return profilePlain
+		case "2":
+			return profileANSI256
+		case "3":
+			return profileTrueColor
+		}
+		return profileANSI16
+	}
+	switch w.(type) {
+	case *chanIO, *viewport, *Tui:
+		w = t.rawOutput()
+	}
+	terminal := t.isTerminalWriter(w)
+	switch {
+	case e.noColor && terminal:
+		return profileAttrs
+	case e.noColor:
+		return profilePlain
+	case e.cliColorForce:
+		return e.depth()
+	case !terminal, e.term == "dumb", !consoleVT(w):
+		return profilePlain
+	}
+	return e.depth()
 }
 
 func (t *tio) input() io.Reader {

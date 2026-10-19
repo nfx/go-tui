@@ -674,14 +674,6 @@ func (t *termIO) clearFixedViewport(buf io.Writer) error {
 	return err
 }
 
-var terminalChecker = func() bool {
-	return term.IsTerminal(int(os.Stdout.Fd()))
-}
-
-func isTerminal() bool {
-	return terminalChecker()
-}
-
 // see https://stackoverflow.com/a/37014283/277035
 func isPrintable(r rune) bool {
 	isSurrogate := r >= 0xd800 && r <= 0xdbff

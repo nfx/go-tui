@@ -129,7 +129,7 @@ func TestMakeTermIO_WithChanIO_RawError(t *testing.T) {
 }
 
 func TestMakeTermIO_WithDescriptor(t *testing.T) {
-	if !isTerminal() {
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		t.Skip("not a terminal")
 	}
 

@@ -129,12 +129,12 @@ func TestEncodeTrueColor(t *testing.T) {
 func TestEncodeNoColorProfiles(t *testing.T) {
 	c := sRGB{1, 2, 3}
 	for _, p := range []colorProfile{profilePlain, profileAttrs} {
-		assert.Equal(t, "", p.fg(c))
-		assert.Equal(t, "", p.bg(c))
+		assert.Equal(t, "", string(p.fg(c)))
+		assert.Equal(t, "", string(p.bg(c)))
 	}
 	for _, p := range []colorProfile{profileANSI16, profileANSI256, profileTrueColor} {
-		assert.True(t, p.fg(c) != "")
-		assert.True(t, p.bg(c) != "")
+		assert.True(t, len(p.fg(c)) > 0)
+		assert.True(t, len(p.bg(c)) > 0)
 	}
 }
 
