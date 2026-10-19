@@ -1440,28 +1440,29 @@ func captureOutput(cio *chanIO) <-chan string {
 	return out
 }
 
-// itemsLoadedWriter signals once the dropdown renders a frame with items.
+// itemsLoadedWriter signals once the dropdown renders a frame with at least min items.
 // Writes happen on the dropdown goroutine, so reading Items here is race-free.
 type itemsLoadedWriter struct {
 	io.Writer
 	d     *dropdown
 	ready chan struct{}
 	once  *sync.Once
+	min   int
 }
 
 func (w itemsLoadedWriter) Write(p []byte) (int, error) {
-	if len(w.d.Items) > 0 {
+	if len(w.d.Items) >= w.min {
 		w.once.Do(func() { close(w.ready) })
 	}
 	return w.Writer.Write(p)
 }
 
 // notifyItemsLoaded must be applied after WithOutput.
-func notifyItemsLoaded() (opt, <-chan struct{}) {
+func notifyItemsLoaded(minItems int) (opt, <-chan struct{}) {
 	ready := make(chan struct{})
 	once := &sync.Once{}
 	return opT(func(d *dropdown) error {
-		d.out = itemsLoadedWriter{Writer: d.out, d: d, ready: ready, once: once}
+		d.out = itemsLoadedWriter{Writer: d.out, d: d, ready: ready, once: once, min: minItems}
 		return nil
 	}), ready
 }
@@ -1519,7 +1520,7 @@ func lazySeq(values ...string) iter.Seq2[string, error] {
 
 func TestDropdownLazySelectsItem(t *testing.T) {
 	cio, opts := testIOforDropdown(t, 20, 6)
-	itemsLoaded, ready := notifyItemsLoaded()
+	itemsLoaded, ready := notifyItemsLoaded(3)
 	opts = WithOptions(opts, itemsLoaded)
 	out := captureOutput(cio)
 	resCh := make(chan struct {
@@ -1549,7 +1550,7 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 		cancel()
 		in.Close()
 	})
-	itemsLoaded, ready := notifyItemsLoaded()
+	itemsLoaded, ready := notifyItemsLoaded(2)
 	opts := WithOptions(
 		WithInput(in),
 		WithOutput(io.Discard),
@@ -1647,7 +1648,7 @@ func TestDropdownLazyCtrlCNotLostAfterPreviousLazyExit(t *testing.T) {
 			t.Errorf("close writer: %v", closeErr)
 		}
 	})
-	itemsLoaded, ready := notifyItemsLoaded()
+	itemsLoaded, ready := notifyItemsLoaded(2)
 	opts := WithOptions(
 		WithInput(in),
 		WithOutput(io.Discard),
@@ -1698,7 +1699,7 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 			t.Errorf("close writer: %v", closeErr)
 		}
 	})
-	itemsLoaded, ready := notifyItemsLoaded()
+	itemsLoaded, ready := notifyItemsLoaded(2)
 	opts := WithOptions(
 		WithInput(in),
 		WithOutput(io.Discard),
