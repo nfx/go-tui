@@ -62,7 +62,7 @@ type inputConfirmed struct {
 // Multichoice checks a unique word-prefix match once and still requires Enter.
 // Lazy multichoice resolves the hint after successful exhaustion.
 func WithDefault(d string) opt {
-	return opT(func(x withPrompt) error {
+	return opT(func(x withDefault) error {
 		x.setDefault(d)
 		return nil
 	})
@@ -138,6 +138,8 @@ type input struct {
 	rules []func(context.Context, string) error
 	// rejection is the message of the last rejected confirmation.
 	rejection string
+	// adjust optionally steps on Up/Down; errors become rejections.
+	adjust func(key rune) error
 
 	// rows is the height of the last drawn frame: the input and optional feedback.
 	rows   int
@@ -517,7 +519,12 @@ func (p *input) handleKeyEvent(ctx context.Context, ev keyEvent, ok bool) (bool,
 	case '→':
 		p.pressRight()
 		return false, nil
-	case '↑', '↓', keyEscape, keyIgnored: // ignore up/down arrows and other special keys
+	case '↑', '↓':
+		if p.adjust != nil {
+			p.reject(p.adjust(ev.key))
+		}
+		return false, nil
+	case keyEscape, keyIgnored: // ignore other special keys
 		return false, nil
 	}
 	return p.applyInputEvent(p.decodeInputEvent(ev.key)), nil
@@ -640,16 +647,24 @@ func (p *input) confirmInput() bool {
 			return false
 		}
 		if err != nil {
-			p.rejection = err.Error()
-			if p.rejection == "" {
-				p.rejection = "Invalid value"
-			}
+			p.reject(err)
 			return false
 		}
 	}
 	p.rejection = ""
 	p.emit(inputComplete{Value: p.typed})
 	return true
+}
+
+// reject displays non-nil errors.
+func (p *input) reject(err error) {
+	if err == nil {
+		return
+	}
+	p.rejection = err.Error()
+	if p.rejection == "" {
+		p.rejection = "Invalid value"
+	}
 }
 
 // pressLeft moves the cursor to the preceding cluster boundary.
