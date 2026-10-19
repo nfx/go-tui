@@ -289,7 +289,7 @@ func startIO(ctx context.Context, out io.Writer) (*chanIO, error) {
 	fd := int(fdw.Fd())
 	w, h, err := termGetSize(fd)
 	if err != nil {
-		return nil, fmt.Errorf("get size: %w", err)
+		return nil, fmt.Errorf("get size: %w: %w", ErrNoTTY, err)
 	}
 	cio := newUnstartedIO(ctx, w, h, fd)
 	go cio.handleViewports(ctx)

@@ -117,7 +117,7 @@ func WithOutput(w io.Writer) opt {
 
 // withDefault is implemented by widgets that accept a default answer or hint.
 type withDefault interface {
-	setDefault(d string)
+	setDefault(d any)
 }
 
 // withPrompt is implemented by widgets that ask a question and print the answer.
@@ -152,3 +152,20 @@ type withChoiceContent interface {
 type withActiveItemTemplate interface{ setActiveItemTemplate(tmpl string) }
 type withInactiveItemTemplate interface{ setInactiveItemTemplate(tmpl string) }
 type withMoreItemsTemplate interface{ setMoreItemsTemplate(tmpl string) }
+
+// defaultValue is a [WithDefault] answer. Presence is tracked apart from the
+// content, as empty strings, zeros, false and nil are valid defaults.
+type defaultValue struct {
+	set bool
+	raw any
+}
+
+// errNoDefault explains that a prompt without terminal has no automatic answer.
+func errNoDefault(label string) error {
+	return fmt.Errorf("%w: %q needs WithDefault when output is not a terminal", ErrNoTTY, label)
+}
+
+// errBadDefault wraps the reason a default cannot answer a prompt.
+func errBadDefault(format string, a ...any) error {
+	return fmt.Errorf("%w: default "+format, append([]any{ErrInvalidOption}, a...)...)
+}

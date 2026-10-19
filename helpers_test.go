@@ -7,8 +7,12 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"iter"
 	"os"
 	"sync"
+	"testing"
+
+	"github.com/nfx/go-tui/internal/assert"
 )
 
 // syncBuffer is a bytes.Buffer safe for one writer goroutine and concurrent readers.
@@ -85,4 +89,49 @@ func (r *chunkReader) Read(p []byte) (int, error) {
 	r.idx++
 	n := copy(p, chunk)
 	return n, nil
+}
+
+// failReader fails the test when a prompt reads from it.
+type failReader struct{ t *testing.T }
+
+func (r failReader) Read([]byte) (int, error) {
+	r.t.Helper()
+	r.t.Error("automatic answer must not read input")
+	return 0, io.EOF
+}
+
+// quiet configures a prompt without terminal: no input may be read, and the
+// buffer must stay empty.
+func quiet(t *testing.T) opt {
+	t.Helper()
+	strictOutput(t)
+	out := &bytes.Buffer{}
+	t.Cleanup(func() { assert.Equal(t, "", out.String()) })
+	return WithOptions(WithInput(failReader{t}), WithOutput(out))
+}
+
+type server struct {
+	Name string
+	Port int
+}
+
+type tagged struct {
+	Name string
+	ID   int
+}
+
+// seq yields values and records whether it ran.
+func seq[T any](started *bool, err error, values ...T) iter.Seq2[T, error] {
+	return func(yield func(T, error) bool) {
+		*started = true
+		for _, v := range values {
+			if !yield(v, nil) {
+				return
+			}
+		}
+		if err != nil {
+			var zero T
+			yield(zero, err)
+		}
+	}
 }
