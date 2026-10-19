@@ -23,7 +23,7 @@ site/public/: $(BIN)/hugo $(shell find site -name "*.md")
 	$(BIN)/hugo build --source site --buildDrafts --baseURL / --minify
 
 $(BIN)/htmltest: | $(BIN)
-	GOBIN=$(BIN) go install github.com/wjdp/htmltest@latest
+	GOBIN=$(BIN) go install github.com/wjdp/htmltest@v0.17.0
 
 lint-site: $(BIN)/htmltest site/public/
 	cd site && $(BIN)/htmltest
