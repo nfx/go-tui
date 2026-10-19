@@ -67,6 +67,14 @@ _, err = io.Copy(dst, wrapped)
 
 Requires size discovery through `Stat().Size()` or `Size() int64`.
 
+Without a TTY, reads continue normally and progress is logged through
+`slog.Default()` at INFO. Records include `label`, `percent`, `read` (bytes), and
+`size` (bytes). A record is emitted when a read reaches a new 10% milestone.
+Large reads log only the latest milestone reached; a single read of the whole
+file logs 100% once. Repeated reads within the same milestone produce no logs.
+An empty file logs 100% on EOF; an early EOF does not report unread bytes as
+complete. Configure the default logger to choose the destination and format.
+
 ## WithFormatRate
 
 Customizes per-second rate formatting.
