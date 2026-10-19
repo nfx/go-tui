@@ -48,9 +48,35 @@ selectedPorts, err := tui.MultichoiceKVV(ctx, "Protocols", ports,
 // A separate interaction; Enter immediately returns []int{443}.
 ```
 
+## Typed defaults
+
+[`WithDefault`](options-and-helpers.md#defaults-without-a-terminal) also takes typed values, which are not labels. `Multichoice[T]`
+and `MultichoiceLazy[T]` take a `T` or a `[]T`, `MultichoiceKVK` a key or `[]K`,
+and `MultichoiceKVV` a value or `[]V` even though rows show keys. When `K` and
+`V` are the same type, the function decides. Matching, uniqueness and rejected
+values (`ErrInvalidOption`) follow [dropdowns](../dropdowns/#withdefault). A
+slice is resolved member by member and the result keeps source order, not
+default order; a missing, repeated or ambiguous member fails. An empty `[]T` is
+an empty selection and returns a non-nil empty slice; no default never selects
+anything. When `T` is itself a slice or interface, a value that matches one item
+wins, an ambiguous one is an error, and otherwise a `[]T` is a selection.
+Members are values, never prefix hints.
+
+```go
+ports := map[string]int{"http": 80, "https": 443, "alt": 8443}
+values, err := tui.MultichoiceKVV(ctx, "Ports", ports,
+    tui.WithDefault([]int{443, 80}))
+// []int{80, 443}
+```
+
+Without a terminal the default is the answer: nothing is read or printed, no
+default is `ErrNoTTY`, and a sole checkbox is never selected for you.
+`WithOneReturn` stays unsupported. `MultichoiceLazy` does not start its
+producer without a default and checks the default after exhaustion.
+
 ## Defaults
 
-`WithDefault(hint)` uses the existing case-insensitive word-prefix matcher and
+[`WithDefault(hint)`](options-and-helpers.md#defaults-without-a-terminal) uses the existing case-insensitive word-prefix matcher and
 similarity ranking. Exactly one prefix match starts checked and focused. Zero
 matches, multiple matches, or duplicate labels start unchecked and focus the
 highest-ranked choice. An exact label that also prefixes a longer label is

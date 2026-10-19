@@ -370,3 +370,55 @@ func TestInputIgnoresArrows(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "ab", p)
 }
+
+type tcpPort int
+
+func TestNumberDefaults(t *testing.T) {
+	io := quiet(t)
+	ctx := t.Context()
+
+	got, err := Number[int](ctx, "Port", io, WithDefault(8080))
+	assert.NoError(t, err)
+	assert.Equal(t, 8080, got)
+
+	named, err := Number[tcpPort](ctx, "Port", io, WithDefault(tcpPort(80)))
+	assert.NoError(t, err)
+	assert.Equal(t, tcpPort(80), named)
+
+	big, err := Number[int64](ctx, "Big", io, WithDefault(int64(9007199254740993)))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(9007199254740993), big)
+
+	f, err := Number[float64](ctx, "Float", io, WithDefault(1e21))
+	assert.NoError(t, err)
+	assert.Equal(t, 1e21, f)
+
+	f32, err := Number[float32](ctx, "Float", io, WithDefault(float32(0.1)))
+	assert.NoError(t, err)
+	assert.Equal(t, float32(0.1), f32)
+
+	text, err := Number[int](ctx, "Port", io, WithDefault("42"))
+	assert.NoError(t, err)
+	assert.Equal(t, 42, text)
+
+	zero, err := Number[int8](ctx, "Small", io, WithDefault(300))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	assert.Equal(t, int8(0), zero)
+
+	_, err = Number[int](ctx, "Port", io, WithDefault("abc"))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+
+	_, err = Number[int](ctx, "Port", io, WithDefault(5), WithAtLeast(10))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	got, err = Number[int](ctx, "Port", io, WithDefault(10), WithAtLeast(10), WithAtMost(10))
+	assert.NoError(t, err)
+	assert.Equal(t, 10, got)
+
+	_, err = Number[int](ctx, "Port", io)
+	assert.ErrorIs(t, err, ErrNoTTY)
+
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = Number[int](cctx, "Port", io, WithDefault(1))
+	assert.ErrorIs(t, err, context.Canceled)
+}

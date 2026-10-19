@@ -10,7 +10,7 @@ misplaced option fails instead of silently doing nothing.
 | Option | Supported by |
 |---|---|
 | `WithInput`, `WithOutput` | `Input`, `Password`, dropdowns, multichoice, `Confirm`, `FilePicker`, `NewSpinners`, progress bars |
-| `WithDefault`, `WithHide`, `WithLabelTemplate`, `WithAnswerTemplate` | `Input`, `Password`, dropdowns, multichoice, `Confirm`, `FilePicker` |
+| `WithDefault`, `WithHide`, `WithLabelTemplate`, `WithAnswerTemplate` | `Input`, `Password`, `Number`, dropdowns, multichoice, `Confirm`, `FilePicker` |
 | `WithNonEmpty`, `WithRegex`, `WithValidation`, `WithFeedbackTemplate` | `Input`, `Password` |
 | other `With*Template`, `WithTemplate`, `WithFieldTemplate` | dropdowns, multichoice, `Confirm`, `FilePicker` |
 | `WithOneReturn` | dropdowns, `Confirm`, `FilePicker` |
@@ -22,6 +22,25 @@ misplaced option fails instead of silently doing nothing.
 Tables take their writer as an argument, so they accept none of the shared
 options below. Column options only shape auto-generated templates and have no
 effect when you pass an explicit row template.
+
+## Defaults without a terminal
+
+`WithDefault(d any)` is also the batch answer. Every prompt follows one rule:
+**when the output is not a terminal it returns its explicit default, otherwise
+an error wrapping `ErrNoTTY`**. A pipe, a redirected file or a `bytes.Buffer`
+is not a terminal, however the input is wrapped. The answer reads no input and
+prints no prompt, answer or escape codes. An invalid, missing or ambiguous
+default is `ErrInvalidOption`, with the validation error still reachable through
+`errors.Is`. There is no extra option to enable this. See
+[Input](../input/), [Number](../number/), [dropdowns](../dropdowns/),
+[multichoice](../multichoice/) and [FilePicker](../filepicker/); `Confirm`
+returns `false` where the others return an error.
+
+To verify it, redirect the prompt's output away from the terminal, for
+example `go run ./examples/number/main.go 2>/dev/null` (prompts draw on stderr),
+or pipe stderr, not stdout, through `cat` with `2>&1 | cat`:
+a prompt with `WithDefault` prints nothing and returns the
+default, and one without it fails with `no tty`.
 
 ## Context
 

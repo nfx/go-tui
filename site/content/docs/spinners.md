@@ -32,14 +32,14 @@ sp.Update("processing")
 sp.Close()
 ```
 
-## WithLogFallback
+## Without a TTY
 
-Opts into logging stage changes through `slog.Default()` when spinner output has
-no TTY. On a TTY, the group renders animated spinners as usual and emits no
+When spinner output has no TTY, stage changes are logged through `slog.Default()`
+instead. On a TTY, the group renders animated spinners as usual and emits no
 fallback logs.
 
 ```go
-group, err := tui.NewSpinners(ctx, tui.WithLogFallback())
+group, err := tui.NewSpinners(ctx)
 if err != nil {
 	return err
 }

@@ -531,9 +531,7 @@ func TestSpinnersLogFallback(t *testing.T) {
 	assert.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, out.Close()) })
 
-	_, err = NewSpinners(t.Context(), WithOutput(out))
-	assert.ErrorIs(t, err, ErrNoTTY)
-	s, err := NewSpinners(t.Context(), WithOutput(out), WithLogFallback())
+	s, err := NewSpinners(t.Context(), WithOutput(out))
 	assert.NoError(t, err)
 	defer s.Close()
 
@@ -594,7 +592,7 @@ func TestSpinnersLogFallbackKeepsTerminalRendering(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	cio, tick, options := testIOforSpinners(t, 24, 5)
-	s, err := NewSpinners(t.Context(), options, WithLogFallback())
+	s, err := NewSpinners(t.Context(), options)
 	assert.NoError(t, err)
 	defer s.Close()
 	spinner, err := s.Add(t.Context())
@@ -607,12 +605,11 @@ func TestSpinnersLogFallbackKeepsTerminalRendering(t *testing.T) {
 }
 
 func TestSpinnersLogFallbackRejectsOtherErrors(t *testing.T) {
-	_, err := NewSpinners(t.Context(), WithLogFallback(), opT(func(s *Spinners) error {
+	_, err := NewSpinners(t.Context(), opT(func(s *Spinners) error {
 		s.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
 			return nil, io.ErrClosedPipe
 		}
 		return nil
 	}))
 	assert.ErrorIs(t, err, io.ErrClosedPipe)
-	assert.ErrorIs(t, WithLogFallback()(newInput(t.Context(), "Name")), ErrWrongWidget)
 }
