@@ -58,3 +58,28 @@ func ExampleDropdown_withLargeList() {
 	}
 	log.Println(v)
 }
+
+func ExampleNumber() {
+	type Port uint16
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	// the type argument chooses the result type and the accepted range
+	workers, err := tui.Number[int](ctx, "Workers", tui.WithDefault("4"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	size, err := tui.Number[uint64](ctx, "Bytes")
+	if err != nil {
+		log.Fatal(err)
+	}
+	port, err := tui.Number[Port](ctx, "Port", tui.WithDefault("8080"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Up/Down change the decimal digit right of the caret: 1.|25 gives 1.35
+	gain, err := tui.Number[float32](ctx, "Gain", tui.WithDefault("1.25"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println(workers, size, port, gain)
+}

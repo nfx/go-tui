@@ -115,12 +115,17 @@ func WithOutput(w io.Writer) opt {
 	})
 }
 
+// withDefault is implemented by widgets that accept a default answer or hint.
+type withDefault interface {
+	setDefault(d string)
+}
+
 // withPrompt is implemented by widgets that ask a question and print the answer.
 type withPrompt interface {
 	setHide()
 	setLabelTemplate(tmpl string)
 	setAnswerTemplate(tmpl string)
-	setDefault(d string)
+	withDefault
 }
 
 type config struct {
