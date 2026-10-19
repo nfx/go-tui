@@ -360,3 +360,10 @@ func TestViewportDropsLongSequence(t *testing.T) {
 	// text before the oversized sequence is kept
 	assert.Equal(t, "ab", string(v.joinPartial([]byte("ab"+title))))
 }
+
+func TestCursorRowsUp(t *testing.T) {
+	assert.Equal(t, 0, new(viewport).cursorRowsUp(nil))
+	assert.Equal(t, 0, new(viewport).cursorRowsUp([][]byte{[]byte("plain\n")}))
+	assert.Equal(t, 1, new(viewport).cursorRowsUp([][]byte{[]byte("msg\x1b[1A\x1b[12G\n")}))
+	assert.Equal(t, 2, new(viewport).cursorRowsUp([][]byte{[]byte("msg\x1b[2A")}))
+}

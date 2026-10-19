@@ -64,6 +64,24 @@ var terminalInputChecker = func(fd int) bool {
 // makeTermIO sets up raw terminal mode and creates
 // a termIO for interactive widget rendering.
 func makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
+	return acquireTermIO(in, out, rawRestore)
+}
+
+// makeOutputIO acquires drawing resources without changing terminal mode,
+// so restoring a progress bar or spinner cannot disable a concurrent prompt's raw mode.
+func makeOutputIO(in io.Reader, out io.Writer) (*termIO, error) {
+	return acquireTermIO(in, out, func(descriptor) (func() error, error) {
+		return func() error { return nil }, nil
+	})
+}
+
+// acquireTermIO prepares direct or managed terminal I/O with the caller's mode policy
+// and restores that mode if viewport acquisition fails.
+func acquireTermIO(
+	in io.Reader,
+	out io.Writer,
+	rawRestore func(descriptor) (func() error, error),
+) (*termIO, error) {
 	stderr, isOutFD := out.(descriptor)
 	cio, isOutChanIO := out.(*chanIO)
 	if !isOutFD && !isOutChanIO {

@@ -126,4 +126,9 @@ p, err := tui.NewMaxProgressBar(ctx, "Upload", 100, opts)
 ## Behavior notes
 
 - `NewMaxProgressBar`, `NewSliceProgressBar`, and `NewParallelProgressBar` tolerate non-TTY output and degrade to no-op updates.
-- `Close()` stops rendering and restores terminal state.
+- `Close()` stops rendering and releases the progress bar's terminal resources.
+- Progress bars can share the default output with `Input` and `Password`, including their validation feedback. They do not change terminal input mode, so closing a bar leaves an active prompt's editing functional.
+
+For a runnable example combining background progress and validated prompts, run
+`go run ./examples/input-validation-progress` from the repository root. See
+[Input and Password](input.md#withvalidation) for validation options.

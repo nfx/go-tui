@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
+	"strconv"
 	"sync"
 )
 
@@ -21,7 +23,9 @@ type writeToResponse struct {
 	bytes  int64
 	lines  int
 	widths []int
-	err    error
+	// up is how many rows above its last line a frame leaves the cursor.
+	up  int
+	err error
 }
 
 type writeTo struct {
@@ -331,7 +335,7 @@ func (v *viewport) sendNotify(ev viewportChanged) bool {
 	}
 }
 
-// serveWriteTo renders into the requester's writer and replies.
+// serveWriteTo renders a frame and reports its row widths and final caret offset.
 // It returns false once the context is done.
 func (v *viewport) serveWriteTo(w *writeTo) bool {
 	if w.height > 0 {
@@ -345,8 +349,29 @@ func (v *viewport) serveWriteTo(w *writeTo) bool {
 		bytes:  bytes,
 		lines:  len(widths),
 		widths: widths,
+		up:     v.cursorRowsUp(v.lines),
 		err:    err,
 	}:
 		return true
 	}
+}
+
+// cursorUpTail matches the cursor moves a frame may end with: up by n rows,
+// then to a column. A frame uses them to leave the caret on an earlier row.
+var cursorUpTail = regexp.MustCompile(`\x1b\[(\d*)A(?:\x1b\[\d*[GC])?\n?\z`)
+
+// cursorRowsUp reports how many rows above the last line the frame ends the cursor.
+func (v *viewport) cursorRowsUp(lines [][]byte) int {
+	if len(lines) == 0 {
+		return 0
+	}
+	m := cursorUpTail.FindSubmatch(lines[len(lines)-1])
+	if m == nil {
+		return 0
+	}
+	if len(m[1]) == 0 {
+		return 1
+	}
+	n, _ := strconv.Atoi(string(m[1])) //nolint:errcheck // digits only
+	return n
 }

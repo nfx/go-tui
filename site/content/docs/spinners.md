@@ -108,3 +108,14 @@ group, err := tui.NewSpinners(common)
 ## Failure handling
 
 `Fail(err)` marks spinner as failed and keeps visible error message.
+
+## Sharing a terminal with prompts
+
+Spinners can share the default terminal output with `Input` and `Password`,
+including their validation feedback. Spinner updates continue while a validator
+runs. Closing a spinner group releases its rendering resources without changing
+the active prompt's terminal input mode.
+
+Route accompanying logs through [`tui.Stderr()`](options-and-helpers.md#stderr)
+so they participate in the same rendering coordination. See
+[Input and Password](input.md#withvalidation) for validation and feedback options.

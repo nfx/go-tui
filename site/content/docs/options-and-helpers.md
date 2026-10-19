@@ -11,7 +11,7 @@ misplaced option fails instead of silently doing nothing.
 |---|---|
 | `WithInput`, `WithOutput` | `Input`, `Password`, dropdowns, multichoice, `Confirm`, `FilePicker`, `NewSpinners`, progress bars |
 | `WithDefault`, `WithHide`, `WithLabelTemplate`, `WithAnswerTemplate` | `Input`, `Password`, dropdowns, multichoice, `Confirm`, `FilePicker` |
-| `WithNonEmpty` | `Input`, `Password` |
+| `WithNonEmpty`, `WithRegex`, `WithValidation`, `WithFeedbackTemplate` | `Input`, `Password` |
 | other `With*Template`, `WithTemplate`, `WithFieldTemplate` | dropdowns, multichoice, `Confirm`, `FilePicker` |
 | `WithOneReturn` | dropdowns, `Confirm`, `FilePicker` |
 | `WithStartDir`, `WithExtensions`, `WithIgnoreUp`, `WithIgnoreDirs`, `WithShowHidden` | `FilePicker` |
@@ -37,6 +37,14 @@ defer cancel()
 
 value, err := tui.Input(ctx, "Name")
 ```
+
+## Input validation and feedback
+
+`WithNonEmpty`, `WithRegex`, and `WithValidation` check confirmed input in option
+order and display the first failure below the editable answer.
+`WithFeedbackTemplate` customizes that row. These options support both `Input`
+and `Password`; see [Input and Password](input.md#withvalidation) for examples and
+the validator context contract.
 
 ## WithInput
 
@@ -117,7 +125,8 @@ All predefined helper functions are documented on
 ## Common errors
 
 - `ErrNoItems`: selection widget called with empty items.
-- `ErrInvalidOption`: nil multichoice lazy sequence.
+- `ErrInvalidOption`: nil multichoice lazy sequence, nil input validator, invalid regex pattern, or blank regex feedback message.
+- `ErrNoSpace`: insufficient terminal space, including fewer than two rows when input rejection feedback is needed.
 - `ErrEmptyLazyResult`: a completed lazy selection source contains no items.
 - `ErrInvalidState`: invalid option value or configuration.
 - `ErrUnsupportedPlatform`: platform-specific feature unavailable.
