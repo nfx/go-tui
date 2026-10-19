@@ -2158,3 +2158,267 @@ func waitUntil(t *testing.T, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+func TestDropdownTypedDefaults(t *testing.T) {
+	io := quiet(t)
+	ctx := t.Context()
+
+	servers := []server{{"alpha", 1}, {"beta", 2}}
+	got, err := Dropdown(ctx, "Pick", servers, io, WithDefault(server{"beta", 2}))
+	assert.NoError(t, err)
+	assert.Equal(t, servers[1], got)
+
+	// identical labels, distinct values
+	same := []tagged{{"x", 1}, {"x", 2}}
+	gotTagged, err := Dropdown(ctx, "Pick", same, io, WithDefault(tagged{"x", 2}))
+	assert.NoError(t, err)
+	assert.Equal(t, 2, gotTagged.ID)
+
+	// pointer identity
+	a, b := &server{"same", 1}, &server{"same", 1}
+	ptr, err := Dropdown(ctx, "Pick", []*server{a, b}, io, WithDefault(b))
+	assert.NoError(t, err)
+	assert.True(t, ptr == b)
+
+	// non-comparable items
+	slices, err := Dropdown(ctx, "Pick", [][]int{{1}, {2, 3}}, io, WithDefault([]int{2, 3}))
+	assert.NoError(t, err)
+	assert.Equal(t, []int{2, 3}, slices)
+	maps, err := Dropdown(ctx, "Pick", []map[string]int{{"a": 1}, {"b": 2}}, io, WithDefault(map[string]int{"b": 2}))
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]int{"b": 2}, maps)
+
+	idx, err := DropdownIndex(ctx, "Pick", []any{1, "two", 3.5}, io, WithDefault(3.5))
+	assert.NoError(t, err)
+	assert.Equal(t, 2, idx)
+
+	// wrong type, missing value, duplicates
+	_, err = Dropdown(ctx, "Pick", []int64{1, 2}, io, WithDefault(2))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = Dropdown(ctx, "Pick", servers, io, WithDefault(server{"gamma", 3}))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = Dropdown(ctx, "Pick", []int{1, 2, 1}, io, WithDefault(1))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = Dropdown(ctx, "Pick", servers, io, WithDefault(true))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+
+	// nil
+	var none *server
+	nilPtr, err := Dropdown(ctx, "Pick", []*server{a, none}, io, WithDefault(nil))
+	assert.NoError(t, err)
+	assert.True(t, nilPtr == nil)
+	_, err = Dropdown(ctx, "Pick", []*server{a}, io, WithDefault(nil))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = Dropdown(ctx, "Pick", []int{1}, io, WithDefault(nil))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = Dropdown(ctx, "Pick", []*server{none, none}, io, WithDefault(nil))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+
+	// functions cannot be identified, NaN does not equal itself
+	fn := func() {}
+	_, err = Dropdown(ctx, "Pick", []func(){fn}, io, WithDefault(fn))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	nan := 0.0
+	nan /= nan
+	_, err = Dropdown(ctx, "Pick", []float64{nan}, io, WithDefault(nan))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+
+	_, err = Dropdown(ctx, "Pick", servers, io)
+	assert.ErrorIs(t, err, ErrNoTTY)
+}
+
+func TestDropdownStringDefaults(t *testing.T) {
+	io := quiet(t)
+	ctx := t.Context()
+
+	got, err := Dropdown(ctx, "Pick", []string{"ab", "a"}, io, WithDefault("a"))
+	assert.NoError(t, err)
+	assert.Equal(t, "a", got)
+
+	got, err = Dropdown(ctx, "Pick", []string{"alpha", "beta"}, io, WithDefault("be"))
+	assert.NoError(t, err)
+	assert.Equal(t, "beta", got)
+
+	_, err = Dropdown(ctx, "Pick", []string{"alpha", "apple"}, io, WithDefault("a"))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = Dropdown(ctx, "Pick", []string{"alpha", "apple"}, io, WithDefault("zz"))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = Dropdown(ctx, "Pick", []string{"alpha", "apple"}, io, WithDefault(""))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	// an exact duplicate is ambiguous, whatever a hint could do
+	_, err = Dropdown(ctx, "Pick", []string{"a", "a", "ab"}, io, WithDefault("a"))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	got, err = Dropdown(ctx, "Pick", []string{"", "x"}, io, WithDefault(""))
+	assert.NoError(t, err)
+	assert.Equal(t, "", got)
+
+	// a hint finds a struct by its label
+	servers := []server{{"alpha", 1}, {"beta", 2}}
+	s, err := Dropdown(ctx, "Pick", servers, io, WithDefault("bet"))
+	assert.NoError(t, err)
+	assert.Equal(t, servers[1], s)
+}
+
+func TestDropdownKVDefault(t *testing.T) {
+	io := quiet(t)
+	items := map[string]int{"one": 1, "two": 2}
+	k, v, err := DropdownKV(t.Context(), "Pick", items, io, WithDefault("two"))
+	assert.NoError(t, err)
+	assert.Equal(t, "two", k)
+	assert.Equal(t, 2, v)
+
+	// the value is not a key lookup
+	_, _, err = DropdownKV(t.Context(), "Pick", map[int]int{1: 2, 2: 1}, io, WithDefault("x"))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	k2, v2, err := DropdownKV(t.Context(), "Pick", map[int]int{1: 2, 2: 1}, io, WithDefault(2))
+	assert.NoError(t, err)
+	assert.Equal(t, 2, k2)
+	assert.Equal(t, 1, v2)
+}
+
+func TestDropdownOneReturn(t *testing.T) {
+	io := quiet(t)
+	ctx := t.Context()
+	got, err := Dropdown(ctx, "Pick", []string{"only"}, io, WithOneReturn())
+	assert.NoError(t, err)
+	assert.Equal(t, "only", got)
+	// the shortcut wins over a hint
+	got, err = Dropdown(ctx, "Pick", []string{"only"}, io, WithOneReturn(), WithDefault("zzz"))
+	assert.NoError(t, err)
+	assert.Equal(t, "only", got)
+	_, err = Dropdown(ctx, "Pick", []string{"a", "b"}, io, WithOneReturn())
+	assert.ErrorIs(t, err, ErrNoTTY)
+	_, err = Dropdown(ctx, "Pick", []string{}, io, WithOneReturn())
+	assert.ErrorIs(t, err, ErrNoItems)
+	_, err = Dropdown(ctx, "Pick", []string{"a"}, io, WithOneReturn(), WithActiveItemTemplate("{{"))
+	assert.Error(t, err)
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = Dropdown(cctx, "Pick", []string{"a"}, io, WithOneReturn())
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestConfirmDefaults(t *testing.T) {
+	io := quiet(t)
+	ctx := t.Context()
+	assert.True(t, Confirm(ctx, "Go?", io, WithDefault(true)))
+	assert.True(t, !Confirm(ctx, "Go?", io, WithDefault(false)))
+	assert.True(t, Confirm(ctx, "Go?", io, WithDefault("Yes")))
+	assert.True(t, Confirm(ctx, "Go?", io, WithDefault("y")))
+	assert.True(t, !Confirm(ctx, "Go?", io, WithDefault("no")))
+	assert.True(t, !Confirm(ctx, "Go?", io))
+	assert.True(t, !Confirm(ctx, "Go?", io, WithDefault(42)))
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	assert.True(t, !Confirm(cctx, "Go?", io, WithDefault(true)))
+
+	// the error behind the false is visible one level down
+	_, err := Dropdown(ctx, "Go?", []string{"Yes", "No"}, io)
+	assert.ErrorIs(t, err, ErrNoTTY)
+}
+
+func TestDropdownLazyDefaults(t *testing.T) {
+	io := quiet(t)
+	ctx := t.Context()
+	var started bool
+
+	_, err := DropdownLazy(ctx, "Pick", seq(&started, nil, "a", "b"), io)
+	assert.ErrorIs(t, err, ErrNoTTY)
+	assert.True(t, !started)
+
+	got, err := DropdownLazy(ctx, "Pick", seq(&started, nil, "alpha", "beta"), io, WithDefault("beta"))
+	assert.NoError(t, err)
+	assert.Equal(t, "beta", got)
+
+	// a late second match is ambiguous
+	_, err = DropdownLazy(ctx, "Pick", seq(&started, nil, "a", "b", "a"), io, WithDefault("a"))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+
+	late := errors.New("late")
+	_, err = DropdownLazy(ctx, "Pick", seq(&started, late, "a"), io, WithDefault("a"))
+	assert.ErrorIs(t, err, late)
+
+	_, err = DropdownLazy(ctx, "Pick", seq[string](&started, nil), io, WithDefault("a"))
+	assert.ErrorIs(t, err, ErrEmptyLazyResult)
+
+	got, err = DropdownLazy(ctx, "Pick", seq(&started, nil, "only"), io, WithOneReturn())
+	assert.NoError(t, err)
+	assert.Equal(t, "only", got)
+	// a singleton at first is not final
+	_, err = DropdownLazy(ctx, "Pick", seq(&started, nil, "a", "b"), io, WithOneReturn())
+	assert.ErrorIs(t, err, ErrNoTTY)
+
+	typed, err := DropdownLazy(ctx, "Pick", seq(&started, nil, server{"a", 1}, server{"b", 2}), io,
+		WithDefault(server{"b", 2}))
+	assert.NoError(t, err)
+	assert.Equal(t, server{"b", 2}, typed)
+
+	cctx, cancel := context.WithCancel(ctx)
+	_, err = DropdownLazy(cctx, "Pick", func(yield func(string, error) bool) {
+		cancel()
+		yield("a", nil)
+	}, io, WithDefault("a"))
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestTypedDefaultSeedsInteractiveDropdown(t *testing.T) {
+	// the typed default is the first row, and Enter confirms it
+	servers := []server{{"alpha", 1}, {"beta", 2}, {"gamma", 3}}
+	var out bytes.Buffer
+	got, err := Dropdown(t.Context(), "Pick", servers,
+		WithInput(strings.NewReader("\r")), WithOutput(&out), WithDefault(server{"gamma", 3}))
+	assert.NoError(t, err)
+	assert.Equal(t, servers[2], got)
+
+	_, err = Dropdown(t.Context(), "Pick", servers,
+		WithInput(strings.NewReader("\r")), WithOutput(&out), WithDefault(server{"nope", 3}))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+}
+
+func TestEqualValues(t *testing.T) {
+	type wrap struct{ V any }
+	assert.True(t, (*new(choiceTarget)).equalValues(wrap{[]int{1}}, wrap{[]int{1}}))
+	assert.True(t, !(*new(choiceTarget)).equalValues(wrap{[]int{1}}, wrap{[]int{2}}))
+	assert.True(t, !(*new(choiceTarget)).equalValues(1, int64(1)))
+	assert.True(t, (*new(choiceTarget)).equalValues(nil, nil))
+	assert.True(t, !(*new(choiceTarget)).equalValues(nil, 0))
+	_ = fmt.Sprint()
+}
+
+func TestDropdownLazySeedValidatedAfterExhaustion(t *testing.T) {
+	for name, items := range map[string][]any{"missing": {1, 2}, "duplicate": {2, 2}} {
+		t.Run(name, func(t *testing.T) {
+			d := newDropdown(t.Context())
+			d.target = choiceTarget{}
+			d.def = defaultValue{set: true, raw: 3}
+			if name == "duplicate" {
+				d.def.raw = 2
+			}
+			d.seedLazy = true
+			d.Items = items
+			err := d.validateLazySeed()
+			assert.ErrorIs(t, err, ErrInvalidOption)
+		})
+	}
+}
+
+func TestDropdownLazyAutomaticAnswerCancelsWhileProducerBlocked(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	release := make(chan struct{})
+	defer close(release)
+	seq := func(_ func(string, error) bool) {
+		<-release
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := DropdownLazy(ctx, "Pick", seq, WithDefault("a"), WithOutput(&bytes.Buffer{}))
+		done <- err
+	}()
+	cancel()
+	select {
+	case err := <-done:
+		assert.Error(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("prompt stayed blocked after cancellation")
+	}
+}
