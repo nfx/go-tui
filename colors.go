@@ -1229,6 +1229,11 @@ var builtinTemplates = Templates{
 			`{{ if .Selected }}{{ accent (symbol "Checked") }}{{ else }}{{ muted (symbol "Unchecked") }}{{ end }} {{ .Value }}`,
 		AnswerValue: `{{ range $i, $v := .Values }}{{ if $i }}, {{ end }}{{ $v }}{{ else }}none{{ end }}`,
 	},
+	// FilePicker.Value names a [fileView]: directories end with a slash, the
+	// way up is muted. It applies unless a theme sets Choice.Value.
+	FilePicker: SelectTemplates{ChoiceTemplates: ChoiceTemplates{
+		Value: `{{ if .Parent }}{{ muted .Name }}{{ else }}{{ .Name }}{{ if .IsDir }}/{{ end }}{{ end }}`,
+	}},
 }
 
 // compile resolves isolated slot inheritance over base and reports errors at defining slots.
@@ -1249,7 +1254,12 @@ func (t *Templates) compile(funcs template.FuncMap, base templates) (templates, 
 		AnswerValue:  base.Multichoice.AnswerValue,
 	}))
 	out.Confirm, errs[7] = t.choiceFamily(root.nest("Confirm", t.Confirm, family))
-	out.FilePicker, errs[8] = t.choiceFamily(root.nest("FilePicker", t.FilePicker, family))
+	picker := family
+	if t.Choice.Value == "" {
+		// a shared projection reaches the picker, otherwise its own built-in
+		picker.Value = base.FilePicker.Value
+	}
+	out.FilePicker, errs[8] = t.choiceFamily(root.nest("FilePicker", t.FilePicker, picker))
 	if err := errors.Join(errs[:]...); err != nil {
 		return templates{}, err
 	}
