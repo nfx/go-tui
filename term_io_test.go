@@ -11,8 +11,10 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"testing/iotest"
+	"time"
 	"unicode/utf8"
 
 	"github.com/nfx/go-tui/internal/assert"
@@ -1005,4 +1007,256 @@ func TestTermIO_WriteControl(t *testing.T) {
 	scripted := &termIO{out: out}
 	assert.ErrorIs(t, scripted.writeControl(t.Context(), []byte("q")), ErrNoTTY)
 	assert.Equal(t, "q", out.String())
+}
+
+// replyingTerminal answers OSC 11 queries through the input pipe.
+type replyingTerminal struct {
+	mu      sync.Mutex
+	queries int
+	reply   string
+	in      *io.PipeWriter
+}
+
+// Write counts queries and injects the configured reply.
+func (r *replyingTerminal) Write(p []byte) (int, error) {
+	if string(p) != "\x1b]11;?\x07" {
+		return len(p), nil
+	}
+	r.mu.Lock()
+	r.queries++
+	r.mu.Unlock()
+	if r.reply != "" {
+		go r.in.Write([]byte(r.reply)) //nolint:errcheck
+	}
+	return len(p), nil
+}
+
+// count returns the synchronized query count.
+func (r *replyingTerminal) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.queries
+}
+
+// probeTermIO creates a simulated terminal with automatic cleanup.
+func probeTermIO(t *testing.T, reply string) (*termIO, *replyingTerminal) {
+	t.Helper()
+	prev, prevSupported := terminalInputChecker, backgroundProbeSupported
+	terminalInputChecker = func(int) bool { return true }
+	backgroundProbeSupported = true // the simulated terminal accepts VT input on every platform
+	t.Cleanup(func() { terminalInputChecker, backgroundProbeSupported = prev, prevSupported })
+	pr, pw := io.Pipe()
+	t.Cleanup(func() { assert.NoError(t, pw.Close()) })
+	term := &replyingTerminal{reply: reply, in: pw}
+	return &termIO{in: &mockDescriptor{Reader: pr, fd: 7}, out: term, fd: 2}, term
+}
+
+// routedTio makes tt the current route for cache tests.
+func routedTio(tt *termIO) *tio {
+	d := &tio{}
+	d.setIO(tt.in, tt.out)
+	return d
+}
+
+func TestDetectBackground_OSCReply(t *testing.T) {
+	tt, term := probeTermIO(t, "\x1b]11;rgb:fafa/fafa/fafa\x1b\\")
+	d := routedTio(tt)
+	b := d.background(t.Context(), tt, nil)
+	assert.True(t, b.measured)
+	assert.Equal(t, sRGB{250, 250, 250}, b.rgb)
+	assert.True(t, b.light)
+	// cached: no second query
+	b = d.background(t.Context(), tt, nil)
+	assert.True(t, b.measured)
+	assert.Equal(t, 1, term.count())
+}
+
+func TestDetectBackground_TimeoutFallsBackOnceToEnv(t *testing.T) {
+	tt, term := probeTermIO(t, "") // a terminal that never answers
+	env := func(string) (string, bool) { return "0;15", true }
+	d := routedTio(tt)
+	b := d.background(t.Context(), tt, env)
+	assert.Equal(t, background{light: true}, b)
+	d.background(t.Context(), tt, env)
+	assert.Equal(t, 1, term.count()) // the timeout is cached too
+}
+
+func TestDetectBackground_MalformedReplyIsNotDark(t *testing.T) {
+	tt, _ := probeTermIO(t, "\x1b]11;rgb:zz/00/00\x07")
+	b := tt.detectBackground(t.Context(), func(string) (string, bool) { return "0;15", true })
+	assert.Equal(t, background{light: true}, b)
+}
+
+func TestDetectBackground_SkipsQuery(t *testing.T) {
+	for name, disable := range map[string]func(t *testing.T){
+		"no terminal input": func(*testing.T) {
+			terminalInputChecker = func(int) bool { return false }
+		},
+		"unsupported platform": func(*testing.T) {
+			backgroundProbeSupported = false // probeTermIO restores the previous value
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tt, term := probeTermIO(t, oscReply)
+			disable(t)
+			assert.Equal(t, background{}, tt.detectBackground(t.Context(), nil))
+			assert.Equal(t, 0, term.count())
+		})
+	}
+}
+
+func TestDetectBackground_ReplacedOutputRouteProbesAgain(t *testing.T) {
+	tt, term := probeTermIO(t, oscReply)
+	d := routedTio(tt)
+	d.background(t.Context(), tt, nil)
+	next := &replyingTerminal{reply: oscReply, in: term.in}
+	d.setIO(nil, next)
+	tt.out = next
+	d.background(t.Context(), tt, nil)
+	assert.Equal(t, 1, next.count())
+}
+
+func TestDetectBackground_KeyTypedDuringProbeIsKept(t *testing.T) {
+	tt, _ := probeTermIO(t, oscReply+"a")
+	assert.True(t, tt.detectBackground(t.Context(), nil).measured)
+	assert.Equal(t, 'a', nextEvent(t, tt).key)
+}
+
+func TestDetectBackground_KeyBeforeReplyIsKept(t *testing.T) {
+	tt, term := probeTermIO(t, oscReply)
+	go term.in.Write([]byte("a")) //nolint:errcheck
+	time.Sleep(20 * time.Millisecond)
+	assert.True(t, tt.detectBackground(t.Context(), nil).measured)
+	go term.in.Write([]byte("b")) //nolint:errcheck
+	assert.Equal(t, 'a', nextEvent(t, tt).key)
+	assert.Equal(t, 'b', nextEvent(t, tt).key)
+}
+
+func TestDetectBackground_InputBeforeReplyIsKept(t *testing.T) {
+	for name, tc := range map[string]struct {
+		typed     string
+		bracketed bool
+		check     func(t *testing.T, ev keyEvent)
+	}{
+		"coalesced text": {typed: "hello", check: func(t *testing.T, ev keyEvent) {
+			t.Helper()
+			var more *pasteTextError
+			assert.True(t, errors.As(ev.err, &more))
+			assert.Equal(t, "hello", string(ev.paste))
+		}},
+		"bracketed paste": {typed: "\x1b[200~hi\x1b[201~", bracketed: true, check: func(t *testing.T, ev keyEvent) {
+			t.Helper()
+			assert.NoError(t, ev.err)
+			assert.Equal(t, "hi", string(ev.paste))
+		}},
+		"legacy bracketed paste": {typed: "\x1b[200~hi\x1b[201~", check: func(t *testing.T, ev keyEvent) {
+			t.Helper()
+			var more *pasteTextError
+			assert.True(t, errors.As(ev.err, &more))
+			assert.Equal(t, "hi", string(ev.paste))
+		}},
+		"ctrl-c": {typed: "\x03", check: func(t *testing.T, ev keyEvent) {
+			t.Helper()
+			assert.ErrorIs(t, ev.err, io.EOF)
+		}},
+		"ctrl-d": {typed: "\x04", check: func(t *testing.T, ev keyEvent) {
+			t.Helper()
+			assert.ErrorIs(t, ev.err, io.EOF)
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tt, term := probeTermIO(t, oscReply)
+			tt.bracketedPaste = tc.bracketed
+			go term.in.Write([]byte(tc.typed)) //nolint:errcheck
+			time.Sleep(20 * time.Millisecond)
+			tt.detectBackground(t.Context(), nil)
+			tc.check(t, nextEvent(t, tt))
+		})
+	}
+}
+
+func TestDetectBackground_RestoredEventsKeepBoundaries(t *testing.T) {
+	tt, term := probeTermIO(t, "")
+	// A standalone Escape decoded before 'a' arrived must not replay as Alt+a.
+	tt.restoreKeys([]keyEvent{{key: keyEscape, readOrder: 1}, {key: 'a', readOrder: 2}})
+	go term.in.Write([]byte("b")) //nolint:errcheck
+	for _, want := range []keyEvent{{key: keyEscape, readOrder: 1}, {key: 'a', readOrder: 2}} {
+		assert.Equal(t, want, nextEvent(t, tt))
+	}
+	assert.Equal(t, 'b', nextEvent(t, tt).key)
+}
+
+func TestDetectBackground_StaleTerminalDoesNotUseCache(t *testing.T) {
+	tt, _ := probeTermIO(t, oscReply)
+	d := routedTio(tt)
+	// Stale terminals must not populate the new route's cache.
+	d.setIO(nil, &replyingTerminal{})
+	assert.True(t, d.background(t.Context(), tt, nil).measured)
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	assert.True(t, d.bg == nil)
+}
+
+func TestParseOSCColor(t *testing.T) {
+	for in, want := range map[string]sRGB{
+		"rgb:0000/0000/0000": {0, 0, 0},
+		"rgb:ffff/ffff/ffff": {255, 255, 255},
+		"rgb:1e1e/1e1e/2e2e": {0x1e, 0x1e, 0x2e},
+		"rgb:f/0/8":          {255, 0, 136}, // one digit scales by 15
+		"rgb:ff/80/00":       {255, 128, 0},
+		"rgb:fff/800/000":    {255, 128, 0},
+	} {
+		got, ok := new(termIO).parseOSCColor(in)
+		assert.True(t, ok)
+		assert.Equal(t, want, got)
+	}
+	for _, in := range []string{
+		"", "?", "rgb:", "rgb:0/0", "rgb:0/0/0/0", "rgb:00000/0/0", "rgb://", "rgb:g/0/0",
+		"rgba:0/0/0/0", "#112233", "rgb:-1/0/0", " rgb:0/0/0",
+	} {
+		_, ok := new(termIO).parseOSCColor(in)
+		assert.Equal(t, false, ok)
+	}
+}
+
+func TestParseColorFGBG(t *testing.T) {
+	rgb, ok := new(termIO).parseColorFGBG("15;0")
+	assert.True(t, ok)
+	assert.Equal(t, sRGB{0, 0, 0}, rgb)
+	rgb, ok = new(termIO).parseColorFGBG("0;default;15")
+	assert.True(t, ok)
+	assert.Equal(t, sRGB{255, 255, 255}, rgb)
+	for _, in := range []string{"", "15", "15;default", "15;", "15;256", "15;-1", "a;b", "1;2;3;4"} {
+		_, ok := new(termIO).parseColorFGBG(in)
+		assert.Equal(t, false, ok)
+	}
+}
+
+func TestBackgroundFromEnv(t *testing.T) {
+	env := func(v string) func(string) (string, bool) {
+		return func(k string) (string, bool) { return v, k == "COLORFGBG" }
+	}
+	b := new(termIO).backgroundFromEnv(env("0;15"))
+	assert.True(t, b.light)
+	assert.Equal(t, false, b.measured)
+	// Blue is dark; mid gray is light despite its low palette index.
+	assert.Equal(t, false, new(termIO).backgroundFromEnv(env("15;4")).light)
+	assert.True(t, new(termIO).backgroundFromEnv(env("15;8")).light)
+	assert.Equal(t, background{}, new(termIO).backgroundFromEnv(env("default;default")))
+	assert.Equal(t, background{}, new(termIO).backgroundFromEnv(nil))
+}
+
+func TestDetectBackground_ConcurrentCallersQueryOnce(t *testing.T) {
+	tt, term := probeTermIO(t, oscReply)
+	d := routedTio(tt)
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			d.background(t.Context(), tt, nil)
+		}()
+	}
+	wg.Wait()
+	assert.Equal(t, 1, term.count())
 }

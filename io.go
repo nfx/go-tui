@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -74,6 +75,11 @@ type tio struct {
 	arbiter  *chanIO
 	cancel   context.CancelCauseFunc
 	env      outputEnv
+	// bg caches appearance, including timeouts, until setIO replaces the route.
+	bg    *background
+	bgGen uint64
+	// bgMu serializes probes; acquire before mu and release mu before probing.
+	bgMu sync.Mutex
 }
 
 type terminalStderr struct {
@@ -255,6 +261,49 @@ func (t *tio) outputLocked(ctx context.Context) io.Writer {
 	return cio
 }
 
+// background shares detection for the current route, caching only uncancelled,
+// still-current results. Other routes bypass the cache.
+func (t *tio) background(
+	ctx context.Context,
+	tt *termIO,
+	lookup func(string) (string, bool),
+) background {
+	t.bgMu.Lock()
+	defer t.bgMu.Unlock()
+	t.mu.RLock()
+	bg, gen, current := t.bg, t.bgGen, t.routesLocked(tt)
+	t.mu.RUnlock()
+	if !current {
+		return tt.detectBackground(ctx, lookup)
+	}
+	if bg != nil {
+		return *bg
+	}
+	b := tt.detectBackground(ctx, lookup)
+	if ctx.Err() == nil {
+		t.mu.Lock()
+		if t.bgGen == gen {
+			t.bg = &b
+		}
+		t.mu.Unlock()
+	}
+	return b
+}
+
+// routesLocked checks route ownership with mu held.
+func (t *tio) routesLocked(tt *termIO) bool {
+	return t.sameStream(tt.in, t.reader) &&
+		(t.sameStream(tt.out, t.writer) || t.sameStream(tt.out, t.arbiter))
+}
+
+// sameStream compares stream identity without panicking on uncomparable values.
+func (t *tio) sameStream(a, b any) bool {
+	if a == nil || b == nil || !reflect.TypeOf(a).Comparable() || !reflect.TypeOf(b).Comparable() {
+		return false
+	}
+	return a == b
+}
+
 // stderrWriter returns a writer for external
 // stderr, routed through the arbiter on TTYs.
 func (t *tio) stderrWriter() io.Writer {
@@ -300,10 +349,12 @@ func (t *tio) setIO(in io.Reader, out io.Writer) {
 	defer t.mu.Unlock()
 	if in != nil {
 		t.reader = in
+		t.bg, t.bgGen = nil, t.bgGen+1
 	}
 	if out == nil {
 		return
 	}
+	t.bg, t.bgGen = nil, t.bgGen+1
 	t.writer = t.unwrapWriterLocked(out)
 	t.resetArbiterLocked()
 }

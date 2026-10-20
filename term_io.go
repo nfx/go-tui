@@ -11,7 +11,10 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"runtime"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -709,6 +712,8 @@ type inputState struct {
 	read         *inputRead
 	pending      []byte
 	pendingOrder uint64
+	// replay holds decoded events that precede the in-flight read.
+	replay []keyEvent
 	// queries await terminal replies, guarded by inputStates.
 	queries []*controlQuery
 }
@@ -761,20 +766,22 @@ func (t *termIO) hasInput() bool {
 	state := t.inputState()
 	inputStates.Lock()
 	defer inputStates.Unlock()
-	return state.read != nil || len(state.pending) != 0
+	return state.read != nil || len(state.pending) != 0 || len(state.replay) != 0
 }
 
-// startRead adopts a previous prompt's read before starting another one.
+// startRead replays consumed input or adopts an outstanding read before reading anew.
 func (t *termIO) startRead(ctx context.Context) (*inputRead, func()) {
 	state := t.inputState()
 	inputStates.Lock()
 	defer inputStates.Unlock()
-	// Any decoder can encounter paste framing and outlive raw mode.
-	// Retain the exact file object to prevent competing successor reads.
+	// Retain file identity to prevent competing reads after raw mode ends.
 	if state.source == nil {
 		if _, file := t.in.(*os.File); file {
 			state.source = t.in
 		}
+	}
+	if len(state.replay) != 0 {
+		return t.startReplay(state)
 	}
 	if state.read != nil {
 		read := state.read
@@ -801,17 +808,38 @@ func (t *termIO) startRead(ctx context.Context) (*inputRead, func()) {
 		err := event.err
 		read.pending = decoder.pending
 		read.pendingOrder = decoder.pendingOrder
-		// A failed read with no key or buffered bytes has nothing to hand off.
-		// Release its source even when the cancelled prompt never accepts it.
+		// Release empty failed reads even if the cancelled prompt never accepts them.
 		if n == 0 && err != nil && len(read.pending) == 0 {
 			inputStates.Lock()
-			if inputStates.states[state.source] == state {
+			if len(state.replay) == 0 && inputStates.states[state.source] == state {
 				delete(inputStates.states, state.source)
 			}
 			inputStates.Unlock()
 		}
 	}()
 	return read, func() { t.acceptRead(state, read) }
+}
+
+// startReplay hands over the oldest retained event, consuming it only on
+// acceptance. Its pending bytes are the caller's own, so delivery keeps them.
+// Requires inputStates held.
+func (t *termIO) startReplay(state *inputState) (*inputRead, func()) {
+	read := &inputRead{
+		done:         make(chan struct{}),
+		event:        state.replay[0],
+		pending:      t.pending,
+		pendingOrder: t.pendingOrder,
+	}
+	close(read.done)
+	return read, func() {
+		inputStates.Lock()
+		defer inputStates.Unlock()
+		state.replay = state.replay[1:]
+		if state.source != nil && state.read == nil && len(state.pending) == 0 && len(state.replay) == 0 &&
+			inputStates.states[state.source] == state {
+			delete(inputStates.states, state.source)
+		}
+	}
 }
 
 // acceptRead retains decoder bytes and releases idle registry entries.
@@ -824,7 +852,8 @@ func (t *termIO) acceptRead(state *inputState, read *inputRead) {
 	state.read = nil
 	state.pending = read.pending
 	state.pendingOrder = read.pendingOrder
-	if state.source != nil && len(state.pending) == 0 && inputStates.states[state.source] == state {
+	if state.source != nil && len(state.pending) == 0 && len(state.replay) == 0 &&
+		inputStates.states[state.source] == state {
 		delete(inputStates.states, state.source)
 	}
 }
@@ -1053,4 +1082,167 @@ func (t *termIO) writeControl(ctx context.Context, p []byte) error {
 		return err
 	}
 	return fmt.Errorf("control: %w", ErrNoTTY)
+}
+
+// backgroundProbeSupported excludes Windows consoles without VT input enabled.
+var backgroundProbeSupported = runtime.GOOS != "windows"
+
+// canProbe checks for terminal input and a control output path.
+func (t *termIO) canProbe() bool {
+	in, ok := t.in.(descriptor)
+	if !ok || !backgroundProbeSupported || !terminalInputChecker(int(in.Fd())) {
+		return false
+	}
+	return t.cio != nil || t.fd > 0
+}
+
+// detectBackground uses the existing input owner for OSC 11, then falls back
+// to COLORFGBG or dark. [tio.background] handles caching.
+func (t *termIO) detectBackground(
+	ctx context.Context,
+	lookup func(string) (string, bool),
+) background {
+	if t.canProbe() {
+		if b, ok := t.probeBackground(ctx); ok {
+			return b
+		}
+	}
+	return t.backgroundFromEnv(lookup)
+}
+
+// backgroundProbeTimeout bounds each OSC 11 query.
+const backgroundProbeTimeout = 200 * time.Millisecond
+
+// probeBackground queries OSC 11 without consuming keys; invalid replies fail.
+func (t *termIO) probeBackground(ctx context.Context) (background, bool) {
+	ctx, cancel := context.WithTimeout(ctx, backgroundProbeTimeout)
+	// Register before reading to catch fast replies; drain and replay intervening keys.
+	q := t.expectControl(11)
+	defer q.cancel()
+	permits := make(chan struct{})
+	keys := t.readEvents(ctx, permits)
+	var typed []keyEvent
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		for ev := range keys {
+			// Readiness failures carry no input; every read-backed event, including
+			// paste and Ctrl-C/D errors, was acknowledged and must be replayed.
+			if ev.readOrder == 0 {
+				continue
+			}
+			if ev.bracketed {
+				ev.err = nil // undo [termIO.shapeEvent] so replay reshapes for its consumer
+			}
+			typed = append(typed, ev)
+		}
+	}()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case permits <- struct{}{}:
+			}
+		}
+	}()
+	defer func() {
+		cancel()
+		t.awaitReader()
+		<-drained
+		t.restoreKeys(typed)
+	}()
+	err := t.writeControl(ctx, []byte("\x1b]11;?\x07"))
+	if err != nil {
+		return background{}, false
+	}
+	select {
+	case <-ctx.Done():
+		return background{}, false
+	case reply := <-q.reply:
+		rgb, ok := t.parseOSCColor(reply.data)
+		if !ok {
+			return background{}, false
+		}
+		return background{
+			rgb:      rgb,
+			light:    rgb.isLight(),
+			measured: true,
+		}, true
+	}
+}
+
+// restoreKeys puts events read while probing back in front of the unread input,
+// keeping their boundaries and arrival orders.
+func (t *termIO) restoreKeys(events []keyEvent) {
+	if len(events) == 0 {
+		return
+	}
+	state := t.inputState()
+	inputStates.Lock()
+	defer inputStates.Unlock()
+	state.replay = append(events, state.replay...)
+	if state.source != nil {
+		inputStates.states[state.source] = state
+	}
+}
+
+// background describes terminal appearance; zero means the dark fallback.
+type background struct {
+	// rgb is valid only when measured; otherwise use the variant's reference.
+	rgb sRGB
+	// light selects the variant, using an estimate when unmeasured.
+	light bool
+	// measured distinguishes terminal RGB from palette estimates.
+	measured bool
+}
+
+// parseOSCColor scales xterm rgb:R/G/B components of one to four hex digits to bytes.
+func (t *termIO) parseOSCColor(data string) (rgb sRGB, ok bool) {
+	spec, found := strings.CutPrefix(data, "rgb:")
+	if !found {
+		return rgb, false
+	}
+	parts := strings.Split(spec, "/")
+	if len(parts) != 3 {
+		return rgb, false
+	}
+	for i, p := range parts {
+		if len(p) < 1 || len(p) > 4 {
+			return rgb, false
+		}
+		v, err := strconv.ParseUint(p, 16, 16)
+		if err != nil {
+			return rgb, false
+		}
+		maxV := uint64(1)<<(4*len(p)) - 1
+		rgb[i] = uint8((v*255 + maxV/2) / maxV)
+	}
+	return rgb, true
+}
+
+// parseColorFGBG estimates the background from fg;bg or fg;xpm;bg using the ANSI palette.
+func (t *termIO) parseColorFGBG(v string) (rgb sRGB, ok bool) {
+	fields := strings.Split(v, ";")
+	if len(fields) < 2 || len(fields) > 3 {
+		return rgb, false
+	}
+	i, err := strconv.Atoi(fields[len(fields)-1])
+	if err != nil || i < 0 || i > 255 {
+		return rgb, false
+	}
+	return ansiPalette()[i], true
+}
+
+// backgroundFromEnv classifies COLORFGBG, or falls back to dark.
+func (t *termIO) backgroundFromEnv(lookup func(string) (string, bool)) background {
+	if lookup == nil {
+		return background{}
+	}
+	v, _ := lookup("COLORFGBG")
+	rgb, ok := t.parseColorFGBG(v)
+	if !ok {
+		return background{}
+	}
+	return background{light: rgb.isLight()}
 }
