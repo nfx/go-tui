@@ -47,6 +47,12 @@ configure:
 godoc:
 	go run golang.org/x/tools/cmd/godoc -http=localhost:6060
 
-check: fmt lint test examples lint-site
+cross-build:
+	GOOS=windows go vet ./...
+	GOOS=windows go test -exec=true -run=^$$ ./...
+	GOOS=linux go vet ./...
+	GOOS=linux go test -exec=true -run=^$$ ./...
 
-.PHONY: check fmt lint test examples lint-site configure
+check: fmt lint test cross-build examples lint-site
+
+.PHONY: check fmt lint test cross-build examples lint-site configure
