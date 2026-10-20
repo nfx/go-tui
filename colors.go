@@ -4,12 +4,14 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
 	"sync"
 	"text/template"
+	"unicode"
 )
 
 const (
@@ -615,25 +617,39 @@ const (
 // background used for contrast come from the Light or Dark variant that
 // matches the terminal; the chromatic seeds are shared between both.
 type Palette struct {
-	Accent, Success, Error RGB // shared chromatic seeds
-	Light, Dark            PaletteVariant
+	Accent  RGB
+	Success RGB
+	Error   RGB // shared chromatic seeds
+	Light   PaletteVariant
+	Dark    PaletteVariant
+}
+
+// canonical rewrites specified colors as uppercase #RRGGBB. Empty fields stay
+// empty: an inherited value must never become an explicit override.
+func (p Palette) canonical() Palette {
+	for _, c := range []*RGB{
+		&p.Accent, &p.Success, &p.Error,
+		&p.Light.Foreground, &p.Light.ReferenceBackground, &p.Light.Accent,
+		&p.Light.Success, &p.Light.Error, &p.Light.Muted, &p.Light.Guide,
+		&p.Dark.Foreground, &p.Dark.ReferenceBackground, &p.Dark.Accent,
+		&p.Dark.Success, &p.Dark.Error, &p.Dark.Muted, &p.Dark.Guide,
+	} {
+		if *c != "" {
+			*c = c.must().hex()
+		}
+	}
+	return p
 }
 
 // PaletteVariant is the palette for one terminal appearance.
 type PaletteVariant struct {
-	Foreground             RGB
-	ReferenceBackground    RGB // used only when the actual background is unknown
-	Accent, Success, Error RGB // optional exact override of shared seeds
-	Muted, Guide           RGB // optional overrides of derived neutrals; Track inherits Guide
-}
-
-// defaultPalette is the preset every empty required field falls back to.
-var defaultPalette = Palette{
-	Accent:  "#00ADD8",
-	Success: "#2D9B55",
-	Error:   "#C83741",
-	Light:   PaletteVariant{Foreground: "#232830", ReferenceBackground: "#FFFFFF"},
-	Dark:    PaletteVariant{Foreground: "#E1E6EE", ReferenceBackground: "#121212"},
+	Foreground          RGB
+	ReferenceBackground RGB // used only when the actual background is unknown
+	Accent              RGB
+	Success             RGB
+	Error               RGB // optional exact override of shared seeds
+	Muted               RGB
+	Guide               RGB // optional overrides of derived neutrals; Track inherits Guide
 }
 
 // resolvedPalette is a palette for one destination: the selected variant,
@@ -646,8 +662,13 @@ type resolvedPalette struct {
 	// from the variant's reference background.
 	Known bool
 
-	Foreground, Muted, Guide, Track sRGB
-	Accent, Success, Error          sRGB
+	Foreground sRGB
+	Muted      sRGB
+	Guide      sRGB
+	Track      sRGB
+	Accent     sRGB
+	Success    sRGB
+	Error      sRGB
 }
 
 // slot is a parsed palette color. Set is false when the caller left the field
@@ -659,35 +680,43 @@ type slot struct {
 
 // parsedVariant is a [PaletteVariant] after parsing and preset filling.
 type parsedVariant struct {
-	foreground, reference, accent, success, err, muted, guide slot
+	foreground slot
+	reference  slot
+	accent     slot
+	success    slot
+	err        slot
+	muted      slot
+	guide      slot
 }
 
 // parsedPalette is a [Palette] after parsing and preset filling.
 type parsedPalette struct {
-	accent, success, err slot
-	light, dark          parsedVariant
+	accent  slot
+	success slot
+	err     slot
+	light   parsedVariant
+	dark    parsedVariant
 }
 
 // parse fills empty required fields from the preset and parses every color
 // once. The error names the theme path of the first malformed value.
 func (p Palette) parse() (out parsedPalette, err error) {
-	def := defaultPalette
 	for _, f := range []struct {
 		path   string
 		c      RGB
 		preset RGB // empty for optional fields
 		dst    *slot
 	}{
-		{"Accent", p.Accent, def.Accent, &out.accent},
-		{"Success", p.Success, def.Success, &out.success},
-		{"Error", p.Error, def.Error, &out.err},
-		{"Light.Foreground", p.Light.Foreground, def.Light.Foreground, &out.light.foreground},
-		{"Light.ReferenceBackground", p.Light.ReferenceBackground, def.Light.ReferenceBackground, &out.light.reference},
+		{"Accent", p.Accent, "#00ADD8", &out.accent},
+		{"Success", p.Success, "#2D9B55", &out.success},
+		{"Error", p.Error, "#C83741", &out.err},
+		{"Light.Foreground", p.Light.Foreground, "#232830", &out.light.foreground},
+		{"Light.ReferenceBackground", p.Light.ReferenceBackground, "#FFFFFF", &out.light.reference},
 		{"Light.Accent", p.Light.Accent, "", &out.light.accent}, {"Light.Success", p.Light.Success, "", &out.light.success},
 		{"Light.Error", p.Light.Error, "", &out.light.err}, {"Light.Muted", p.Light.Muted, "", &out.light.muted},
 		{"Light.Guide", p.Light.Guide, "", &out.light.guide},
-		{"Dark.Foreground", p.Dark.Foreground, def.Dark.Foreground, &out.dark.foreground},
-		{"Dark.ReferenceBackground", p.Dark.ReferenceBackground, def.Dark.ReferenceBackground, &out.dark.reference},
+		{"Dark.Foreground", p.Dark.Foreground, "#E1E6EE", &out.dark.foreground},
+		{"Dark.ReferenceBackground", p.Dark.ReferenceBackground, "#121212", &out.dark.reference},
 		{"Dark.Accent", p.Dark.Accent, "", &out.dark.accent}, {"Dark.Success", p.Dark.Success, "", &out.dark.success},
 		{"Dark.Error", p.Dark.Error, "", &out.dark.err}, {"Dark.Muted", p.Dark.Muted, "", &out.dark.muted},
 		{"Dark.Guide", p.Dark.Guide, "", &out.dark.guide},
@@ -719,6 +748,12 @@ func (p Palette) resolve(light bool, measured sRGB, known bool) (resolvedPalette
 	if err != nil {
 		return resolvedPalette{}, err
 	}
+	return pp.resolve(light, measured, known), nil
+}
+
+// resolve is [Palette.resolve] for a palette that was parsed once, as a
+// compiled theme holds it. It cannot fail.
+func (pp parsedPalette) resolve(light bool, measured sRGB, known bool) resolvedPalette {
 	if known {
 		light = measured.isLight()
 	}
@@ -758,7 +793,7 @@ func (p Palette) resolve(light bool, measured sRGB, known bool) (resolvedPalette
 		Guide:      quiet(v.guide, contrastGuide),
 	}
 	out.Track = out.Guide
-	return out, nil
+	return out
 }
 
 // String is for diagnostics and golden comparisons.
@@ -775,3 +810,158 @@ func (r resolvedPalette) String() string {
 	}
 	return strings.TrimSpace(b.String())
 }
+
+// Theme is the editable configuration of the appearance of every widget. A
+// preset such as [GuidedTheme] is a complete, usable theme to edit.
+type Theme struct {
+	// Light forces the light palette variant without detection. Otherwise the
+	// terminal background is detected, falling back to dark.
+	Light   bool
+	Palette Palette
+	Symbols Symbols
+}
+
+// clone returns an independent copy. Theme holds only value types today; copy
+// every map and slice here when one is added.
+func (t Theme) clone() Theme { return t }
+
+// compile validates and compiles t without terminal I/O or any user
+// code execution. The caller's value is not modified or retained.
+func (in Theme) compile() (*compiledTheme, error) {
+	t := in.clone()
+	var err error
+	c := &compiledTheme{}
+	c.palette, err = t.Palette.parse()
+	if err != nil {
+		return nil, fmt.Errorf("palette: %w", err)
+	}
+	t.Palette = t.Palette.canonical()
+	t.Symbols, err = t.Symbols.normalize()
+	if err != nil {
+		return nil, fmt.Errorf("symbols: %w", err)
+	}
+	c.source = t
+	return c, nil
+}
+
+// Symbols are the glyphs the built-in templates and renderers use. Every
+// symbol is a single display column. An empty field takes the Unicode preset.
+type Symbols struct {
+	Prompt    string
+	Focus     string
+	Guide     string
+	End       string
+	Checked   string
+	Unchecked string
+	Success   string
+	Error     string
+	Cancel    string
+	Ellipsis  string
+	Mask      string
+}
+
+// unicodeSymbols is the preset every empty symbol falls back to.
+var unicodeSymbols = Symbols{
+	Prompt:    "◆",
+	Focus:     "❯",
+	Guide:     "│",
+	End:       "└",
+	Checked:   "◉",
+	Unchecked: "○",
+	Success:   "✔",
+	Error:     "✖",
+	Cancel:    "■",
+	Ellipsis:  "…",
+	Mask:      "*",
+}
+
+func (s Symbols) normalize() (Symbols, error) {
+	def := unicodeSymbols
+	for _, f := range []struct {
+		path string
+		dst  *string
+		def  *string
+	}{
+		{"Prompt", &s.Prompt, &def.Prompt},
+		{"Focus", &s.Focus, &def.Focus},
+		{"Guide", &s.Guide, &def.Guide},
+		{"End", &s.End, &def.End},
+		{"Checked", &s.Checked, &def.Checked},
+		{"Unchecked", &s.Unchecked, &def.Unchecked},
+		{"Success", &s.Success, &def.Success},
+		{"Error", &s.Error, &def.Error},
+		{"Cancel", &s.Cancel, &def.Cancel},
+		{"Ellipsis", &s.Ellipsis, &def.Ellipsis},
+		{"Mask", &s.Mask, &def.Mask},
+	} {
+		if *f.dst == "" {
+			*f.dst = *f.def
+		}
+		err := s.singleColumn(*f.dst)
+		if err != nil {
+			return s, fmt.Errorf("theme.Symbols.%s: %w", f.path, err)
+		}
+	}
+	return s, nil
+}
+
+// singleColumn checks a glyph that must occupy exactly one display column.
+func (Symbols) singleColumn(s string) error {
+	if s == "" {
+		return errors.New("must not be empty")
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("%q: control character", s)
+		}
+	}
+	w := text(s).width()
+	if w != 1 || len(text(s).clusters()) != 1 {
+		return fmt.Errorf("%q: want one display column, got %d", s, w)
+	}
+	return nil
+}
+
+// ASCIISymbols is the symbol set for terminals whose fonts lack the Unicode
+// glyphs.
+func ASCIISymbols() Symbols {
+	return Symbols{
+		Prompt:    "?",
+		Focus:     ">",
+		Guide:     "|",
+		End:       "`",
+		Checked:   "x",
+		Unchecked: "o",
+		Success:   "+",
+		Error:     "!",
+		Cancel:    "-",
+		Ellipsis:  ".",
+		Mask:      "*",
+	}
+}
+
+// presetTheme builds the default theme. The palette stays empty: [Palette.parse]
+// fills every required color, and leaving the adaptive neutrals unset keeps
+// them adapting to the background instead of becoming exact overrides.
+func presetTheme() Theme {
+	return Theme{
+		Palette: Palette{},
+		Symbols: unicodeSymbols,
+	}
+}
+
+// GuidedTheme returns an independent, editable copy of the Guided preset.
+func GuidedTheme() Theme { return presetTheme() }
+
+// compiledTheme is an immutable snapshot of an installed theme. Nothing in it
+// is derived from a terminal: backgrounds and profiles are bound per operation.
+type compiledTheme struct {
+	// source is the normalized editable configuration, privately owned.
+	source Theme
+
+	// Derived state, computed from source.
+	palette parsedPalette
+}
+
+// editable returns the source configuration as an independent copy.
+func (c *compiledTheme) editable() Theme { return c.source.clone() }

@@ -7,6 +7,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
@@ -493,4 +494,116 @@ func TestDistinctCollapsesByEncoding(t *testing.T) {
 	a, b := sRGB{0x00, 0x7F, 0x00}, sRGB{0x00, 0x80, 0x00}
 	assert.Equal(t, 1, len(profileANSI16.distinct([]sRGB{a, b})))
 	assert.Equal(t, 2, len(profileTrueColor.distinct([]sRGB{a, b})))
+}
+
+func TestPresetsCompile(t *testing.T) {
+	for name, th := range map[string]Theme{"guided": GuidedTheme()} {
+		t.Run(name, func(t *testing.T) {
+			_, err := th.compile()
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestSymbolPresetsAreOneColumn(t *testing.T) {
+	_, err := Symbols{}.normalize()
+	assert.NoError(t, err)
+	_, err = ASCIISymbols().normalize()
+	assert.NoError(t, err)
+}
+
+func TestZeroThemeCompiles(t *testing.T) {
+	_, err := Theme{}.compile()
+	assert.NoError(t, err)
+}
+
+func TestPresetKeepsAdaptiveNeutralsUnset(t *testing.T) {
+	th := GuidedTheme()
+	assert.Equal(t, RGB(""), th.Palette.Light.Foreground)
+	assert.Equal(t, RGB(""), th.Palette.Dark.Foreground)
+	c, err := th.compile()
+	assert.NoError(t, err)
+	assert.True(t, !c.palette.dark.foreground.set)
+	assert.True(t, !c.palette.light.muted.set)
+}
+
+func TestRoundTripKeepsIntentAndCanonicalizes(t *testing.T) {
+	th := GuidedTheme()
+	th.Palette.Accent = "#0ad"
+	th.Palette.Dark.Error = "#000"
+	c, err := th.compile()
+	assert.NoError(t, err)
+	got := c.editable()
+	assert.Equal(t, RGB("#00AADD"), got.Palette.Accent)
+	assert.Equal(t, RGB("#000000"), got.Palette.Dark.Error) // explicit black stays explicit
+	assert.Equal(t, RGB(""), got.Palette.Dark.Foreground)
+	again, err := got.compile()
+	assert.NoError(t, err)
+	assert.True(t, again.palette.dark.err.set)
+	assert.True(t, !again.palette.dark.foreground.set)
+	assert.Equal(t, RGB("#0ad"), th.Palette.Accent) // caller value untouched
+}
+
+func TestPaletteErrorIsPathQualified(t *testing.T) {
+	th := GuidedTheme()
+	th.Palette.Dark.Accent = "00ADD8"
+	_, err := th.compile()
+	assert.Contains(t, err.Error(), "theme.Palette.Dark.Accent")
+}
+
+func TestInstallAtomicAndIsolation(t *testing.T) {
+	prev := defaultIO.currentTheme()
+	t.Cleanup(func() { defaultIO.theme.Store(prev) })
+
+	th := GuidedTheme()
+	th.Palette.Accent = "#112233"
+	assert.NoError(t, defaultIO.installTheme(th))
+	c := defaultIO.currentTheme()
+	assert.Equal(t, RGB("#112233"), c.editable().Palette.Accent)
+
+	// Mutating the caller's value and the returned copy leaves the snapshot alone.
+	th.Palette.Accent = "#445566"
+	got := defaultIO.currentTheme().editable()
+	got.Palette.Accent = "#778899"
+	assert.Equal(t, RGB("#112233"), c.source.Palette.Accent)
+	assert.Equal(t, RGB("#112233"), defaultIO.currentTheme().editable().Palette.Accent)
+
+	// A failed installation changes nothing.
+	bad := GuidedTheme()
+	bad.Palette.Accent = "nope"
+	assert.Error(t, defaultIO.installTheme(bad))
+	assert.True(t, defaultIO.currentTheme() == c)
+}
+
+func TestConcurrentInstall(t *testing.T) {
+	prev := defaultIO.currentTheme()
+	t.Cleanup(func() { defaultIO.theme.Store(prev) })
+	var wg sync.WaitGroup
+	for i := range 16 {
+		wg.Go(func() {
+			th := GuidedTheme()
+			if i%2 == 0 {
+				th.Palette.Accent = "nope"
+			}
+			err := defaultIO.installTheme(th)
+			if i%2 == 0 {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			if c := defaultIO.currentTheme(); c == nil {
+				t.Error("torn theme")
+			}
+		})
+	}
+	wg.Wait()
+}
+
+func TestParsedPaletteResolveMatchesAdapter(t *testing.T) {
+	p := Palette{Accent: "#00ADD8", Dark: PaletteVariant{Muted: "#777777"}}
+	want, err := p.resolve(false, sRGB{0x20, 0x20, 0x20}, true)
+	assert.NoError(t, err)
+	pp, err := p.parse()
+	assert.NoError(t, err)
+	assert.Equal(t, want, pp.resolve(false, sRGB{0x20, 0x20, 0x20}, true))
 }

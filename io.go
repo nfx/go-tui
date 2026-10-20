@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/term"
@@ -80,6 +81,20 @@ type tio struct {
 	bgGen uint64
 	// bgMu serializes probes; acquire before mu and release mu before probing.
 	bgMu sync.Mutex
+	// theme is the installed snapshot, set only on defaultIO. Installing
+	// is compile-then-store with no shared read-modify-write, so it needs no lock.
+	theme atomic.Pointer[compiledTheme]
+}
+
+func (t *tio) currentTheme() *compiledTheme { return t.theme.Load() }
+
+func (t *tio) installTheme(th Theme) error {
+	c, err := th.compile()
+	if err != nil {
+		return err
+	}
+	t.theme.Store(c)
+	return nil
 }
 
 type terminalStderr struct {
@@ -124,10 +139,20 @@ func (w *terminalStderr) Fd() uintptr {
 	return fdw.Fd()
 }
 
-var defaultIO = &tio{
-	reader: os.Stdin,
-	writer: os.Stderr,
-	env:    readOutputEnv(os.LookupEnv),
+var defaultIO = newDefaultIO()
+
+func newDefaultIO() *tio {
+	t := &tio{
+		reader: os.Stdin,
+		writer: os.Stderr,
+		env:    readOutputEnv(os.LookupEnv),
+	}
+	c, err := GuidedTheme().compile()
+	if err != nil {
+		panic(err) // the preset is valid
+	}
+	t.theme.Store(c)
+	return t
 }
 
 // Stderr returns the package-default append-only terminal writer.
