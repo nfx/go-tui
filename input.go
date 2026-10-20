@@ -727,7 +727,7 @@ func (p *input) pressAny(key rune) {
 
 // parseTemplates prepares label, answer, and feedback templates before interaction.
 func (p *input) parseTemplates() (err error) {
-	tmpl := template.New("dropdown").Funcs(colorFns)
+	tmpl := template.New("dropdown").Funcs(legacyTemplateFuncs())
 	p.labelTemplate, err = tmpl.New("label").Parse(mustEndWith(p.LabelTemplate, ' '))
 	if err != nil {
 		return fmt.Errorf("label: %w", err)
@@ -759,7 +759,7 @@ func (p *input) parseFeedback() error {
 	if source == "" {
 		source = DefaultFeedbackTemplate
 	}
-	parsed, err := template.New("feedback").Funcs(colorFns).Parse(source)
+	parsed, err := template.New("feedback").Funcs(legacyTemplateFuncs()).Parse(source)
 	if err != nil {
 		return fmt.Errorf("feedback: %w", err)
 	}

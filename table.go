@@ -11,6 +11,7 @@ import (
 	"io"
 	"iter"
 	"log/slog"
+	"maps"
 	"math"
 	"os"
 	"reflect"
@@ -1063,10 +1064,9 @@ func (t *table) formatterTemplate(fnName string, meta *fieldMetadata) string {
 
 // templateFuncs merges shared color functions with per-table formatter functions.
 func (t *table) templateFuncs() template.FuncMap {
-	funcs := make(template.FuncMap, len(colorFns)+len(t.customTemplateFuncs)+2)
-	for name, fn := range colorFns {
-		funcs[name] = fn
-	}
+	legacy := legacyTemplateFuncs()
+	funcs := make(template.FuncMap, len(legacy)+len(t.customTemplateFuncs)+2)
+	maps.Copy(funcs, legacy)
 	funcs["tableString"] = tableString
 	funcs["__cellSep"] = t.cellSeparator
 	for name, fn := range t.customTemplateFuncs {

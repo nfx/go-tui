@@ -4,10 +4,13 @@
 package tui
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"maps"
 	"math"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -55,71 +58,6 @@ const (
 	underline     = "\x1b[4m"
 	strikethrough = "\x1b[9m"
 )
-
-var colorFns = template.FuncMap{
-	"black":        ansciiFormatter(black),
-	"red":          ansciiFormatter(red),
-	"green":        ansciiFormatter(green),
-	"yellow":       ansciiFormatter(yellow),
-	"blue":         ansciiFormatter(blue),
-	"purple":       ansciiFormatter(purple),
-	"cyan":         ansciiFormatter(cyan),
-	"white":        ansciiFormatter(white),
-	"brightBlack":  ansciiFormatter(brightBlack),
-	"brightRed":    ansciiFormatter(brightRed),
-	"brightGreen":  ansciiFormatter(brightGreen),
-	"brightYellow": ansciiFormatter(brightYellow),
-	"brightBlue":   ansciiFormatter(brightBlue),
-	"brightPurple": ansciiFormatter(brightPurple),
-	"brightCyan":   ansciiFormatter(brightCyan),
-	"brightWhite":  ansciiFormatter(brightWhite),
-	"bgBlack":      ansciiFormatter(bgBlack),
-	"bgRed":        ansciiFormatter(bgRed),
-	"bgGreen":      ansciiFormatter(bgGreen),
-	"bgYellow":     ansciiFormatter(bgYellow),
-	"bgBlue":       ansciiFormatter(bgBlue),
-	"bgPurple":     ansciiFormatter(bgPurple),
-	"bgCyan":       ansciiFormatter(bgCyan),
-	"bgWhite":      ansciiFormatter(bgWhite),
-	"bold":         ansciiFormatter(bold),
-	"dim":          ansciiFormatter(dim),
-	"italic":       ansciiFormatter(italic),
-	"underline":    ansciiFormatter(underline),
-	"strike":       ansciiFormatter(strikethrough),
-	"ago":          ago,
-}
-
-func WithFn(name string, fn any) {
-	// TODO: add validation for fn signature via reflect
-	colorFns[name] = fn
-}
-
-func ansciiFormatter(codes ...string) func(...any) string {
-	return func(text ...any) string {
-		var result strings.Builder
-		for _, code := range codes {
-			result.WriteString(code)
-		}
-		for _, t := range text {
-			switch x := t.(type) {
-			case *string:
-				if x != nil {
-					result.WriteString(*x)
-				}
-			case []string:
-				result.WriteString(strings.Join(x, ", "))
-			case *int:
-				if x != nil {
-					fmt.Fprint(&result, *x)
-				}
-			default:
-				fmt.Fprint(&result, t)
-			}
-		}
-		result.WriteString(reset)
-		return result.String()
-	}
-}
 
 // RGB is a 24-bit sRGB color in CSS hex notation, "#RRGGBB" or the
 // shorthand "#RGB". Hex digits are case-insensitive. The empty string
@@ -542,6 +480,19 @@ func (p colorProfile) encode(c sRGB, background bool) text {
 	}
 }
 
+// named preserves a named SGR code only when the profile supports it.
+func (p colorProfile) named(seq text) string {
+	set, _ := seq.scan().sgrEffect()
+	switch {
+	case p >= profileANSI16:
+		return seq.String()
+	case p == profileAttrs && set&(sgrForeground|sgrBackground) == 0:
+		return seq.String()
+	default:
+		return ""
+	}
+}
+
 // fg returns the SGR sequence selecting c as foreground.
 func (p colorProfile) fg(c sRGB) text { return p.encode(c, false) }
 
@@ -821,10 +772,22 @@ type Theme struct {
 	Palette   Palette
 	Symbols   Symbols
 	Templates Templates
+	// Funcs are custom template helpers, added to the built-in ones. They
+	// cannot replace a built-in helper, and must be safe for concurrent use.
+	Funcs template.FuncMap
 }
 
-// clone returns an independent copy while Theme contains only value types.
-func (t Theme) clone() Theme { return t }
+// clone copies theme configuration without isolating helper closures.
+func (t Theme) clone() Theme {
+	t.Funcs = maps.Clone(t.Funcs)
+	return t
+}
+
+// withCustom adds custom helpers to builtins in place.
+func (t Theme) withCustom(builtins template.FuncMap) template.FuncMap {
+	maps.Copy(builtins, t.Funcs)
+	return builtins
+}
 
 // compile validates an independent theme copy without terminal I/O or executing user code.
 func (in Theme) compile() (*compiledTheme, error) {
@@ -840,12 +803,79 @@ func (in Theme) compile() (*compiledTheme, error) {
 	if err != nil {
 		return nil, fmt.Errorf("symbols: %w", err)
 	}
-	c.templates, err = t.Templates.compile()
+	builtins := destination{symbols: t.Symbols}.funcs()
+	err = in.compileFuncs(builtins, t.Funcs)
 	if err != nil {
 		return nil, err
 	}
+	c.templates, err = t.Templates.compile(t.withCustom(builtins))
+	if err != nil {
+		return nil, err
+	}
+	c.legacy = t.withCustom(destination{profile: legacyProfile}.legacy())
 	c.source = t
 	return c, nil
+}
+
+// compileFuncs reports custom helper validation errors by name.
+func (in Theme) compileFuncs(builtins, funcs template.FuncMap) error {
+	var errs []error
+	for _, name := range slices.Sorted(maps.Keys(funcs)) {
+		if err := in.checkFunc(builtins, name, funcs[name]); err != nil {
+			errs = append(errs, fmt.Errorf("theme.Funcs.%s: %w", name, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// widgetHelpers are the names of helpers that widgets add to the builtins.
+var widgetHelpers = []string{"label", "tableString"}
+
+// generatedHelperPrefixes are the prefixes of names that tables generate.
+var generatedHelperPrefixes = []string{"__", "tableColumnTypeFormat", "tableColumnNameFormat"}
+
+// checkFunc validates helper names and signatures without executing user code.
+func (in Theme) checkFunc(builtins template.FuncMap, name string, fn any) error {
+	if !in.isHelperName(name) {
+		return errors.New("not a template identifier")
+	}
+	if _, ok := builtins[name]; ok || slices.Contains(widgetHelpers, name) {
+		return errors.New("reserved for a built-in helper")
+	}
+	for _, prefix := range generatedHelperPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return fmt.Errorf("prefix %q is reserved for generated helpers", prefix)
+		}
+	}
+	v := reflect.ValueOf(fn)
+	if !v.IsValid() || v.Kind() != reflect.Func || v.IsNil() {
+		return fmt.Errorf("want a function, got %T", fn)
+	}
+	t := v.Type()
+	switch {
+	case t.NumOut() == 1:
+	case t.NumOut() == 2 && t.Out(1) == reflect.TypeFor[error]():
+	default:
+		return fmt.Errorf("%s: want one result, or a result and an error", t)
+	}
+	return nil
+}
+
+// isHelperName reports whether name is a template function identifier.
+func (in Theme) isHelperName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		switch {
+		case r == '_':
+		case i == 0 && !unicode.IsLetter(r):
+			return false
+		case !unicode.IsLetter(r) && !unicode.IsDigit(r):
+			return false
+		}
+	}
+	return true
 }
 
 // Symbols are the glyphs the built-in templates and renderers use. Every
@@ -877,6 +907,35 @@ var unicodeSymbols = Symbols{
 	Cancel:    "■",
 	Ellipsis:  "…",
 	Mask:      "*",
+}
+
+// named returns the glyph of a field by name.
+func (s Symbols) named(name string) (string, error) {
+	switch name {
+	case "Prompt":
+		return s.Prompt, nil
+	case "Focus":
+		return s.Focus, nil
+	case "Guide":
+		return s.Guide, nil
+	case "End":
+		return s.End, nil
+	case "Checked":
+		return s.Checked, nil
+	case "Unchecked":
+		return s.Unchecked, nil
+	case "Success":
+		return s.Success, nil
+	case "Error":
+		return s.Error, nil
+	case "Cancel":
+		return s.Cancel, nil
+	case "Ellipsis":
+		return s.Ellipsis, nil
+	case "Mask":
+		return s.Mask, nil
+	}
+	return "", fmt.Errorf("symbol %q: no such symbol", name)
 }
 
 func (s Symbols) normalize() (Symbols, error) {
@@ -966,10 +1025,21 @@ type compiledTheme struct {
 	// Derived state, computed from source.
 	palette   parsedPalette
 	templates templates
+	// legacy are the helpers of per-call templates. It is shared: callers
+	// copy it before adding their own helpers.
+	legacy template.FuncMap
 }
 
 // editable returns the source configuration as an independent copy.
 func (c *compiledTheme) editable() Theme { return c.source.clone() }
+
+// funcs returns built-in and custom helpers bound to one destination.
+func (c *compiledTheme) funcs(p colorProfile, roles roleStyles) template.FuncMap {
+	return c.source.withCustom(destination{profile: p, roles: roles, symbols: c.source.Symbols}.funcs())
+}
+
+// legacyTemplateFuncs returns installed per-call helpers; callers must not modify the map.
+func legacyTemplateFuncs() template.FuncMap { return defaultIO.currentTheme().legacy }
 
 // Template is an optional template source. The zero value inherits from the
 // parent slot; [Hidden] is an explicit empty source that hides the slot
@@ -1041,8 +1111,8 @@ type templates struct {
 }
 
 // compile resolves slot inheritance in isolated namespaces and reports errors at defining slots.
-func (t *Templates) compile() (templates, error) {
-	root := templated[struct{}, struct{}]{Funcs: t.funcs()}
+func (t *Templates) compile(funcs template.FuncMap) (templates, error) {
+	root := templated[struct{}, struct{}]{Funcs: funcs}
 	var out templates
 	var errs [9]error
 	out.Prompt, errs[0] = t.prompt(root.nest("Prompt", t.Prompt, promptTemplates{}))
@@ -1193,15 +1263,241 @@ func (t *Templates) slot(in templated[Template, *compiledSlot], optional bool) (
 	return &compiledSlot{tmpl: tmpl}, nil
 }
 
-// funcs supplies template helpers with placeholder signatures for rendering functions.
-func (t *Templates) funcs() template.FuncMap {
-	funcs := make(template.FuncMap, len(colorFns)+8)
-	maps.Copy(funcs, colorFns)
-	for _, name := range []string{"text", "muted", "accent", "success", "error"} {
-		funcs[name] = func(...any) string { return "" }
+// bind attaches destination helpers to a clone, preserving the installed slot.
+func (s *compiledSlot) bind(funcs template.FuncMap) (boundSlot, error) {
+	if s.hidden {
+		return boundSlot{}, nil
 	}
-	funcs["symbol"] = func(string) string { return "" }
-	funcs["fg"] = func(string, ...any) (string, error) { return "", nil }
-	funcs["bg"] = func(string, ...any) (string, error) { return "", nil }
+	tmpl, err := s.tmpl.Clone()
+	if err != nil {
+		return boundSlot{}, fmt.Errorf("theme.Templates.%s: %w", s.tmpl.Name(), err)
+	}
+	return boundSlot{tmpl: tmpl.Funcs(funcs)}, nil
+}
+
+// boundSlot is a slot bound to one destination. The zero value is hidden.
+type boundSlot struct {
+	tmpl *template.Template
+}
+
+// render returns complete slot output or an error, allowing only text and SGR.
+func (b boundSlot) render(data any) (text, error) {
+	if b.tmpl == nil {
+		return nil, nil
+	}
+	var out text
+	err := b.tmpl.Execute(&out, data)
+	if err != nil {
+		return nil, fmt.Errorf("theme.Templates.%s: %w", b.tmpl.Name(), err)
+	}
+	for seg := range out.segments() {
+		if _, sgr := seg.sgrParams(); seg.isText() || (seg.isEscape && sgr) {
+			continue
+		}
+		return nil, fmt.Errorf("theme.Templates.%s: %q: want text and SGR only", b.tmpl.Name(), seg.text)
+	}
+	return out, nil
+}
+
+// WithFn registers or replaces a custom helper for future operations.
+// Helpers must be safe for concurrent use and return one value or a value and error.
+// Invalid or reserved names and invalid signatures panic without changing the theme.
+func WithFn(name string, fn any) {
+	err := defaultIO.updateTheme(func(t *Theme) {
+		if t.Funcs == nil {
+			t.Funcs = template.FuncMap{}
+		}
+		t.Funcs[name] = fn
+	})
+	if err != nil {
+		panic(fmt.Errorf("tui.WithFn: %w", err))
+	}
+}
+
+// legacyProfile is the profile of the per-call templates, which still emit
+// SGR whatever the destination until each widget binds its destination.
+const legacyProfile = profileTrueColor
+
+// formatArgs joins helper arguments without separators.
+func (span) formatArgs(args []any) text {
+	var result text
+	for _, t := range args {
+		switch x := t.(type) {
+		case *string:
+			if x != nil {
+				result = append(result, *x...)
+			}
+		case []string:
+			result = append(result, strings.Join(x, ", ")...)
+		case *int:
+			if x != nil {
+				result = fmt.Append(result, *x)
+			}
+		default:
+			result = fmt.Append(result, t)
+		}
+	}
+	return result
+}
+
+// span is the style one helper call establishes. It is immutable and keeps
+// no state between calls, so its helpers are safe for concurrent executions.
+type span struct {
+	open     []sgrCode
+	channels sgrChannel
+	closer   string
+}
+
+// sgrCode is one opening SGR sequence and the channels it sets.
+type sgrCode struct {
+	seq      string
+	channels sgrChannel
+}
+
+// helper adapts s to a template helper with the legacy argument conversions.
+func (s span) helper() func(...any) string {
+	return func(args ...any) string { return s.wrap(s.formatArgs(args)).String() }
+}
+
+// wrap styles body, restoring outer channels after nested resets when content follows.
+// Non-SGR escape sequences pass through unchanged.
+func (s span) wrap(body text) text {
+	if len(s.open) == 0 {
+		return body
+	}
+	var out text
+	for _, c := range s.open {
+		out = append(out, c.seq...)
+	}
+	if bytes.IndexByte(body, 0x1b) < 0 {
+		out = append(out, body...)
+	} else {
+		var pending sgrChannel
+		for seg := range body.segments() {
+			if pending != 0 {
+				s.restore(&out, pending)
+			}
+			out = append(out, seg.text...)
+			_, cleared := seg.sgrEffect()
+			pending = cleared & s.channels
+		}
+	}
+	out = append(out, s.closer...)
+	return out
+}
+
+// restore appends the opening codes of s that set any of channels, in order.
+func (s span) restore(out *text, channels sgrChannel) {
+	for _, c := range s.open {
+		if c.channels&channels != 0 {
+			*out = append(*out, c.seq...)
+		}
+	}
+}
+
+// roleStyles are the encoded foregrounds of the semantic helpers for one
+// destination. An empty style keeps the terminal default.
+type roleStyles struct {
+	foreground, muted, accent, success, failure text
+}
+
+// destination is what the built-in template helpers depend on: what one output
+// accepts and shows.
+type destination struct {
+	profile colorProfile
+	roles   roleStyles
+	symbols Symbols
+}
+
+// newSpan defines a style wrapper that leaves text unchanged when no sequences are set.
+func (d destination) newSpan(closer string, seqs ...text) span {
+	s := span{closer: closer}
+	for _, seq := range seqs {
+		if len(seq) == 0 {
+			continue
+		}
+		set, _ := seq.scan().sgrEffect()
+		s.open = append(s.open, sgrCode{seq: seq.String(), channels: set})
+		s.channels |= set
+	}
+	return s
+}
+
+// legacy returns the helpers of per-call templates: named styles and ago.
+func (d destination) legacy() template.FuncMap {
+	var namedStyles = map[string]string{
+		"black":        black,
+		"red":          red,
+		"green":        green,
+		"yellow":       yellow,
+		"blue":         blue,
+		"purple":       purple,
+		"cyan":         cyan,
+		"white":        white,
+		"brightBlack":  brightBlack,
+		"brightRed":    brightRed,
+		"brightGreen":  brightGreen,
+		"brightYellow": brightYellow,
+		"brightBlue":   brightBlue,
+		"brightPurple": brightPurple,
+		"brightCyan":   brightCyan,
+		"brightWhite":  brightWhite,
+		"bgBlack":      bgBlack,
+		"bgRed":        bgRed,
+		"bgGreen":      bgGreen,
+		"bgYellow":     bgYellow,
+		"bgBlue":       bgBlue,
+		"bgPurple":     bgPurple,
+		"bgCyan":       bgCyan,
+		"bgWhite":      bgWhite,
+		"bold":         bold,
+		"dim":          dim,
+		"italic":       italic,
+		"underline":    underline,
+		"strike":       strikethrough,
+	}
+	funcs := make(template.FuncMap, len(namedStyles)+1)
+	for name, seq := range namedStyles {
+		funcs[name] = d.newSpan(reset, text(d.profile.named(text(seq)))).helper()
+	}
+	funcs["ago"] = ago
 	return funcs
+}
+
+// funcs returns all built-in helpers bound to the destination.
+func (d destination) funcs() template.FuncMap {
+	funcs := d.legacy()
+	for name, seq := range map[string]text{
+		"text":    d.roles.foreground,
+		"muted":   d.roles.muted,
+		"accent":  d.roles.accent,
+		"success": d.roles.success,
+		"error":   d.roles.failure,
+	} {
+		funcs[name] = d.newSpan(fgDefault, seq).helper()
+	}
+	funcs["fg"] = d.color(false)
+	funcs["bg"] = d.color(true)
+	funcs["symbol"] = d.symbols.named
+	return funcs
+}
+
+// color returns a foreground or background helper that validates colors at execution.
+func (d destination) color(background bool) func(string, ...any) (string, error) {
+	name, closer := "fg", fgDefault
+	if background {
+		name, closer = "bg", bgDefault
+	}
+	return func(c string, args ...any) (string, error) {
+		rgb, err := RGB(c).parse()
+		if err == nil && c == "" {
+			err = errors.New(`"": want "#RRGGBB" or "#RGB"`)
+		}
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", name, err)
+		}
+		seq := d.profile.encode(rgb, background)
+		s := d.newSpan(closer, seq)
+		return s.wrap(s.formatArgs(args)).String(), nil
+	}
 }

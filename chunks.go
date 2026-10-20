@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"iter"
 	"slices"
+	"strconv"
 	"unicode"
 	"unicode/utf8"
 )
@@ -92,16 +93,101 @@ func (t segment) isText() bool {
 
 // sgrStyle reports whether t is SGR and may leave a style open.
 func (t segment) sgrStyle() (styled, ok bool) {
-	params, ok := bytes.CutPrefix(t.text, []byte("\x1b["))
+	params, ok := t.sgrParams()
 	if !ok {
 		return false, false
+	}
+	return len(bytes.Trim(params, "0;")) > 0, true
+}
+
+// sgrParams returns SGR parameters, rejecting non-SGR sequences.
+func (t segment) sgrParams() (text, bool) {
+	params, ok := bytes.CutPrefix(t.text, []byte("\x1b["))
+	if !ok {
+		return nil, false
 	}
 	params, ok = bytes.CutSuffix(params, []byte("m"))
 	// private parameters, like in ESC [ > 4 m, are not SGR
 	if !ok || len(bytes.Trim(params, "0123456789;:")) > 0 {
-		return false, false
+		return nil, false
 	}
-	return len(bytes.Trim(params, "0;")) > 0, true
+	return params, true
+}
+
+// sgrChannel is a part of the style that SGR sets and resets independently.
+type sgrChannel uint8
+
+const (
+	sgrForeground sgrChannel = 1 << iota
+	sgrBackground
+	sgrIntensity // bold and dim share reset 22
+	sgrItalic
+	sgrUnderline
+	sgrStrike
+
+	sgrAll = sgrForeground | sgrBackground | sgrIntensity | sgrItalic | sgrUnderline | sgrStrike
+)
+
+// sgrEffect reports final channel changes without treating color arguments as resets.
+func (t segment) sgrEffect() (set, cleared sgrChannel) {
+	params, ok := t.sgrParams()
+	if !ok {
+		return 0, 0
+	}
+	fields := bytes.Split(params, []byte(";"))
+	for i := 0; i < len(fields); i++ {
+		head, _, colon := bytes.Cut(fields[i], []byte(":"))
+		code := -1
+		if len(head) == 0 {
+			code = 0 // an empty parameter is a reset
+		} else if n, err := strconv.Atoi(string(head)); err == nil {
+			code = n
+		}
+		on, off := t.sgrCodeEffect(code)
+		set, cleared = (set|on)&^off, (cleared|off)&^on
+		if (code == 38 || code == 48 || code == 58) && !colon && i+1 < len(fields) {
+			switch string(fields[i+1]) {
+			case "5":
+				i += 2
+			case "2":
+				i += 4
+			}
+		}
+	}
+	return set, cleared
+}
+
+// sgrCodeEffect returns the channels one SGR parameter sets and resets.
+func (t segment) sgrCodeEffect(code int) (on, off sgrChannel) {
+	switch {
+	case code == 0:
+		return 0, sgrAll
+	case code == 1 || code == 2:
+		return sgrIntensity, 0
+	case code == 3:
+		return sgrItalic, 0
+	case code == 4:
+		return sgrUnderline, 0
+	case code == 9:
+		return sgrStrike, 0
+	case code == 22:
+		return 0, sgrIntensity
+	case code == 23:
+		return 0, sgrItalic
+	case code == 24:
+		return 0, sgrUnderline
+	case code == 29:
+		return 0, sgrStrike
+	case code >= 30 && code <= 38, code >= 90 && code <= 97:
+		return sgrForeground, 0
+	case code == 39:
+		return 0, sgrForeground
+	case code >= 40 && code <= 48, code >= 100 && code <= 107:
+		return sgrBackground, 0
+	case code == 49:
+		return 0, sgrBackground
+	}
+	return 0, 0
 }
 
 // segments returns the segments of t, in order.

@@ -130,13 +130,14 @@ _, err := tui.Input(ctx, "Name", common)
 
 ## WithFn
 
-Registers a global template helper function.
+Registers a global template helper function for operations started afterwards.
 
 ```go
 tui.WithFn("upper", strings.ToUpper)
 ```
 
-Then use it in templates: `{{ upper .Name }}`.
+Then use it in templates: `{{ upper .Name }}`. It panics on an invalid name or
+signature, or on a built-in helper's name.
 
 All predefined helper functions are documented on
 [Template Functions](template-functions.md).
