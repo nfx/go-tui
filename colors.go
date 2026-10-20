@@ -136,6 +136,15 @@ func (c RGB) Validate() error {
 // see https://en.wikipedia.org/wiki/SRGB.
 type sRGB [3]uint8
 
+// must parses a color that was already validated or is a constant.
+func (c RGB) must() sRGB {
+	rgb, err := c.parse()
+	if err != nil {
+		panic(err)
+	}
+	return rgb
+}
+
 // parse returns the color bytes. The empty (unset) value parses to zero
 // bytes without error, so callers that care check c == "" themselves.
 func (c RGB) parse() (rgb sRGB, err error) {
@@ -240,6 +249,23 @@ func (c sRGB) srgbToLinear(v uint8) float64 {
 	return math.Pow((f+0.055)/1.055, 2.4)
 }
 
+// contrast is the WCAG contrast ratio between two colors, in 1..21.
+func (c sRGB) contrast(o sRGB) float64 {
+	a, b := c.luminance(), o.luminance()
+	if a < b {
+		a, b = b, a
+	}
+	return (a + 0.05) / (b + 0.05)
+}
+
+// luminance is the linear-sRGB relative luminance.
+func (c sRGB) luminance() float64 {
+	return 0.2126*c.srgbToLinear(c[0]) + 0.7152*c.srgbToLinear(c[1]) + 0.0722*c.srgbToLinear(c[2])
+}
+
+// isLight classifies a background as light, at or above [lightBoundary].
+func (c sRGB) isLight() bool { return c.luminance() >= lightBoundary }
+
 // oklab converts to OKLab using Björn Ottosson's matrices.
 // see https://bottosson.github.io/posts/oklab/#converting-from-linear-srgb-to-oklab.
 func (c sRGB) oklab() oklab {
@@ -252,6 +278,107 @@ func (c sRGB) oklab() oklab {
 		A: 1.9779984951*l - 2.4285922050*m + 0.4505937099*s,
 		B: 0.0259040371*l + 0.7827717662*m - 0.8086757660*s,
 	}
+}
+
+// atLeast returns c unchanged when it has at least the target contrast
+// against bg. Otherwise it returns the same hue at the smallest lightness
+// change that does, in whichever direction needs less. When neither black nor
+// white suffices, the one with more contrast is returned.
+func (c sRGB) atLeast(bg sRGB, target float64) sRGB {
+	if c.contrast(bg) >= target {
+		return c
+	}
+	lch := c.oklab().lch()
+	var best sRGB
+	bestStep, found := math.Inf(1), false
+	for _, far := range []float64{0, 1} {
+		l, ok := lch.reach(bg, target, far)
+		if !ok {
+			continue
+		}
+		if step := math.Abs(l - lch.L); step < bestStep {
+			best, bestStep, found = lch.withLightness(l), step, true
+		}
+	}
+	if found {
+		return best
+	}
+	black, white := lch.withLightness(0), lch.withLightness(1)
+	if black.contrast(bg) >= white.contrast(bg) {
+		return black
+	}
+	return white
+}
+
+// atContrast is the color of c's hue closest to bg that reaches the target
+// contrast, moving away from bg toward black on light backgrounds and toward
+// white on dark ones. It may be less contrasty than c itself. When even the
+// extreme falls short, that extreme is returned.
+func (c sRGB) atContrast(bg sRGB, target float64) sRGB {
+	far := 1.0
+	if bg.isLight() {
+		far = 0.0
+	}
+	lch := c.oklab().lch()
+	l, _ := lch.reach(bg, target, far)
+	return lch.withLightness(l)
+}
+
+// reach finds the lightness nearest bg's, on the side of far, whose color
+// reaches the target contrast. When even far falls short, it returns far and
+// false.
+func (c oklch) reach(bg sRGB, target, far float64) (float64, bool) {
+	if c.withLightness(far).contrast(bg) < target {
+		return far, false
+	}
+	// contrast grows as lightness moves away from the background
+	return bisect(far, bg.oklab().L, func(l float64) bool {
+		return c.withLightness(l).contrast(bg) >= target
+	}), true
+}
+
+// quieter returns the color between c and bg closest to bg that still has
+// the target contrast. When c already falls short, c is returned.
+func (c sRGB) quieter(bg sRGB, target float64) sRGB {
+	if c.contrast(bg) <= target {
+		return c
+	}
+	a, b := c.oklab(), bg.oklab()
+	// 0 is c, 1 is bg
+	return a.mix(b, bisect(0, 1, func(t float64) bool {
+		return a.mix(b, t).contrast(bg) >= target
+	}))
+}
+
+// bisect narrows the interval between good, where ok holds, and bad, where
+// it does not, and returns the boundary point on the good side.
+func bisect(good, bad float64, ok func(float64) bool) float64 {
+	for range 32 {
+		mid := (good + bad) / 2
+		if ok(mid) {
+			good = mid
+		} else {
+			bad = mid
+		}
+	}
+	return good
+}
+
+// ramp returns n shades of base's hue with ascending contrast against bg,
+// from [contrastMark] to [contrastRampMax]. One level is the base itself.
+func (c sRGB) ramp(bg sRGB, n int) ([]sRGB, error) {
+	if n < 1 || n > maxRampLevels {
+		return nil, fmt.Errorf("levels %d: want 1..%d", n, maxRampLevels)
+	}
+	if n == 1 {
+		return []sRGB{c}, nil
+	}
+	out := make([]sRGB, n)
+	for i := range n {
+		target := contrastMark + (contrastRampMax-contrastMark)*float64(i)/float64(n-1)
+		out[i] = c.atContrast(bg, target)
+	}
+	return out, nil
 }
 
 var (
@@ -297,6 +424,75 @@ type oklab struct{ L, A, B float64 }
 func (c oklab) distance(o oklab) float64 {
 	dl, da, db := c.L-o.L, c.A-o.A, c.B-o.B
 	return dl*dl + da*da + db*db
+}
+
+// oklch is a color in the cylindrical form of OKLab: lightness, chroma, hue.
+type oklch struct{ L, C, H float64 }
+
+func (c oklab) lch() oklch {
+	return oklch{L: c.L, C: math.Hypot(c.A, c.B), H: math.Atan2(c.B, c.A)}
+}
+
+// mix moves from c toward o by t in 0..1.
+func (c oklab) mix(o oklab, t float64) sRGB {
+	rgb, _ := oklab{L: c.L + (o.L-c.L)*t, A: c.A + (o.A-c.A)*t, B: c.B + (o.B-c.B)*t}.srgb()
+	return rgb
+}
+
+// linearToSRGB applies the sRGB transfer function and quantizes to a byte.
+func (c oklab) linearToSRGB(v float64) (uint8, bool) {
+	const eps = 1e-6
+	inGamut := v >= -eps && v <= 1+eps
+	v = min(1, max(0, v))
+	if v <= 0.0031308 {
+		v *= 12.92
+	} else {
+		v = 1.055*math.Pow(v, 1/2.4) - 0.055
+	}
+	return uint8(math.Round(v * 255)), inGamut
+}
+
+// srgb converts back to bytes, reporting whether the color fits the gamut.
+// see https://bottosson.github.io/posts/oklab/#converting-from-linear-srgb-to-oklab.
+func (c oklab) srgb() (rgb sRGB, inGamut bool) {
+	cube := func(v float64) float64 { return v * v * v }
+	l := cube(c.L + 0.3963377774*c.A + 0.2158037573*c.B)
+	m := cube(c.L - 0.1055613458*c.A - 0.0638541728*c.B)
+	s := cube(c.L - 0.0894841775*c.A - 1.2914855480*c.B)
+	lin := [3]float64{
+		4.0767416621*l - 3.3077115913*m + 0.2309699292*s,
+		-1.2684380046*l + 2.6097574011*m - 0.3413193965*s,
+		-0.0041960863*l - 0.7034186147*m + 1.7076147010*s,
+	}
+	inGamut = true
+	for i, v := range lin {
+		var ok bool
+		rgb[i], ok = c.linearToSRGB(v)
+		inGamut = inGamut && ok
+	}
+	return rgb, inGamut
+}
+
+// srgb converts to bytes at the given lightness, keeping the hue and
+// reducing chroma only as far as needed to fit sRGB.
+func (c oklch) srgb() sRGB {
+	at := func(chroma float64) (sRGB, bool) {
+		return oklab{L: c.L, A: chroma * math.Cos(c.H), B: chroma * math.Sin(c.H)}.srgb()
+	}
+	if rgb, ok := at(c.C); ok {
+		return rgb
+	}
+	rgb, _ := at(bisect(0, c.C, func(chroma float64) bool {
+		_, ok := at(chroma)
+		return ok
+	}))
+	return rgb
+}
+
+// withLightness keeps hue and (as far as the gamut allows) chroma.
+func (c oklch) withLightness(l float64) sRGB {
+	c.L = l
+	return c.srgb()
 }
 
 // colorProfile is what SGR a destination accepts, ordered by capability.
@@ -348,3 +544,234 @@ func (p colorProfile) fg(c sRGB) text { return p.encode(c, false) }
 
 // bg returns the SGR sequence selecting c as background.
 func (p colorProfile) bg(c sRGB) text { return p.encode(c, true) }
+
+// shown is what a destination displays for c: the nearest palette entry for
+// indexed profiles, c itself for truecolor.
+func (p colorProfile) shown(c sRGB) sRGB {
+	switch p {
+	case profileANSI16:
+		return ansiPalette()[c.nearestIndex(16)]
+	case profileANSI256:
+		return ansiPalette()[c.nearestIndex(256)]
+	default:
+		return c
+	}
+}
+
+// readable returns c, or a nearby shade of the same hue, whose displayed
+// color still meets the target against bg. The adjustment is bounded; ok is
+// false when no colored result is readable and the caller should keep a
+// neutral color plus a shape or label. The encoder stays pure: only the
+// resolved RGB is adjusted, never the encoding.
+func (p colorProfile) readable(c, bg sRGB, target float64) (rgb sRGB, ok bool) {
+	for step := range 9 {
+		cand := c.atLeast(bg, target+0.5*float64(step))
+		if p.shown(cand).contrast(bg) >= target {
+			return cand, true
+		}
+	}
+	return c, false
+}
+
+// distinct drops shades whose encoded output equals an earlier one, so a
+// 16-color terminal is not promised five different greens. Comparison uses
+// the encoded bytes, never RGB strings. Profiles without color collapse to
+// the first shade.
+func (p colorProfile) distinct(shades []sRGB) []sRGB {
+	var out []sRGB
+	seen := map[string]bool{}
+	for _, c := range shades {
+		key := string(p.fg(c))
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, c)
+	}
+	return out
+}
+
+// Contrast targets, see https://www.w3.org/WAI/WCAG21/Techniques/general/G18.
+const (
+	// contrastText is for roles that carry words: labels, keys, reasons.
+	contrastText = 4.5
+	// contrastMark is for glyphs and markers.
+	contrastMark = 3.0
+	// contrastGuide is for nonessential structure, which may be quiet.
+	contrastGuide = 2.0
+	// contrastRampMax is the strongest level of a shade ramp.
+	contrastRampMax = 7.0
+
+	// maxRampLevels bounds a shade ramp.
+	maxRampLevels = 16
+
+	// lightBoundary is the relative luminance where ideal black and white
+	// have equal contrast: sqrt(0.05*1.05) - 0.05. A design choice rather
+	// than a terminal protocol rule.
+	lightBoundary = 0.1791287847
+)
+
+// Palette holds the semantic color seeds of a theme. Foreground and the
+// background used for contrast come from the Light or Dark variant that
+// matches the terminal; the chromatic seeds are shared between both.
+type Palette struct {
+	Accent, Success, Error RGB // shared chromatic seeds
+	Light, Dark            PaletteVariant
+}
+
+// PaletteVariant is the palette for one terminal appearance.
+type PaletteVariant struct {
+	Foreground             RGB
+	ReferenceBackground    RGB // used only when the actual background is unknown
+	Accent, Success, Error RGB // optional exact override of shared seeds
+	Muted, Guide           RGB // optional overrides of derived neutrals; Track inherits Guide
+}
+
+// defaultPalette is the preset every empty required field falls back to.
+var defaultPalette = Palette{
+	Accent:  "#00ADD8",
+	Success: "#2D9B55",
+	Error:   "#C83741",
+	Light:   PaletteVariant{Foreground: "#232830", ReferenceBackground: "#FFFFFF"},
+	Dark:    PaletteVariant{Foreground: "#E1E6EE", ReferenceBackground: "#121212"},
+}
+
+// resolvedPalette is a palette for one destination: the selected variant,
+// adjusted for readability against the effective background. It is
+// computed from, and never written back to, the caller's [Palette].
+type resolvedPalette struct {
+	Light      bool // the variant that was selected
+	Background sRGB
+	// Known reports whether Background was measured rather than assumed
+	// from the variant's reference background.
+	Known bool
+
+	Foreground, Muted, Guide, Track sRGB
+	Accent, Success, Error          sRGB
+}
+
+// slot is a parsed palette color. Set is false when the caller left the field
+// empty: a required field then holds its preset, an optional one is absent.
+type slot struct {
+	rgb sRGB
+	set bool
+}
+
+// parsedVariant is a [PaletteVariant] after parsing and preset filling.
+type parsedVariant struct {
+	foreground, reference, accent, success, err, muted, guide slot
+}
+
+// parsedPalette is a [Palette] after parsing and preset filling.
+type parsedPalette struct {
+	accent, success, err slot
+	light, dark          parsedVariant
+}
+
+// parse fills empty required fields from the preset and parses every color
+// once. The error names the theme path of the first malformed value.
+func (p Palette) parse() (out parsedPalette, err error) {
+	def := defaultPalette
+	for _, f := range []struct {
+		path   string
+		c      RGB
+		preset RGB // empty for optional fields
+		dst    *slot
+	}{
+		{"Accent", p.Accent, def.Accent, &out.accent},
+		{"Success", p.Success, def.Success, &out.success},
+		{"Error", p.Error, def.Error, &out.err},
+		{"Light.Foreground", p.Light.Foreground, def.Light.Foreground, &out.light.foreground},
+		{"Light.ReferenceBackground", p.Light.ReferenceBackground, def.Light.ReferenceBackground, &out.light.reference},
+		{"Light.Accent", p.Light.Accent, "", &out.light.accent}, {"Light.Success", p.Light.Success, "", &out.light.success},
+		{"Light.Error", p.Light.Error, "", &out.light.err}, {"Light.Muted", p.Light.Muted, "", &out.light.muted},
+		{"Light.Guide", p.Light.Guide, "", &out.light.guide},
+		{"Dark.Foreground", p.Dark.Foreground, def.Dark.Foreground, &out.dark.foreground},
+		{"Dark.ReferenceBackground", p.Dark.ReferenceBackground, def.Dark.ReferenceBackground, &out.dark.reference},
+		{"Dark.Accent", p.Dark.Accent, "", &out.dark.accent}, {"Dark.Success", p.Dark.Success, "", &out.dark.success},
+		{"Dark.Error", p.Dark.Error, "", &out.dark.err}, {"Dark.Muted", p.Dark.Muted, "", &out.dark.muted},
+		{"Dark.Guide", p.Dark.Guide, "", &out.dark.guide},
+	} {
+		src := f.c
+		if src == "" {
+			src = f.preset
+		}
+		rgb, err := src.parse()
+		if err != nil {
+			return out, fmt.Errorf("theme.Palette.%s: %w", f.path, err)
+		}
+		*f.dst = slot{rgb: rgb, set: f.c != ""}
+	}
+	return out, nil
+}
+
+// resolve selects the variant and derives every role. With a measured
+// background (known), the variant follows its luminance; otherwise it is
+// light when asked and the variant's reference background is the context.
+//
+// A shared seed is rendered literally when it meets its contrast target and
+// is otherwise moved to the nearest readable lightness of the same hue. A
+// per-variant override is always rendered literally, and so is a Foreground
+// the caller set; the preset Foreground is moved like a seed. Derived roles
+// come from the rendered colors, not from the raw seeds.
+func (p Palette) resolve(light bool, measured sRGB, known bool) (resolvedPalette, error) {
+	pp, err := p.parse()
+	if err != nil {
+		return resolvedPalette{}, err
+	}
+	if known {
+		light = measured.isLight()
+	}
+	v := pp.dark
+	if light {
+		v = pp.light
+	}
+	bg := measured
+	if !known {
+		bg = v.reference.rgb
+	}
+	fg := v.foreground.rgb
+	if !v.foreground.set {
+		fg = fg.atLeast(bg, contrastText)
+	}
+	seed := func(override, shared slot, target float64) sRGB {
+		if override.set {
+			return override.rgb
+		}
+		return shared.rgb.atLeast(bg, target)
+	}
+	quiet := func(override slot, target float64) sRGB {
+		if override.set {
+			return override.rgb
+		}
+		return fg.quieter(bg, target)
+	}
+	out := resolvedPalette{
+		Light:      light,
+		Background: bg,
+		Known:      known,
+		Foreground: fg,
+		Accent:     seed(v.accent, pp.accent, contrastText),
+		Success:    seed(v.success, pp.success, contrastMark),
+		Error:      seed(v.err, pp.err, contrastText),
+		Muted:      quiet(v.muted, contrastText),
+		Guide:      quiet(v.guide, contrastGuide),
+	}
+	out.Track = out.Guide
+	return out, nil
+}
+
+// String is for diagnostics and golden comparisons.
+func (r resolvedPalette) String() string {
+	var b strings.Builder
+	for _, f := range []struct {
+		name string
+		c    sRGB
+	}{
+		{"fg", r.Foreground}, {"muted", r.Muted}, {"guide", r.Guide},
+		{"accent", r.Accent}, {"success", r.Success}, {"error", r.Error},
+	} {
+		fmt.Fprintf(&b, "%s=%s ", f.name, f.c.hex())
+	}
+	return strings.TrimSpace(b.String())
+}

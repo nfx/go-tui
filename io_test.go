@@ -1194,19 +1194,13 @@ func TestFactsFollowProfile(t *testing.T) {
 }
 
 func TestPrettyJSONLevels(t *testing.T) {
-	src := `{"a":{"b":"c"}}`
-	render := func(env string) string {
-		withEnv(t, env)
-		var out bytes.Buffer
-		assert.NoError(t, PrettyJSON(&out, src))
-		return out.String()
-	}
+	render := func(env string) string { return renderJSON(t, env, `{"a":{"b":"c"}}`) }
 	assert.NotContains(t, render("FORCE_COLOR=0"), "\x1b[")
 	attrs := render("FORCE_COLOR=1")
-	assert.Contains(t, attrs, "\x1b[34m")
+	assert.True(t, regexp.MustCompile("\x1b\\[(3|9)[0-7]m").MatchString(attrs))
 	assert.NotContains(t, attrs, "38;5;")
 	assert.Contains(t, render("FORCE_COLOR=2"), "38;5;")
-	assert.Contains(t, render("FORCE_COLOR=3"), "38;5;")
+	assert.Contains(t, render("FORCE_COLOR=3"), "38;2;")
 	stripped := regexpSGR.ReplaceAllString(render("FORCE_COLOR=1"), "")
 	assert.Equal(t, "{\n  \"a\": {\n    \"b\": \"c\"\n  }\n}\n", stripped)
 }

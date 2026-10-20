@@ -8,7 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
+	"math"
+	"sync"
 )
 
 type jsonState int
@@ -24,61 +25,113 @@ const (
 	jsonEscape
 )
 
-var keyDepthShades = []string{ // shades of blue
-	"\x1b[38;5;27m",
-	"\x1b[38;5;33m",
-	"\x1b[38;5;39m",
-	"\x1b[38;5;45m",
-	"\x1b[38;5;51m",
+// jsonLevels is the number of key depth shades; deeper keys keep the last one.
+const jsonLevels = 5
+
+// jsonShades are the encoded shades of a token kind, by nesting depth.
+type jsonShades []text
+
+// at returns the shade for depth, brightest at the top level.
+func (s jsonShades) at(depth int) text {
+	if len(s) == 0 {
+		return nil
+	}
+	return s[min(max(depth, 0), len(s)-1)]
 }
 
-var valDepthShades = []string{ // shades of green
-	"\x1b[38;5;46m",
-	"\x1b[38;5;40m",
-	"\x1b[38;5;34m",
-	"\x1b[38;5;28m",
-	"\x1b[38;5;22m",
+// jsonStyle is the encoded presentation of JSON tokens for one destination
+// that accepts SGR. Keys are always bold, after their shade.
+type jsonStyle struct {
+	keys  jsonShades // may be empty
+	value text       // prefix for strings, numbers and literals
+	punct text       // prefix for brackets and braces
 }
 
-// keyDepthBasic and valDepthBasic are the hand-picked ansi16 counterparts of
-// the depth shades: nearest-color matching turns some blues gray.
-var (
-	keyDepthBasic = []string{blue, brightBlue, brightCyan, cyan, brightCyan}
-	valDepthBasic = []string{brightGreen, brightGreen, green, green, green}
-)
+// newJSONStyle maps the resolved palette onto JSON: keys are Accent, dimmed
+// with depth, values are Foreground and punctuation is Muted. Neutrals are
+// only emitted when the background is known: otherwise they could be nearly
+// invisible, so values keep the terminal's default foreground and
+// punctuation is bold.
+func newJSONStyle(p colorProfile, pal resolvedPalette) jsonStyle {
+	if p < profileANSI16 {
+		return jsonStyle{punct: text(bold)}
+	}
+	if !pal.Known {
+		return jsonStyle{
+			keys:  jsonDimming(p, pal.Accent, pal.Background),
+			punct: text(bold),
+		}
+	}
+	return jsonStyle{
+		keys:  jsonDimming(p, pal.Accent, pal.Background),
+		value: p.fg(pal.Foreground),
+		punct: p.fg(pal.Muted),
+	}
+}
 
-// PrettyJSON pretty-prints JSON data with depth-aware coloring.
+// jsonDimming fades the top color toward bg with depth, down to
+// [contrastText] since keys are words. Shades are judged as displayed on p:
+// one that is not strictly dimmer than the previous is dropped, so a
+// destination with a coarse palette gets fewer levels, never a reversed one.
+func jsonDimming(p colorProfile, top, bg sRGB) jsonShades {
+	hi := top.contrast(bg)
+	var out jsonShades
+	prev := math.Inf(1)
+	for i := range jsonLevels {
+		target := hi - (hi-contrastText)*float64(i)/float64(jsonLevels-1)
+		c, ok := p.readable(top.quieter(bg, target), bg, contrastText)
+		if !ok {
+			continue
+		}
+		shown := p.shown(c).contrast(bg)
+		if shown >= prev {
+			continue
+		}
+		prev = shown
+		out = append(out, p.fg(c))
+	}
+	return out
+}
+
+// jsonPalette is the palette PrettyJSON renders with. The terminal
+// appearance is not measured for plain writers yet, so the dark variant's
+// reference background is assumed.
+var jsonPalette = sync.OnceValue(func() resolvedPalette {
+	pal, err := Palette{}.resolve(false, sRGB{}, false)
+	if err != nil {
+		panic(err) // the preset is valid
+	}
+	return pal
+})
+
+// jsonStyles caches the style of each profile: it depends on nothing else,
+// and deriving it takes thousands of color conversions.
+var jsonStyles = func() (out [profileTrueColor + 1]func() jsonStyle) {
+	for p := range out {
+		out[p] = sync.OnceValue(func() jsonStyle { return newJSONStyle(colorProfile(p), jsonPalette()) })
+	}
+	return out
+}()
+
+// PrettyJSON pretty-prints JSON data with two-space indentation. When the
+// destination writer accepts color, keys use the accent color, dimmed with
+// nesting depth, values the foreground and brackets a muted shade. Color follows the writer and the
+// NO_COLOR, FORCE_COLOR and CLICOLOR_FORCE conventions, never os.Stdout.
+// Without color the output is plain indented JSON.
 func PrettyJSON(w io.Writer, src any) error {
-	identBuf, err := jsonIndent(src)
+	out, err := jsonIndent(src)
 	if err != nil {
 		return err
 	}
-	profile := defaultIO.profileFor(w)
-	if !profile.attrs() {
-		_, err = identBuf.WriteTo(w)
-		return err
+	if profile := defaultIO.profileFor(w); profile.attrs() {
+		style := jsonStyles[profile]()
+		colored := bytes.NewBuffer(make([]byte, 0, 2*out.Len()))
+		style.recolor(out, colored)
+		out = colored
 	}
-	outBuf := bytes.NewBuffer(nil)
-	prettyJsonRecolor(identBuf, outBuf)
-	_, err = io.WriteString(w, jsonReduce(profile, outBuf.String()))
+	out.WriteByte('\n')
+	_, err = out.WriteTo(w)
 	return err
-}
-
-// jsonReduce maps the 256-color depth shades onto what the destination
-// accepts: basic colors for ansi16, and bold only for attrs.
-func jsonReduce(p colorProfile, s string) string {
-	if p >= profileANSI256 {
-		return s
-	}
-	var pairs []string
-	for i := range keyDepthShades {
-		k, v := keyDepthBasic[i], valDepthBasic[i]
-		if p == profileAttrs {
-			k, v = "", ""
-		}
-		pairs = append(pairs, keyDepthShades[i], k, valDepthShades[i], v)
-	}
-	return strings.NewReplacer(pairs...).Replace(s)
 }
 
 func jsonIndent(src any) (*bytes.Buffer, error) {
@@ -104,76 +157,107 @@ func jsonIndent(src any) (*bytes.Buffer, error) {
 	return identBuf, nil
 }
 
-func prettyJsonRecolor(identBuf, w *bytes.Buffer) {
+func (s *jsonStyle) recolor(identBuf, w *bytes.Buffer) {
 	pretty := identBuf.Bytes()
 	stack := []jsonState{jsonRoot}
 	lo, hi, depth := 0, identBuf.Len(), -1
 	for lo < hi {
 		ch := pretty[lo]
 		lo++
-		depth, stack = prettyJsonLoop(stack, w, ch, depth)
+		depth, stack = s.prettyJsonLoop(stack, w, ch, depth)
 	}
-	w.WriteByte('\n')
+	if stack[len(stack)-1] == jsonConst { // a root scalar runs to the end
+		w.WriteString(reset)
+	}
 }
 
-func prettyJsonLoop(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
+func (s *jsonStyle) prettyJsonLoop(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
 	curr := stack[len(stack)-1]
 	if curr == jsonEscape {
 		w.WriteByte(ch)
 		stack = stack[:len(stack)-1]
 		return depth, stack
 	}
+	if curr == jsonConst {
+		if !s.jsonEndsConst(ch) {
+			w.WriteByte(ch)
+			return depth, stack
+		}
+		w.WriteString(reset)
+		stack = stack[:len(stack)-1]
+	}
 	if curr == jsonQuoted && ch == '\\' {
-		return depth, pretttJsonBackslash(stack, w, ch)
+		return depth, s.pretttJsonBackslash(stack, w, ch)
 	}
 	if curr == jsonQuoted && ch != '"' {
 		w.WriteByte(ch)
 		return depth, stack
 	}
-	return prettyJsonChar(stack, w, ch, depth)
+	return s.prettyJsonChar(stack, w, ch, depth)
 }
 
-func prettyJsonChar(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
+func (s *jsonStyle) prettyJsonChar(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
 	switch ch {
-	case '{':
-		depth, stack = prettyJsonOpenObject(stack, w, ch, depth)
-	case '[':
-		depth, stack = prettyJsonOpenArray(stack, w, ch, depth)
+	case '{', '[':
+		depth, stack = s.prettyJsonOpen(stack, w, ch, depth)
 	case '}', ']':
-		depth, stack = prettyJsonClose(stack, w, ch, depth)
+		depth, stack = s.prettyJsonClose(stack, w, ch, depth)
 	case ':':
-		stack = prettyJsonColon(stack, w, ch)
+		stack = s.prettyJsonColon(stack, w, ch)
 	case ',':
-		stack = prettyJsonComma(stack, w, ch)
+		stack = s.prettyJsonComma(stack, w, ch)
 	case '\\':
-		stack = pretttJsonBackslash(stack, w, ch)
+		stack = s.pretttJsonBackslash(stack, w, ch)
 	case '"':
-		stack = prettyJsonQuote(stack, w, ch, depth)
+		stack = s.prettyJsonQuote(stack, w, ch, depth)
 	default:
-		w.WriteByte(ch)
+		stack = s.prettyJsonOther(stack, w, ch)
 	}
 	return depth, stack
 }
 
-func prettyJsonOpenObject(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
-	depth++
-	stack = append(stack, jsonObject)
-	w.WriteString(bold)
-	w.WriteByte(ch)
-	w.WriteString(reset)
-	return depth, stack
+// jsonEndsConst reports whether ch terminates a number or literal.
+func (s *jsonStyle) jsonEndsConst(ch byte) bool {
+	switch ch {
+	case ' ', '\t', '\n', '\r', ',', ']', '}':
+		return true
+	}
+	return false
 }
 
-func prettyJsonOpenArray(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
-	depth++
-	stack = append(stack, jsonArray)
-	w.WriteString(bold)
+// prettyJsonOther opens a number or literal in value position, and passes
+// whitespace through.
+func (s *jsonStyle) prettyJsonOther(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
+	if s.jsonEndsConst(ch) {
+		w.WriteByte(ch)
+		return stack
+	}
+	switch stack[len(stack)-1] {
+	case jsonValue:
+		stack = stack[:len(stack)-1]
+		fallthrough
+	case jsonRoot, jsonArray:
+		w.Write(s.value)
+		stack = append(stack, jsonConst)
+	default:
+	}
 	w.WriteByte(ch)
-	w.WriteString(reset)
-	return depth, stack
+	return stack
 }
 
-func prettyJsonClose(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
+// prettyJsonOpen enters the object or array that ch opens.
+func (s *jsonStyle) prettyJsonOpen(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
+	state := jsonObject
+	if ch == '[' {
+		state = jsonArray
+	}
+	w.Write(s.punct)
+	w.WriteByte(ch)
+	w.WriteString(reset)
+	return depth + 1, append(stack, state)
+}
+
+func (s *jsonStyle) prettyJsonClose(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
 	// a pending value (number, literal or nested container) sits above its container
 	if stack[len(stack)-1] == jsonValue {
 		stack = stack[:len(stack)-1]
@@ -182,13 +266,13 @@ func prettyJsonClose(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (in
 		stack = stack[:len(stack)-1]
 		depth--
 	}
-	w.WriteString(bold)
+	w.Write(s.punct)
 	w.WriteByte(ch)
 	w.WriteString(reset)
 	return depth, stack
 }
 
-func prettyJsonColon(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
+func (s *jsonStyle) prettyJsonColon(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
 	curr := stack[len(stack)-1]
 	if curr == jsonObject {
 		stack = append(stack, jsonValue)
@@ -197,7 +281,7 @@ func prettyJsonColon(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
 	return stack
 }
 
-func prettyJsonComma(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
+func (s *jsonStyle) prettyJsonComma(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
 	curr := stack[len(stack)-1]
 	if curr == jsonValue {
 		stack = stack[:len(stack)-1]
@@ -206,42 +290,33 @@ func prettyJsonComma(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
 	return stack
 }
 
-func pretttJsonBackslash(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
+func (s *jsonStyle) pretttJsonBackslash(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
 	stack = append(stack, jsonEscape)
 	w.WriteByte(ch)
 	return stack
 }
 
-func prettyJsonQuote(stack []jsonState, w *bytes.Buffer, ch byte, depth int) []jsonState {
+func (s *jsonStyle) prettyJsonQuote(stack []jsonState, w *bytes.Buffer, ch byte, depth int) []jsonState {
 	curr := stack[len(stack)-1]
 	switch curr {
 	case jsonObject: // open key
-		w.WriteString(keyDepthShades[abs(depth)%len(keyDepthShades)])
+		w.Write(s.keys.at(depth))
 		w.WriteString(bold)
 		w.WriteByte(ch)
 		stack = append(stack, jsonQuoted)
-	case jsonQuoted: // close key
+	case jsonQuoted: // close key or string
 		w.WriteByte(ch)
 		w.WriteString(reset)
 		stack = stack[:len(stack)-1]
-	case jsonRoot, jsonArray: // open const
-		w.WriteString(valDepthShades[abs(depth)%len(valDepthShades)])
-		w.WriteByte(ch)
-		stack = append(stack, jsonQuoted)
-	case jsonValue: // open const
-		w.WriteString(valDepthShades[abs(depth)%len(valDepthShades)])
-		w.WriteByte(ch)
+	case jsonValue: // open string
 		stack = stack[:len(stack)-1]
+		fallthrough
+	case jsonRoot, jsonArray: // open string
+		w.Write(s.value)
+		w.WriteByte(ch)
 		stack = append(stack, jsonQuoted)
 	default:
 		w.WriteByte(ch)
 	}
 	return stack
-}
-
-func abs(n int) int {
-	if n < 0 {
-		return -n
-	}
-	return n
 }
