@@ -27,6 +27,9 @@ type outputEnv struct {
 	cliColorForce   bool
 	term, colorTerm string
 	windowsTerminal bool
+	// bgHint is the background estimated from COLORFGBG, the fallback of
+	// detection, read with the same lifetime as the color policy.
+	bgHint background
 }
 
 func readOutputEnv(lookup func(string) (string, bool)) outputEnv {
@@ -43,6 +46,7 @@ func readOutputEnv(lookup func(string) (string, bool)) outputEnv {
 		term:            get("TERM"),
 		colorTerm:       strings.ToLower(get("COLORTERM")),
 		windowsTerminal: get("WT_SESSION") != "",
+		bgHint:          new(termIO).backgroundFromEnv(lookup),
 	}
 	// FORCE_COLOR= (empty) is meant to force 16-color output.
 	if v, ok := lookup("FORCE_COLOR"); ok {
@@ -309,24 +313,21 @@ func (t *tio) outputLocked(ctx context.Context) io.Writer {
 }
 
 // background shares detection for the current route, caching only uncancelled,
-// still-current results. Other routes bypass the cache.
-func (t *tio) background(
-	ctx context.Context,
-	tt *termIO,
-	lookup func(string) (string, bool),
-) background {
+// still-current results. Other routes bypass the cache. Without a reply,
+// detection falls back to hint.
+func (t *tio) background(ctx context.Context, tt *termIO, hint background) background {
 	t.bgMu.Lock()
 	defer t.bgMu.Unlock()
 	t.mu.RLock()
 	bg, gen, current := t.bg, t.bgGen, t.routesLocked(tt)
 	t.mu.RUnlock()
 	if !current {
-		return tt.detectBackground(ctx, lookup)
+		return tt.detectBackground(ctx, hint)
 	}
 	if bg != nil {
 		return *bg
 	}
-	b := tt.detectBackground(ctx, lookup)
+	b := tt.detectBackground(ctx, hint)
 	if ctx.Err() == nil {
 		t.mu.Lock()
 		if t.bgGen == gen {
@@ -335,6 +336,24 @@ func (t *tio) background(
 		t.mu.Unlock()
 	}
 	return b
+}
+
+// bindTheme binds c to out, the destination of one operation. Only a prompt
+// holding the terminal lease passes tt, and may then probe the background
+// before it starts reading keys; other operations estimate it from the
+// environment. A forced light variant and a destination without color
+// detect nothing.
+func (t *tio) bindTheme(ctx context.Context, c *compiledTheme, out io.Writer, tt *termIO) binding {
+	p := t.profileFor(out)
+	var bg background
+	switch {
+	case c.source.Light, p < profileANSI16:
+	case tt != nil:
+		bg = t.background(ctx, tt, t.env.bgHint)
+	default:
+		bg = t.env.bgHint
+	}
+	return c.bind(p, bg)
 }
 
 // routesLocked checks route ownership with mu held.

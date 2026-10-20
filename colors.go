@@ -14,7 +14,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"text/template"
+	"text/template/parse"
 	"unicode"
 )
 
@@ -812,7 +814,12 @@ func (in Theme) compile() (*compiledTheme, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.templates, err = t.Templates.compile(t.withCustom(builtins))
+	funcs := t.withCustom(builtins)
+	base, err := builtinTemplates.compile(funcs, templates{})
+	if err != nil {
+		return nil, fmt.Errorf("built-in %w", err)
+	}
+	c.templates, err = t.Templates.compile(funcs, base)
 	if err != nil {
 		return nil, err
 	}
@@ -1047,6 +1054,85 @@ func (c *compiledTheme) geometry(width, height int) geometry {
 	return geometry{inline: c.source.Inline, guide: c.source.Symbols.Guide, width: width, height: height}
 }
 
+// roles encodes the semantic roles of pal for p. Every role carries words, so
+// it is held to [contrastText], the guide to [contrastGuide]. A role the
+// caller set explicitly renders literally. An automatic neutral keeps the
+// terminal default on an assumed background, where it could be nearly
+// invisible, unless the theme forces the light variant. A role that no
+// displayed shade keeps readable also keeps the terminal default, and the
+// symbols of the templates still carry its meaning.
+func (c *compiledTheme) roles(p colorProfile, pal resolvedPalette) roleStyles {
+	if p < profileANSI16 {
+		return roleStyles{}
+	}
+	v := c.palette.dark
+	if pal.Light {
+		v = c.palette.light
+	}
+	style := func(override slot, rgb sRGB, target float64, neutral bool) text {
+		switch {
+		case override.set:
+			return p.fg(override.rgb)
+		case neutral && !pal.Known && !c.source.Light:
+			return nil
+		}
+		readable, ok := p.readable(rgb, pal.Background, target)
+		if !ok {
+			return nil
+		}
+		return p.fg(readable)
+	}
+	return roleStyles{
+		foreground: style(v.foreground, pal.Foreground, contrastText, true),
+		muted:      style(v.muted, pal.Muted, contrastText, true),
+		guide:      style(v.guide, pal.Guide, contrastGuide, true),
+		accent:     style(v.accent, pal.Accent, contrastText, false),
+		success:    style(v.success, pal.Success, contrastText, false),
+		failure:    style(v.err, pal.Error, contrastText, false),
+	}
+}
+
+// bind resolves the palette against the background of a destination with
+// profile p. The variant follows a measured background, or else the theme
+// and the estimate in bg.
+func (c *compiledTheme) bind(p colorProfile, bg background) binding {
+	pal := c.palette.resolve(c.source.Light || bg.light, bg.rgb, bg.measured)
+	roles := c.roles(p, pal)
+	return binding{theme: c, roles: roles, funcs: c.funcs(p, roles)}
+}
+
+// binding is a compiled theme bound to the destination of one operation.
+// Renderers take helpers, roles and geometry from it, never from the
+// installed default, so one operation cannot mix two themes.
+type binding struct {
+	theme *compiledTheme
+	roles roleStyles
+	// funcs are the helpers of theme slots and per-call templates. Templates
+	// only read the map.
+	funcs template.FuncMap
+}
+
+// geometry is the layout of the theme for a terminal size, with the guide
+// in its role color.
+func (b binding) geometry(width, height int) geometry {
+	g := b.theme.geometry(width, height)
+	g.guide = b.style(b.roles.guide, text(g.guide)).String()
+	return g
+}
+
+// style wraps renderer-owned content, such as an editable value, in a role.
+func (binding) style(role, content text) text {
+	if len(content) == 0 {
+		return content
+	}
+	return destination{}.newSpan(fgDefault, role).wrap(content)
+}
+
+// themeRendering routes migrated widgets through the theme they capture. It
+// stays off, keeping the legacy presentation, until every widget family has
+// migrated; tests turn it on.
+var themeRendering atomic.Bool
+
 // legacyTemplateFuncs returns installed per-call helpers; callers must not modify the map.
 func legacyTemplateFuncs() template.FuncMap { return defaultIO.currentTheme().legacy }
 
@@ -1119,16 +1205,28 @@ type templates struct {
 	FilePicker  choiceFamily
 }
 
-// compile resolves slot inheritance in isolated namespaces and reports errors at defining slots.
-func (t *Templates) compile(funcs template.FuncMap) (templates, error) {
+// builtinTemplates are the built-in sources of the root slots, shared by
+// Guided and Inline: only geometry differs. Family slots stay unset, so that
+// they inherit, and a root slot without a source has no built-in yet.
+var builtinTemplates = Templates{
+	Prompt: PromptTemplates{
+		Label:    `{{ accent (symbol "Prompt") }} {{ bold (text .Label) }}`,
+		Answer:   `{{ success (symbol "Success") }} {{ text .Label }} {{ muted "·" }} {{ text .Value }}`,
+		Feedback: `{{ error (symbol "Error") }} {{ error .Message }}`,
+	},
+}
+
+// compile resolves slot inheritance over base, the compiled built-ins, in
+// isolated namespaces and reports errors at defining slots.
+func (t *Templates) compile(funcs template.FuncMap, base templates) (templates, error) {
 	root := templated[struct{}, struct{}]{Funcs: funcs}
 	var out templates
 	var errs [9]error
-	out.Prompt, errs[0] = t.prompt(root.nest("Prompt", t.Prompt, promptTemplates{}))
+	out.Prompt, errs[0] = t.prompt(root.nest("Prompt", t.Prompt, base.Prompt))
 	out.Input, errs[1] = t.prompt(root.nest("Input", t.Input, out.Prompt))
 	out.Password, errs[2] = t.secret(root.nest("Password", t.Password, out.Input))
 	out.Number, errs[3] = t.secret(root.nest("Number", t.Number, out.Input))
-	out.Choice, errs[4] = t.choice(root.nest("Choice", t.Choice, choiceTemplates{}))
+	out.Choice, errs[4] = t.choice(root.nest("Choice", t.Choice, base.Choice))
 	family := choiceFamily{out.Prompt, out.Choice}
 	out.Dropdown, errs[5] = t.choiceFamily(root.nest("Dropdown", t.Dropdown, family))
 	out.Multichoice, errs[6] = t.multichoice(root.nest("Multichoice", t.Multichoice, family))
@@ -1248,7 +1346,7 @@ func (t *Templates) multichoice(in templated[MultichoiceTemplates, choiceFamily]
 }
 
 // compiledSlot is one parsed presentation slot. A hidden slot renders nothing
-// and reserves no space; a nil slot uses the built-in default.
+// and reserves no space, and so does a nil slot, which has no built-in yet.
 type compiledSlot struct {
 	tmpl   *template.Template
 	hidden bool
@@ -1266,15 +1364,94 @@ func (t *Templates) slot(in templated[Template, *compiledSlot], optional bool) (
 		return &compiledSlot{hidden: true}, nil
 	}
 	tmpl, err := template.New(in.Name).Funcs(in.Funcs).Parse(in.Src.source())
+	if err == nil {
+		err = t.colorLiterals(tmpl)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("theme.Templates.%s: %w", in.Name, err)
 	}
 	return &compiledSlot{tmpl: tmpl}, nil
 }
 
+// colorLiterals checks the color argument of every fg and bg call that is a
+// string literal, in every template of a slot, so that a typo fails the
+// installation. Dynamic colors are checked when the template runs.
+func (t *Templates) colorLiterals(tmpl *template.Template) error {
+	for _, tt := range tmpl.Templates() {
+		if tt.Tree == nil {
+			continue
+		}
+		if err := t.walkColors(tt.Tree, tt.Root); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// walkColors visits every command of the parse tree below n.
+func (t *Templates) walkColors(tree *parse.Tree, n parse.Node) error {
+	var next []parse.Node
+	switch n := n.(type) {
+	case *parse.ListNode:
+		if n != nil {
+			next = n.Nodes
+		}
+	case *parse.ActionNode:
+		next = []parse.Node{n.Pipe}
+	case *parse.IfNode:
+		next = []parse.Node{n.Pipe, n.List, n.ElseList}
+	case *parse.RangeNode:
+		next = []parse.Node{n.Pipe, n.List, n.ElseList}
+	case *parse.WithNode:
+		next = []parse.Node{n.Pipe, n.List, n.ElseList}
+	case *parse.TemplateNode:
+		next = []parse.Node{n.Pipe}
+	case *parse.PipeNode:
+		if n != nil {
+			for _, c := range n.Cmds {
+				next = append(next, c)
+			}
+		}
+	case *parse.ChainNode:
+		next = []parse.Node{n.Node}
+	case *parse.CommandNode:
+		if err := t.colorLiteral(tree, n); err != nil {
+			return err
+		}
+		next = n.Args
+	}
+	for _, c := range next {
+		if err := t.walkColors(tree, c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// colorLiteral validates the color of an fg or bg command with a literal one.
+func (*Templates) colorLiteral(tree *parse.Tree, n *parse.CommandNode) error {
+	if len(n.Args) < 2 {
+		return nil
+	}
+	id, isID := n.Args[0].(*parse.IdentifierNode)
+	lit, isStr := n.Args[1].(*parse.StringNode)
+	if !isID || !isStr || id.Ident != "fg" && id.Ident != "bg" {
+		return nil
+	}
+	err := RGB(lit.Text).Validate()
+	if lit.Text == "" {
+		err = errors.New(`"": want "#RRGGBB" or "#RGB"`)
+	}
+	if err != nil {
+		loc, _ := tree.ErrorContext(n)
+		return fmt.Errorf("%s: %s: %w", loc, id.Ident, err)
+	}
+	return nil
+}
+
 // bind attaches destination helpers to a clone, preserving the installed slot.
 func (s *compiledSlot) bind(funcs template.FuncMap) (boundSlot, error) {
-	if s.hidden {
+	if s == nil || s.hidden {
 		return boundSlot{}, nil
 	}
 	tmpl, err := s.tmpl.Clone()
@@ -1401,10 +1578,10 @@ func (s span) restore(out *text, channels sgrChannel) {
 	}
 }
 
-// roleStyles are the encoded foregrounds of the semantic helpers for one
-// destination. An empty style keeps the terminal default.
+// roleStyles are the encoded foregrounds of the semantic helpers and of the
+// guide for one destination. An empty style keeps the terminal default.
 type roleStyles struct {
-	foreground, muted, accent, success, failure text
+	foreground, muted, guide, accent, success, failure text
 }
 
 // destination is what the built-in template helpers depend on: what one output

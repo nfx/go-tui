@@ -1300,3 +1300,350 @@ func TestPasswordDefaultKeepsSecretOut(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidOption)
 	assert.True(t, !strings.Contains(err.Error(), "hunter2"))
 }
+
+// useTheme installs th and routes migrated widgets through it for the test.
+func useTheme(t *testing.T, th Theme) {
+	t.Helper()
+	keepTheme(t)
+	assert.NoError(t, defaultIO.installTheme(th))
+	prev := themeRendering.Swap(true)
+	t.Cleanup(func() { themeRendering.Store(prev) })
+}
+
+// asciiTheme is the preset theme with ASCII symbols, Guided or Inline.
+func asciiTheme(inline bool) Theme {
+	th := NewTheme()
+	th.Symbols = ASCIISymbols()
+	th.Inline = inline
+	return th
+}
+
+// themedInput is an input rendering through th on a scripted terminal of the
+// given size. Each key is one read. restored reports a released terminal.
+func themedInput(
+	t *testing.T,
+	th Theme,
+	width, height int,
+	keys ...string,
+) (i *input, out *bytes.Buffer, restored *bool) {
+	t.Helper()
+	useTheme(t, th)
+	i = newInput(t.Context(), "Label")
+	var chunks [][]byte
+	for _, k := range keys {
+		chunks = append(chunks, []byte(k))
+	}
+	out, restored = &bytes.Buffer{}, new(bool)
+	i.in, i.out = &chunkReader{chunks: chunks}, out
+	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		restore := func() error { *restored = true; return nil }
+		return &termIO{in: in, out: out, Width: width, Height: height, Restore: restore}, nil
+	}
+	return i, out, restored
+}
+
+func TestThemedInputGuidedFrameAnswerAndClear(t *testing.T) {
+	i, out, restored := themedInput(t, asciiTheme(false), 20, 5, "a", "\r")
+	got, err := i.read(t.Context())
+	assert.NoError(t, err)
+	assert.Equal(t, "a", got)
+	assert.True(t, *restored)
+	assert.Equal(t, ""+
+		// the label has its own row, the caret stays on the guided value row
+		"\r? Label\x1b[K\n\r| \x1b[K"+
+		// the next frame starts from the label row
+		"\x1b[1A\r? Label\x1b[K\n\r| a\x1b[K"+
+		// from the caret row below the frame, then up over both rows
+		"\n\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r"+
+		"+ Label · a\n", out.String())
+}
+
+func TestThemedInputInlineKeepsLabelOnValueRow(t *testing.T) {
+	i, out, _ := themedInput(t, asciiTheme(true), 20, 5, "a", "\x1b[D", "\r")
+	_, err := i.read(t.Context())
+	assert.NoError(t, err)
+	assert.Equal(t, ""+
+		"\r? Label \x1b[K"+
+		"\r? Label a\x1b[K"+
+		"\r? Label a\x1b[K\x1b[1D"+
+		"\n\x1b[1A\r\x1b[K"+
+		"+ Label · a\n", out.String())
+}
+
+func TestThemedInputInlineReservesCaretColumn(t *testing.T) {
+	// "? Label " takes 8 of 12 columns, the last one is the caret's: 3 remain
+	i, out, _ := themedInput(t, asciiTheme(true), 12, 5, "abcd", "\r")
+	_, err := i.read(t.Context())
+	assert.NoError(t, err)
+	assert.Contains(t, out.String(), "\r? Label bcd\x1b[K\n")
+}
+
+func TestThemedInputGuidedCaretAfterMovingLeft(t *testing.T) {
+	i, out, _ := themedInput(t, asciiTheme(false), 20, 5, "ab", "\x1b[D", "\r")
+	_, err := i.read(t.Context())
+	assert.NoError(t, err)
+	assert.Contains(t, out.String(), "\x1b[1A\r? Label\x1b[K\n\r| ab\x1b[K\x1b[1D")
+}
+
+func TestThemedInputRejectionRowGrowsAndShrinks(t *testing.T) {
+	check := WithValidation(func(_ context.Context, s string) error {
+		if len(s) < 2 {
+			return errors.New("too short")
+		}
+		return nil
+	})
+	i, out, _ := themedInput(t, asciiTheme(false), 20, 5, "a", "\r", "b", "\r")
+	got, err := i.read(t.Context(), check)
+	assert.NoError(t, err)
+	assert.Equal(t, "ab", got)
+	assert.Equal(t, ""+
+		"\r? Label\x1b[K\n\r| \x1b[K"+
+		"\x1b[1A\r? Label\x1b[K\n\r| a\x1b[K"+
+		// the rejection adds a guided row below; the caret returns to column 4
+		"\x1b[1A\r? Label\x1b[K\n\r| a\x1b[K\n\r| ! too short\x1b[K\x1b[1A\x1b[4G"+
+		// typing clears it, and the stale row is erased
+		"\x1b[1A\r? Label\x1b[K\n\r| ab\x1b[K\n\r\x1b[K\x1b[1A\x1b[5G"+
+		"\n\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r"+
+		"+ Label · ab\n", out.String())
+}
+
+func TestThemedInputClearsRejectionRowsOnError(t *testing.T) {
+	reject := WithValidation(func(context.Context, string) error { return errors.New("no") })
+	i, out, restored := themedInput(t, asciiTheme(false), 20, 5, "a", "\r")
+	_, err := i.read(t.Context(), reject)
+	assert.ErrorIs(t, err, io.EOF)
+	assert.True(t, *restored)
+	// three rows, the caret on the second: down two, then up over all three
+	assert.True(t, strings.HasSuffix(out.String(),
+		"\x1b[1A\x1b[4G\n\n\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"))
+}
+
+// renderThemedInput binds i to a terminal of the given size and draws one frame.
+func renderThemedInput(t *testing.T, i *input, width, height int) (string, error) {
+	t.Helper()
+	assert.NoError(t, i.parseTemplates())
+	var out bytes.Buffer
+	tt := &termIO{out: &out, Width: width, Height: height}
+	assert.NoError(t, i.bind(t.Context(), tt))
+	err := i.render(tt, &bytes.Buffer{})
+	return out.String(), err
+}
+
+func TestThemedInputRejectionTruncatesAndRefitsOnResize(t *testing.T) {
+	i, _, _ := themedInput(t, asciiTheme(false), 0, 0)
+	i.typed, i.cursor, i.rejection = "abc", 3, "much too short"
+	got, err := renderThemedInput(t, i, 30, 5)
+	assert.NoError(t, err)
+	assert.Contains(t, got, "\n\r| ! much too short\x1b[K")
+	// the same prompt after a resize: the rejection is clipped to the row
+	i.rows, i.caretRow = 0, 0
+	var out bytes.Buffer
+	assert.NoError(t, i.render(&termIO{out: &out, Width: 10, Height: 5}, &bytes.Buffer{}))
+	assert.Equal(t, "\r? Label\x1b[K\n\r| abc\x1b[K\n\r| ! much\u2026\x1b[K\x1b[1A\x1b[6G", out.String())
+}
+
+func TestThemedInputShortTerminals(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		width     int
+		height    int
+		rejection string
+		want      string
+		err       error
+	}{
+		{"label dropped first", 20, 2, "no", "\r| a\x1b[K\n\r| ! no\x1b[K\x1b[1A\x1b[4G", nil},
+		{"one row keeps the value", 20, 1, "", "\r| a\x1b[K", nil},
+		{"rejection needs a second row", 20, 1, "no", "", ErrNoSpace},
+		{"no value column", 3, 5, "", "", ErrNoSpace},
+		{"unknown size is unbounded", 0, 0, "", "\r? Label\x1b[K\n\r| a\x1b[K", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			i, _, _ := themedInput(t, asciiTheme(false), 0, 0)
+			i.typed, i.cursor, i.rejection = "a", 1, tc.rejection
+			got, err := renderThemedInput(t, i, tc.width, tc.height)
+			if tc.err != nil {
+				assert.ErrorIs(t, err, tc.err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestThemedInputShrinkKeepsValueOnScreen(t *testing.T) {
+	i, _, _ := themedInput(t, asciiTheme(false), 0, 0)
+	i.typed, i.cursor = "a", 1
+	got, err := renderThemedInput(t, i, 20, 2)
+	assert.NoError(t, err)
+	assert.Equal(t, "\r? Label\x1b[K\n\r| a\x1b[K", got)
+	// one row left: the label goes, and no newline scrolls the value away
+	var out bytes.Buffer
+	assert.NoError(t, i.render(&termIO{out: &out, Width: 20, Height: 1}, &bytes.Buffer{}))
+	assert.Equal(t, "\x1b[1A\r| a\x1b[K", out.String())
+	assert.Equal(t, 1, i.rows)
+	assert.Equal(t, 0, i.caretRow)
+}
+
+func TestThemedInputWideAndCombiningValue(t *testing.T) {
+	i, _, _ := themedInput(t, asciiTheme(false), 0, 0)
+	// "| " and the caret column leave five of eight columns: the third wide
+	// rune does not fit, and the caret after the cluster moves over two
+	i.typed, i.cursor = "e\u0301\u754c\u754c\u754c", 2
+	got, err := renderThemedInput(t, i, 8, 5)
+	assert.NoError(t, err)
+	assert.Equal(t, "\r? Label\x1b[K\n\r| e\u0301\u754c\u754c\x1b[K\x1b[4D", got)
+}
+
+func TestThemedInputPerCallTemplatesKeepRawPayloads(t *testing.T) {
+	th := asciiTheme(false)
+	th.Templates.Input.Label = `theme {{ .Label }}`
+	th.Templates.Input.Answer = `theme {{ .Value }}`
+	th.Templates.Input.Feedback = `theme {{ .Message }}`
+	reject := WithValidation(func(_ context.Context, s string) error {
+		if s == "a" {
+			return errors.New("no")
+		}
+		return nil
+	})
+
+	i, out, _ := themedInput(t, th, 20, 5, "a", "\r", "b", "\r")
+	_, err := i.read(t.Context(), reject,
+		WithLabelTemplate(`{{ printf "%T" . }}`),
+		WithAnswerTemplate(`{{ .Label }}={{ .Answer }}`),
+		WithFeedbackTemplate(`call {{ .Message }}`))
+	assert.NoError(t, err)
+	assert.Contains(t, out.String(), "\rstring \x1b[K\n")
+	assert.Contains(t, out.String(), "\n\r| call no\x1b[K")
+	assert.True(t, strings.HasSuffix(out.String(), "Label=ab\n"))
+	assert.True(t, !strings.Contains(out.String(), "theme"))
+
+	// without per-call templates, and with an empty feedback template, the
+	// theme slots of the family render
+	i, out, _ = themedInput(t, th, 20, 5, "a", "\r", "b", "\r")
+	_, err = i.read(t.Context(), reject, WithFeedbackTemplate(""))
+	assert.NoError(t, err)
+	assert.Contains(t, out.String(), "\rtheme Label\x1b[K\n")
+	assert.Contains(t, out.String(), "\n\r| theme no\x1b[K")
+	assert.True(t, strings.HasSuffix(out.String(), "theme ab\n"))
+}
+
+func TestThemedInputHiddenSlots(t *testing.T) {
+	th := asciiTheme(false)
+	th.Templates.Prompt.Label = Hidden
+	th.Templates.Prompt.Answer = Hidden
+	i, out, _ := themedInput(t, th, 20, 5, "a", "\r")
+	_, err := i.read(t.Context())
+	assert.NoError(t, err)
+	// no label row and no retained answer; the value row stays
+	assert.Equal(t, "\r| \x1b[K\r| a\x1b[K\n\x1b[1A\r\x1b[K", out.String())
+}
+
+func TestThemedInputFamilySlots(t *testing.T) {
+	th := asciiTheme(false)
+	th.Templates.Input.Label = `input`
+	th.Templates.Number.Label = `number`
+	useTheme(t, th)
+	label := func(i *input) string {
+		t.Helper()
+		assert.NoError(t, i.parseTemplates())
+		assert.NoError(t, i.bind(t.Context(), &termIO{out: &bytes.Buffer{}}))
+		return i.label.String()
+	}
+	assert.Equal(t, "input", label(newInput(t.Context(), "x")))
+	password := newInput(t.Context(), "x")
+	password.Password = true
+	assert.Equal(t, "input", label(password)) // Password inherits Input
+	_, answer, _ := password.slots()
+	assert.True(t, answer == nil)
+	assert.Equal(t, "number", label(newNumber[int](t.Context(), "x").prompt))
+}
+
+func TestThemedInputHelperErrorsRestoreTerminal(t *testing.T) {
+	boom := errors.New("boom")
+	th := asciiTheme(false)
+	th.Funcs = map[string]any{"fails": func(string) (string, error) { return "", boom }}
+
+	th.Templates.Input.Label = `{{ fails .Label }}`
+	i, out, restored := themedInput(t, th, 20, 5, "a", "\r")
+	_, err := i.read(t.Context())
+	assert.ErrorIs(t, err, boom)
+	assert.Contains(t, err.Error(), "theme.Templates.Input.Label")
+	assert.True(t, *restored)
+	assert.Equal(t, "", out.String()) // nothing drawn
+
+	th.Templates.Input.Label = ""
+	th.Templates.Input.Feedback = `{{ fails .Message }}`
+	reject := WithValidation(func(context.Context, string) error { return errors.New("no") })
+	i, out, restored = themedInput(t, th, 20, 5, "a", "\r")
+	_, err = i.read(t.Context(), reject)
+	assert.ErrorIs(t, err, boom)
+	assert.True(t, *restored)
+	// the frame of the rejection is not drawn, the previous one is cleared
+	assert.True(t, strings.HasSuffix(out.String(), "| a\x1b[K\n\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r"))
+
+	th.Templates.Input.Feedback = ""
+	th.Templates.Input.Answer = `{{ fails .Value }}`
+	i, _, restored = themedInput(t, th, 20, 5, "a", "\r")
+	_, err = i.read(t.Context())
+	assert.ErrorIs(t, err, boom)
+	assert.True(t, *restored)
+}
+
+func TestThemedInputDefaultWithoutTerminal(t *testing.T) {
+	strictOutput(t)
+	th := asciiTheme(false)
+	th.Templates.Input.Label = `{{ fails .Label }}`
+	th.Funcs = map[string]any{"fails": func(string) (string, error) { return "", errors.New("boom") }}
+	useTheme(t, th)
+	i := newInput(t.Context(), "Label")
+	var out bytes.Buffer
+	i.out = &out
+	i.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
+		t.Fatal("acquired a terminal")
+		return nil, ErrNoTTY
+	}
+	got, err := i.read(t.Context(), WithDefault("dflt"))
+	assert.NoError(t, err)
+	assert.Equal(t, "dflt", got)
+	assert.Equal(t, "", out.String())
+}
+
+func TestThemedInputColorsFollowDestination(t *testing.T) {
+	withEnv(t, "FORCE_COLOR=3")
+	i, out, _ := themedInput(t, asciiTheme(false), 20, 5, "a", "\r")
+	_, err := i.read(t.Context())
+	assert.NoError(t, err)
+	accent := string(i.look.roles.accent)
+	assert.True(t, strings.HasPrefix(accent, "\x1b[38;2;"))
+	assert.Contains(t, out.String(), "\r"+accent+"?\x1b[39m \x1b[1mLabel\x1b[0m\x1b[K\n")
+	// the background is unknown, so the guide and the value keep the default
+	assert.Contains(t, out.String(), "\n\r| a\x1b[K")
+
+	withEnv(t)
+	i, out, _ = themedInput(t, asciiTheme(false), 20, 5, "a", "\r")
+	_, err = i.read(t.Context())
+	assert.NoError(t, err)
+	assert.True(t, !strings.Contains(out.String(), "\x1b[3"))
+	assert.True(t, !strings.Contains(out.String(), "\x1b[1m"))
+}
+
+func TestThemedInputCapturesThemeAtConstruction(t *testing.T) {
+	i, out, _ := themedInput(t, asciiTheme(false), 20, 5, "a", "\r")
+	assert.NoError(t, defaultIO.installTheme(asciiTheme(true)))
+	_, err := i.read(t.Context())
+	assert.NoError(t, err)
+	assert.Contains(t, out.String(), "\r? Label\x1b[K\n\r| a\x1b[K")
+}
+
+func TestThemedInputOffKeepsLegacyPath(t *testing.T) {
+	keepTheme(t)
+	assert.NoError(t, defaultIO.installTheme(asciiTheme(false)))
+	i := newInput(t.Context(), "Label")
+	assert.True(t, !i.themed)
+	assert.NoError(t, i.parseTemplates())
+	var out bytes.Buffer
+	assert.NoError(t, i.render(&termIO{out: &out, Width: 20}, &bytes.Buffer{}))
+	assert.Contains(t, out.String(), "?")
+	assert.True(t, !strings.Contains(out.String(), "|"))
+}
