@@ -257,13 +257,13 @@ func TestSpinnerWithCustomFrames(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	customFrames := []string{"[  ]", "[. ]", "[..]", "[...]"}
+	customFrames := []string{"[   ]", "[.  ]", "[.. ]", "[...]"}
 	spinner, err := s.Add(ctx, WithFrames(customFrames))
 	assert.NoError(t, err)
 
 	spinner.Update("custom")
 	tick()
-	assert.Equal(t, "\r[..] custom\n\r", <-cio.Out)
+	assert.Equal(t, "\r[.. ] custom\n\r", <-cio.Out)
 }
 
 func TestSpinnerStateNext(t *testing.T) {
@@ -522,6 +522,13 @@ func TestSpinnersAddRejectsEmptyFrames(t *testing.T) {
 	}
 }
 
+func TestSpinnersAddRejectsUnequalFrames(t *testing.T) {
+	s := &Spinners{}
+	_, err := s.Add(context.Background(), WithFrames([]string{"..", "..."}))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "spinner: frames[1]")
+}
+
 func TestSpinnersLogFallback(t *testing.T) {
 	var logs bytes.Buffer
 	previous := slog.Default()
@@ -612,4 +619,34 @@ func TestSpinnersLogFallbackRejectsOtherErrors(t *testing.T) {
 		return nil
 	}))
 	assert.ErrorIs(t, err, io.ErrClosedPipe)
+}
+
+func TestCheckFrames(t *testing.T) {
+	for _, frames := range [][]string{
+		SpinnerStyleDocs,
+		DefaultSpinnerStyle,
+		{"\x1b[32m⠋\x1b[0m", "\x1b[32m⠙\x1b[0m"},
+		{"\u754c", " ."},
+		{"-"},
+	} {
+		assert.NoError(t, new(Spinners).checkFrames(frames))
+	}
+	for _, tc := range []struct {
+		frames []string
+		want   string
+	}{
+		{nil, "frames must not be empty"},
+		{[]string{}, "frames must not be empty"},
+		{[]string{""}, "frames[0]: \"\": want a positive display width"},
+		{[]string{"\x1b[31m"}, "want a positive display width"},
+		{[]string{"\u0301"}, "want a positive display width"},
+		{[]string{"a", "a\nb"}, "frames[1]: \"a\\nb\": \"\\n\" is not text or SGR"},
+		{[]string{"a\tb"}, "is not text or SGR"},
+		{[]string{"\x1b[2Ka"}, "is not text or SGR"},
+		{[]string{"ab", "abc"}, "frames[1]: \"abc\": width 3, want 2 as frames[0]"},
+	} {
+		err := new(Spinners).checkFrames(tc.frames)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), tc.want)
+	}
 }

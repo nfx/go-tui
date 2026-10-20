@@ -189,6 +189,7 @@ func WithFrames(frames []string) opt {
 	})
 }
 
+// Add creates a spinner with nonempty, equally wide single-line frames.
 func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 	// rewrap the context, so that we can cancel the spinner when
 	// we don't want to cancel the parent context.
@@ -200,8 +201,11 @@ func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 		replyOffset: replyOffset,
 	}
 	err := opts(opt).Apply(&req)
-	if err == nil && len(req.frames) == 0 {
-		err = errors.New("spinner: frames must not be empty")
+	if err == nil {
+		err = s.checkFrames(req.frames)
+		if err != nil {
+			err = fmt.Errorf("spinner: %w", err)
+		}
 	}
 	if err != nil {
 		cancel()
@@ -573,4 +577,26 @@ func (s *Spinner) monitor(ctx context.Context) {
 	case <-ctx.Done():
 		return // what created spinner is done
 	}
+}
+
+// checkFrames requires nonempty, single-line text/SGR frames of equal positive display width.
+func (s *Spinners) checkFrames(frames []string) error {
+	if len(frames) == 0 {
+		return errors.New("frames must not be empty")
+	}
+	width := 0
+	for i, f := range frames {
+		if seg, ok := text(f).unstyled(); ok {
+			return fmt.Errorf("frames[%d]: %q: %q is not text or SGR", i, f, seg.text)
+		}
+		w := text(f).width()
+		switch {
+		case w == 0:
+			return fmt.Errorf("frames[%d]: %q: want a positive display width", i, f)
+		case i > 0 && w != width:
+			return fmt.Errorf("frames[%d]: %q: width %d, want %d as frames[0]", i, f, w, width)
+		}
+		width = w
+	}
+	return nil
 }

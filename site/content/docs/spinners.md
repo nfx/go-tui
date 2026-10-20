@@ -102,8 +102,9 @@ Detailed behavior:
 - After the last frame, animation loops back to the first frame.
 - Default frame set for new spinners is `SpinnerStyleDocs`.
 - You can switch to `DefaultSpinnerStyle` or any custom frame slice.
-- Frame slices must be non-empty. There is no runtime guard for empty slices.
-- Keep frame width visually consistent to avoid jitter in terminal output.
+- `Add` returns an error unless the frames are non-empty single lines of
+  text, optionally styled with color sequences, that all have the same
+  positive display width. Equal widths keep the animation from jittering.
 
 ## WithInput
 
