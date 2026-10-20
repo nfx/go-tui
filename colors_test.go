@@ -409,7 +409,14 @@ func TestResolveDefaultNeutralsReadableAroundBoundary(t *testing.T) {
 
 func TestResolveExplicitForegroundIsLiteralOnAnyBackground(t *testing.T) {
 	bg := sRGB{0x77, 0x77, 0x77}
-	r, err := Palette{Light: PaletteVariant{Foreground: "#232830"}, Dark: PaletteVariant{Foreground: "#232830"}}.resolve(false, bg, true)
+	r, err := Palette{
+		Light: PaletteVariant{Foreground: "#232830"},
+		Dark:  PaletteVariant{Foreground: "#232830"},
+	}.resolve(
+		false,
+		bg,
+		true,
+	)
 	assert.NoError(t, err)
 	assert.Equal(t, RGB("#232830").must(), r.Foreground)
 }
