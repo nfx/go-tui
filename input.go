@@ -80,14 +80,12 @@ func WithDefault(d any) opt {
 	})
 }
 
-// WithNonEmpty forces the prompt to continue until the confirmed input contains
-// at least one non-whitespace character. Empty and whitespace-only input are
-// rejected.
+// WithNonEmpty rejects confirmed input containing only whitespace or no characters.
 func WithNonEmpty() opt {
 	return opT(func(i *input) error {
 		i.rules = append(i.rules, func(_ context.Context, s string) error {
 			if strings.TrimSpace(s) == "" {
-				return errors.New("a value is required")
+				return ruleError("a value is required")
 			}
 			return nil
 		})
@@ -108,8 +106,8 @@ func WithValidation(fn func(context.Context, string) error) opt {
 	})
 }
 
-// WithRegex rejects a confirmed input that is not fully matched by pattern and
-// shows message instead. A pattern that matches the empty string accepts it;
+// WithRegex rejects confirmed input that does not fully match pattern, showing message.
+// A pattern that matches the empty string accepts it;
 // combine with [WithNonEmpty] to require a value.
 func WithRegex(pattern, message string) opt {
 	return opT(func(i *input) error {
@@ -124,13 +122,20 @@ func WithRegex(pattern, message string) opt {
 		}
 		i.rules = append(i.rules, func(_ context.Context, s string) error {
 			if !re.MatchString(s) {
-				return errors.New(message)
+				return ruleError(message)
 			}
 			return nil
 		})
 		return nil
 	})
 }
+
+// ruleError rejects input for a built-in rule. Its message comes from the
+// option, never from the typed text, so a [Password] may show it.
+type ruleError string
+
+// Error returns the built-in rule's rejection message.
+func (e ruleError) Error() string { return string(e) }
 
 type input struct {
 	config
@@ -737,13 +742,14 @@ func (p *input) confirmInput() bool {
 	return true
 }
 
-// reject displays non-nil errors.
+// reject records non-nil errors, hiding custom messages for themed passwords.
 func (p *input) reject(err error) {
 	if err == nil {
 		return
 	}
 	p.rejection = err.Error()
-	if p.rejection == "" {
+	var rule ruleError
+	if p.rejection == "" || p.themed && p.Password && !errors.As(err, &rule) {
 		p.rejection = "Invalid value"
 	}
 }
@@ -923,10 +929,7 @@ func (p *input) bind(ctx context.Context, tt *termIO) error {
 	return nil
 }
 
-// renderThemed draws the frame in the geometry of the theme: in Guided, the
-// label row, the value row behind the guide and the feedback row behind it;
-// in Inline, the label leads the value row. The caret ends on the value row,
-// and the next frame starts from there.
+// renderThemed draws the themed prompt, leaving the caret on the value row for the next frame.
 func (i *input) renderThemed(io *termIO, frame *bytes.Buffer) error {
 	io.refreshSize()
 	frame.Reset()
@@ -940,6 +943,10 @@ func (i *input) renderThemed(io *termIO, frame *bytes.Buffer) error {
 	cells := text(string(runes)).clusters()
 	first, last := i.visibleWindow(cells, cols)
 	visible := text(string(runes[cells.runeOffset(first):cells.runeOffset(last)]))
+	if i.Password {
+		// Keep one mask per visible typed rune, even for multi-rune masks.
+		visible = text(strings.Repeat(i.theme.source.Symbols.Mask, last-first))
+	}
 	feedback, err := i.themedFeedback()
 	if err != nil {
 		return err
