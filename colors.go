@@ -1222,11 +1222,16 @@ var builtinTemplates = Templates{
 		Active:   `{{ bold (accent .Value) }}{{ with .Details }} {{ muted . }}{{ end }}`,
 		Inactive: `{{ text .Value }}`,
 		More:     `{{ muted (printf "%s %d more" (symbol "Ellipsis") .More) }}`,
+		Empty:    `{{ muted "No matches" }}`,
+	},
+	Multichoice: MultichoiceTemplates{
+		Row: `{{ if .Active }}{{ accent (symbol "Focus") }}{{ else }} {{ end }} ` +
+			`{{ if .Selected }}{{ accent (symbol "Checked") }}{{ else }}{{ muted (symbol "Unchecked") }}{{ end }} {{ .Value }}`,
+		AnswerValue: `{{ range $i, $v := .Values }}{{ if $i }}, {{ end }}{{ $v }}{{ else }}none{{ end }}`,
 	},
 }
 
-// compile resolves slot inheritance over base, the compiled built-ins, in
-// isolated namespaces and reports errors at defining slots.
+// compile resolves isolated slot inheritance over base and reports errors at defining slots.
 func (t *Templates) compile(funcs template.FuncMap, base templates) (templates, error) {
 	root := templated[struct{}, struct{}]{Funcs: funcs}
 	var out templates
@@ -1238,7 +1243,11 @@ func (t *Templates) compile(funcs template.FuncMap, base templates) (templates, 
 	out.Choice, errs[4] = t.choice(root.nest("Choice", t.Choice, base.Choice))
 	family := choiceFamily{out.Prompt, out.Choice}
 	out.Dropdown, errs[5] = t.choiceFamily(root.nest("Dropdown", t.Dropdown, family))
-	out.Multichoice, errs[6] = t.multichoice(root.nest("Multichoice", t.Multichoice, family))
+	out.Multichoice, errs[6] = t.multichoice(root.nest("Multichoice", t.Multichoice, multichoiceTemplates{
+		choiceFamily: family,
+		Row:          base.Multichoice.Row,
+		AnswerValue:  base.Multichoice.AnswerValue,
+	}))
 	out.Confirm, errs[7] = t.choiceFamily(root.nest("Confirm", t.Confirm, family))
 	out.FilePicker, errs[8] = t.choiceFamily(root.nest("FilePicker", t.FilePicker, family))
 	if err := errors.Join(errs[:]...); err != nil {
@@ -1345,12 +1354,14 @@ type multichoiceTemplates struct {
 	Row, AnswerValue *compiledSlot
 }
 
-// multichoice compiles family slots with no parent fallback for Row or AnswerValue.
-func (t *Templates) multichoice(in templated[MultichoiceTemplates, choiceFamily]) (out multichoiceTemplates, _ error) {
+// multichoice compiles family slots with built-in fallbacks for Row and AnswerValue.
+func (t *Templates) multichoice(
+	in templated[MultichoiceTemplates, multichoiceTemplates],
+) (out multichoiceTemplates, _ error) {
 	var errs [3]error
-	out.choiceFamily, errs[0] = t.choiceFamily(in.nest("", in.Src.SelectTemplates, in.Parent))
-	out.Row, errs[1] = t.slot(in.nest("Row", in.Src.Row, (*compiledSlot)(nil)), false)
-	out.AnswerValue, errs[2] = t.slot(in.nest("AnswerValue", in.Src.AnswerValue, (*compiledSlot)(nil)), true)
+	out.choiceFamily, errs[0] = t.choiceFamily(in.nest("", in.Src.SelectTemplates, in.Parent.choiceFamily))
+	out.Row, errs[1] = t.slot(in.nest("Row", in.Src.Row, in.Parent.Row), false)
+	out.AnswerValue, errs[2] = t.slot(in.nest("AnswerValue", in.Src.AnswerValue, in.Parent.AnswerValue), true)
 	return out, errors.Join(errs[:]...)
 }
 

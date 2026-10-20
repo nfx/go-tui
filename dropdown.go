@@ -106,11 +106,7 @@ type dropdown struct {
 	// labelSet, answerSet, activeSet, inactiveSet and moreSet record per-call
 	// templates, which win over the theme in any option order.
 	labelSet, answerSet, activeSet, inactiveSet, moreSet bool
-	// mainSource and detailsSource are the projection of [WithTemplate] or
-	// [WithFieldTemplate] of a themed dropdown, which replaces the Value and
-	// Details slots of the theme and leaves its presentation alone.
-	mainSource, detailsSource     string
-	mainTemplate, detailsTemplate *template.Template
+	projection
 
 	// theme is the snapshot captured at construction. When themed, the
 	// dropdown renders through it: look is its binding to the destination,
@@ -540,15 +536,14 @@ func (d *dropdown) hintMatches(items []any) func(string) ([]int, error) {
 	}
 }
 
-// searchText renders the text of item that filtering matches: the output of
-// the inactive template, or the projected content of a themed dropdown.
+// searchText returns searchable item content without theme decoration.
 func (d *dropdown) searchText(item any) (text, error) {
 	if d.themed && !d.legacySearch() {
 		err := d.bindOnce()
 		if err != nil {
 			return nil, err
 		}
-		return d.projectContent(item)
+		return d.projectContent(d.slot.value, item)
 	}
 	var label text
 	err := d.inactiveItemTemplate.Execute(&label, item)
@@ -684,14 +679,20 @@ func (d *dropdown) setContentTemplate(main string, activeDetails ...string) {
 	d.AnswerTemplate = fmt.Sprintf(`{{ dim "✔ " .Label " …" }} {{ bold .Answer%s }}`, main)
 }
 
-// setProjection records the content of a themed dropdown, keeping the
-// expression grammar of [WithTemplate]: the arguments are joined as before,
-// without presentation, which stays with the theme and explicit templates.
-func (d *dropdown) setProjection(main string, details ...string) {
-	d.mainSource = fmt.Sprintf(`{{ __content %s }}`, main)
-	d.detailsSource = ""
+// projection is the content of a themed choice list set by [WithTemplate]
+// or [WithFieldTemplate]. It replaces the Value and Details slots of the
+// theme and leaves the presentation alone.
+type projection struct {
+	mainSource, detailsSource     string
+	mainTemplate, detailsTemplate *template.Template
+}
+
+// setProjection preserves WithTemplate expressions while leaving presentation to the theme.
+func (p *projection) setProjection(main string, details ...string) {
+	p.mainSource = fmt.Sprintf(`{{ __content %s }}`, main)
+	p.detailsSource = ""
 	if len(details) > 0 {
-		d.detailsSource = fmt.Sprintf(`{{ __content (%s) }}`, strings.Join(details, `) ", " (`))
+		p.detailsSource = fmt.Sprintf(`{{ __content (%s) }}`, strings.Join(details, `) ", " (`))
 	}
 }
 
@@ -972,17 +973,9 @@ func (d *dropdown) parseTemplates() error {
 	return nil
 }
 
-// parseThemed parses only per-call templates and the projection, with
-// placeholder helpers that bind replaces; the theme slots are compiled.
+// parseThemed parses per-call templates and projections for later destination binding.
 func (d *dropdown) parseThemed() error {
-	funcs := d.theme.funcs(profilePlain, roleStyles{})
-	funcs["__content"] = span{}.helper()
-	tmpl := template.New("dropdown").Funcs(funcs)
-	for _, part := range []struct {
-		set          bool
-		name, source string
-		dest         **template.Template
-	}{
+	return parseThemed(d.theme, "dropdown", []perCall{
 		{d.labelSet, "label", mustEndWith(d.LabelTemplate, ' '), &d.labelTemplate},
 		{d.activeSet, "active", d.ActiveItemTemplate, &d.activeItemTemplate},
 		{d.inactiveSet, "inactive", d.InactiveItemTemplate, &d.inactiveItemTemplate},
@@ -990,7 +983,23 @@ func (d *dropdown) parseThemed() error {
 		{d.answerSet, "answer", mustEndWith(d.AnswerTemplate, '\n'), &d.answerTemplate},
 		{d.mainSource != "", "content", d.mainSource, &d.mainTemplate},
 		{d.detailsSource != "", "details", d.detailsSource, &d.detailsTemplate},
-	} {
+	})
+}
+
+// perCall is a per-call template of a themed choice list, parsed into dest
+// only when the option set it.
+type perCall struct {
+	set          bool
+	name, source string
+	dest         **template.Template
+}
+
+// parseThemed checks explicitly set templates using helpers replaced at destination binding.
+func parseThemed(c *compiledTheme, name string, parts []perCall) error {
+	funcs := c.funcs(profilePlain, roleStyles{})
+	funcs["__content"] = span{}.helper()
+	tmpl := template.New(name).Funcs(funcs)
+	for _, part := range parts {
 		if !part.set {
 			continue
 		}
@@ -1003,22 +1012,9 @@ func (d *dropdown) parseThemed() error {
 	return nil
 }
 
-// choiceSlots are the theme slots of a choice family bound to one destination.
-type choiceSlots struct {
-	value, details, active, inactive, more, answer boundSlot
-}
-
-// dropdownKeys are the bindings beyond confirming that the hint row describes.
-var dropdownKeys = []keyHint{{Key: "up/down", Action: "move"}, {Key: "type", Action: "filter"}}
-
-// bind captures the presentation for the destination of look: per-call
-// templates rebound to its helpers and the bound slots of the family.
-func (d *dropdown) bind(look binding) error {
-	d.look = look
-	for _, t := range []**template.Template{
-		&d.labelTemplate, &d.activeItemTemplate, &d.inactiveItemTemplate, &d.moreItemsTemplate,
-		&d.answerTemplate, &d.mainTemplate, &d.detailsTemplate,
-	} {
+// rebind clones non-nil templates before installing destination-bound helpers.
+func rebind(funcs template.FuncMap, ts ...**template.Template) error {
+	for _, t := range ts {
 		if *t == nil {
 			continue
 		}
@@ -1026,17 +1022,71 @@ func (d *dropdown) bind(look binding) error {
 		if err != nil {
 			return fmt.Errorf("%s: %w", (*t).Name(), err)
 		}
-		*t = clone.Funcs(look.funcs)
+		*t = clone.Funcs(funcs)
 	}
-	s := d.theme.templates.Dropdown
+	return nil
+}
+
+// choiceSlots are the theme slots of a choice family bound to one destination.
+type choiceSlots struct {
+	value, details, active, inactive, more, answer boundSlot
+}
+
+// bind binds the item and answer slots of the family to funcs.
+func (f choiceFamily) bind(funcs template.FuncMap) (s choiceSlots, _ error) {
 	var errs [6]error
-	d.slot.value, errs[0] = s.Value.bind(look.funcs)
-	d.slot.details, errs[1] = s.Details.bind(look.funcs)
-	d.slot.active, errs[2] = s.Active.bind(look.funcs)
-	d.slot.inactive, errs[3] = s.Inactive.bind(look.funcs)
-	d.slot.more, errs[4] = s.More.bind(look.funcs)
-	d.slot.answer, errs[5] = s.Answer.bind(look.funcs)
-	return errors.Join(errs[:]...)
+	s.value, errs[0] = f.Value.bind(funcs)
+	s.details, errs[1] = f.Details.bind(funcs)
+	s.active, errs[2] = f.Active.bind(funcs)
+	s.inactive, errs[3] = f.Inactive.bind(funcs)
+	s.more, errs[4] = f.More.bind(funcs)
+	s.answer, errs[5] = f.Answer.bind(funcs)
+	return s, errors.Join(errs[:]...)
+}
+
+// chrome renders label and key hints, passing the raw label to an explicit template.
+func (f choiceFamily) chrome(
+	funcs template.FuncMap,
+	explicit *template.Template,
+	label string,
+	keys []keyHint,
+) (head, hint text, _ error) {
+	if explicit != nil {
+		err := explicit.Execute(&head, label)
+		if err != nil {
+			return nil, nil, fmt.Errorf("label: %w", err)
+		}
+	} else {
+		slot, err := f.Label.bind(funcs)
+		if err != nil {
+			return nil, nil, err
+		}
+		head, err = slot.render(labelView{label})
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	slot, err := f.Hint.bind(funcs)
+	if err != nil {
+		return nil, nil, err
+	}
+	hint, err = slot.render(hintView{keys})
+	return head, hint, err
+}
+
+// dropdownKeys are the bindings beyond confirming that the hint row describes.
+var dropdownKeys = []keyHint{{Key: "up/down", Action: "move"}, {Key: "type", Action: "filter"}}
+
+// bind installs destination-bound helpers and choice slots.
+func (d *dropdown) bind(look binding) error {
+	d.look = look
+	err := rebind(look.funcs, &d.labelTemplate, &d.activeItemTemplate, &d.inactiveItemTemplate,
+		&d.moreItemsTemplate, &d.answerTemplate, &d.mainTemplate, &d.detailsTemplate)
+	if err != nil {
+		return err
+	}
+	d.slot, err = d.theme.templates.Dropdown.bind(look.funcs)
+	return err
 }
 
 // bindOnce binds to the destination without a terminal lease unless a run
@@ -1049,57 +1099,34 @@ func (d *dropdown) bindOnce() error {
 }
 
 // renderChrome renders the label and hint rows once per run.
-func (d *dropdown) renderChrome() error {
-	d.label = nil
-	s := d.theme.templates.Dropdown
-	if d.labelSet {
-		err := d.labelTemplate.Execute(&d.label, d.Label)
-		if err != nil {
-			return fmt.Errorf("label: %w", err)
-		}
-	} else {
-		slot, err := s.Label.bind(d.look.funcs)
-		if err != nil {
-			return err
-		}
-		d.label, err = slot.render(labelView{d.Label})
-		if err != nil {
-			return err
-		}
-	}
-	slot, err := s.Hint.bind(d.look.funcs)
-	if err != nil {
-		return err
-	}
-	d.hint, err = slot.render(hintView{dropdownKeys})
+func (d *dropdown) renderChrome() (err error) {
+	d.label, d.hint, err = d.theme.templates.Dropdown.chrome(d.look.funcs, d.labelTemplate, d.Label, dropdownKeys)
 	return err
 }
 
-// projectContent renders the main content of item before any presentation:
-// the per-call projection, or else the Value slot of the theme.
-func (d *dropdown) projectContent(item any) (text, error) {
-	if d.mainTemplate == nil {
-		return d.slot.value.render(item)
+// projectContent renders the per-call projection or falls back to the bound Value slot.
+func (p *projection) projectContent(value boundSlot, item any) (text, error) {
+	if p.mainTemplate == nil {
+		return value.render(item)
 	}
 	var out text
-	err := d.mainTemplate.Execute(&out, item)
+	err := p.mainTemplate.Execute(&out, item)
 	if err != nil {
 		return nil, fmt.Errorf("content: %w", err)
 	}
 	return out.beforeNewline(), nil
 }
 
-// projectDetails renders the active-only details of item: the per-call
-// details of a per-call projection, or else the Details slot of the theme.
-func (d *dropdown) projectDetails(item any) (text, error) {
+// projectDetails uses projected details when a projection is set, otherwise the bound Details slot.
+func (p *projection) projectDetails(details boundSlot, item any) (text, error) {
 	switch {
-	case d.mainTemplate == nil:
-		return d.slot.details.render(item)
-	case d.detailsTemplate == nil:
+	case p.mainTemplate == nil:
+		return details.render(item)
+	case p.detailsTemplate == nil:
 		return nil, nil
 	}
 	var out text
-	err := d.detailsTemplate.Execute(&out, item)
+	err := p.detailsTemplate.Execute(&out, item)
 	if err != nil {
 		return nil, fmt.Errorf("details: %w", err)
 	}
@@ -1115,16 +1142,14 @@ type choiceView struct {
 	Active, Selected bool
 }
 
-// themedItem projects item at i once, caches both of its rows and returns the
-// text that filtering matches. The theme slots render behind the renderer's
-// focus mark; an explicit per-call template takes the raw item and brings its
-// own markers.
+// themedItem caches both item rows and returns projected content for filtering.
+// Explicit templates own their markers; theme slots use the renderer's focus mark.
 func (d *dropdown) themedItem(i int, item any) (text, error) {
-	content, err := d.projectContent(item)
+	content, err := d.projectContent(d.slot.value, item)
 	if err != nil {
 		return nil, err
 	}
-	details, err := d.projectDetails(item)
+	details, err := d.projectDetails(d.slot.details, item)
 	if err != nil {
 		return nil, err
 	}
@@ -1182,7 +1207,7 @@ func (d *dropdown) themedAnswer(label string, i int) error {
 	var content text
 	if i < len(d.content) {
 		content = d.content[i]
-	} else if content, err = d.projectContent(d.Items[i]); err != nil {
+	} else if content, err = d.projectContent(d.slot.value, d.Items[i]); err != nil {
 		return err
 	}
 	value := content.String()
@@ -1535,7 +1560,9 @@ func (d *dropdown) renderThemed(io *termIO, buf *bytes.Buffer) error {
 	if err != nil {
 		return fmt.Errorf("more: %w", err)
 	}
-	g := d.look.geometry(io.Width, io.Height)
+	// the newline after the last row moves the cursor to a row of its own,
+	// which must stay on the screen, or the terminal scrolls the label away
+	g := d.look.geometry(io.Width, io.Height-1)
 	rows := make([]frameRow, 0, len(d.displayed)+4)
 	// Inline, the label leads the first row and indents the others, unless
 	// the widest row does not fit after it.
