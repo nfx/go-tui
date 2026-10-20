@@ -91,6 +91,17 @@ func (t segment) isText() bool {
 	return !t.isInvalid && !t.isControl && !t.isEscape && !t.isIncomplete && !t.isBroken
 }
 
+// unstyled reports the first segment that is neither text nor SGR.
+func (t text) unstyled() (segment, bool) {
+	for seg := range t.segments() {
+		if _, sgr := seg.sgrParams(); seg.isText() || (seg.isEscape && sgr) {
+			continue
+		}
+		return seg, true
+	}
+	return segment{}, false
+}
+
 // sgrStyle reports whether t is SGR and may leave a style open.
 func (t segment) sgrStyle() (styled, ok bool) {
 	params, ok := t.sgrParams()

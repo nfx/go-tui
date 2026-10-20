@@ -475,7 +475,7 @@ func TestDistinctCollapsesByEncoding(t *testing.T) {
 }
 
 func TestPresetsCompile(t *testing.T) {
-	for name, th := range map[string]Theme{"guided": GuidedTheme()} {
+	for name, th := range map[string]Theme{"builtin": NewTheme()} {
 		t.Run(name, func(t *testing.T) {
 			_, err := th.compile()
 			assert.NoError(t, err)
@@ -496,7 +496,7 @@ func TestZeroThemeCompiles(t *testing.T) {
 }
 
 func TestPresetKeepsAdaptiveNeutralsUnset(t *testing.T) {
-	th := GuidedTheme()
+	th := NewTheme()
 	assert.Equal(t, RGB(""), th.Palette.Light.Foreground)
 	assert.Equal(t, RGB(""), th.Palette.Dark.Foreground)
 	c, err := th.compile()
@@ -506,7 +506,7 @@ func TestPresetKeepsAdaptiveNeutralsUnset(t *testing.T) {
 }
 
 func TestRoundTripKeepsIntentAndCanonicalizes(t *testing.T) {
-	th := GuidedTheme()
+	th := NewTheme()
 	th.Palette.Accent = "#0ad"
 	th.Palette.Dark.Error = "#000"
 	c, err := th.compile()
@@ -523,7 +523,7 @@ func TestRoundTripKeepsIntentAndCanonicalizes(t *testing.T) {
 }
 
 func TestPaletteErrorIsPathQualified(t *testing.T) {
-	th := GuidedTheme()
+	th := NewTheme()
 	th.Palette.Dark.Accent = "00ADD8"
 	_, err := th.compile()
 	assert.Contains(t, err.Error(), "theme.Palette.Dark.Accent")
@@ -533,7 +533,7 @@ func TestInstallAtomicAndIsolation(t *testing.T) {
 	prev := defaultIO.currentTheme()
 	t.Cleanup(func() { defaultIO.theme.Store(prev) })
 
-	th := GuidedTheme()
+	th := NewTheme()
 	th.Palette.Accent = "#112233"
 	assert.NoError(t, defaultIO.installTheme(th))
 	c := defaultIO.currentTheme()
@@ -547,7 +547,7 @@ func TestInstallAtomicAndIsolation(t *testing.T) {
 	assert.Equal(t, RGB("#112233"), defaultIO.currentTheme().editable().Palette.Accent)
 
 	// A failed installation changes nothing.
-	bad := GuidedTheme()
+	bad := NewTheme()
 	bad.Palette.Accent = "nope"
 	assert.Error(t, defaultIO.installTheme(bad))
 	assert.True(t, defaultIO.currentTheme() == c)
@@ -559,7 +559,7 @@ func TestConcurrentInstall(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range 16 {
 		wg.Go(func() {
-			th := GuidedTheme()
+			th := NewTheme()
 			if i%2 == 0 {
 				th.Palette.Accent = "nope"
 			}
@@ -586,10 +586,10 @@ func TestParsedPaletteResolveMatchesAdapter(t *testing.T) {
 	assert.Equal(t, want, pp.resolve(false, sRGB{0x20, 0x20, 0x20}, true))
 }
 
-// compileTemplates compiles a Guided theme with test-specific edits.
+// compileTemplates compiles the built-in theme with test-specific edits.
 func compileTemplates(t *testing.T, edit func(*Theme)) (*compiledTheme, error) {
 	t.Helper()
-	th := GuidedTheme()
+	th := NewTheme()
 	edit(&th)
 	return th.compile()
 }
@@ -818,7 +818,7 @@ func TestConcurrentWithFnLosesNothing(t *testing.T) {
 func TestInstallReplacesFuncs(t *testing.T) {
 	keepTheme(t)
 	WithFn("forgotten", strings.ToUpper)
-	th := GuidedTheme()
+	th := NewTheme()
 	th.Funcs = template.FuncMap{"kept": strings.ToLower}
 	assert.NoError(t, defaultIO.installTheme(th))
 	funcs := defaultIO.currentTheme().editable().Funcs
@@ -829,7 +829,7 @@ func TestInstallReplacesFuncs(t *testing.T) {
 
 func TestThemeFuncsAreCopied(t *testing.T) {
 	keepTheme(t)
-	th := GuidedTheme()
+	th := NewTheme()
 	th.Funcs = template.FuncMap{"h": strings.ToUpper}
 	assert.NoError(t, defaultIO.installTheme(th))
 	th.Funcs["h"] = strings.ToLower
@@ -1067,4 +1067,17 @@ func TestBoundSlotRendersOrFailsWhole(t *testing.T) {
 	out, err = render(c.templates.Choice.More, profileTrueColor)
 	assert.NoError(t, err)
 	assert.True(t, out == nil)
+}
+
+func TestThemeGeometryUsesInlineAndGuide(t *testing.T) {
+	th := NewTheme()
+	th.Symbols = ASCIISymbols()
+	c, err := th.compile()
+	assert.NoError(t, err)
+	assert.Equal(t, "| ", c.geometry(10, 5).lead(true).String())
+	assert.Equal(t, "", c.geometry(10, 5).lead(false).String())
+	th.Inline = true
+	c, err = th.compile()
+	assert.NoError(t, err)
+	assert.Equal(t, "", c.geometry(10, 5).lead(true).String())
 }

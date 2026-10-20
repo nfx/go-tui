@@ -764,11 +764,15 @@ func (r resolvedPalette) String() string {
 }
 
 // Theme is the editable configuration of the appearance of every widget. A
-// preset such as [GuidedTheme] is a complete, usable theme to edit.
+// preset such as [NewTheme] is a complete, usable theme to edit.
 type Theme struct {
 	// Light forces the light palette variant without detection. Otherwise the
 	// terminal background is detected, falling back to dark.
-	Light     bool
+	Light bool
+	// Inline keeps each prompt's label on its value row. Otherwise the label
+	// has its own row, and the value, list and feedback rows start with the
+	// guide symbol. Only geometry differs.
+	Inline    bool
 	Palette   Palette
 	Symbols   Symbols
 	Templates Templates
@@ -1013,8 +1017,8 @@ func presetTheme() Theme {
 	}
 }
 
-// GuidedTheme returns an independent, editable copy of the Guided preset.
-func GuidedTheme() Theme { return presetTheme() }
+// NewTheme returns an independent, editable copy of the built-in theme.
+func NewTheme() Theme { return presetTheme() }
 
 // compiledTheme is an immutable snapshot of an installed theme. Nothing in it
 // is derived from a terminal: backgrounds and profiles are bound per operation.
@@ -1036,6 +1040,11 @@ func (c *compiledTheme) editable() Theme { return c.source.clone() }
 // funcs returns built-in and custom helpers bound to one destination.
 func (c *compiledTheme) funcs(p colorProfile, roles roleStyles) template.FuncMap {
 	return c.source.withCustom(destination{profile: p, roles: roles, symbols: c.source.Symbols}.funcs())
+}
+
+// geometry binds the theme layout to a terminal size.
+func (c *compiledTheme) geometry(width, height int) geometry {
+	return geometry{inline: c.source.Inline, guide: c.source.Symbols.Guide, width: width, height: height}
 }
 
 // legacyTemplateFuncs returns installed per-call helpers; callers must not modify the map.
@@ -1290,10 +1299,7 @@ func (b boundSlot) render(data any) (text, error) {
 	if err != nil {
 		return nil, fmt.Errorf("theme.Templates.%s: %w", b.tmpl.Name(), err)
 	}
-	for seg := range out.segments() {
-		if _, sgr := seg.sgrParams(); seg.isText() || (seg.isEscape && sgr) {
-			continue
-		}
+	if seg, ok := out.unstyled(); ok {
 		return nil, fmt.Errorf("theme.Templates.%s: %q: want text and SGR only", b.tmpl.Name(), seg.text)
 	}
 	return out, nil
