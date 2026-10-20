@@ -221,6 +221,7 @@ func newNumber[T numberType](ctx context.Context, label string) *number[T] {
 	}
 	n.signed = n.float || (kind >= reflect.Int && kind <= reflect.Int64)
 	// the numeric rule goes first, so that options appended later cannot bypass it
+	n.prompt.numeric = true
 	n.prompt.rules = append(n.prompt.rules, n.validate)
 	n.prompt.adjust = n.adjust
 	return n

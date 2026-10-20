@@ -1097,17 +1097,14 @@ func (t *termIO) canProbe() bool {
 }
 
 // detectBackground uses the existing input owner for OSC 11, then falls back
-// to COLORFGBG or dark. [tio.background] handles caching.
-func (t *termIO) detectBackground(
-	ctx context.Context,
-	lookup func(string) (string, bool),
-) background {
+// to hint, the COLORFGBG estimate or dark. [tio.background] handles caching.
+func (t *termIO) detectBackground(ctx context.Context, hint background) background {
 	if t.canProbe() {
 		if b, ok := t.probeBackground(ctx); ok {
 			return b
 		}
 	}
-	return t.backgroundFromEnv(lookup)
+	return hint
 }
 
 // backgroundProbeTimeout bounds each OSC 11 query.

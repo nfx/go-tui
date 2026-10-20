@@ -1081,3 +1081,128 @@ func TestThemeGeometryUsesInlineAndGuide(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "", c.geometry(10, 5).lead(true).String())
 }
+
+func TestBuiltinPromptSlots(t *testing.T) {
+	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = ASCIISymbols() })
+	assert.NoError(t, err)
+	render := func(s *compiledSlot, data any) string {
+		t.Helper()
+		b, err := s.bind(c.funcs(profilePlain, roleStyles{}))
+		assert.NoError(t, err)
+		out, err := b.render(data)
+		assert.NoError(t, err)
+		return out.String()
+	}
+	tt := c.templates
+	assert.Equal(t, "? Name", render(tt.Input.Label, labelView{"Name"}))
+	assert.Equal(t, "? Name", render(tt.Password.Label, labelView{"Name"}))
+	assert.Equal(t, "+ Name · v", render(tt.Input.Answer, answerView{Label: "Name", Value: "v"}))
+	assert.Equal(t, "! bad", render(tt.Number.Feedback, feedbackView{"bad"}))
+	assert.True(t, tt.Prompt.Hint == nil) // no widget renders hints yet
+	// built-ins stay out of the editable configuration
+	assert.Equal(t, Template(""), c.editable().Templates.Prompt.Label)
+}
+
+func TestColorLiteralsFailInstallation(t *testing.T) {
+	for _, src := range []Template{
+		`{{ fg "#2D9B5" .Label }}`,
+		`{{ bg "teal" .Label }}`,
+		`{{ fg "" .Label }}`,
+		`{{ bold (bg "#FFF3C4" (fg "00ADD8" .Label)) }}`,
+		`{{ if .Label }}{{ fg "#12345G" . }}{{ end }}`,
+		`{{ range .Values }}{{ else }}{{ fg "#1234" "x" }}{{ end }}`,
+		`{{ with .Label }}{{ . }}{{ else }}{{ bg "#FFFFFFFF" "x" }}{{ end }}`,
+		`{{ define "x" }}{{ fg "rgb(0,0,0)" . }}{{ end }}{{ template "x" .Label }}`,
+	} {
+		_, err := compileTemplates(t, func(th *Theme) { th.Templates.Input.Label = src })
+		if err == nil || !strings.Contains(err.Error(), "theme.Templates.Input.Label") ||
+			!strings.Contains(err.Error(), `want "#RRGGBB" or "#RGB"`) {
+			t.Errorf("%s: got %v", src, err)
+		}
+	}
+	_, err := compileTemplates(t, func(th *Theme) { th.Templates.Input.Label = `{{ fg "#0AD" .Label }}` })
+	assert.NoError(t, err)
+	// dynamic colors, and text literals in the value position, are not checked
+	_, err = compileTemplates(t, func(th *Theme) {
+		th.Templates.Input.Label = `{{ fg .Color .Label }}{{ fg "#000" "not a color" }}{{ printf "%s" "teal" }}`
+	})
+	assert.NoError(t, err)
+}
+
+func TestColorLiteralErrorHasPosition(t *testing.T) {
+	_, err := compileTemplates(t, func(th *Theme) { th.Templates.Prompt.Answer = "x\n{{ fg \"#12\" .Value }}" })
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "theme.Templates.Prompt.Answer: Prompt.Answer:2:")
+	assert.Contains(t, err.Error(), ": fg: ")
+}
+
+func TestThemeRolesKeepNeutralsDefaultOnAssumedBackground(t *testing.T) {
+	c, err := NewTheme().compile()
+	assert.NoError(t, err)
+	assumed := c.bind(profileTrueColor, background{})
+	assert.True(t, assumed.roles.foreground == nil && assumed.roles.muted == nil && assumed.roles.guide == nil)
+	assert.True(t, assumed.roles.accent != nil && assumed.roles.success != nil && assumed.roles.failure != nil)
+
+	measured := c.bind(profileTrueColor, background{rgb: sRGB{0x12, 0x12, 0x12}, measured: true})
+	assert.True(t, measured.roles.foreground != nil && measured.roles.muted != nil && measured.roles.guide != nil)
+
+	for _, p := range []colorProfile{profilePlain, profileAttrs} {
+		assert.Equal(t, roleStyles{}, c.bind(p, background{rgb: sRGB{0x12, 0x12, 0x12}, measured: true}).roles)
+	}
+}
+
+func TestThemeRolesHonorExplicitChoices(t *testing.T) {
+	th := NewTheme()
+	th.Light = true
+	th.Palette.Dark.Muted = "#777777"
+	th.Palette.Light.Accent = "#00ADD8" // too light for white, kept as given
+	c, err := th.compile()
+	assert.NoError(t, err)
+	b := c.bind(profileTrueColor, background{})
+	// a forced light variant trusts its reference background for neutrals
+	assert.True(t, b.roles.foreground != nil)
+	assert.Equal(t, "\x1b[38;2;0;173;216m", string(b.roles.accent))
+
+	th.Light = false
+	c, err = th.compile()
+	assert.NoError(t, err)
+	b = c.bind(profileTrueColor, background{})
+	// an explicit neutral renders on an assumed background, automatic ones do not
+	assert.Equal(t, "\x1b[38;2;119;119;119m", string(b.roles.muted))
+	assert.True(t, b.roles.foreground == nil)
+}
+
+func TestThemeRolesHoldWordsToTextContrast(t *testing.T) {
+	c, err := NewTheme().compile()
+	assert.NoError(t, err)
+	white := sRGB{0xFF, 0xFF, 0xFF}
+	pal := c.palette.resolve(false, white, true)
+	for _, p := range []colorProfile{profileANSI16, profileANSI256, profileTrueColor} {
+		roles := c.roles(p, pal)
+		for name, role := range map[string]text{"success": roles.success, "accent": roles.accent, "error": roles.failure} {
+			if role == nil {
+				continue // no readable shade: the terminal default
+			}
+			want, ok := p.readable(
+				map[string]sRGB{"success": pal.Success, "accent": pal.Accent, "error": pal.Error}[name],
+				white,
+				contrastText,
+			)
+			assert.True(t, ok)
+			assert.Equal(t, string(p.fg(want)), string(role))
+		}
+	}
+}
+
+func TestBindingStylesGuideAndValue(t *testing.T) {
+	th := NewTheme()
+	th.Symbols = ASCIISymbols()
+	c, err := th.compile()
+	assert.NoError(t, err)
+	b := c.bind(profileTrueColor, background{rgb: sRGB{0x12, 0x12, 0x12}, measured: true})
+	lead := b.geometry(10, 5).lead(true)
+	assert.Equal(t, string(b.roles.guide)+"|\x1b[39m ", lead.String())
+	assert.Equal(t, 2, lead.width())
+	assert.Equal(t, "", b.style(b.roles.foreground, nil).String())
+	assert.Equal(t, "| ", c.bind(profilePlain, background{}).geometry(10, 5).lead(true).String())
+}

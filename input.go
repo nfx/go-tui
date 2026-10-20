@@ -145,6 +145,21 @@ type input struct {
 	answerTemplate   *template.Template
 	FeedbackTemplate string
 	feedbackTmpl     *template.Template
+	// labelSet and answerSet record per-call templates, which win over the
+	// theme whatever their source.
+	labelSet, answerSet bool
+
+	// theme is the snapshot captured at construction. When themed, the prompt
+	// renders through it, and run binds it to the destination: look holds the
+	// binding, label the label rendered once with it, answer and feedback the
+	// bound slots of the prompt family.
+	theme            *compiledTheme
+	themed           bool
+	look             binding
+	label            text
+	answer, feedback boundSlot
+	// numeric selects the Number slots of the theme.
+	numeric bool
 
 	def defaultValue
 	// rules validate the confirmed text in order; the first error rejects it.
@@ -154,10 +169,12 @@ type input struct {
 	// adjust optionally steps on Up/Down; errors become rejections.
 	adjust func(key rune) error
 
-	// rows is the height of the last drawn frame: the input and optional feedback.
-	rows   int
-	typed  string
-	cursor int
+	// rows is the height of the last drawn frame: the input and optional
+	// feedback, below a guided label. caretRow is the row of the caret in it.
+	rows     int
+	caretRow int
+	typed    string
+	cursor   int
 
 	// TODO: special case for testing?..
 	makeTermIO func(in io.Reader, out io.Writer) (*termIO, error)
@@ -173,11 +190,13 @@ func (i *input) setHide() {
 // implement [withPrompt] interface.
 func (i *input) setLabelTemplate(tmpl string) {
 	i.LabelTemplate = tmpl
+	i.labelSet = true
 }
 
 // implement [withPrompt] interface.
 func (i *input) setAnswerTemplate(tmpl string) {
 	i.AnswerTemplate = tmpl
+	i.answerSet = true
 }
 
 // implement [withPrompt] interface.
@@ -196,6 +215,8 @@ func newInput(ctx context.Context, label string) *input {
 		Label:          label,
 		LabelTemplate:  DefaultLabelTemplate,
 		AnswerTemplate: DefaultAnswerTemplate,
+		theme:          defaultIO.currentTheme(),
+		themed:         themeRendering.Load(),
 		makeTermIO:     makePromptIO,
 	}
 }
@@ -262,11 +283,16 @@ func (i *input) showAnswer() error {
 		return nil
 	}
 	var buf bytes.Buffer
-	// TODO: unify reused structures
-	err := i.answerTemplate.Execute(&buf, dropdownAnswer{
-		Label:  i.Label,
-		Answer: i.safeText(i.typed),
-	})
+	var err error
+	if i.themed && !i.answerSet {
+		err = i.themedAnswer(&buf)
+	} else {
+		// TODO: unify reused structures
+		err = i.answerTemplate.Execute(&buf, dropdownAnswer{
+			Label:  i.Label,
+			Answer: i.safeText(i.typed),
+		})
+	}
 	if err != nil {
 		return fmt.Errorf("answer: %w", err)
 	}
@@ -284,6 +310,13 @@ func (p *input) run(ctx context.Context) (string, error) {
 		return "", err
 	}
 	defer io.Restore() //nolint:errcheck
+	if p.themed {
+		// before the event reader starts, as it may probe the background
+		err = p.bind(ctx, io)
+		if err != nil {
+			return "", err
+		}
+	}
 	frame := &bytes.Buffer{}
 	// Cancel the event goroutine on return; an outstanding wrapper read is
 	// retained for the next prompt on this input (see termIO.startRead).
@@ -451,6 +484,9 @@ func (i *input) safeText(text string) string {
 
 // render draws the input and optional feedback, then restores the caret on the input row.
 func (i *input) render(io *termIO, frame *bytes.Buffer) error {
+	if i.themed {
+		return i.renderThemed(io, frame)
+	}
 	io.refreshSize()
 	frame.Reset()
 	var errs []error
@@ -530,7 +566,12 @@ func (i *input) renderFeedback(frame *bytes.Buffer, feedback text,
 func (i *input) clear(io *termIO) error {
 	var errs []error
 	rows := max(i.rows, 1)
-	_, err := fmt.Fprint(io, strings.Repeat("\n", rows))
+	down := rows
+	if io.vp == nil {
+		// from the caret row to below the frame; a viewport replaces the frame
+		down -= i.caretRow
+	}
+	_, err := fmt.Fprint(io, strings.Repeat("\n", down))
 	if err != nil {
 		errs = append(errs, fmt.Errorf("newline: %w", err))
 	}
@@ -726,17 +767,30 @@ func (p *input) pressAny(key rune) {
 }
 
 // parseTemplates prepares label, answer, and feedback templates before interaction.
+// A themed prompt parses only per-call templates, with placeholder helpers
+// that run rebinds to the destination; the theme slots are already compiled.
 func (p *input) parseTemplates() (err error) {
-	tmpl := template.New("dropdown").Funcs(legacyTemplateFuncs())
-	p.labelTemplate, err = tmpl.New("label").Parse(mustEndWith(p.LabelTemplate, ' '))
-	if err != nil {
-		return fmt.Errorf("label: %w", err)
+	if p.theme == nil {
+		p.theme = defaultIO.currentTheme()
 	}
-	p.answerTemplate, err = tmpl.New("answer").Parse(mustEndWith(p.AnswerTemplate, '\n'))
-	if err != nil {
-		return fmt.Errorf("answer: %w", err)
+	funcs := p.theme.legacy
+	if p.themed {
+		funcs = p.theme.funcs(profilePlain, roleStyles{})
 	}
-	return p.parseFeedback()
+	tmpl := template.New("dropdown").Funcs(funcs)
+	if !p.themed || p.labelSet {
+		p.labelTemplate, err = tmpl.New("label").Parse(mustEndWith(p.LabelTemplate, ' '))
+		if err != nil {
+			return fmt.Errorf("label: %w", err)
+		}
+	}
+	if !p.themed || p.answerSet {
+		p.answerTemplate, err = tmpl.New("answer").Parse(mustEndWith(p.AnswerTemplate, '\n'))
+		if err != nil {
+			return fmt.Errorf("answer: %w", err)
+		}
+	}
+	return p.parseFeedback(funcs)
 }
 
 // DefaultFeedbackTemplate renders the message shown below an input whose answer
@@ -753,13 +807,18 @@ func WithFeedbackTemplate(tmpl string) opt {
 	})
 }
 
-// parseFeedback prepares the feedback template, using the default for an empty override.
-func (p *input) parseFeedback() error {
+// parseFeedback prepares the feedback template, using the default for an
+// empty override. A themed prompt uses its feedback slot instead.
+func (p *input) parseFeedback(funcs template.FuncMap) error {
 	source := p.FeedbackTemplate
+	if source == "" && p.themed {
+		p.feedbackTmpl = nil
+		return nil
+	}
 	if source == "" {
 		source = DefaultFeedbackTemplate
 	}
-	parsed, err := template.New("feedback").Funcs(legacyTemplateFuncs()).Parse(source)
+	parsed, err := template.New("feedback").Funcs(funcs).Parse(source)
 	if err != nil {
 		return fmt.Errorf("feedback: %w", err)
 	}
@@ -784,9 +843,183 @@ func (p *input) feedbackSafe(message string) string {
 // formatFeedback renders one row that fits into width columns.
 func (p *input) formatFeedback(message string, width int) (text, error) {
 	var buf text
-	err := p.feedbackTmpl.Execute(&buf, struct{ Message string }{p.feedbackSafe(message)})
+	err := p.feedbackTmpl.Execute(&buf, feedbackView{p.feedbackSafe(message)})
 	if err != nil {
 		return nil, fmt.Errorf("feedback: %w", err)
 	}
 	return buf.beforeNewline().truncateColumns(width), nil
+}
+
+// labelView is the payload of a label slot.
+type labelView struct{ Label string }
+
+// answerView is the payload of an answer slot: Value is the formatted answer,
+// Values and Count the answer as a collection, for scalar prompts one value.
+type answerView struct {
+	Label  string
+	Value  string
+	Values []string
+	Count  int
+}
+
+// feedbackView is the payload of a feedback slot and of per-call feedback
+// templates: the sanitized rejection message.
+type feedbackView struct{ Message string }
+
+// slots selects the theme slots of the prompt family. A password retains no answer.
+func (p *input) slots() (label, answer, feedback *compiledSlot) {
+	t := &p.theme.templates
+	switch {
+	case p.Password:
+		return t.Password.Label, nil, t.Password.Feedback
+	case p.numeric:
+		return t.Number.Label, t.Input.Answer, t.Number.Feedback
+	}
+	return t.Input.Label, t.Input.Answer, t.Input.Feedback
+}
+
+// bind captures the presentation of one run for its destination, before the
+// first frame: the helpers, per-call templates rebound to them, the bound
+// slots, and the label, which renders once. tt is the terminal lease.
+func (p *input) bind(ctx context.Context, tt *termIO) error {
+	p.look = defaultIO.bindTheme(ctx, p.theme, p.out, tt)
+	for _, t := range []**template.Template{&p.labelTemplate, &p.answerTemplate, &p.feedbackTmpl} {
+		if *t == nil {
+			continue
+		}
+		clone, err := (*t).Clone()
+		if err != nil {
+			return fmt.Errorf("%s: %w", (*t).Name(), err)
+		}
+		*t = clone.Funcs(p.look.funcs)
+	}
+	label, answer, feedback := p.slots()
+	var err error
+	if p.answer, err = answer.bind(p.look.funcs); err != nil {
+		return err
+	}
+	if p.feedback, err = feedback.bind(p.look.funcs); err != nil {
+		return err
+	}
+	if p.labelSet {
+		p.label = nil
+		if err = p.labelTemplate.Execute(&p.label, p.Label); err != nil {
+			return fmt.Errorf("label: %w", err)
+		}
+		return nil
+	}
+	slot, err := label.bind(p.look.funcs)
+	if err != nil {
+		return err
+	}
+	p.label, err = slot.render(labelView{p.Label})
+	if err != nil {
+		return err
+	}
+	if p.theme.source.Inline && p.label.width() > 0 {
+		// the renderer owns the spacing before the value
+		p.label = append(p.label, ' ')
+	}
+	return nil
+}
+
+// renderThemed draws the frame in the geometry of the theme: in Guided, the
+// label row, the value row behind the guide and the feedback row behind it;
+// in Inline, the label leads the value row. The caret ends on the value row,
+// and the next frame starts from there.
+func (i *input) renderThemed(io *termIO, frame *bytes.Buffer) error {
+	io.refreshSize()
+	frame.Reset()
+	g := i.look.geometry(io.Width, io.Height)
+	lead := g.valueLead(i.label)
+	cols, err := g.valueColumns(lead)
+	if err != nil {
+		return err
+	}
+	runes := i.displayRunes()
+	cells := text(string(runes)).clusters()
+	first, last := i.visibleWindow(cells, cols)
+	visible := text(string(runes[cells.runeOffset(first):cells.runeOffset(last)]))
+	feedback, err := i.themedFeedback()
+	if err != nil {
+		return err
+	}
+	rows := make([]frameRow, 0, 3)
+	if !g.inline {
+		rows = append(rows, frameRow{content: i.label, drop: 1})
+	}
+	value := len(rows)
+	row := append(append(text{}, lead...), i.look.style(i.look.roles.foreground, visible)...)
+	rows = append(rows, frameRow{content: row})
+	if len(feedback) > 0 {
+		rows = append(rows, frameRow{content: feedback, guided: true})
+	}
+	fit, err := g.fit(rows)
+	if err != nil {
+		return err
+	}
+	// a cursor inside of a cluster stands on its first rune
+	at := min(max(cells.at(i.cursor), first), last)
+	i.writeFrame(io, frame, fit, fit.at[value], lead.width()+cells[first:at].width(), cells[at:last].width())
+	_, err = frame.WriteTo(io)
+	return err
+}
+
+// writeFrame draws fitted rows from the top of the previous frame, erases
+// the rows it had beyond them and puts the caret on row caret, col columns
+// in, which is left columns before the end of that row.
+func (i *input) writeFrame(io *termIO, frame *bytes.Buffer, fit fitted, caret, col, left int) {
+	if io.vp == nil && i.caretRow > 0 {
+		fmt.Fprintf(frame, "\x1b[%dA", i.caretRow)
+	}
+	for k, line := range fit.lines {
+		if k > 0 {
+			frame.WriteByte('\n')
+		}
+		frame.WriteByte('\r')
+		frame.Write(line)
+		frame.WriteString("\x1b[K")
+	}
+	drawn, stale := len(fit.lines), i.rows
+	if io.Height > 0 {
+		// rows past the bottom of a shorter terminal are gone, and a newline
+		// there would scroll away the rows just drawn
+		stale = min(stale, max(io.Height, drawn))
+	}
+	for ; drawn < stale; drawn++ {
+		// erase a row of the taller previous frame
+		frame.WriteString("\n\r\x1b[K")
+	}
+	switch up := drawn - 1 - caret; {
+	case up > 0:
+		// an absolute column, as a managed viewport drops the carriage return
+		fmt.Fprintf(frame, "\x1b[%dA\x1b[%dG", up, col+1)
+	case left > 0:
+		fmt.Fprintf(frame, "\x1b[%dD", left)
+	}
+	i.rows, i.caretRow = len(fit.lines), caret
+}
+
+// themedFeedback renders the rejection with the per-call template, cut at its
+// first line as before, or with the feedback slot. The geometry clips it.
+func (i *input) themedFeedback() (text, error) {
+	switch {
+	case i.rejection == "":
+		return nil, nil
+	case i.feedbackTmpl != nil:
+		return i.formatFeedback(i.rejection, math.MaxInt)
+	}
+	return i.feedback.render(feedbackView{i.feedbackSafe(i.rejection)})
+}
+
+// themedAnswer renders the answer slot of the family and ends its line. A
+// hidden or empty answer retains nothing.
+func (i *input) themedAnswer(buf *bytes.Buffer) error {
+	value := i.safeText(i.typed)
+	out, err := i.answer.render(answerView{Label: i.Label, Value: value, Values: []string{value}, Count: 1})
+	if err != nil || out.width() == 0 {
+		return err
+	}
+	buf.Write(out)
+	return buf.WriteByte('\n')
 }
