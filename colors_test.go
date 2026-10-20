@@ -733,24 +733,29 @@ func execute(t *testing.T, funcs template.FuncMap, src string, data any) string 
 	return b.String()
 }
 
+// installedFuncs are the helpers of the installed theme, for a plain destination.
+func installedFuncs() template.FuncMap {
+	return defaultIO.currentTheme().funcs(profilePlain, roleStyles{})
+}
+
 func TestWithFnRegistersForFutureOperations(t *testing.T) {
 	before := keepTheme(t)
 	WithFn("shout", func(s string) string { return strings.ToUpper(s) + "!" })
 
-	assert.Equal(t, "HI!", execute(t, legacyTemplateFuncs(), `{{ shout "hi" }}`, nil))
-	_, ok := before.legacy["shout"]
+	assert.Equal(t, "HI!", execute(t, installedFuncs(), `{{ shout "hi" }}`, nil))
+	_, ok := before.funcs(profilePlain, roleStyles{})["shout"]
 	assert.True(t, !ok) // an operation that started earlier keeps its helpers
 	_, ok = defaultIO.currentTheme().editable().Funcs["shout"]
 	assert.True(t, ok)
 
 	WithFn("shout", func(s string) string { return s + "?" })
-	assert.Equal(t, "hi?", execute(t, legacyTemplateFuncs(), `{{ shout "hi" }}`, nil))
+	assert.Equal(t, "hi?", execute(t, installedFuncs(), `{{ shout "hi" }}`, nil))
 }
 
 func TestWithFnReachesWidgetTemplates(t *testing.T) {
 	keepTheme(t)
 	WithFn("shout", strings.ToUpper)
-	funcs := choiceTemplateFuncs()
+	funcs := installedFuncs()
 	assert.Equal(t, "A", execute(t, funcs, `{{ shout "a" }}`, nil))
 	assert.Equal(t, "x", execute(t, funcs, `{{ label "x" }}`, nil))
 }
@@ -797,7 +802,7 @@ func TestWithFnAcceptsErrorResult(t *testing.T) {
 	keepTheme(t)
 	boom := errors.New("boom")
 	WithFn("fails", func() (string, error) { return "", boom })
-	tmpl, err := template.New("t").Funcs(legacyTemplateFuncs()).Parse(`{{ fails }}`)
+	tmpl, err := template.New("t").Funcs(installedFuncs()).Parse(`{{ fails }}`)
 	assert.NoError(t, err)
 	assert.ErrorIs(t, tmpl.Execute(&strings.Builder{}, nil), boom)
 }
@@ -837,7 +842,7 @@ func TestThemeFuncsAreCopied(t *testing.T) {
 	th.Funcs["extra"] = strings.ToLower
 	got := defaultIO.currentTheme().editable()
 	got.Funcs["h"] = strings.ToLower
-	assert.Equal(t, "A", execute(t, legacyTemplateFuncs(), `{{ h "a" }}`, nil))
+	assert.Equal(t, "A", execute(t, installedFuncs(), `{{ h "a" }}`, nil))
 	_, ok := defaultIO.currentTheme().editable().Funcs["extra"]
 	assert.True(t, !ok)
 }

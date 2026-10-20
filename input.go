@@ -154,12 +154,11 @@ type input struct {
 	// theme whatever their source.
 	labelSet, answerSet bool
 
-	// theme is the snapshot captured at construction. When themed, the prompt
-	// renders through it, and run binds it to the destination: look holds the
+	// theme is the snapshot captured at construction. The prompt renders
+	// through it, and run binds it to the destination: look holds the
 	// binding, label the label rendered once with it, answer and feedback the
 	// bound slots of the prompt family.
 	theme            *compiledTheme
-	themed           bool
 	look             binding
 	label, hint      text
 	answer, feedback boundSlot
@@ -216,15 +215,12 @@ func (i *input) setDefault(d any) {
 func newInput(ctx context.Context, label string) *input {
 	in, out := defaultStreams(ctx)
 	return &input{
-		ctx:            ctx,
-		out:            out,
-		in:             in,
-		Label:          label,
-		LabelTemplate:  DefaultLabelTemplate,
-		AnswerTemplate: DefaultAnswerTemplate,
-		theme:          defaultIO.currentTheme(),
-		themed:         themeRendering.Load(),
-		makeTermIO:     makePromptIO,
+		ctx:        ctx,
+		out:        out,
+		in:         in,
+		Label:      label,
+		theme:      defaultIO.currentTheme(),
+		makeTermIO: makePromptIO,
 	}
 }
 
@@ -291,7 +287,7 @@ func (i *input) showAnswer() error {
 	}
 	var buf bytes.Buffer
 	var err error
-	if i.themed && !i.answerSet {
+	if !i.answerSet {
 		err = i.themedAnswer(&buf)
 	} else {
 		// TODO: unify reused structures
@@ -317,12 +313,10 @@ func (p *input) run(ctx context.Context) (string, error) {
 		return "", err
 	}
 	defer io.Restore() //nolint:errcheck
-	if p.themed {
-		// before the event reader starts, as it may probe the background
-		err = p.bind(ctx, io)
-		if err != nil {
-			return "", err
-		}
+	// before the event reader starts, as it may probe the background
+	err = p.bind(ctx, io)
+	if err != nil {
+		return "", err
 	}
 	frame := &bytes.Buffer{}
 	// Cancel the event goroutine on return; an outstanding wrapper read is
@@ -487,86 +481,6 @@ func (*input) safeRune(r rune) rune {
 // safeText applies [input.safeRune] to every rune of text.
 func (i *input) safeText(text string) string {
 	return strings.Map(i.safeRune, text)
-}
-
-// render draws the input and optional feedback, then restores the caret on the input row.
-func (i *input) render(io *termIO, frame *bytes.Buffer) error {
-	if i.themed {
-		return i.renderThemed(io, frame)
-	}
-	io.refreshSize()
-	frame.Reset()
-	var errs []error
-	collect := func(err error) {
-		if err != nil {
-			errs = append(errs, err)
-		}
-	}
-	collect(frame.WriteByte('\r'))
-	// render label into a scratch buffer to measure its width
-	var label text
-	collect(i.labelTemplate.Execute(&label, i.Label))
-	labelW := label.width()
-	_, err := frame.Write(label)
-	collect(err)
-	// clip text to a visible window that fits on one row
-	runes := i.displayRunes()
-	cells := text(string(runes)).clusters()
-	first, last := 0, len(cells)
-	if io.Width > 0 {
-		first, last = i.visibleWindow(cells, io.Width-labelW)
-	}
-	visible := runes[cells.runeOffset(first):cells.runeOffset(last)]
-	// write displayed text and clear to the end of the line
-	_, err = fmt.Fprintf(frame, "%s\x1b[K", string(visible))
-	collect(err)
-	// a cursor inside of a cluster stands on its first rune
-	at := min(max(cells.at(i.cursor), first), last)
-	moveLeft := cells[at:last].width()
-	feedback, err := i.wrapRejection(io)
-	collect(err)
-	switch {
-	case len(feedback) > 0 || i.rows > 1:
-		i.renderFeedback(frame, feedback, collect, cells, labelW, first, at)
-	case moveLeft > 0:
-		// move the cursor left by the difference between
-		// the end and the desired position
-		_, err = fmt.Fprintf(frame, "\x1b[%dD", moveLeft)
-		collect(err)
-	}
-	_, err = frame.WriteTo(io)
-	collect(err)
-	return errors.Join(errs...)
-}
-
-func (i *input) wrapRejection(io *termIO) (text, error) {
-	var feedback text
-	if i.rejection == "" {
-		return feedback, nil
-	}
-	if io.Height > 0 && io.Height < 2 {
-		return nil, ErrNoSpace
-	}
-	// unknown width is unbounded; a known one leaves the last column free
-	limit := math.MaxInt
-	if io.Width > 0 {
-		limit = max(io.Width-1, 1)
-	}
-	return i.formatFeedback(i.rejection, limit)
-}
-
-// renderFeedback row (or erase a stale one) and return to the caret column.
-func (i *input) renderFeedback(frame *bytes.Buffer, feedback text,
-	collect func(err error), cells clusters, labelW, first, at int) {
-	_, err := fmt.Fprintf(frame, "\n\r\x1b[K%s\x1b[1A", feedback)
-	collect(err)
-	// an absolute column, as a managed viewport drops the carriage return
-	_, err = fmt.Fprintf(frame, "\x1b[%dG", labelW+cells[first:at].width()+1)
-	collect(err)
-	i.rows = 1
-	if len(feedback) > 0 {
-		i.rows = 2
-	}
 }
 
 // clear erases the input and any feedback row before the prompt exits.
@@ -744,14 +658,14 @@ func (p *input) confirmInput() bool {
 	return true
 }
 
-// reject records non-nil errors, hiding custom messages for themed passwords.
+// reject records non-nil errors, hiding custom messages for passwords.
 func (p *input) reject(err error) {
 	if err == nil {
 		return
 	}
 	p.rejection = err.Error()
 	var rule ruleError
-	if p.rejection == "" || p.themed && p.Password && !errors.As(err, &rule) {
+	if p.rejection == "" || p.Password && !errors.As(err, &rule) {
 		p.rejection = "Invalid value"
 	}
 }
@@ -774,25 +688,22 @@ func (p *input) pressAny(key rune) {
 	p.applyInputChanged(p.insertAtCursor(string(key)))
 }
 
-// parseTemplates prepares label, answer, and feedback templates before interaction.
-// A themed prompt parses only per-call templates, with placeholder helpers
-// that run rebinds to the destination; the theme slots are already compiled.
+// parseTemplates checks the per-call label, answer, and feedback templates
+// before interaction, with placeholder helpers that run rebinds to the
+// destination; the theme slots are already compiled.
 func (p *input) parseTemplates() (err error) {
 	if p.theme == nil {
 		p.theme = defaultIO.currentTheme()
 	}
-	funcs := p.theme.legacy
-	if p.themed {
-		funcs = p.theme.funcs(profilePlain, roleStyles{})
-	}
+	funcs := p.theme.funcs(profilePlain, roleStyles{})
 	tmpl := template.New("dropdown").Funcs(funcs)
-	if !p.themed || p.labelSet {
+	if p.labelSet {
 		p.labelTemplate, err = tmpl.New("label").Parse(mustEndWith(p.LabelTemplate, ' '))
 		if err != nil {
 			return fmt.Errorf("label: %w", err)
 		}
 	}
-	if !p.themed || p.answerSet {
+	if p.answerSet {
 		p.answerTemplate, err = tmpl.New("answer").Parse(mustEndWith(p.AnswerTemplate, '\n'))
 		if err != nil {
 			return fmt.Errorf("answer: %w", err)
@@ -815,16 +726,13 @@ func WithFeedbackTemplate(tmpl string) opt {
 	})
 }
 
-// parseFeedback prepares the feedback template, using the default for an
-// empty override. A themed prompt uses its feedback slot instead.
+// parseFeedback prepares the per-call feedback template. Without one, the
+// prompt uses the feedback slot of its theme.
 func (p *input) parseFeedback(funcs template.FuncMap) error {
 	source := p.FeedbackTemplate
-	if source == "" && p.themed {
+	if source == "" {
 		p.feedbackTmpl = nil
 		return nil
-	}
-	if source == "" {
-		source = DefaultFeedbackTemplate
 	}
 	parsed, err := template.New("feedback").Funcs(funcs).Parse(source)
 	if err != nil {
@@ -959,8 +867,8 @@ func (p *input) bindHint(hint *compiledSlot) error {
 	return err
 }
 
-// renderThemed draws the themed prompt, leaving the caret on the value row for the next frame.
-func (i *input) renderThemed(io *termIO, frame *bytes.Buffer) error {
+// render draws the prompt, leaving the caret on the value row for the next frame.
+func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 	io.refreshSize()
 	frame.Reset()
 	g := i.look.geometry(io.Width, io.Height)

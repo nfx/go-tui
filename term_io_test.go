@@ -1319,6 +1319,43 @@ func TestBindThemeUsesMeasuredOrEstimatedBackground(t *testing.T) {
 	assert.True(t, estimated.roles.foreground == nil) // estimated, not measured
 }
 
+func TestBindThemeReusesRouteDetectionWithoutWaiting(t *testing.T) {
+	c, err := NewTheme().compile()
+	assert.NoError(t, err)
+	tt, term := probeTermIO(t, "\x1b]11;rgb:fafa/fafa/fafa\x1b\\")
+	d := routedTio(tt)
+	d.env = readOutputEnv(func(k string) (string, bool) { return "3", k == "FORCE_COLOR" })
+	estimated := d.bindTheme(t.Context(), c, tt.out, nil) // nothing detected yet
+	measured := d.bindTheme(t.Context(), c, tt.out, tt)
+	assert.True(t, estimated.roles.foreground == nil)
+	assert.True(t, measured.roles.foreground != nil)
+
+	// output-only work drawing on the route reuses its detection
+	for _, out := range []io.Writer{tt.out, &terminalStderr{parent: d}} {
+		assert.Equal(t, measured.roles, d.bindTheme(t.Context(), c, out, nil).roles)
+	}
+	assert.Equal(t, 1, term.count())
+	// other destinations estimate, and so does another tio's Stderr
+	assert.Equal(t, estimated.roles, d.bindTheme(t.Context(), c, &bytes.Buffer{}, nil).roles)
+	assert.Equal(t, estimated.roles, d.bindTheme(t.Context(), c, &terminalStderr{parent: &tio{}}, nil).roles)
+
+	// a probe in progress does not hold up output-only work
+	d.bgMu.Lock()
+	bound := make(chan binding)
+	go func() { bound <- d.bindTheme(t.Context(), c, tt.out, nil) }()
+	select {
+	case b := <-bound:
+		assert.Equal(t, measured.roles, b.roles)
+	case <-time.After(time.Second):
+		t.Fatal("output-only binding waited for a probe")
+	}
+	d.bgMu.Unlock()
+
+	// replacing the route forgets the detection
+	d.setIO(tt.in, tt.out)
+	assert.Equal(t, estimated.roles, d.bindTheme(t.Context(), c, tt.out, nil).roles)
+}
+
 func TestThemedInputProbesBeforeReadingKeys(t *testing.T) {
 	withEnv(t, "FORCE_COLOR=3")
 	useTheme(t, NewTheme())

@@ -32,7 +32,6 @@ func pickMultichoice[T any](ctx context.Context, label string, items []T, target
 	}
 	snapshot := slices.Clone(items)
 	m := newMultichoice(ctx)
-	m.themed = themeRendering.Load()
 	m.target = target
 	m.Label = label
 	for _, item := range snapshot {
@@ -99,12 +98,8 @@ func multichoiceMap[K comparable, V any](
 		entries = append(entries, mapKV[K, V]{key, value})
 	}
 	sort.SliceStable(entries, func(i, j int) bool { return fmt.Sprint(entries[i].Key) < fmt.Sprint(entries[j].Key) })
-	defaults := []opt{WithTemplate(".Key")}
-	if themeRendering.Load() {
-		// the theme presents the entries, projected to their keys
-		defaults = []opt{WithTemplate("(label .Key)")}
-	}
-	return pickMultichoice(ctx, label, entries, target, append(defaults, o...))
+	// the theme presents the entries, projected to their keys
+	return pickMultichoice(ctx, label, entries, target, append([]opt{WithTemplate("(label .Key)")}, o...))
 }
 
 // MultichoiceLazy displays a finite sequence progressively and enables Enter
@@ -116,7 +111,6 @@ func MultichoiceLazy[T any](ctx context.Context, label string, items iter.Seq2[T
 		return nil, fmt.Errorf("%w: MultichoiceLazy sequence is nil", ErrInvalidOption)
 	}
 	m := newMultichoice(ctx)
-	m.themed = themeRendering.Load()
 	m.target = targetOf[T]()
 	m.Label = label
 	m.loading = true
@@ -164,22 +158,20 @@ type multichoice struct {
 	MoreItemsTemplate    string
 	AnswerTemplate       string
 	answerSet            bool // an explicit WithAnswerTemplate wins over generated ones
-	ItemTemplate         string
 	// labelSet, activeSet, inactiveSet and moreSet record per-call templates,
 	// which win over the theme in any option order.
 	labelSet, activeSet, inactiveSet, moreSet bool
 	labelTemplate                             *template.Template
 	projection
 
-	// theme is the snapshot captured at construction. When themed, the
-	// multichoice renders through it: look is its binding to the destination,
+	// theme is the snapshot captured at construction. The multichoice
+	// renders through it: look is its binding to the destination,
 	// slot the bound slots, label and help the rows rendered once per run.
 	theme       *compiledTheme
-	themed      bool
 	look        binding
 	slot        multichoiceSlots
 	label, help text
-	// pending holds the items of a themed multichoice until binding projects them.
+	// pending holds the items until binding projects them.
 	pending []any
 	// content is the projected main content of every item. Its details, and
 	// its per-call rows in contents and inactive, render when a frame first
@@ -187,8 +179,6 @@ type multichoice struct {
 	content, details []text
 	drawn            []bool
 
-	labelBuf             text
-	itemTemplate         *template.Template
 	activeItemTemplate   *template.Template
 	inactiveItemTemplate *template.Template
 	moreItemsTemplate    *template.Template
@@ -225,16 +215,10 @@ type multichoice struct {
 // newMultichoice installs defaults without acquiring terminal resources.
 func newMultichoice(ctx context.Context) *multichoice {
 	return &multichoice{
-		Ctx:                  ctx,
-		Label:                "Select items",
-		makeTermIO:           makePromptIO,
-		LabelTemplate:        DefaultLabelTemplate,
-		ActiveItemTemplate:   `{{label .}}`,
-		InactiveItemTemplate: `{{label .}}`,
-		ItemTemplate:         DefaultMultichoiceItemTemplate,
-		MoreItemsTemplate:    DefaultMoreItemsTemplate,
-		AnswerTemplate:       DefaultMultichoiceAnswerTemplate,
-		theme:                defaultIO.currentTheme(),
+		Ctx:        ctx,
+		Label:      "Select items",
+		makeTermIO: makePromptIO,
+		theme:      defaultIO.currentTheme(),
 	}
 }
 
@@ -278,22 +262,7 @@ func (m *multichoice) setMoreItemsTemplate(t string) { m.MoreItemsTemplate, m.mo
 
 // setContentTemplate shares item content with collection answers, keeping details active-only.
 func (m *multichoice) setContentTemplate(main string, details ...string) {
-	if m.themed {
-		m.setProjection(main, details...)
-		return
-	}
-	extra := ""
-	if len(details) > 0 {
-		extra = fmt.Sprintf(` {{dim "(" (%s) ")"}}`, strings.Join(details, `) ", " (`))
-	}
-	m.ActiveItemTemplate = fmt.Sprintf(`{{cyan %s}}%s`, main, extra)
-	m.InactiveItemTemplate = fmt.Sprintf(`{{%s}}`, main)
-	if !m.answerSet {
-		m.AnswerTemplate = fmt.Sprintf(
-			`{{dim "✔ " .Label " …"}} {{range $i, $item := .Answer}}{{if $i}}, {{end}}{{bold %s}}{{else}}none{{end}}`,
-			main,
-		)
-	}
+	m.setProjection(main, details...)
 }
 
 // setFieldTemplate keeps named fields consistent across rows and collection answers.
@@ -302,22 +271,10 @@ func (m *multichoice) setFieldTemplate(fields ...string) {
 	for i, f := range fields {
 		expr[i] = "." + f
 	}
-	main := strings.Join(expr, ` ", " `)
-	if m.themed {
-		m.setProjection(main)
-		return
-	}
-	m.ActiveItemTemplate = fmt.Sprintf(`{{cyan %s}}`, main)
-	m.InactiveItemTemplate = fmt.Sprintf(`{{print %s}}`, main)
-	if !m.answerSet {
-		m.AnswerTemplate = fmt.Sprintf(
-			`{{dim "✔ " .Label " …"}} {{range $i, $item := .Answer}}{{if $i}}, {{end}}{{bold %s}}{{else}}none{{end}}`,
-			main,
-		)
-	}
+	m.setProjection(strings.Join(expr, ` ", " `))
 }
 
-// prepare validates options and defers themed item projection until destination binding.
+// prepare validates options and defers item projection until destination binding.
 func (m *multichoice) prepare(o []opt) error {
 	err := m.Ctx.Err()
 	if err != nil {
@@ -340,55 +297,21 @@ func (m *multichoice) prepare(o []opt) error {
 	m.Items = nil
 	m.selected = nil
 	m.toggled = nil
-	if m.themed {
-		m.pending = items // projected once bound to the destination
-		return m.Ctx.Err()
-	}
-	for _, item := range items {
-		if err := m.addItem(item); err != nil {
-			return err
-		}
-	}
+	m.pending = items // projected once bound to the destination
 	return m.Ctx.Err()
 }
 
-// parseTemplates checks template syntax and caches the legacy label.
+// parseTemplates checks the syntax of per-call templates and projections.
 func (m *multichoice) parseTemplates() error {
-	if m.themed {
-		return parseThemed(m.theme, "multichoice", []perCall{
-			{m.labelSet, "label", m.LabelTemplate, &m.labelTemplate},
-			{m.activeSet, "active", m.ActiveItemTemplate, &m.activeItemTemplate},
-			{m.inactiveSet, "inactive", m.InactiveItemTemplate, &m.inactiveItemTemplate},
-			{m.moreSet, "more", m.MoreItemsTemplate, &m.moreItemsTemplate},
-			{m.answerSet, "answer", mustEndWith(m.AnswerTemplate, '\n'), &m.answerTemplate},
-			{m.mainSource != "", "content", m.mainSource, &m.mainTemplate},
-			{m.detailsSource != "", "details", m.detailsSource, &m.detailsTemplate},
-		})
-	}
-	root := template.New("multichoice").Funcs(choiceTemplateFuncs())
-	for _, part := range []struct {
-		name, source string
-		dest         **template.Template
-	}{
-		{"row", m.ItemTemplate, &m.itemTemplate}, {"active", m.ActiveItemTemplate, &m.activeItemTemplate},
-		{"inactive", m.InactiveItemTemplate, &m.inactiveItemTemplate}, {"more", m.MoreItemsTemplate, &m.moreItemsTemplate},
-		{"answer", mustEndWith(m.AnswerTemplate, '\n'), &m.answerTemplate},
-	} {
-		parsed, err := root.New(part.name).Parse(part.source)
-		if err != nil {
-			return fmt.Errorf("%s: %w", part.name, err)
-		}
-		*part.dest = parsed
-	}
-	label, err := root.New("label").Parse(m.LabelTemplate)
-	if err != nil {
-		return fmt.Errorf("label: %w", err)
-	}
-	m.labelBuf = nil
-	if err := label.Execute(&m.labelBuf, m.Label); err != nil {
-		return fmt.Errorf("label: %w", err)
-	}
-	return nil
+	return parseThemed(m.theme, "multichoice", []perCall{
+		{m.labelSet, "label", m.LabelTemplate, &m.labelTemplate},
+		{m.activeSet, "active", m.ActiveItemTemplate, &m.activeItemTemplate},
+		{m.inactiveSet, "inactive", m.InactiveItemTemplate, &m.inactiveItemTemplate},
+		{m.moreSet, "more", m.MoreItemsTemplate, &m.moreItemsTemplate},
+		{m.answerSet, "answer", mustEndWith(m.AnswerTemplate, '\n'), &m.answerTemplate},
+		{m.mainSource != "", "content", m.mainSource, &m.mainTemplate},
+		{m.detailsSource != "", "details", m.detailsSource, &m.detailsTemplate},
+	})
 }
 
 // addItem renders and indexes each arrival once; subsequent frames use caches.
@@ -432,21 +355,7 @@ func (m *multichoice) addItem(item any) error {
 
 // indexItem caches item content and returns the text used for filtering.
 func (m *multichoice) indexItem(item any) (text, error) {
-	if m.themed {
-		return m.projectItem(item)
-	}
-	var active, inactive text
-	err := m.activeItemTemplate.Execute(&active, item)
-	if err != nil {
-		return nil, fmt.Errorf("active item: %w", err)
-	}
-	err = m.inactiveItemTemplate.Execute(&inactive, item)
-	if err != nil {
-		return nil, fmt.Errorf("inactive item: %w", err)
-	}
-	m.contents = append(m.contents, active)
-	m.inactive = append(m.inactive, inactive)
-	return inactive, nil
+	return m.projectItem(item)
 }
 
 // less ranks by the default hint, using arrival order to break ties.
@@ -521,12 +430,10 @@ func (m *multichoice) answerFromDefault(ctx context.Context) error {
 	if !m.def.set {
 		return errNoDefault(m.Label)
 	}
-	if m.themed {
-		// without a terminal only the projection runs, for the hint to match
-		err = m.bind(defaultIO.bindTheme(ctx, m.theme, m.out, nil))
-		if err != nil {
-			return err
-		}
+	// without a terminal only the projection runs, for the hint to match
+	err = m.bind(defaultIO.bindTheme(ctx, m.theme, m.out, nil))
+	if err != nil {
+		return err
 	}
 	if m.loading {
 		// the channel lets cancellation return while the iterator is blocked
@@ -667,62 +574,9 @@ func (m *multichoice) paste(payload []byte) {
 	m.filter(m.typed + clean)
 }
 
-// choiceLine uses the shared cluster/ANSI truncator and shows omitted content.
-func (m *multichoice) choiceLine(content text, width int) text {
-	content = text(strings.TrimRight(string(content), "\r\n"))
-	first := content.beforeNewline()
-	if len(first) < len(content) {
-		first = append(slices.Clone(first), []byte("…")...)
-	}
-	return first.truncateColumns(width)
-}
-
 // render builds a width-bounded frame from cached content and current selection state.
 func (m *multichoice) render(tio *termIO, buf *bytes.Buffer) error {
-	if m.themed {
-		return m.renderThemed(tio, buf)
-	}
-	tio.refreshSize()
-	if tio.Width < 1 || tio.Height < 3 {
-		return ErrNoSpace
-	}
-	capacity := tio.Height / 2
-	footer := len(m.relevant) > capacity
-	m.clampRows(capacity)
-	writeLine := func(content text) {
-		buf.WriteByte('\r')
-		buf.Write(m.choiceLine(content, tio.Width))
-		buf.WriteByte('\n')
-	}
-	writeLine(m.labelBuf)
-	if m.noMatches() {
-		writeLine(text("No matches"))
-	}
-	for row, i := range m.displayed {
-		content := m.inactive[i]
-		if row == m.active {
-			content = m.contents[i]
-		}
-		var decorated text
-		if err := m.itemTemplate.Execute(&decorated, multichoiceRow{
-			string(content), m.selected[i], row == m.active, i,
-		}); err != nil {
-			return fmt.Errorf("row: %w", err)
-		}
-		writeLine(decorated)
-	}
-	if footer {
-		var more text
-		if err := m.moreItemsTemplate.Execute(
-			&more,
-			dropdownMore{More: len(m.relevant) - m.offset - len(m.displayed), Total: len(m.relevant)},
-		); err != nil {
-			return fmt.Errorf("more: %w", err)
-		}
-		writeLine(more)
-	}
-	buf.WriteByte('\r')
-	return nil
+	return m.renderThemed(tio, buf)
 }
 
 // noMatches distinguishes an empty match from a sequence still awaiting its first item.
@@ -744,7 +598,7 @@ func (m *multichoice) showAnswer() error {
 	if m.Hide {
 		return nil
 	}
-	if m.themed && !m.answerSet {
+	if !m.answerSet {
 		return m.themedAnswer()
 	}
 	answer := make([]any, 0, m.count)
@@ -1119,11 +973,6 @@ func (m *multichoice) run(ctx context.Context, o ...opt) error {
 	if !outputIsTerminal(m.out) {
 		return m.answerFromDefault(ctx) // an automatic answer prints nothing
 	}
-	if !m.loading && !m.themed { // a themed multichoice resolves once bound
-		if err := m.resolveDefault(); err != nil {
-			return err
-		}
-	}
 	if err := m.interact(ctx); err != nil {
 		return err
 	}
@@ -1169,11 +1018,9 @@ func (m *multichoice) interact(parent context.Context) (resultErr error) {
 			resultErr = errors.Join(resultErr, fmt.Errorf("restore: %w", err))
 		}
 	}()
-	if m.themed {
-		// before the event reader starts, as binding may probe the background
-		if err := m.bindRun(ctx, tio); err != nil {
-			return err
-		}
+	// before the event reader starts, as binding may probe the background
+	if err := m.bindRun(ctx, tio); err != nil {
+		return err
 	}
 	var frame bytes.Buffer
 	if err := m.render(tio, &frame); err != nil {

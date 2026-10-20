@@ -171,6 +171,11 @@ func (r *blockingByteReader) Close() {
 
 func testIOforDropdown(t *testing.T, width, height int, o ...opt) (*chanIO, opt) {
 	t.Helper()
+	// the label alongside the rows, and no hint row
+	th := NewTheme()
+	th.Inline = true
+	th.Templates.Prompt.Hint = Hidden
+	useTheme(t, th)
 	ctx, cancel := context.WithCancel(t.Context())
 	cio := &chanIO{
 		ctx: ctx,
@@ -260,7 +265,9 @@ func TestDownAndUpCase(t *testing.T) {
 
 func overflowForTest(t *testing.T) (in, out chan string, result chan string) {
 	t.Helper()
-	cio, opts := testIOforDropdown(t, 12, 4)
+	// room for the label, two items and the count, with the autowrap column
+	// and the row below the frame free
+	cio, opts := testIOforDropdown(t, 14, 5)
 	result = make(chan string)
 	go func() {
 		defer close(result)
@@ -289,23 +296,24 @@ func TestMoreItems(t *testing.T) {
 		<-out,
 	)
 	in <- "\x1b\x5b\x42" // down
+	// the count goes, and the frame shrinks by its row
 	assert.Equal(t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r+ D\n\r- E\n\r\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r+ D\n\r- E\n\r",
 		<-out)
 	in <- "\x1b\x5b\x42" // down
 	assert.Equal(t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r- D\n\r+ E\n\r\n\r",
+		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r\rPick letter \n\r- D\n\r+ E\n\r",
 		<-out)
 	in <- "\x1b\x5b\x42" // down, no more items, might bell
 	assert.Equal(t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r- D\n\r+ E\n\r\n\r",
+		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r\rPick letter \n\r- D\n\r+ E\n\r",
 		<-out)
 	in <- "\x1b\x5b\x41" // up
 	assert.Equal(t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r+ D\n\r- E\n\r\n\r",
+		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r\rPick letter \n\r+ D\n\r- E\n\r",
 		<-out)
 	in <- "\x0d" // enter
-	assert.Equal(t, "\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r", <-out)
+	assert.Equal(t, "\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r", <-out)
 	assert.Equal(t, "Pick letter: D\n", waitForDropdownOutput(t, out, "Pick letter: D\n"))
 	assert.Equal(t, "D", <-res)
 }
@@ -594,15 +602,6 @@ func TestDropdownPressKeyRuneAndRenderMore(t *testing.T) {
 
 	var frame bytes.Buffer
 	assert.NoError(t, d.clearFrame(tio, &frame, 0))
-
-	d.relevant = []int{0, 1, 2, 3}
-	d.displayed = d.relevant[:2]
-	d.Items = append(d.Items, 3, 4)
-	assert.NoError(t, d.parseTemplates())
-	buf, longest, err := d.renderMore(4, 2, 0)
-	assert.NoError(t, err)
-	assert.True(t, longest > 0)
-	assert.True(t, len(buf) > 0)
 }
 
 func TestDropdownRenderInitAndItems(t *testing.T) {
@@ -619,27 +618,7 @@ func TestDropdownRenderInitAndItems(t *testing.T) {
 	assert.True(t, longest > 0)
 	assert.True(t, len(d.displayed) > 0)
 
-	item := d.renderItem(io, 0, d.displayed[0])
-	assert.True(t, len(item) > 0)
-}
-
-func TestDropdownRenderInit_activeItemOverflowTriggersLabelNewLine(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.Items = []any{"ab", "cd"}
-	// active template is much wider than inactive
-	d.ActiveItemTemplate = `{{ cyan "→ selected: " (label .) " (details)" }}`
-	d.InactiveItemTemplate = `{{ dim (label .) }}`
-	// terminal is wide enough for label + inactive, but not for label + active
-	tio := newTestTermIO(20, 6)
-	assert.NoError(t, d.parseTemplates())
-	longest, err := d.renderInit(tio)
-	assert.NoError(t, err)
-	// active rendering of "→ selected: ab (details)" is ~25 chars, wider than inactive "ab" (~2 chars)
-	assert.True(t, longest > 10)
-	var buf bytes.Buffer
-	prefix := d.renderLabel(&buf, tio, longest)
-	assert.Equal(t, 0, prefix)
-	assert.True(t, d.LabelNewLine)
+	assert.True(t, len(d.active[d.displayed[0]]) > 0)
 }
 
 func TestDropdownRenderInitEmitsEvents(t *testing.T) {
@@ -661,24 +640,6 @@ func TestDropdownRenderInitEmitsEvents(t *testing.T) {
 	assert.True(t, ok)
 	_, ok = events[2].(dropdownAppendItem)
 	assert.True(t, ok)
-}
-
-func TestDropdownRenderMoreAndHeight(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.Items = make([]any, 10)
-	for i := range d.Items {
-		d.Items[i] = i
-	}
-	d.displayed = []int{0, 1, 2}
-	d.relevant = []int{0, 1, 2}
-
-	assert.NoError(t, d.parseTemplates())
-
-	buf, longest, err := d.renderMore(10, 3, 0)
-	assert.NoError(t, err)
-	assert.True(t, len(buf) > 0)
-	assert.True(t, longest > 0)
-	assert.True(t, d.height() >= 3)
 }
 
 func TestDropdownPressKeys(t *testing.T) {
@@ -1976,7 +1937,6 @@ func TestDropdownRenderRemembersLongestWidth(t *testing.T) {
 	tio.Width = 30
 	var buf bytes.Buffer
 	assert.NoError(t, d.render(tio, &buf))
-	assert.True(t, d.LabelNewLine)
 	_ = d.addItem(6, "x") //nolint:errcheck // test cleanup
 	assert.Equal(t, first, d.longest)
 }
@@ -2475,7 +2435,6 @@ func boundDropdown(t *testing.T, th Theme, width, height int, items []any, o ...
 	t.Helper()
 	useTheme(t, th)
 	d := newDropdown(t.Context())
-	d.themed = true
 	d.Label, d.Items = "Fruit", items
 	assert.NoError(t, opts(o).Apply(d))
 	assert.NoError(t, d.parseTemplates())
@@ -2897,13 +2856,6 @@ func TestThemedConfirmRolesMarkYesAndNoAsCompleted(t *testing.T) {
 		assert.True(t, strings.HasPrefix(answer, string(roles.success)+"+"))
 		assert.True(t, !strings.Contains(answer, string(roles.failure)))
 	}
-}
-
-func TestConfirmStaysLegacyWhenOff(t *testing.T) {
-	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "\r")
-	themeRendering.Store(false)
-	assert.True(t, Confirm(t.Context(), "Sure?", o))
-	assert.Contains(t, out.String(), "→ Yes")
 }
 
 func TestThemedDropdownRolesStyleFocusAndRows(t *testing.T) {

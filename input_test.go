@@ -19,22 +19,42 @@ import (
 	"github.com/nfx/go-tui/internal/assert"
 )
 
+// bindInput prepares a literal input as run does: per-call templates parsed
+// and the installed theme bound to tt.
+func bindInput(t *testing.T, i *input, tt *termIO) {
+	t.Helper()
+	assert.NoError(t, i.parseTemplates())
+	assert.NoError(t, i.bind(t.Context(), tt))
+}
+
+// literalInputs render per-call templates on an Inline theme into plain
+// writers, like the inputs before themes.
+func literalInputs(t *testing.T) {
+	t.Helper()
+	withEnv(t)
+	th := NewTheme()
+	th.Inline = true
+	useTheme(t, th)
+}
+
 func TestRenderNormal(t *testing.T) {
+	literalInputs(t)
 	i := &input{
 		Label:          "Enter text:",
 		typed:          "hello",
 		cursor:         5,
 		LabelTemplate:  "{{.}} ",
 		AnswerTemplate: "{{.Label}}: {{.Answer}}\n",
+		labelSet:       true,
+		answerSet:      true,
 	}
-	err := i.parseTemplates()
-	assert.NoError(t, err)
 
 	var out bytes.Buffer
-	io := &termIO{out: &out} // Assuming termIO has an out field; adjust if needed
+	io := &termIO{out: &out}
+	bindInput(t, i, io)
 
 	frame := &bytes.Buffer{}
-	err = i.render(io, frame)
+	err := i.render(io, frame)
 	assert.NoError(t, err)
 
 	expected := "\rEnter text: hello\x1b[K"
@@ -42,21 +62,23 @@ func TestRenderNormal(t *testing.T) {
 }
 
 func TestRenderCursorAtStart(t *testing.T) {
+	literalInputs(t)
 	i := &input{
 		Label:          "Input:",
 		typed:          "abc",
 		cursor:         0,
 		LabelTemplate:  "{{.}} ",
 		AnswerTemplate: "{{.Label}}: {{.Answer}}\n",
+		labelSet:       true,
+		answerSet:      true,
 	}
-	err := i.parseTemplates()
-	assert.NoError(t, err)
 
 	var out bytes.Buffer
 	io := &termIO{out: &out}
+	bindInput(t, i, io)
 
 	frame := &bytes.Buffer{}
-	err = i.render(io, frame)
+	err := i.render(io, frame)
 	assert.NoError(t, err)
 
 	expected := "\rInput: abc\x1b[K\x1b[3D"
@@ -64,22 +86,24 @@ func TestRenderCursorAtStart(t *testing.T) {
 }
 
 func TestRenderWriteError(t *testing.T) {
+	literalInputs(t)
 	i := &input{
 		Label:          "Test:",
 		typed:          "test",
 		cursor:         0,
 		LabelTemplate:  "{{.}} ",
 		AnswerTemplate: "{{.Label}}: {{.Answer}}\n",
+		labelSet:       true,
+		answerSet:      true,
 	}
-	err := i.parseTemplates()
-	assert.NoError(t, err)
 
 	// Mock a failing writer
 	failingWriter := &failingBuffer{}
 	tio := &termIO{out: failingWriter}
+	bindInput(t, i, tio)
 
 	frame := &bytes.Buffer{}
-	err = i.render(tio, frame)
+	err := i.render(tio, frame)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, io.EOF)
 }
@@ -114,15 +138,14 @@ func TestInputWithNonEmpty(t *testing.T) {
 }
 
 func TestInputShowAnswerVisibility(t *testing.T) {
+	literalInputs(t)
 	i := newInput(t.Context(), "Name")
 	i.typed = "value"
-	err := i.parseTemplates()
-	assert.NoError(t, err)
-
 	var out bytes.Buffer
 	i.out = &out
+	bindInput(t, i, &termIO{out: &out})
 
-	err = i.showAnswer()
+	err := i.showAnswer()
 	assert.NoError(t, err)
 	assert.Contains(t, out.String(), "value")
 
@@ -801,25 +824,30 @@ func TestInputRunKeepsKeysAfterEnter(t *testing.T) {
 }
 
 func TestInputRendersPastedControlsSafely(t *testing.T) {
+	literalInputs(t)
 	i := &input{
 		Label:          "L",
 		typed:          "a\rb\x1b[2J\x7f\u009b",
 		cursor:         1,
 		LabelTemplate:  "{{.}} ",
 		AnswerTemplate: "{{.Answer}}",
+		labelSet:       true,
+		answerSet:      true,
 	}
-	assert.NoError(t, i.parseTemplates())
 	var out bytes.Buffer
-	err := i.render(&termIO{out: &out}, &bytes.Buffer{})
+	tt := &termIO{out: &out}
+	bindInput(t, i, tt)
+	err := i.render(tt, &bytes.Buffer{})
 	assert.NoError(t, err)
 	assert.Equal(t, "\rL a␍b␛[2J␡�\x1b[K\x1b[8D", out.String())
 }
 
 func TestInputShowAnswerRendersControlsSafely(t *testing.T) {
 	var out bytes.Buffer
-	i := &input{Label: "L", typed: "a\rb", LabelTemplate: "{{.}} ", AnswerTemplate: "{{.Answer}}"}
+	literalInputs(t)
+	i := &input{Label: "L", typed: "a\rb", AnswerTemplate: "{{.Answer}}", answerSet: true}
 	i.out = &out
-	assert.NoError(t, i.parseTemplates())
+	bindInput(t, i, &termIO{out: &out})
 	assert.NoError(t, i.showAnswer())
 	assert.Equal(t, "a␍b\n", out.String())
 }
@@ -847,13 +875,17 @@ func TestInputChangedWithCursor(t *testing.T) {
 	assert.Equal(t, 3, i.cursor)
 }
 
+// renderInput renders a literal input with termWidth columns for its label
+// and value, and one more for the caret.
 func renderInput(t *testing.T, i *input, termWidth int) string {
 	t.Helper()
-	i.LabelTemplate = "{{.}} "
-	i.AnswerTemplate = "{{.Answer}}"
-	assert.NoError(t, i.parseTemplates())
+	literalInputs(t)
+	i.LabelTemplate, i.labelSet = "{{.}} ", true
+	i.AnswerTemplate, i.answerSet = "{{.Answer}}", true
 	var out bytes.Buffer
-	err := i.render(&termIO{out: &out, Width: termWidth}, &bytes.Buffer{})
+	tt := &termIO{out: &out, Width: termWidth + 1}
+	bindInput(t, i, tt)
+	err := i.render(tt, &bytes.Buffer{})
 	assert.NoError(t, err)
 	return out.String()
 }
@@ -1307,8 +1339,6 @@ func useTheme(t *testing.T, th Theme) {
 	t.Helper()
 	keepTheme(t)
 	assert.NoError(t, defaultIO.installTheme(th))
-	prev := themeRendering.Swap(true)
-	t.Cleanup(func() { themeRendering.Store(prev) })
 }
 
 // asciiTheme is the preset theme with ASCII symbols, Guided or Inline.
@@ -1636,18 +1666,6 @@ func TestThemedInputCapturesThemeAtConstruction(t *testing.T) {
 	assert.Contains(t, out.String(), "\r? Label\x1b[K\n\r| a\x1b[K")
 }
 
-func TestThemedInputOffKeepsLegacyPath(t *testing.T) {
-	keepTheme(t)
-	assert.NoError(t, defaultIO.installTheme(asciiTheme(false)))
-	i := newInput(t.Context(), "Label")
-	assert.True(t, !i.themed)
-	assert.NoError(t, i.parseTemplates())
-	var out bytes.Buffer
-	assert.NoError(t, i.render(&termIO{out: &out, Width: 20}, &bytes.Buffer{}))
-	assert.Contains(t, out.String(), "?")
-	assert.True(t, !strings.Contains(out.String(), "|"))
-}
-
 // themedPassword prepares a themed password prompt with simulated keys and captured output.
 func themedPassword(t *testing.T, th Theme, keys ...string) (*input, *bytes.Buffer) {
 	t.Helper()
@@ -1750,13 +1768,4 @@ func TestThemedPasswordFailingFeedbackKeepsSecretOut(t *testing.T) {
 	assert.Contains(t, err.Error(), `cannot show "Invalid value"`)
 	assert.True(t, !strings.Contains(err.Error(), "hunter2"))
 	assert.True(t, !strings.Contains(out.String(), "hunter2"))
-}
-
-func TestPasswordOffKeepsValidatorMessage(t *testing.T) {
-	keepTheme(t)
-	i := newInput(t.Context(), "Label")
-	i.Password = true
-	assert.True(t, !i.themed)
-	i.reject(errors.New("too weak"))
-	assert.Equal(t, "too weak", i.rejection)
 }

@@ -241,12 +241,11 @@ func TestFilePickerNextDropdownInheritsThemeAndBinding(t *testing.T) {
 	useTheme(t, asciiTheme(false))
 	f, first, err := newFilePicker(t.Context(), WithStartDir(t.TempDir()))
 	assert.NoError(t, err)
-	assert.True(t, first.themed)
 	f.look = defaultIO.bindTheme(t.Context(), f.theme, first.out, nil)
 	assert.NoError(t, defaultIO.installTheme(asciiTheme(true)))
 	next, err := f.nextDropdown(t.Context(), nil)
 	assert.NoError(t, err)
-	assert.True(t, next.theme == f.theme && next.themed)
+	assert.True(t, next.theme == f.theme)
 	assert.True(t, next.inherit.theme == f.theme)
 	assert.True(t, next.destination(t.Context(), nil).theme == f.theme)
 	assert.True(t, next.family.Value == f.theme.templates.FilePicker.Value)
@@ -379,12 +378,4 @@ func TestThemedFilePickerHelperErrorRestoresTerminal(t *testing.T) {
 	assert.ErrorIs(t, err, boom)
 	assert.True(t, *restored)
 	assert.True(t, !strings.Contains(out.String(), "+ File"))
-}
-
-func TestFilePickerStaysLegacyWhenOff(t *testing.T) {
-	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "\r")
-	themeRendering.Store(false)
-	_, err := FilePicker(t.Context(), "File", WithStartDir(pickerTree(t)), o)
-	assert.NoError(t, err)
-	assert.Contains(t, out.String(), "→ ")
 }

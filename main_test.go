@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"testing"
+
+	"golang.org/x/term"
 )
 
 // strictOutput restores production terminal classification for a test, where
@@ -31,3 +33,37 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(m.Run())
 }
+
+// Hooks for the external test package, see integration_test.go.
+
+// UseTheme installs th and routes migrated widgets through it for the test,
+// for the external test package.
+func UseTheme(t *testing.T, th Theme) {
+	t.Helper()
+	useTheme(t, th)
+}
+
+// WithEnv installs an output environment fixture built from KEY=VALUE pairs.
+func WithEnv(t *testing.T, pairs ...string) {
+	t.Helper()
+	withEnv(t, pairs...)
+}
+
+// ProbingKeyboard makes input on fd a terminal that answers background
+// queries, without changing any terminal mode.
+func ProbingKeyboard(t *testing.T, fd uintptr) {
+	t.Helper()
+	prevInput, prevSupported := terminalInputChecker, backgroundProbeSupported
+	prevRaw, prevRestore := termMakeRaw, termRestore
+	terminalInputChecker = func(f int) bool { return f == int(fd) || prevInput(f) }
+	backgroundProbeSupported = true
+	termMakeRaw = func(int) (*term.State, error) { return &term.State{}, nil }
+	termRestore = func(int, *term.State) error { return nil }
+	t.Cleanup(func() {
+		terminalInputChecker, backgroundProbeSupported = prevInput, prevSupported
+		termMakeRaw, termRestore = prevRaw, prevRestore
+	})
+}
+
+// InstallTheme replaces the installed theme.
+func InstallTheme(th Theme) error { return defaultIO.installTheme(th) }

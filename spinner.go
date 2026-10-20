@@ -134,8 +134,7 @@ type Spinners struct {
 	eventSink  func(spinnerEvent)
 
 	// theme is captured with the group, so a spinner added later keeps it.
-	theme  *compiledTheme
-	themed bool
+	theme *compiledTheme
 	// rows are the theme slots bound to the destination of the group.
 	rows spinnerSlots
 }
@@ -143,12 +142,8 @@ type Spinners struct {
 // newSpinners initializes spinner updates without taking ownership of terminal mode.
 func newSpinners(ctx context.Context) *Spinners {
 	ctx, cancel := context.WithCancelCause(ctx)
-	theme, themed := defaultIO.currentTheme(), themeRendering.Load()
-	interval := spinnerInterval
-	if themed {
-		interval = theme.source.Spinner.Interval
-	}
-	ticker := time.NewTicker(interval)
+	theme := defaultIO.currentTheme()
+	ticker := time.NewTicker(theme.source.Spinner.Interval)
 	in, out := defaultStreams(ctx)
 	return &Spinners{
 		ctx:        ctx,
@@ -158,7 +153,6 @@ func newSpinners(ctx context.Context) *Spinners {
 		ticks:      ticker.C,
 		cancel:     cancel,
 		theme:      theme,
-		themed:     themed,
 		stopped:    make(chan struct{}),
 		makeTermIO: makeOutputIO,
 		creates:    make(chan createSpinner),
@@ -180,13 +174,11 @@ func NewSpinners(ctx context.Context, opt ...opt) (*Spinners, error) {
 	if err != nil {
 		return nil, err
 	}
-	if s.themed {
-		// output only: no lease, so no probe
-		look := defaultIO.bindTheme(ctx, s.theme, s.out, nil)
-		s.rows, err = s.theme.templates.Spinner.bind(look.funcs)
-		if err != nil {
-			return nil, err
-		}
+	// output only: no lease, so no probe
+	look := defaultIO.bindTheme(ctx, s.theme, s.out, nil)
+	s.rows, err = s.theme.templates.Spinner.bind(look.funcs)
+	if err != nil {
+		return nil, err
 	}
 	s.io, err = s.makeTermIO(s.in, s.out)
 	if err != nil {
@@ -254,13 +246,9 @@ func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 	// we don't want to cancel the parent context.
 	ctx, cancel := context.WithCancel(ctx)
 	replyOffset := make(chan int, 1)
-	frames := SpinnerStyleDocs
-	if s.themed {
-		frames = s.theme.source.Spinner.Frames
-	}
 	req := createSpinner{
 		cancel:      cancel,
-		frames:      frames,
+		frames:      s.theme.source.Spinner.Frames,
 		replyOffset: replyOffset,
 	}
 	err := opts(opt).Apply(&req)
@@ -505,19 +493,13 @@ func (s *Spinners) redraw(prevActive int) (int, error) {
 		}
 	}
 	currActive := 0
-	var line text
 	for _, spinner := range s.state {
 		if spinner == nil {
 			continue
 		}
-		if s.themed {
-			row, err := s.themedRow(spinner)
-			if err != nil {
-				return prevActive, err
-			}
-			line = row
-		} else {
-			line = s.legacyRow(line[:0], spinner)
+		line, err := s.row(spinner)
+		if err != nil {
+			return prevActive, err
 		}
 		frame.WriteByte('\r')
 		frame.Write(line)
@@ -531,26 +513,10 @@ func (s *Spinners) redraw(prevActive int) (int, error) {
 	return currActive, nil
 }
 
-// legacyRow appends the animated row of a spinner to line, truncated to the
-// terminal width.
-func (s *Spinners) legacyRow(line text, spinner *spinnerState) text {
-	spinner.next()
-	line = append(line, spinner.frames[spinner.tick]...)
-	line = append(line, ' ')
-	if len(spinner.Prefix) > 0 {
-		line = append(append(line, spinner.Prefix...), ": "...)
-	}
-	line = append(line, spinner.Message...)
-	if s.io.Width > 0 && line.width() > s.io.Width {
-		return line.truncateVisible(s.io.Width, ' ')
-	}
-	return line
-}
-
-// themedRow renders a spinner through the slot of its state. Only a running
+// row renders a spinner through the slot of its state. Only a running
 // spinner advances its frame. The row is clipped before the last column, so
 // that it cannot autowrap.
-func (s *Spinners) themedRow(spinner *spinnerState) (text, error) {
+func (s *Spinners) row(spinner *spinnerState) (text, error) {
 	slot, state := s.rows.running, "running"
 	switch {
 	case spinner.Failed:

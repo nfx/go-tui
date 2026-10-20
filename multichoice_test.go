@@ -369,7 +369,6 @@ func TestMultichoiceStateAndGeometry(t *testing.T) {
 			[]any{"\u6f22\u5b57", "👨‍👩‍👧 family", "e\u0301", "\x1b[31mred\x1b[0m", "first\nsecond"},
 		)
 		m.Label = "very long label"
-		m.labelBuf = text(m.Label)
 		tio := newTestTermIO(width, 6)
 		var frame bytes.Buffer
 		if err := m.render(tio, &frame); err != nil {
@@ -1605,7 +1604,6 @@ func boundMultichoice(t *testing.T, th Theme, height int, items []any, o ...opt)
 	t.Helper()
 	useTheme(t, th)
 	m := newMultichoice(t.Context())
-	m.themed = true
 	m.Label, m.Items = "Fruit", items
 	assert.NoError(t, m.prepare(o))
 	tt := &termIO{out: &bytes.Buffer{}, Width: 60, Height: height}
@@ -1694,7 +1692,7 @@ func TestThemedMultichoiceEmptyState(t *testing.T) {
 func TestThemedMultichoiceLoadingShowsNoEmptyState(t *testing.T) {
 	useTheme(t, asciiTheme(false))
 	m := newMultichoice(t.Context())
-	m.themed, m.loading, m.Label = true, true, "Fruit"
+	m.loading, m.Label = true, "Fruit"
 	assert.NoError(t, m.prepare(nil))
 	tt := &termIO{out: &bytes.Buffer{}, Width: 60, Height: 10}
 	assert.NoError(t, m.bindRun(t.Context(), tt))

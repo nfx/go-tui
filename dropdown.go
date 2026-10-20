@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"maps"
 	"reflect"
 	"slices"
 	"sort"
@@ -90,10 +89,8 @@ type dropdown struct {
 	Default      any
 	Hide         bool
 	OneReturn    bool
-	LabelNewLine bool
 
 	LabelTemplate        string
-	labelBuf             text
 	labelTemplate        *template.Template
 	ActiveItemTemplate   string
 	activeItemTemplate   *template.Template
@@ -108,14 +105,13 @@ type dropdown struct {
 	labelSet, answerSet, activeSet, inactiveSet, moreSet bool
 	projection
 
-	// theme is the snapshot captured at construction. When themed, the
-	// dropdown renders through it: family are the slots of the widget that
+	// theme is the snapshot captured at construction. The dropdown renders
+	// through it: family are the slots of the widget that
 	// runs it, look is its binding to the destination, slot the bound
 	// slots, label and hint the rows rendered once per run. A wrapper that
 	// runs several dropdowns hands the binding of an earlier one on as
 	// inherit, so that one invocation keeps one appearance.
 	theme       *compiledTheme
-	themed      bool
 	family      choiceFamily
 	look        binding
 	inherit     binding
@@ -125,7 +121,7 @@ type dropdown struct {
 	// plain text of it that filtering and ranking see.
 	content []text
 	search  []string
-	// rows is the height of the last themed frame.
+	// rows is the height of the last frame.
 	rows int
 
 	ItemsFn func(prefix string) []any
@@ -193,7 +189,6 @@ func Confirm(ctx context.Context, action string, opts ...opt) bool {
 // defaultConfirmRunner runs a dropdown over Yes and No through the Confirm slots.
 func defaultConfirmRunner(ctx context.Context, action string, o ...opt) bool {
 	d := newDropdown(ctx)
-	d.themed = themeRendering.Load()
 	d.family = d.theme.templates.Confirm
 	d.target = targetOf[string]()
 	d.normalize = confirmDefault
@@ -254,16 +249,8 @@ func DropdownKV[K comparable, V any](ctx context.Context, label string, items ma
 		// sort by key, use fmt to convert to string
 		return fmt.Sprintf("%v", kvs[i].Key) < fmt.Sprintf("%v", kvs[j].Key)
 	})
-	defaults := []opt{
-		WithActiveItemTemplate(`→ {{ bold .Key }}`),
-		WithInactiveItemTemplate(`~ {{ dim .Key }}`),
-		WithAnswerTemplate(`{{ dim "✔ " .Label " …" }} {{ .Answer.Key | bold }}`),
-	}
-	if themeRendering.Load() {
-		// the theme presents the entries, projected to their keys
-		defaults = []opt{WithTemplate("(label .Key)")}
-	}
-	opts = append(defaults, opts...)
+	// the theme presents the entries, projected to their keys
+	opts = append([]opt{WithTemplate("(label .Key)")}, opts...)
 	anyKVs := make([]any, len(kvs))
 	for i, kv := range kvs {
 		anyKVs[i] = kv
@@ -300,7 +287,6 @@ func Dropdown[T any](ctx context.Context, label string, items []T, opts ...opt) 
 func DropdownLazy[V any](ctx context.Context, label string, itemFn iter.Seq2[V, error], o ...opt) (V, error) {
 	var zero V
 	d := newDropdown(ctx)
-	d.themed = themeRendering.Load()
 	d.Label = label
 	d.target = targetOf[V]()
 	err := opts(o).Apply(d)
@@ -427,7 +413,6 @@ func DropdownIndex(ctx context.Context, label string, items []any, o ...opt) (in
 // pickIndex runs a dropdown whose typed defaults have the type of target.
 func pickIndex(ctx context.Context, label string, items []any, target choiceTarget, o []opt) (int, error) {
 	d := newDropdown(ctx)
-	d.themed = themeRendering.Load()
 	d.target = target
 	err := opts(o).Apply(d)
 	if err != nil {
@@ -454,10 +439,10 @@ func (d *dropdown) pick(ctx context.Context, label string, items []any) (int, er
 	return i, nil
 }
 
-// answer prints the answer line for item i: the answer slot of a themed
-// dropdown, unless a per-call template takes the raw item.
+// answer prints the answer line for item i: the answer slot of the theme,
+// unless a per-call template takes the raw item.
 func (d *dropdown) answer(label string, i int) error {
-	if !d.themed || d.answerSet {
+	if d.answerSet {
 		return d.showAnswer(label, d.Items[i])
 	}
 	return d.themedAnswer(label, i)
@@ -549,7 +534,7 @@ func (d *dropdown) hintMatches(items []any) func(string) ([]int, error) {
 
 // searchText returns searchable item content without theme decoration.
 func (d *dropdown) searchText(item any) (text, error) {
-	if d.themed && !d.legacySearch() {
+	if !d.legacySearch() {
 		err := d.bindOnce()
 		if err != nil {
 			return nil, err
@@ -564,7 +549,7 @@ func (d *dropdown) searchText(item any) (text, error) {
 	return label, nil
 }
 
-// legacySearch reports whether a themed dropdown matches the output of a
+// legacySearch reports whether a dropdown matches the output of a
 // per-call inactive template, as before the theme, because no per-call
 // projection replaces it.
 func (d *dropdown) legacySearch() bool { return d.inactiveSet && d.mainTemplate == nil }
@@ -653,16 +638,7 @@ func (d *dropdown) setFieldTemplate(fieldName ...string) {
 		single = append(single, "."+f)
 		answer = append(answer, ".Answer."+f)
 	}
-	a := strings.Join(single, ` ", " `)
-	if d.themed {
-		d.setProjection(a)
-		return
-	}
-	b := strings.Join(answer, ` ", " `)
-	// d.LabelTemplate = fmt.Sprintf(`{{ "?" | green }} {{ .%s | bold }}`, fieldName)
-	d.ActiveItemTemplate = fmt.Sprintf(`{{ cyan "→ " %s }}`, a)
-	d.InactiveItemTemplate = fmt.Sprintf(`{{ dim "→ " %s }}`, a)
-	d.AnswerTemplate = fmt.Sprintf(`{{ dim "✔ " .Label " …" }} {{ bold %s }}`, b)
+	d.setProjection(strings.Join(single, ` ", " `))
 }
 
 // WithTemplate shares main content across choice rows and answers; details appear only on the active row.
@@ -675,22 +651,10 @@ func WithTemplate(main string, activeDetails ...string) opt {
 
 // setContentTemplate keeps active-only details out of inactive rows and answers.
 func (d *dropdown) setContentTemplate(main string, activeDetails ...string) {
-	if d.themed {
-		d.setProjection(main, activeDetails...)
-		return
-	}
-	details := ""
-	if len(activeDetails) > 0 {
-		details = strings.Join(activeDetails, `) ", " (`)
-		details = fmt.Sprintf(` {{ dim "(" (%s) ")" }}`, details)
-	}
-	// TODO: add template validation once we have a reflection on field structure
-	d.ActiveItemTemplate = fmt.Sprintf(`{{ cyan "→ " %s }}%s`, main, details)
-	d.InactiveItemTemplate = fmt.Sprintf(`{{ dim "→ " %s }}`, main)
-	d.AnswerTemplate = fmt.Sprintf(`{{ dim "✔ " .Label " …" }} {{ bold .Answer%s }}`, main)
+	d.setProjection(main, activeDetails...)
 }
 
-// projection is the content of a themed choice list set by [WithTemplate]
+// projection is the content of a choice list set by [WithTemplate]
 // or [WithFieldTemplate]. It replaces the Value and Details slots of the
 // theme and leaves the presentation alone. view adapts a raw item to the
 // payload of those slots; nil passes it unchanged. Per-call templates always
@@ -762,37 +726,20 @@ func newDropdown(ctx context.Context) *dropdown {
 	in, out := defaultStreams(ctx)
 	theme := defaultIO.currentTheme()
 	return &dropdown{
-		in:                   in,
-		out:                  out,
-		Ctx:                  ctx,
-		Label:                "Select from list",
-		makeTermIO:           makePromptIO,
-		LabelTemplate:        DefaultLabelTemplate,
-		ActiveItemTemplate:   DefaultDropdownActiveItemTemplate,
-		InactiveItemTemplate: DefaultDropdownInactiveItemTemplate,
-		MoreItemsTemplate:    DefaultMoreItemsTemplate,
-		AnswerTemplate:       DefaultDropdownAnswerTemplate,
-		IterBatchSize:        10,
-		trie:                 newTrie(),
-		theme:                theme,
-		family:               theme.templates.Dropdown,
+		in:            in,
+		out:           out,
+		Ctx:           ctx,
+		Label:         "Select from list",
+		makeTermIO:    makePromptIO,
+		IterBatchSize: 10,
+		trie:          newTrie(),
+		theme:         theme,
+		family:        theme.templates.Dropdown,
 	}
 }
 
-// templateFuncs supplies the shared label and color helpers.
-func (d *dropdown) templateFuncs() template.FuncMap { return choiceTemplateFuncs() }
-
 // choiceLabels owns the shared label contract without widget interaction state.
 type choiceLabels struct{}
-
-// choiceTemplateFuncs gives each template set its own shared label and color helpers.
-func choiceTemplateFuncs() template.FuncMap {
-	legacy := legacyTemplateFuncs()
-	funcs := make(template.FuncMap, len(legacy)+1)
-	maps.Copy(funcs, legacy)
-	funcs["label"] = choiceLabels{}.itemLabel
-	return funcs
-}
 
 // itemLabel gives choice widgets a consistent label for display and search.
 func (d choiceLabels) itemLabel(item any) string {
@@ -966,35 +913,7 @@ func (d choiceLabels) indirectValue(value reflect.Value) (reflect.Value, bool) {
 }
 
 func (d *dropdown) parseTemplates() error {
-	if d.themed {
-		return d.parseThemed()
-	}
-	tmpl := template.New("dropdown").Funcs(d.templateFuncs())
-	labelTemplate, err := tmpl.New("label").Parse(mustEndWith(d.LabelTemplate, ' '))
-	if err != nil {
-		return fmt.Errorf("label: %w", err)
-	}
-	err = labelTemplate.Execute(&d.labelBuf, d.Label)
-	if err != nil {
-		return fmt.Errorf("label: %w", err)
-	}
-	d.activeItemTemplate, err = tmpl.New("active").Parse(mustEndWith(d.ActiveItemTemplate, '\n'))
-	if err != nil {
-		return fmt.Errorf("active: %w", err)
-	}
-	d.inactiveItemTemplate, err = tmpl.New("inactive").Parse(mustEndWith(d.InactiveItemTemplate, '\n'))
-	if err != nil {
-		return fmt.Errorf("inactive: %w", err)
-	}
-	d.moreItemsTemplate, err = tmpl.New("more").Parse(d.MoreItemsTemplate)
-	if err != nil {
-		return fmt.Errorf("more: %w", err)
-	}
-	d.answerTemplate, err = tmpl.New("answer").Parse(mustEndWith(d.AnswerTemplate, '\n'))
-	if err != nil {
-		return fmt.Errorf("answer: %w", err)
-	}
-	return nil
+	return d.parseThemed()
 }
 
 // parseThemed parses per-call templates and projections for later destination binding.
@@ -1338,51 +1257,6 @@ func (d *dropdown) clampDisplay(height int) {
 	d.selected = pos - d.offset
 }
 
-// render displays the dropdown.
-func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
-	if d.themed {
-		return d.renderThemed(io, buf)
-	}
-	io.refreshSize()
-	// use buffer to write to io only once
-	longest, err := d.renderInit(io)
-	if err != nil {
-		return fmt.Errorf("init: %w", err)
-	}
-	// re-derive visible rows from current height after init
-	d.clampDisplay(io.Height)
-	var prefix int
-	total := len(d.relevant)
-	height := min(total, io.Height/2)
-	bufMore, longest, err := d.renderMore(total, height, longest)
-	if err != nil {
-		return fmt.Errorf("more: %w", err)
-	}
-	for i, j := range d.displayed {
-		buf.WriteByte('\r') // ensure we start from the leftmost position
-		if i == 0 {
-			prefix = d.renderLabel(buf, io, longest)
-		} else {
-			for range prefix {
-				buf.WriteByte(' ')
-			}
-		}
-		buf.Write(d.renderItem(io, i, j))
-	}
-	if total > len(d.displayed) {
-		buf.WriteByte('\r') // always display a line to avoid flickering
-		if d.offset+height < total {
-			for range prefix - 1 { // ???...
-				buf.WriteByte(' ')
-			}
-			buf.Write(bufMore)
-		}
-		buf.WriteByte('\n')
-	}
-	buf.WriteByte('\r')
-	return nil
-}
-
 func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 	if len(d.displayed) > 0 {
 		return d.longest, nil // already initialized
@@ -1457,14 +1331,8 @@ func (d *dropdown) rankByLevenstein(relevant []int, match string) {
 	})
 }
 
-// rankLabel is the text of item i that ranking compares: the projected
-// content of a themed dropdown, otherwise the item label.
-func (d *dropdown) rankLabel(i int) string {
-	if d.themed {
-		return d.search[i]
-	}
-	return d.itemLabel(d.Items[i])
-}
+// rankLabel is the text of item i that ranking compares: its projected content.
+func (d *dropdown) rankLabel(i int) string { return d.search[i] }
 
 // choiceDistance bounds Unicode edit-distance work for interactive ranking.
 func choiceDistance(a, b []rune) int {
@@ -1520,71 +1388,7 @@ func (d *dropdown) setItem(i int, item any) error {
 // renderStates caches the active and inactive rows of item at i and returns
 // the text that filtering matches.
 func (d *dropdown) renderStates(i int, item any) (text, error) {
-	if d.themed {
-		return d.themedItem(i, item)
-	}
-	err := d.activeItemTemplate.Execute(&d.active[i], item)
-	if err != nil {
-		return nil, fmt.Errorf("active: %w", err)
-	}
-	err = d.inactiveItemTemplate.Execute(&d.inactive[i], item)
-	if err != nil {
-		return nil, fmt.Errorf("inactive: %w", err)
-	}
-	return d.inactive[i], nil
-}
-
-// renderLabel writes the label and returns its occupied columns.
-func (d *dropdown) renderLabel(buf *bytes.Buffer, io *termIO, longest int) int {
-	label := d.labelBuf
-	prefix := label.width()
-	if prefix > io.Width {
-		label = label.truncateVisible(io.Width-1, ' ')
-		prefix = io.Width - 1
-	}
-	buf.Write(label)
-	// recompute each render instead of latching
-	d.LabelNewLine = prefix+longest >= io.Width
-	if d.LabelNewLine {
-		buf.WriteByte('\n')
-		buf.WriteByte('\r')
-		prefix = 0
-	}
-	return prefix
-}
-
-// renderItem selects and clips item j for row i.
-func (d *dropdown) renderItem(io *termIO, i, j int) text {
-	var item text
-	var itemW int
-	if i == d.selected {
-		item = d.active[j]
-		itemW = d.activeWidths[j]
-	} else {
-		item = d.inactive[j]
-		itemW = d.widths[j]
-	}
-	if itemW > io.Width {
-		item = item.truncateVisible(io.Width-1, '\n')
-	}
-	return item
-}
-
-// renderMore renders the remaining-items indicator when needed.
-func (d *dropdown) renderMore(total int, height int, longest int) (text, int, error) {
-	var bufMore text
-	if total <= len(d.displayed) {
-		return bufMore, longest, nil // nothing to do
-	}
-	err := d.moreItemsTemplate.Execute(&bufMore, dropdownMore{
-		More:  total - d.offset - height,
-		Total: total,
-	})
-	if err != nil {
-		return nil, 0, fmt.Errorf("more: %w", err)
-	}
-	longest = max(longest, bufMore.width())
-	return bufMore, longest, nil
+	return d.themedItem(i, item)
 }
 
 type dropdownMore struct {
@@ -1592,10 +1396,10 @@ type dropdownMore struct {
 	Total int
 }
 
-// renderThemed draws the label, the visible rows, the count of rows below
-// them and the hint in the geometry of the theme. Every row ends with a
-// newline, as in the legacy layout, so that [termIO.clear] erases the frame.
-func (d *dropdown) renderThemed(io *termIO, buf *bytes.Buffer) error {
+// render draws the label, the visible rows, the count of rows below them
+// and the hint in the geometry of the theme. Every row ends with a newline,
+// so that [termIO.clear] erases the frame.
+func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
 	io.refreshSize()
 	_, err := d.renderInit(io)
 	if err != nil {
@@ -1613,13 +1417,18 @@ func (d *dropdown) renderThemed(io *termIO, buf *bytes.Buffer) error {
 	// Inline, the label leads the first row and indents the others, unless
 	// the widest row does not fit after it.
 	var lead, indent text
-	if g.inline && d.label.width()+1+d.longest <= g.columns(nil) {
-		if d.label.width() > 0 {
-			// the renderer owns the spacing before the rows
-			lead = append(append(text{}, d.label...), ' ')
+	if d.label.width() > 0 {
+		lead = append(text{}, d.label...)
+		if !d.labelSet {
+			// the renderer owns the spacing after a theme label; a per-call
+			// label keeps its own trailing space, as in Input
+			lead = append(lead, ' ')
 		}
+	}
+	if g.inline && lead.width()+d.longest <= g.columns(nil) {
 		indent = text(strings.Repeat(" ", lead.width()))
 	} else {
+		lead = nil
 		rows = append(rows, frameRow{content: d.label, drop: 1})
 	}
 	for k, j := range d.displayed {
@@ -1670,18 +1479,7 @@ func (d *dropdown) themedMore() (text, error) {
 }
 
 func (d *dropdown) height() int {
-	if d.themed {
-		return d.rows
-	}
-	// TODO: once viewport is more stable, use it here
-	height, total := len(d.displayed), len(d.relevant)
-	if total > height {
-		height++ // more ... row
-	}
-	if d.LabelNewLine {
-		height++ // label wrapped
-	}
-	return height
+	return d.rows
 }
 
 // snapshotState captures dropdown state so key handlers can emit semantic diffs.
@@ -1795,15 +1593,13 @@ func (d *dropdown) run(ctx context.Context) (int, error) {
 	if io.Height < 3 {
 		return -1, ErrNoSpace
 	}
-	if d.themed {
-		// before the event reader starts, as binding may probe the background
-		err = d.bind(d.destination(ctx, io))
-		if err == nil {
-			err = d.renderChrome()
-		}
-		if err != nil {
-			return -1, err
-		}
+	// before the event reader starts, as binding may probe the background
+	err = d.bind(d.destination(ctx, io))
+	if err == nil {
+		err = d.renderChrome()
+	}
+	if err != nil {
+		return -1, err
 	}
 	frame := bytes.NewBuffer(make([]byte, d.height()*io.Width))
 	frame.Reset()

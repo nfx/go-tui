@@ -22,9 +22,8 @@ type filePicker struct {
 
 	// theme is captured once per invocation for the dropdowns of every
 	// directory; look is the binding of the latest one that bound.
-	theme  *compiledTheme
-	themed bool
-	look   binding
+	theme *compiledTheme
+	look  binding
 }
 
 var upEntry = &dirEntry{name: "..", isDir: true}
@@ -109,7 +108,7 @@ func newFilePicker(ctx context.Context, o ...opt) (*filePicker, *dropdown, error
 		extensions: map[string]bool{},
 	}
 	d := newDropdown(ctx)
-	f.theme, f.themed = d.theme, themeRendering.Load()
+	f.theme = d.theme
 	f.adopt(d)
 	for _, option := range o {
 		err := applyToAny(option, f, d)
@@ -223,7 +222,7 @@ func (f *filePicker) nextDropdown(ctx context.Context, o []opt) (*dropdown, erro
 // the binding of the previous directory, so that navigation never switches
 // appearance.
 func (f *filePicker) adopt(d *dropdown) {
-	d.theme, d.themed, d.inherit = f.theme, f.themed, f.look
+	d.theme, d.inherit = f.theme, f.look
 	d.family = f.theme.templates.FilePicker
 }
 
@@ -255,7 +254,7 @@ type fileView struct {
 // cleared. Without a terminal nothing is retained; a per-call answer
 // template already ran on each chosen entry.
 func (f *filePicker) answer(d *dropdown, title, path string) error {
-	if !f.themed || d.answerSet || !outputIsTerminal(d.out) {
+	if d.answerSet || !outputIsTerminal(d.out) {
 		return nil
 	}
 	err := d.retain(title, path)
@@ -298,7 +297,7 @@ func (f *filePicker) choose(
 	if !outputIsTerminal(d.out) {
 		return f.answerFromDefault(ctx, d, title, entries, items)
 	}
-	if f.themed && !d.answerSet {
+	if !d.answerSet {
 		// the path is retained once, by answer
 		d.Label, d.Items = title, items
 		return d.dropdownIndex(ctx)

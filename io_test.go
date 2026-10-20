@@ -1154,12 +1154,6 @@ func TestProfileConsoleVTNotCalledForPipe(t *testing.T) {
 	assert.Equal(t, profileTrueColor, defaultIO.profileFor(&bytes.Buffer{}))
 }
 
-func TestProfileBold(t *testing.T) {
-	assert.Equal(t, "x", profilePlain.bold("x"))
-	assert.Equal(t, "\x1b[1mx\x1b[0m", profileAttrs.bold("x"))
-	assert.Equal(t, "\x1b[1mx\x1b[0m", profileTrueColor.bold("x"))
-}
-
 func TestProfileForManagedWriterUsesRawOutput(t *testing.T) {
 	withEnv(t, "COLORTERM=truecolor")
 	tty := ttyWriter(t)
