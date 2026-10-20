@@ -326,6 +326,25 @@ func (t text) truncateVisible(maxLen int, tailer byte) text {
 	return out
 }
 
+// oneLine keeps the text and SGR of caller content on one row: line breaks
+// and tabs become spaces, invalid bytes U+FFFD, and other controls and
+// escape sequences are dropped.
+func (t text) oneLine() string {
+	var out text
+	for seg := range t.segments() {
+		_, sgr := seg.sgrParams()
+		switch {
+		case seg.isText(), seg.isEscape && sgr:
+			out = append(out, seg.text...)
+		case seg.isInvalid:
+			out = append(out, "\uFFFD"...)
+		case seg.isControl && bytes.ContainsAny(seg.text, "\r\n\t"):
+			out = append(out, ' ')
+		}
+	}
+	return out.String()
+}
+
 // beforeNewline returns t before its first line break.
 func (t text) beforeNewline() text {
 	for i, b := range t {

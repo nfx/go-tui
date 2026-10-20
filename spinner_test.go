@@ -921,7 +921,7 @@ func TestThemedSpinnerLogsWithoutTerminal(t *testing.T) {
 }
 
 func TestSpinnerOneLine(t *testing.T) {
-	got := new(Spinners).oneLine(text("a\r\nb\tc\x1b[2Kd\x1b[31mred\x1b[0m\xff\x07"))
+	got := text("a\r\nb\tc\x1b[2Kd\x1b[31mred\x1b[0m\xff\x07").oneLine()
 	assert.Equal(t, "a  b cd\x1b[31mred\x1b[0m�", got)
 }
 

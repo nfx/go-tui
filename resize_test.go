@@ -82,7 +82,7 @@ func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
-	p, err := newStartedProgressBar(t.Context(), "downloading files", 20,
+	p, err := newStartedProgressBar(t.Context(), "downloading files", 20, false,
 		WithInput(cio),
 		WithOutput(cio),
 		opT(func(pb *Progressbar) error {
@@ -137,7 +137,7 @@ func TestProgressbarTickOnResizeExitsWhenDone(t *testing.T) {
 		Out: make(chan string, 4),
 	}
 	resizeCh := make(chan struct{})
-	p, err := newStartedProgressBar(t.Context(), "downloading files", 10,
+	p, err := newStartedProgressBar(t.Context(), "downloading files", 10, false,
 		WithInput(cio),
 		WithOutput(cio),
 		opT(func(pb *Progressbar) error {

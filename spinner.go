@@ -33,6 +33,10 @@ const spinnerInterval = 100 * time.Millisecond
 type SpinnerStyle struct {
 	// Frames are nonempty, equally wide single-line strings. Empty takes the
 	// preset.
+	//
+	// TODO: move the frames to [Symbols], like the progress bar glyphs, so
+	// that [ASCIISymbols] selects ASCII frames and the Unicode preset can
+	// animate with glyphs such as [DefaultSpinnerStyle].
 	Frames []string
 	// Interval is the animation step. Zero takes 100ms.
 	Interval time.Duration

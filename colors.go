@@ -779,6 +779,7 @@ type Theme struct {
 	Symbols   Symbols
 	Templates Templates
 	Spinner   SpinnerStyle
+	Progress  ProgressStyle
 	// Funcs are custom template helpers, added to the built-in ones. They
 	// cannot replace a built-in helper, and must be safe for concurrent use.
 	Funcs template.FuncMap
@@ -812,6 +813,10 @@ func (in Theme) compile() (*compiledTheme, error) {
 		return nil, fmt.Errorf("symbols: %w", err)
 	}
 	t.Spinner, err = t.Spinner.normalize()
+	if err != nil {
+		return nil, err
+	}
+	t.Progress, err = t.Progress.normalize()
 	if err != nil {
 		return nil, err
 	}
@@ -909,6 +914,11 @@ type Symbols struct {
 	Cancel    string
 	Ellipsis  string
 	Mask      string
+	// BarFill draws the done cells of a progress bar, BarHead the partly
+	// done cell after them, and BarEmpty the rest of its track.
+	BarFill  string
+	BarHead  string
+	BarEmpty string
 }
 
 // unicodeSymbols is the preset every empty symbol falls back to.
@@ -924,6 +934,9 @@ var unicodeSymbols = Symbols{
 	Cancel:    "■",
 	Ellipsis:  "…",
 	Mask:      "*",
+	BarFill:   "█",
+	BarHead:   "█",
+	BarEmpty:  "░",
 }
 
 // named returns the glyph of a field by name.
@@ -951,6 +964,12 @@ func (s Symbols) named(name string) (string, error) {
 		return s.Ellipsis, nil
 	case "Mask":
 		return s.Mask, nil
+	case "BarFill":
+		return s.BarFill, nil
+	case "BarHead":
+		return s.BarHead, nil
+	case "BarEmpty":
+		return s.BarEmpty, nil
 	}
 	return "", fmt.Errorf("symbol %q: no such symbol", name)
 }
@@ -973,6 +992,9 @@ func (s Symbols) normalize() (Symbols, error) {
 		{"Cancel", &s.Cancel, &def.Cancel},
 		{"Ellipsis", &s.Ellipsis, &def.Ellipsis},
 		{"Mask", &s.Mask, &def.Mask},
+		{"BarFill", &s.BarFill, &def.BarFill},
+		{"BarHead", &s.BarHead, &def.BarHead},
+		{"BarEmpty", &s.BarEmpty, &def.BarEmpty},
 	} {
 		if *f.dst == "" {
 			*f.dst = *f.def
@@ -1017,6 +1039,9 @@ func ASCIISymbols() Symbols {
 		Cancel:    "-",
 		Ellipsis:  ".",
 		Mask:      "*",
+		BarFill:   "=",
+		BarHead:   ">",
+		BarEmpty:  "-",
 	}
 }
 
@@ -1031,6 +1056,7 @@ func presetTheme() Theme {
 			Frames:   slices.Clone(spinnerFrames),
 			Interval: spinnerInterval,
 		},
+		Progress: progressStyle,
 	}
 }
 
@@ -1199,6 +1225,7 @@ type Templates struct {
 	Confirm     SelectTemplates
 	FilePicker  SelectTemplates
 	Spinner     SpinnerTemplates
+	Progress    ProgressTemplates
 }
 
 // templates are the compiled [Templates], with inheritance resolved.
@@ -1215,7 +1242,8 @@ type templates struct {
 	Confirm     choiceFamily
 	FilePicker  choiceFamily
 
-	Spinner spinnerTemplates
+	Spinner  spinnerTemplates
+	Progress progressTemplates
 }
 
 // builtinTemplates are the built-in sources of the root slots, shared by
@@ -1254,13 +1282,21 @@ var builtinTemplates = Templates{
 		Stopped: `{{ muted (symbol "Cancel") }} {{ with .Prefix }}{{ text . }}{{ muted ":" }} {{ end }}{{ text .Message }}`,
 		Failed:  `{{ error (symbol "Error") }} {{ with .Prefix }}{{ text . }}{{ muted ":" }} {{ end }}{{ text .Message }}`,
 	},
+	// Progress slots name a [progressView]. The renderer draws the bar in
+	// the accent role and its empty track in the guide role.
+	Progress: ProgressTemplates{
+		Label:   `{{ text .Label }}`,
+		Metrics: `{{ range $i, $v := .Values }}{{ if $i }}{{ muted " · " }}{{ end }}{{ muted $v }}{{ end }}`,
+		Frame: `{{ with .Label }}{{ . }} {{ end }}{{ accent (printf "%3d%%" .Percent) }} ` +
+			`{{ .Bar }}{{ with .Metrics }} {{ . }}{{ end }}`,
+	},
 }
 
 // compile resolves isolated slot inheritance over base and reports errors at defining slots.
 func (t *Templates) compile(funcs template.FuncMap, base templates) (templates, error) {
 	root := templated[struct{}, struct{}]{Funcs: funcs}
 	var out templates
-	var errs [10]error
+	var errs [11]error
 	out.Prompt, errs[0] = t.prompt(root.nest("Prompt", t.Prompt, base.Prompt))
 	out.Input, errs[1] = t.prompt(root.nest("Input", t.Input, out.Prompt))
 	out.Password, errs[2] = t.secret(root.nest("Password", t.Password, out.Input))
@@ -1281,6 +1317,7 @@ func (t *Templates) compile(funcs template.FuncMap, base templates) (templates, 
 	}
 	out.FilePicker, errs[8] = t.choiceFamily(root.nest("FilePicker", t.FilePicker, picker))
 	out.Spinner, errs[9] = t.spinner(root.nest("Spinner", t.Spinner, base.Spinner))
+	out.Progress, errs[10] = t.progress(root.nest("Progress", t.Progress, base.Progress))
 	if err := errors.Join(errs[:]...); err != nil {
 		return templates{}, err
 	}
@@ -1416,6 +1453,87 @@ func (t *Templates) spinner(in templated[SpinnerTemplates, spinnerTemplates]) (o
 	return out, errors.Join(errs[:]...)
 }
 
+// ProgressTemplates are the row of a progress bar. Label and Metrics render
+// first; Frame then places their output around the bar, which it must insert
+// exactly once, as a top-level {{ .Bar }} that nothing else refers to, so
+// that the bar can take the columns the rest of the row leaves.
+type ProgressTemplates struct {
+	Label   Template
+	Metrics Template
+	Frame   Template
+}
+
+// progressTemplates are the compiled [ProgressTemplates].
+type progressTemplates struct{ Label, Metrics, Frame *compiledSlot }
+
+// progress compiles the progress slots, which have no cross-family parent.
+// Label and Metrics may be hidden; the frame holds the bar, so it cannot.
+func (t *Templates) progress(in templated[ProgressTemplates, progressTemplates]) (out progressTemplates, _ error) {
+	var errs [3]error
+	out.Label, errs[0] = t.slot(in.nest("Label", in.Src.Label, in.Parent.Label), true)
+	out.Metrics, errs[1] = t.slot(in.nest("Metrics", in.Src.Metrics, in.Parent.Metrics), true)
+	out.Frame, errs[2] = t.slot(in.nest("Frame", in.Src.Frame, in.Parent.Frame), false)
+	if errs[2] == nil && in.Src.Frame != "" {
+		errs[2] = t.barOnce(out.Frame)
+	}
+	return out, errors.Join(errs[:]...)
+}
+
+// barOnce checks that a frame inserts the bar once, as a top-level action
+// printing .Bar unchanged, and refers to .Bar nowhere else. Then nothing in
+// the frame depends on the bar, and the renderer can measure the frame
+// before sizing it.
+func (t *Templates) barOnce(s *compiledSlot) error {
+	inserts, uses := 0, 0
+	if s.tmpl.Tree != nil {
+		for _, n := range s.tmpl.Root.Nodes {
+			if a, ok := n.(*parse.ActionNode); ok && t.isBar(a.Pipe) {
+				inserts++
+			}
+		}
+	}
+	for _, tt := range s.tmpl.Templates() {
+		if tt.Tree == nil {
+			continue
+		}
+		err := t.walk(tt.Tree, tt.Root, func(_ *parse.Tree, n parse.Node) error {
+			if t.usesBar(n) {
+				uses++
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	if inserts != 1 || uses != 1 {
+		return fmt.Errorf("theme.Templates.%s: want one top-level {{ .Bar }} and no other use of .Bar", s.tmpl.Name())
+	}
+	return nil
+}
+
+// isBar reports whether a pipeline only prints .Bar.
+func (*Templates) isBar(p *parse.PipeNode) bool {
+	if len(p.Decl) > 0 || len(p.Cmds) != 1 || len(p.Cmds[0].Args) != 1 {
+		return false
+	}
+	f, ok := p.Cmds[0].Args[0].(*parse.FieldNode)
+	return ok && len(f.Ident) == 1 && f.Ident[0] == "Bar"
+}
+
+// usesBar reports whether n reads a Bar field: .Bar, $.Bar, $x.Bar or (x).Bar.
+func (*Templates) usesBar(n parse.Node) bool {
+	switch n := n.(type) {
+	case *parse.FieldNode:
+		return n.Ident[0] == "Bar"
+	case *parse.VariableNode:
+		return len(n.Ident) > 1 && n.Ident[1] == "Bar"
+	case *parse.ChainNode:
+		return n.Field[0] == "Bar"
+	}
+	return false
+}
+
 // compiledSlot is one parsed presentation slot. A hidden slot renders nothing
 // and reserves no space, and so does a nil slot, which has no built-in yet.
 type compiledSlot struct {
@@ -1452,15 +1570,18 @@ func (t *Templates) colorLiterals(tmpl *template.Template) error {
 		if tt.Tree == nil {
 			continue
 		}
-		if err := t.walkColors(tt.Tree, tt.Root); err != nil {
+		if err := t.walk(tt.Tree, tt.Root, t.colorLiteral); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// walkColors visits every command of the parse tree below n.
-func (t *Templates) walkColors(tree *parse.Tree, n parse.Node) error {
+// walk calls visit for n and every node below it in tree.
+func (t *Templates) walk(tree *parse.Tree, n parse.Node, visit func(*parse.Tree, parse.Node) error) error {
+	if err := visit(tree, n); err != nil {
+		return err
+	}
 	var next []parse.Node
 	switch n := n.(type) {
 	case *parse.ListNode:
@@ -1486,13 +1607,10 @@ func (t *Templates) walkColors(tree *parse.Tree, n parse.Node) error {
 	case *parse.ChainNode:
 		next = []parse.Node{n.Node}
 	case *parse.CommandNode:
-		if err := t.colorLiteral(tree, n); err != nil {
-			return err
-		}
 		next = n.Args
 	}
 	for _, c := range next {
-		if err := t.walkColors(tree, c); err != nil {
+		if err := t.walk(tree, c, visit); err != nil {
 			return err
 		}
 	}
@@ -1500,8 +1618,9 @@ func (t *Templates) walkColors(tree *parse.Tree, n parse.Node) error {
 }
 
 // colorLiteral validates the color of an fg or bg command with a literal one.
-func (*Templates) colorLiteral(tree *parse.Tree, n *parse.CommandNode) error {
-	if len(n.Args) < 2 {
+func (*Templates) colorLiteral(tree *parse.Tree, node parse.Node) error {
+	n, ok := node.(*parse.CommandNode)
+	if !ok || len(n.Args) < 2 {
 		return nil
 	}
 	id, isID := n.Args[0].(*parse.IdentifierNode)
@@ -1539,6 +1658,18 @@ type boundSlot struct {
 
 // render returns complete slot output or an error, allowing only text and SGR.
 func (b boundSlot) render(data any) (text, error) {
+	out, err := b.execute(data)
+	if err == nil {
+		err = b.styled(out)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// execute returns the slot output without checking it.
+func (b boundSlot) execute(data any) (text, error) {
 	if b.tmpl == nil {
 		return nil, nil
 	}
@@ -1547,10 +1678,15 @@ func (b boundSlot) render(data any) (text, error) {
 	if err != nil {
 		return nil, fmt.Errorf("theme.Templates.%s: %w", b.tmpl.Name(), err)
 	}
-	if seg, ok := out.unstyled(); ok {
-		return nil, fmt.Errorf("theme.Templates.%s: %q: want text and SGR only", b.tmpl.Name(), seg.text)
-	}
 	return out, nil
+}
+
+// styled reports slot output that is not only text and SGR.
+func (b boundSlot) styled(out text) error {
+	if seg, ok := out.unstyled(); ok {
+		return fmt.Errorf("theme.Templates.%s: %q: want text and SGR only", b.tmpl.Name(), seg.text)
+	}
+	return nil
 }
 
 // WithFn registers or replaces a custom helper for future operations.
