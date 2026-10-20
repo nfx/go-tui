@@ -11,6 +11,7 @@ import (
 	"io"
 	"iter"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -2421,4 +2422,356 @@ func TestDropdownLazyAutomaticAnswerCancelsWhileProducerBlocked(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("prompt stayed blocked after cancellation")
 	}
+}
+
+// themedDropdownOpt routes a Dropdown family prompt through th on a scripted
+// terminal of the given width and ten rows. Each key is one read; without
+// keys, reads block until the test ends. restored reports a released terminal.
+func themedDropdownOpt(t *testing.T, th Theme, width int, keys ...string) (o opt, out *bytes.Buffer, restored *bool) {
+	t.Helper()
+	useTheme(t, th)
+	var in io.Reader
+	if len(keys) == 0 {
+		blocking := newBlockingByteReader()
+		t.Cleanup(blocking.Close)
+		in = blocking
+	} else {
+		var chunks [][]byte
+		for _, k := range keys {
+			chunks = append(chunks, []byte(k))
+		}
+		in = &chunkReader{chunks: chunks}
+	}
+	out, restored = &bytes.Buffer{}, new(bool)
+	return opT(func(d *dropdown) error {
+		d.in, d.out = in, out
+		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			restore := func() error { *restored = true; return nil }
+			return &termIO{in: in, out: out, Width: width, Height: 10, Restore: restore}, nil
+		}
+		return nil
+	}), out, restored
+}
+
+// boundDropdown is a themed dropdown over items, parsed and bound to a
+// terminal of the given size, which render draws a frame on.
+func boundDropdown(t *testing.T, th Theme, width, height int, items []any, o ...opt) (*dropdown, *termIO) {
+	t.Helper()
+	useTheme(t, th)
+	d := newDropdown(t.Context())
+	d.themed = true
+	d.Label, d.Items = "Fruit", items
+	assert.NoError(t, opts(o).Apply(d))
+	assert.NoError(t, d.parseTemplates())
+	tt := &termIO{out: &bytes.Buffer{}, Width: width, Height: height}
+	assert.NoError(t, d.bind(defaultIO.bindTheme(t.Context(), d.theme, d.out, tt)))
+	assert.NoError(t, d.renderChrome())
+	return d, tt
+}
+
+// frame draws one frame of d on tt.
+func frame(t *testing.T, d *dropdown, tt *termIO) string {
+	t.Helper()
+	var buf bytes.Buffer
+	assert.NoError(t, d.render(tt, &buf))
+	return buf.String()
+}
+
+var fruits = []string{"apple", "banana", "cherry"}
+
+func TestThemedDropdownGuidedFrameAndAnswer(t *testing.T) {
+	o, out, restored := themedDropdownOpt(t, asciiTheme(false), 30, "\x1b[B", "\r")
+	got, err := Dropdown(t.Context(), "Fruit", fruits, o)
+	assert.NoError(t, err)
+	assert.Equal(t, "banana", got)
+	assert.True(t, *restored)
+	erase := "\x1b[5A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[4A\r"
+	assert.Equal(t, ""+
+		// the label has its own row, the rows and the hint are behind the guide
+		"\r? Fruit\n\r| > apple\n\r|   banana\n\r|   cherry\n\r| up/down move · type filter\n\r"+
+		// the next frame erases all five rows first
+		erase+
+		"\r? Fruit\n\r|   apple\n\r| > banana\n\r|   cherry\n\r| up/down move · type filter\n\r"+
+		// confirming erases the frame once, leaving the rows above it alone
+		erase+
+		"+ Fruit · banana\n", out.String())
+}
+
+func TestDropdownConfirmClearsFrameOnce(t *testing.T) {
+	var out bytes.Buffer
+	_, err := Dropdown(t.Context(), "Fruit", fruits, WithOutput(&out),
+		WithInput(&chunkReader{chunks: [][]byte{[]byte("\r")}}),
+		WithLabelTemplate("{{ . }}"), WithActiveItemTemplate("+ {{ . }}"),
+		WithInactiveItemTemplate("- {{ . }}"), WithAnswerTemplate("{{ .Answer }}"),
+		opT(func(d *dropdown) error {
+			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+				return &termIO{in: in, out: out, Width: 40, Height: 10, Restore: func() error { return nil }}, nil
+			}
+			return nil
+		}))
+	assert.NoError(t, err)
+	assert.Equal(t, ""+
+		"\rFruit + apple\n\r      - banana\n\r      - cherry\n\r"+
+		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"+
+		"apple\n", out.String())
+}
+
+func TestThemedDropdownInlineIndentsRowsUnderLabel(t *testing.T) {
+	o, out, _ := themedDropdownOpt(t, asciiTheme(true), 30, "\x1b[B", "\r")
+	_, err := Dropdown(t.Context(), "Fruit", fruits, o)
+	assert.NoError(t, err)
+	assert.True(t, strings.HasPrefix(out.String(), ""+
+		"\r? Fruit > apple\n\r          banana\n\r          cherry\n\rup/down move · type filter\n\r"))
+	assert.Contains(t, out.String(), "\r? Fruit   apple\n\r        > banana\n")
+}
+
+func TestThemedDropdownInlineLabelTooWideTakesItsRow(t *testing.T) {
+	d, tt := boundDropdown(t, asciiTheme(true), 12, 10, []any{"apple", "banana"})
+	assert.Equal(t, "\r? Fruit\n\r> apple\n\r  banana\n\rup/down mo…\n\r", frame(t, d, tt))
+}
+
+func TestThemedDropdownMoreRowAndShortTerminals(t *testing.T) {
+	items := []any{"a", "b", "c", "d", "e"}
+	for _, tc := range []struct {
+		height int
+		want   string
+	}{
+		{10, "\r? Fruit\n\r| > a\n\r|   b\n\r|   c\n\r|   d\n\r|   e\n\r| up/down move · type filter\n\r"},
+		// three of five rows fit; the count of the rest follows them
+		{6, "\r? Fruit\n\r| > a\n\r|   b\n\r|   c\n\r| . 2 more\n\r| up/down move · type filter\n\r"},
+		// the hint goes first
+		{4, "\r? Fruit\n\r| > a\n\r|   b\n\r| . 3 more\n\r"},
+		{3, "\r? Fruit\n\r| > a\n\r| . 4 more\n\r"},
+	} {
+		t.Run(strconv.Itoa(tc.height), func(t *testing.T) {
+			d, tt := boundDropdown(t, asciiTheme(false), 40, tc.height, items)
+			assert.Equal(t, tc.want, frame(t, d, tt))
+			assert.Equal(t, strings.Count(tc.want, "\n"), d.height())
+		})
+	}
+}
+
+func TestThemedDropdownMoreCountsRowsBelowAfterScrolling(t *testing.T) {
+	d, tt := boundDropdown(t, asciiTheme(false), 40, 6, []any{"a", "b", "c", "d", "e"})
+	frame(t, d, tt)
+	for range 4 {
+		d.pressDown(len(d.displayed))
+	}
+	// at the bottom nothing is below, and the count row is gone
+	assert.Equal(t, "\r? Fruit\n\r|   c\n\r|   d\n\r| > e\n\r| up/down move · type filter\n\r", frame(t, d, tt))
+}
+
+type themedFruit struct{ Name, Color string }
+
+func TestThemedDropdownProjectionMatchesAndAnswers(t *testing.T) {
+	items := []themedFruit{{"apple", "red"}, {"banana", "yellow"}, {"cherry", "blue"}}
+	// "b" is the start of a detail too, but only the projected name matches
+	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "b", "\r")
+	got, err := Dropdown(t.Context(), "Fruit", items, o, WithTemplate(".Name", ".Color"))
+	assert.NoError(t, err)
+	assert.Equal(t, items[1], got)
+	s := out.String()
+	// details are on the active row only
+	assert.Contains(t, s, "\r| > apple red\n\r|   banana\n\r|   cherry\n")
+	assert.Contains(t, s, "\r? Fruit\n\r| > banana yellow\n\r| up/down move · type filter\n")
+	assert.True(t, strings.HasSuffix(s, "+ Fruit · banana\n"))
+}
+
+func TestThemedDropdownFieldTemplateProjects(t *testing.T) {
+	items := []themedFruit{{"apple", "red"}, {"banana", "yellow"}}
+	d, tt := boundDropdown(t, asciiTheme(false), 40, 10, []any{items[0], items[1]}, WithFieldTemplate("Name", "Color"))
+	assert.Equal(t,
+		"\r? Fruit\n\r| > apple, red\n\r|   banana, yellow\n\r| up/down move · type filter\n\r",
+		frame(t, d, tt))
+}
+
+func TestThemedDropdownExplicitTemplatesWinInEitherOrder(t *testing.T) {
+	active := WithActiveItemTemplate(`* {{ . }}`)
+	project := WithTemplate(`(printf "<%s>" .)`)
+	for name, o := range map[string][]opt{
+		"explicit first":   {active, project},
+		"projection first": {project, active},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d, tt := boundDropdown(t, asciiTheme(false), 40, 10, []any{"apple", "banana"}, o...)
+			// the explicit row brings its own marker; the other row is projected
+			assert.Equal(t,
+				"\r? Fruit\n\r| * apple\n\r|   <banana>\n\r| up/down move · type filter\n\r",
+				frame(t, d, tt))
+		})
+	}
+}
+
+func TestThemedDropdownExplicitAnswerKeepsRawPayload(t *testing.T) {
+	items := []themedFruit{{"apple", "red"}, {"banana", "yellow"}}
+	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "\r")
+	_, err := Dropdown(t.Context(), "Fruit", items, o,
+		WithAnswerTemplate(`{{ .Label }}={{ .Answer.Name }}/{{ .Answer.Color }}`), WithTemplate(".Name"))
+	assert.NoError(t, err)
+	assert.True(t, strings.HasSuffix(out.String(), "\rFruit=apple/red\n"))
+}
+
+func TestThemedDropdownHiddenAnswerRetainsNothing(t *testing.T) {
+	th := asciiTheme(false)
+	th.Templates.Dropdown.Answer = Hidden
+	o, out, _ := themedDropdownOpt(t, th, 40, "\r")
+	_, err := Dropdown(t.Context(), "Fruit", fruits, o)
+	assert.NoError(t, err)
+	assert.True(t, strings.HasSuffix(out.String(), "\x1b[4A\r"))
+
+	o, out, _ = themedDropdownOpt(t, asciiTheme(false), 40, "\r")
+	_, err = Dropdown(t.Context(), "Fruit", fruits, o, WithHide())
+	assert.NoError(t, err)
+	assert.True(t, strings.HasSuffix(out.String(), "\x1b[4A\r"))
+}
+
+func TestThemedDropdownSlotPrecedence(t *testing.T) {
+	th := asciiTheme(false)
+	th.Templates.Choice.Inactive = `{{ printf "-%s" .Value }}`
+	th.Templates.Dropdown.Active = `[{{ .Value }}]`
+	th.Templates.Choice.More = Hidden
+	th.Templates.Prompt.Hint = Hidden
+	th.Templates.Dropdown.Label = `{{ .Label }}:`
+	d, tt := boundDropdown(t, th, 40, 4, []any{"a", "b", "c", "d"})
+	// shared and family edits apply; hidden slots reserve no row
+	assert.Equal(t, "\rFruit:\n\r| > [a]\n\r|   -b\n\r", frame(t, d, tt))
+}
+
+func TestThemedDropdownPerCallMoreAndLabelKeepPayloads(t *testing.T) {
+	d, tt := boundDropdown(t, asciiTheme(false), 40, 4, []any{"a", "b", "c", "d"},
+		WithMoreItemsTemplate(`{{ .More }}/{{ .Total }}`), WithLabelTemplate(`<{{ . }}>`))
+	assert.Equal(t, "\r<Fruit> \n\r| > a\n\r|   b\n\r| 2/4\n\r", frame(t, d, tt))
+}
+
+func TestThemedDropdownKVShowsKeys(t *testing.T) {
+	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "\x1b[B", "\r")
+	k, v, err := DropdownKV(t.Context(), "Pick", map[string]int{"b": 2, "a": 1}, o)
+	assert.NoError(t, err)
+	assert.Equal(t, "b", k)
+	assert.Equal(t, 2, v)
+	assert.True(t, strings.HasPrefix(out.String(), "\r? Pick\n\r| > a\n\r|   b\n"))
+	assert.True(t, strings.HasSuffix(out.String(), "+ Pick · b\n"))
+}
+
+func TestThemedDropdownIndexKeepsSourceIndexOfDuplicates(t *testing.T) {
+	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "\x1b[B", "\r")
+	i, err := DropdownIndex(t.Context(), "Pick", []any{"same", "same"}, o)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, i)
+	assert.True(t, strings.HasSuffix(out.String(), "+ Pick · same\n"))
+}
+
+func TestThemedDropdownTypedDefaultSeedsFirstRow(t *testing.T) {
+	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "\r")
+	got, err := Dropdown(t.Context(), "Pick", []int{1, 2, 3}, o, WithDefault(2))
+	assert.NoError(t, err)
+	assert.Equal(t, 2, got)
+	assert.True(t, strings.HasPrefix(out.String(), "\r? Pick\n\r| > 2\n\r|   1\n\r|   3\n"))
+}
+
+func TestThemedDropdownOneReturnAnswersWithoutFrame(t *testing.T) {
+	o, out, restored := themedDropdownOpt(t, asciiTheme(false), 40)
+	got, err := Dropdown(t.Context(), "Fruit", []string{"apple"}, o, WithOneReturn())
+	assert.NoError(t, err)
+	assert.Equal(t, "apple", got)
+	assert.True(t, !*restored) // no terminal was acquired
+	assert.Equal(t, "+ Fruit · apple\n", out.String())
+}
+
+func TestThemedDropdownAutomaticAnswerMatchesProjection(t *testing.T) {
+	strictOutput(t)
+	boom := errors.New("boom")
+	th := asciiTheme(false)
+	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
+	// no presentation slot runs without a terminal: only the projection
+	th.Templates.Prompt.Label = `{{ fails .Label }}`
+	th.Templates.Choice.Active = `{{ fails .Value }}`
+	th.Templates.Choice.Value = `{{ printf "z%s" . }}`
+	useTheme(t, th)
+	var out bytes.Buffer
+	got, err := Dropdown(t.Context(), "Fruit", fruits, WithOutput(&out), WithDefault("zb"))
+	assert.NoError(t, err)
+	assert.Equal(t, "banana", got)
+
+	got, err = Dropdown(t.Context(), "Fruit", fruits, WithOutput(&out),
+		WithTemplate(`(printf "y%s" .)`), WithDefault("yc"))
+	assert.NoError(t, err)
+	assert.Equal(t, "cherry", got)
+
+	// a per-call inactive template without a projection is matched as before
+	got, err = Dropdown(t.Context(), "Fruit", fruits, WithOutput(&out),
+		WithInactiveItemTemplate(`x{{ . }}`), WithDefault("xa"))
+	assert.NoError(t, err)
+	assert.Equal(t, "apple", got)
+	assert.Equal(t, "", out.String())
+}
+
+func TestThemedDropdownSearchSkipsDecoration(t *testing.T) {
+	th := asciiTheme(false)
+	th.Templates.Choice.Active = `{{ .Value }} zzz`
+	th.Templates.Choice.Inactive = `{{ .Value }} zzz`
+	d, tt := boundDropdown(t, th, 40, 10, []any{"apple", "banana"})
+	frame(t, d, tt)
+	// the presentation of the rows is not searchable, only their content
+	assert.Equal(t, 0, len(d.trie.Prefix("zzz")))
+	assert.Equal(t, []int{1}, d.trie.Prefix("b"))
+	assert.Equal(t, []string{"apple", "banana"}, d.search)
+
+	// a late item is projected and matched like the others
+	assert.NoError(t, d.addItem(tt.Height, "blueberry"))
+	assert.Equal(t, []int{1, 2}, d.trie.Prefix("b"))
+	assert.Equal(t, "blueberry", d.content[2].String())
+}
+
+func TestThemedDropdownLazyOneReturnAndProducerError(t *testing.T) {
+	o, out, restored := themedDropdownOpt(t, asciiTheme(false), 40)
+	got, err := DropdownLazy(t.Context(), "Fruit", lazySeq("apple"), o, WithOneReturn())
+	assert.NoError(t, err)
+	assert.Equal(t, "apple", got)
+	assert.True(t, *restored)
+	assert.True(t, strings.HasSuffix(out.String(), "+ Fruit · apple\n"))
+
+	boom := errors.New("boom")
+	failing := func(yield func(string, error) bool) {
+		if yield("apple", nil) {
+			yield("", boom)
+		}
+	}
+	o, out, restored = themedDropdownOpt(t, asciiTheme(false), 40)
+	_, err = DropdownLazy(t.Context(), "Fruit", failing, o)
+	assert.ErrorIs(t, err, boom)
+	assert.True(t, *restored)
+	assert.True(t, !strings.Contains(out.String(), "+ Fruit"))
+}
+
+func TestThemedDropdownHelperErrorRestoresTerminal(t *testing.T) {
+	boom := errors.New("boom")
+	th := asciiTheme(false)
+	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
+	th.Templates.Choice.Inactive = `{{ fails .Value }}`
+	o, _, restored := themedDropdownOpt(t, th, 40, "\r")
+	_, err := Dropdown(t.Context(), "Fruit", fruits, o)
+	assert.ErrorIs(t, err, boom)
+	assert.Contains(t, err.Error(), "theme.Templates.Choice.Inactive")
+	assert.True(t, *restored)
+}
+
+func TestThemedDropdownLeavesConfirmLegacy(t *testing.T) {
+	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "\r")
+	assert.True(t, Confirm(t.Context(), "Sure?", o))
+	assert.Contains(t, out.String(), "→ Yes")
+}
+
+func TestThemedDropdownRolesStyleFocusAndRows(t *testing.T) {
+	withEnv(t, "FORCE_COLOR=3")
+	th := asciiTheme(false)
+	th.Light = true
+	d, tt := boundDropdown(t, th, 40, 10, []any{"a", "b"})
+	got := frame(t, d, tt)
+	// the focus mark and the active value take the accent, inactive values the foreground
+	roles := d.look.roles
+	assert.True(t, len(roles.accent) > 0 && len(roles.foreground) > 0)
+	assert.Contains(t, got, string(roles.accent)+">")
+	assert.Contains(t, got, string(roles.accent)+"a")
+	assert.Contains(t, got, string(roles.foreground)+"b")
 }
