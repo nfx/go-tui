@@ -615,7 +615,7 @@ func TestTemplateZeroInheritsAndEmptyHides(t *testing.T) {
 	if s := tt.Dropdown.Hint; s == nil || !s.hidden {
 		t.Error("explicit empty did not hide Dropdown.Hint")
 	}
-	if tt.Multichoice.Hint != nil {
+	if s := tt.Multichoice.Hint; s == nil || s != tt.Prompt.Hint {
 		t.Error("unset slot must fall to the built-in default")
 	}
 }
@@ -1098,7 +1098,9 @@ func TestBuiltinPromptSlots(t *testing.T) {
 	assert.Equal(t, "? Name", render(tt.Password.Label, labelView{"Name"}))
 	assert.Equal(t, "+ Name · v", render(tt.Input.Answer, answerView{Label: "Name", Value: "v"}))
 	assert.Equal(t, "! bad", render(tt.Number.Feedback, feedbackView{"bad"}))
-	assert.True(t, tt.Prompt.Hint == nil) // no widget renders hints yet
+	keys := hintView{[]keyHint{{"up/down", "adjust"}, {"enter", "submit"}}}
+	assert.Equal(t, "up/down adjust · enter submit", render(tt.Number.Hint, keys))
+	assert.Equal(t, "", render(tt.Number.Hint, hintView{}))
 	// built-ins stay out of the editable configuration
 	assert.Equal(t, Template(""), c.editable().Templates.Prompt.Label)
 }

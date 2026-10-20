@@ -1555,8 +1555,7 @@ func TestThemedInputFamilySlots(t *testing.T) {
 	password := newInput(t.Context(), "x")
 	password.Password = true
 	assert.Equal(t, "input", label(password)) // Password inherits Input
-	_, answer, _ := password.slots()
-	assert.True(t, answer == nil)
+	assert.True(t, password.slots().Answer == nil)
 	assert.Equal(t, "number", label(newNumber[int](t.Context(), "x").prompt))
 }
 

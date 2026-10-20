@@ -6,6 +6,7 @@ package tui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"math"
 	"strconv"
@@ -421,4 +422,181 @@ func TestNumberDefaults(t *testing.T) {
 	cancel()
 	_, err = Number[int](cctx, "Port", io, WithDefault(1))
 	assert.ErrorIs(t, err, context.Canceled)
+}
+
+// themedNumber is a Number rendering through th on a scripted terminal of the
+// given size. Each key is one read. restored reports a released terminal.
+func themedNumber[T numberType](
+	t *testing.T,
+	th Theme,
+	width, height int,
+	keys ...string,
+) (n *number[T], out *bytes.Buffer, restored *bool) {
+	t.Helper()
+	i, out, restored := themedInput(t, th, width, height, keys...)
+	n = newNumber[T](t.Context(), "Count")
+	n.prompt.in, n.prompt.out, n.prompt.makeTermIO = i.in, i.out, i.makeTermIO
+	return n, out, restored
+}
+
+func TestThemedNumberGuidedFrameHintAndAnswer(t *testing.T) {
+	n, out, restored := themedNumber[int](t, asciiTheme(false), 30, 5, "41", keyUp, "\r")
+	got, err := n.read(t.Context())
+	assert.NoError(t, err)
+	assert.Equal(t, 42, got)
+	assert.True(t, *restored)
+	assert.Equal(t, ""+
+		// the hint is a guided row below the value; the caret stays on the value
+		"\r? Count\x1b[K\n\r| \x1b[K\n\r| up/down adjust\x1b[K\x1b[1A\x1b[3G"+
+		"\x1b[1A\r? Count\x1b[K\n\r| 4\x1b[K\n\r| up/down adjust\x1b[K\x1b[1A\x1b[4G"+
+		"\x1b[1A\r? Count\x1b[K\n\r| 41\x1b[K\n\r| up/down adjust\x1b[K\x1b[1A\x1b[5G"+
+		"\x1b[1A\r? Count\x1b[K\n\r| 42\x1b[K\n\r| up/down adjust\x1b[K\x1b[1A\x1b[5G"+
+		// from the caret row below the frame, then up over all three rows
+		"\n\n\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"+
+		"+ Count · 42\n", out.String())
+}
+
+func TestThemedNumberInlineHintHasNoGuide(t *testing.T) {
+	n, out, _ := themedNumber[int](t, asciiTheme(true), 30, 5, "7", "\r")
+	_, err := n.read(t.Context())
+	assert.NoError(t, err)
+	assert.Contains(t, out.String(), "\r? Count 7\x1b[K\n\rup/down adjust\x1b[K\x1b[1A\x1b[10G")
+}
+
+func TestThemedNumberHintBelowRejection(t *testing.T) {
+	n, out, _ := themedNumber[int](t, asciiTheme(false), 40, 5, "1", "\r", "\x7f", "5", "\r")
+	got, err := n.read(t.Context(), WithAtLeast(2), WithAtMost(10))
+	assert.NoError(t, err)
+	assert.Equal(t, 5, got)
+	// the Number feedback slot sits right below the value, the hint after it
+	assert.Contains(t, out.String(), ""+
+		"\n\r| 1\x1b[K\n\r| ! value must be between 2 and 10\x1b[K\n\r| up/down adjust\x1b[K\x1b[2A\x1b[4G")
+	// editing removes the rejection and erases the stale fourth row
+	assert.Contains(t, out.String(), "\n\r| \x1b[K\n\r| up/down adjust\x1b[K\n\r\x1b[K\x1b[2A\x1b[3G")
+}
+
+func TestThemedNumberShortTerminalsDropHintFirst(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		height    int
+		rejection string
+		want      string
+	}{
+		{"hint before label", 2, "", "\r? Count\x1b[K\n\r| 3\x1b[K"},
+		{"hint before rejection", 3, "no", "\r? Count\x1b[K\n\r| 3\x1b[K\n\r| ! no\x1b[K\x1b[1A\x1b[4G"},
+		{"everything fits", 4, "no", "" +
+			"\r? Count\x1b[K\n\r| 3\x1b[K\n\r| ! no\x1b[K\n\r| up/down adjust\x1b[K\x1b[2A\x1b[4G"},
+		{"one row keeps the value", 1, "", "\r| 3\x1b[K"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			n, _, _ := themedNumber[int](t, asciiTheme(false), 0, 0)
+			n.prompt.typed, n.prompt.cursor, n.prompt.rejection = "3", 1, tc.rejection
+			got, err := renderThemedInput(t, n.prompt, 30, tc.height)
+			assert.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestThemedNumberHintSlots(t *testing.T) {
+	// the prompt captures the theme when it is made, after installing th
+	frame := func(th Theme, build func() *input) string {
+		t.Helper()
+		useTheme(t, th)
+		i := build()
+		i.typed, i.cursor = "1", 1
+		got, err := renderThemedInput(t, i, 30, 5)
+		assert.NoError(t, err)
+		return got
+	}
+	number := func() *input { return newNumber[int](t.Context(), "Count").prompt }
+
+	// a shared hint reaches Number, which passes its actual key bindings
+	th := asciiTheme(false)
+	th.Templates.Prompt.Hint = `{{ range .Bindings }}[{{ .Key }}={{ .Action }}]{{ end }}`
+	assert.Contains(t, frame(th, number), "\n\r| [up/down=adjust]\x1b[K")
+	// Input and Password handle no keys beyond editing, so they show no hint
+	assert.Equal(t, "\r? Count\x1b[K\n\r| 1\x1b[K", frame(th, func() *input { return newInput(t.Context(), "Count") }))
+	assert.Equal(t, "\r? Count\x1b[K\n\r| *\x1b[K", frame(th, func() *input {
+		i := newInput(t.Context(), "Count")
+		i.Password = true
+		return i
+	}))
+
+	// a Number override stays local, and Hidden reserves no row
+	th = asciiTheme(false)
+	th.Templates.Number.Hint = `number hint`
+	assert.Contains(t, frame(th, number), "\n\r| number hint\x1b[K")
+	th.Templates.Number.Hint = Hidden
+	assert.Equal(t, "\r? Count\x1b[K\n\r| 1\x1b[K", frame(th, number))
+	// Number inherits an Input hint
+	th = asciiTheme(false)
+	th.Templates.Input.Hint = `input hint`
+	assert.Contains(t, frame(th, number), "\n\r| input hint\x1b[K")
+}
+
+func TestThemedNumberStepsAndRetainsExactDraft(t *testing.T) {
+	// float steps at the caret's decimal place and keeps the fractional digits
+	n, out, _ := themedNumber[float32](t, asciiTheme(false), 30, 5, "1.25", keyLeft, keyLeft, keyUp, "\r")
+	f, err := n.read(t.Context())
+	assert.NoError(t, err)
+	assert.Equal(t, float32(1.35), f)
+	assert.True(t, strings.HasSuffix(out.String(), "+ Count · 1.35\n"))
+
+	// the submitted spelling is retained, not the converted value
+	d, out, _ := themedNumber[float64](t, asciiTheme(false), 30, 5, "\r")
+	v, err := d.read(t.Context(), WithDefault("1.00"))
+	assert.NoError(t, err)
+	assert.Equal(t, 1.0, v)
+	assert.True(t, strings.HasSuffix(out.String(), "+ Count · 1.00\n"))
+
+	// bounds stop the arrows through the Number feedback slot
+	th := asciiTheme(false)
+	th.Templates.Number.Feedback = `number: {{ .Message }}`
+	b, out, _ := themedNumber[int](t, th, 40, 5, keyUp, "\r")
+	i, err := b.read(t.Context(), WithDefault(10), WithAtMost(10))
+	assert.NoError(t, err)
+	assert.Equal(t, 10, i)
+	assert.Contains(t, out.String(), "\n\r| number: value must be at most 10\x1b[K")
+
+	// an unsigned number cannot step below zero
+	u, out, _ := themedNumber[uint](t, asciiTheme(false), 40, 5, keyDown, "3", "\r")
+	w, err := u.read(t.Context())
+	assert.NoError(t, err)
+	assert.Equal(t, uint(3), w)
+	assert.Contains(t, out.String(), "| ! value cannot go below zero\x1b[K")
+}
+
+func TestThemedNumberKeepsOptionSet(t *testing.T) {
+	for _, o := range []opt{WithLabelTemplate("x"), WithAnswerTemplate("x"), WithFeedbackTemplate("x")} {
+		n, _, restored := themedNumber[int](t, asciiTheme(false), 30, 5, "1", "\r")
+		_, err := n.read(t.Context(), o)
+		assert.ErrorIs(t, err, ErrWrongWidget)
+		assert.True(t, !*restored)
+	}
+}
+
+func TestThemedNumberHintErrorRestoresTerminal(t *testing.T) {
+	th := asciiTheme(false)
+	th.Funcs = map[string]any{"fails": func() (string, error) { return "", errors.New("boom") }}
+	th.Templates.Number.Hint = `{{ fails }}`
+	n, out, restored := themedNumber[int](t, th, 30, 5, "1", "\r")
+	_, err := n.read(t.Context())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "theme.Templates.Number.Hint")
+	assert.True(t, *restored)
+	assert.Equal(t, "", out.String())
+
+	// without a terminal, the default is the answer and no slot runs
+	strictOutput(t)
+	n, out, _ = themedNumber[int](t, th, 30, 5)
+	n.prompt.out = out
+	n.prompt.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
+		t.Fatal("acquired a terminal")
+		return nil, ErrNoTTY
+	}
+	v, err := n.read(t.Context(), WithDefault(5))
+	assert.NoError(t, err)
+	assert.Equal(t, 5, v)
+	assert.Equal(t, "", out.String())
 }

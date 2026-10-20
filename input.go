@@ -161,10 +161,12 @@ type input struct {
 	theme            *compiledTheme
 	themed           bool
 	look             binding
-	label            text
+	label, hint      text
 	answer, feedback boundSlot
 	// numeric selects the Number slots of the theme.
 	numeric bool
+	// keys are the bindings beyond editing that the hint row describes.
+	keys []keyHint
 
 	def defaultValue
 	// rules validate the confirmed text in order; the first error rejects it.
@@ -872,21 +874,32 @@ type answerView struct {
 // templates: the sanitized rejection message.
 type feedbackView struct{ Message string }
 
+// keyHint names a key the widget handles and what it does.
+type keyHint struct{ Key, Action string }
+
+// hintView is the payload of a hint slot: the widget's actual key bindings.
+type hintView struct{ Bindings []keyHint }
+
 // slots selects the theme slots of the prompt family. A password retains no answer.
-func (p *input) slots() (label, answer, feedback *compiledSlot) {
+func (p *input) slots() promptTemplates {
 	t := &p.theme.templates
 	switch {
 	case p.Password:
-		return t.Password.Label, nil, t.Password.Feedback
+		return promptTemplates{Label: t.Password.Label, Hint: t.Password.Hint, Feedback: t.Password.Feedback}
 	case p.numeric:
-		return t.Number.Label, t.Input.Answer, t.Number.Feedback
+		return promptTemplates{
+			Label:    t.Number.Label,
+			Answer:   t.Input.Answer,
+			Hint:     t.Number.Hint,
+			Feedback: t.Number.Feedback,
+		}
 	}
-	return t.Input.Label, t.Input.Answer, t.Input.Feedback
+	return t.Input
 }
 
 // bind captures the presentation of one run for its destination, before the
 // first frame: the helpers, per-call templates rebound to them, the bound
-// slots, and the label, which renders once. tt is the terminal lease.
+// slots, and the label and hint, which render once. tt is the terminal lease.
 func (p *input) bind(ctx context.Context, tt *termIO) error {
 	p.look = defaultIO.bindTheme(ctx, p.theme, p.out, tt)
 	for _, t := range []**template.Template{&p.labelTemplate, &p.answerTemplate, &p.feedbackTmpl} {
@@ -899,12 +912,15 @@ func (p *input) bind(ctx context.Context, tt *termIO) error {
 		}
 		*t = clone.Funcs(p.look.funcs)
 	}
-	label, answer, feedback := p.slots()
+	slots := p.slots()
 	var err error
-	if p.answer, err = answer.bind(p.look.funcs); err != nil {
+	if p.answer, err = slots.Answer.bind(p.look.funcs); err != nil {
 		return err
 	}
-	if p.feedback, err = feedback.bind(p.look.funcs); err != nil {
+	if p.feedback, err = slots.Feedback.bind(p.look.funcs); err != nil {
+		return err
+	}
+	if err = p.bindHint(slots.Hint); err != nil {
 		return err
 	}
 	if p.labelSet {
@@ -914,7 +930,7 @@ func (p *input) bind(ctx context.Context, tt *termIO) error {
 		}
 		return nil
 	}
-	slot, err := label.bind(p.look.funcs)
+	slot, err := slots.Label.bind(p.look.funcs)
 	if err != nil {
 		return err
 	}
@@ -927,6 +943,20 @@ func (p *input) bind(ctx context.Context, tt *termIO) error {
 		p.label = append(p.label, ' ')
 	}
 	return nil
+}
+
+// bindHint renders the hint row once; a prompt without keys beyond editing has none.
+func (p *input) bindHint(hint *compiledSlot) error {
+	p.hint = nil
+	if len(p.keys) == 0 {
+		return nil
+	}
+	slot, err := hint.bind(p.look.funcs)
+	if err != nil {
+		return err
+	}
+	p.hint, err = slot.render(hintView{p.keys})
+	return err
 }
 
 // renderThemed draws the themed prompt, leaving the caret on the value row for the next frame.
@@ -951,7 +981,7 @@ func (i *input) renderThemed(io *termIO, frame *bytes.Buffer) error {
 	if err != nil {
 		return err
 	}
-	rows := make([]frameRow, 0, 3)
+	rows := make([]frameRow, 0, 4)
 	if !g.inline {
 		rows = append(rows, frameRow{content: i.label, drop: 1})
 	}
@@ -961,6 +991,8 @@ func (i *input) renderThemed(io *termIO, frame *bytes.Buffer) error {
 	if len(feedback) > 0 {
 		rows = append(rows, frameRow{content: feedback, guided: true})
 	}
+	// the hint goes first on a short terminal, before the label
+	rows = append(rows, frameRow{content: i.hint, guided: true, drop: 2})
 	fit, err := g.fit(rows)
 	if err != nil {
 		return err
