@@ -1210,8 +1210,10 @@ type templates struct {
 // they inherit, and a root slot without a source has no built-in yet.
 var builtinTemplates = Templates{
 	Prompt: PromptTemplates{
-		Label:    `{{ accent (symbol "Prompt") }} {{ bold (text .Label) }}`,
-		Answer:   `{{ success (symbol "Success") }} {{ text .Label }} {{ muted "·" }} {{ text .Value }}`,
+		Label:  `{{ accent (symbol "Prompt") }} {{ bold (text .Label) }}`,
+		Answer: `{{ success (symbol "Success") }} {{ text .Label }} {{ muted "·" }} {{ text .Value }}`,
+		Hint: `{{ range $i, $b := .Bindings }}{{ if $i }}{{ muted " · " }}{{ end }}` +
+			`{{ text $b.Key }} {{ muted $b.Action }}{{ end }}`,
 		Feedback: `{{ error (symbol "Error") }} {{ error .Message }}`,
 	},
 }
