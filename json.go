@@ -5,10 +5,11 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
+	"strings"
 	"sync"
 )
 
@@ -39,45 +40,46 @@ func (s jsonShades) at(depth int) text {
 	return s[min(max(depth, 0), len(s)-1)]
 }
 
-// jsonStyle is the encoded presentation of JSON tokens for one destination
+// jsonLook is the encoded presentation of JSON tokens for one destination
 // that accepts SGR. Keys are always bold, after their shade.
-type jsonStyle struct {
+type jsonLook struct {
 	keys  jsonShades // may be empty
 	value text       // prefix for strings, numbers and literals
 	punct text       // prefix for brackets and braces
 }
 
-// newJSONStyle maps the resolved palette onto JSON: keys are Accent, dimmed
-// with depth, values are Foreground and punctuation is Muted. Neutrals are
-// only emitted when the background is known: otherwise they could be nearly
-// invisible, so values keep the terminal's default foreground and
-// punctuation is bold.
-func newJSONStyle(p colorProfile, pal resolvedPalette) jsonStyle {
-	if p < profileANSI16 {
-		return jsonStyle{punct: text(bold)}
+// newJSONLook maps the roles of a binding onto JSON: keys are the accent,
+// dimmed with depth, values the foreground and punctuation the muted role.
+// A neutral role that keeps the terminal default, as on an unknown
+// background where it could be nearly invisible, leaves values unstyled and
+// makes punctuation bold. It is computed per operation: the theme, its
+// background and the destination all decide it.
+func newJSONLook(b binding) jsonLook {
+	look := jsonLook{value: b.roles.foreground, punct: b.roles.muted}
+	if len(look.punct) == 0 {
+		look.punct = text(bold)
 	}
-	if !pal.Known {
-		return jsonStyle{
-			keys:  jsonDimming(p, pal.Accent, pal.Background),
-			punct: text(bold),
-		}
+	if b.profile < profileANSI16 {
+		return look
 	}
-	return jsonStyle{
-		keys:  jsonDimming(p, pal.Accent, pal.Background),
-		value: p.fg(pal.Foreground),
-		punct: p.fg(pal.Muted),
+	pal := b.palette
+	top, ok := b.theme.role(b.profile, pal, b.theme.variant(pal).accent, pal.Accent, contrastText, false)
+	if ok {
+		look.keys = jsonDimming(b.profile, top, pal.Background)
 	}
+	return look
 }
 
 // jsonDimming fades the top color toward bg with depth, down to
-// [contrastText] since keys are words. Shades are judged as displayed on p:
+// [contrastText] since keys are words. The top level renders top as given,
+// so an explicit accent stays literal. Shades are judged as displayed on p:
 // one that is not strictly dimmer than the previous is dropped, so a
 // destination with a coarse palette gets fewer levels, never a reversed one.
 func jsonDimming(p colorProfile, top, bg sRGB) jsonShades {
+	out := jsonShades{p.fg(top)}
+	prev := p.shown(top).contrast(bg)
 	hi := top.contrast(bg)
-	var out jsonShades
-	prev := math.Inf(1)
-	for i := range jsonLevels {
+	for i := 1; i < jsonLevels; i++ {
 		target := hi - (hi-contrastText)*float64(i)/float64(jsonLevels-1)
 		c, ok := p.readable(top.quieter(bg, target), bg, contrastText)
 		if !ok {
@@ -93,38 +95,69 @@ func jsonDimming(p colorProfile, top, bg sRGB) jsonShades {
 	return out
 }
 
-// jsonPalette is the palette PrettyJSON renders with. The terminal
-// appearance is not measured for plain writers yet, so the dark variant's
-// reference background is assumed.
-var jsonPalette = sync.OnceValue(func() resolvedPalette {
-	pal, err := Palette{}.resolve(false, sRGB{}, false)
+// JSONStyle is the layout of [PrettyJSON].
+type JSONStyle struct {
+	// Indent is one level of indentation: at most [maxJSONIndent] spaces or
+	// tabs, so that the output stays valid JSON. Empty takes two spaces.
+	Indent string
+	// Compact prints the JSON on one line, without insignificant
+	// whitespace, ignoring Indent.
+	Compact bool
+}
+
+// jsonStyle is the theme preset: the legacy two-space indentation.
+var jsonStyle = JSONStyle{Indent: "  "}
+
+// maxJSONIndent bounds the bytes of one indentation level.
+const maxJSONIndent = 16
+
+// normalize fills the preset and rejects indentation that is not whitespace.
+func (s JSONStyle) normalize() (JSONStyle, error) {
+	if s.Indent == "" {
+		s.Indent = jsonStyle.Indent
+	}
+	if len(s.Indent) > maxJSONIndent || strings.Trim(s.Indent, " \t") != "" {
+		return s, fmt.Errorf("theme.JSON.Indent: %q: want at most %d spaces or tabs", s.Indent, maxJSONIndent)
+	}
+	return s, nil
+}
+
+// legacyJSONTheme is the preset PrettyJSON renders with while themes are
+// off, bound to the dark reference background: the presentation before
+// themes, which an installed theme does not change.
+var legacyJSONTheme = sync.OnceValue(func() *compiledTheme {
+	c, err := presetTheme().compile()
 	if err != nil {
 		panic(err) // the preset is valid
 	}
-	return pal
+	return c
 })
 
-// jsonStyles caches the style of each profile: it depends on nothing else,
-// and deriving it takes thousands of color conversions.
-var jsonStyles = func() (out [profileTrueColor + 1]func() jsonStyle) {
-	for p := range out {
-		out[p] = sync.OnceValue(func() jsonStyle { return newJSONStyle(colorProfile(p), jsonPalette()) })
-	}
-	return out
-}()
-
-// PrettyJSON pretty-prints JSON data with two-space indentation. When the
-// destination writer accepts color, keys use the accent color, dimmed with
-// nesting depth, values the foreground and brackets a muted shade. Color follows the writer and the
-// NO_COLOR, FORCE_COLOR and CLICOLOR_FORCE conventions, never os.Stdout.
-// Without color the output is plain indented JSON.
+// PrettyJSON pretty-prints JSON data, with two-space indentation unless the
+// theme sets another [JSONStyle]. When the destination writer accepts color,
+// keys use the accent color, dimmed with nesting depth, values the
+// foreground and brackets a muted shade. Color follows the writer and the
+// NO_COLOR, FORCE_COLOR and CLICOLOR_FORCE conventions, never os.Stdout, and
+// the terminal is never queried. Without color the output is plain JSON.
+// Malformed input returns an error before anything is written.
 func PrettyJSON(w io.Writer, src any) error {
-	out, err := jsonIndent(src)
+	themed := themeRendering.Load()
+	theme := legacyJSONTheme()
+	if themed {
+		theme = defaultIO.currentTheme()
+	}
+	out, err := jsonIndent(src, theme.source.JSON)
 	if err != nil {
 		return err
 	}
-	if profile := defaultIO.profileFor(w); profile.attrs() {
-		style := jsonStyles[profile]()
+	if p := defaultIO.profileFor(w); p.attrs() {
+		var look binding
+		if themed {
+			look = defaultIO.bindTheme(context.Background(), theme, w, nil)
+		} else {
+			look = theme.bind(p, background{})
+		}
+		style := newJSONLook(look)
 		colored := bytes.NewBuffer(make([]byte, 0, 2*out.Len()))
 		style.recolor(out, colored)
 		out = colored
@@ -134,7 +167,8 @@ func PrettyJSON(w io.Writer, src any) error {
 	return err
 }
 
-func jsonIndent(src any) (*bytes.Buffer, error) {
+// jsonIndent validates src and lays it out in style, without a trailing newline.
+func jsonIndent(src any, style JSONStyle) (*bytes.Buffer, error) {
 	identBuf := bytes.NewBuffer(nil)
 	var toIndent []byte
 	var err error
@@ -150,14 +184,18 @@ func jsonIndent(src any) (*bytes.Buffer, error) {
 		}
 	}
 	// standard library already indents JSON data, so we're only coloring things here.
-	err = json.Indent(identBuf, toIndent, "", "  ")
+	if style.Compact {
+		err = json.Compact(identBuf, toIndent)
+	} else {
+		err = json.Indent(identBuf, toIndent, "", style.Indent)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("indent: %w", err)
 	}
 	return identBuf, nil
 }
 
-func (s *jsonStyle) recolor(identBuf, w *bytes.Buffer) {
+func (s *jsonLook) recolor(identBuf, w *bytes.Buffer) {
 	pretty := identBuf.Bytes()
 	stack := []jsonState{jsonRoot}
 	lo, hi, depth := 0, identBuf.Len(), -1
@@ -171,7 +209,7 @@ func (s *jsonStyle) recolor(identBuf, w *bytes.Buffer) {
 	}
 }
 
-func (s *jsonStyle) prettyJsonLoop(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
+func (s *jsonLook) prettyJsonLoop(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
 	curr := stack[len(stack)-1]
 	if curr == jsonEscape {
 		w.WriteByte(ch)
@@ -196,7 +234,7 @@ func (s *jsonStyle) prettyJsonLoop(stack []jsonState, w *bytes.Buffer, ch byte, 
 	return s.prettyJsonChar(stack, w, ch, depth)
 }
 
-func (s *jsonStyle) prettyJsonChar(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
+func (s *jsonLook) prettyJsonChar(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
 	switch ch {
 	case '{', '[':
 		depth, stack = s.prettyJsonOpen(stack, w, ch, depth)
@@ -217,7 +255,7 @@ func (s *jsonStyle) prettyJsonChar(stack []jsonState, w *bytes.Buffer, ch byte, 
 }
 
 // jsonEndsConst reports whether ch terminates a number or literal.
-func (s *jsonStyle) jsonEndsConst(ch byte) bool {
+func (s *jsonLook) jsonEndsConst(ch byte) bool {
 	switch ch {
 	case ' ', '\t', '\n', '\r', ',', ']', '}':
 		return true
@@ -227,7 +265,7 @@ func (s *jsonStyle) jsonEndsConst(ch byte) bool {
 
 // prettyJsonOther opens a number or literal in value position, and passes
 // whitespace through.
-func (s *jsonStyle) prettyJsonOther(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
+func (s *jsonLook) prettyJsonOther(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
 	if s.jsonEndsConst(ch) {
 		w.WriteByte(ch)
 		return stack
@@ -246,7 +284,7 @@ func (s *jsonStyle) prettyJsonOther(stack []jsonState, w *bytes.Buffer, ch byte)
 }
 
 // prettyJsonOpen enters the object or array that ch opens.
-func (s *jsonStyle) prettyJsonOpen(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
+func (s *jsonLook) prettyJsonOpen(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
 	state := jsonObject
 	if ch == '[' {
 		state = jsonArray
@@ -257,7 +295,7 @@ func (s *jsonStyle) prettyJsonOpen(stack []jsonState, w *bytes.Buffer, ch byte, 
 	return depth + 1, append(stack, state)
 }
 
-func (s *jsonStyle) prettyJsonClose(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
+func (s *jsonLook) prettyJsonClose(stack []jsonState, w *bytes.Buffer, ch byte, depth int) (int, []jsonState) {
 	// a pending value (number, literal or nested container) sits above its container
 	if stack[len(stack)-1] == jsonValue {
 		stack = stack[:len(stack)-1]
@@ -272,7 +310,7 @@ func (s *jsonStyle) prettyJsonClose(stack []jsonState, w *bytes.Buffer, ch byte,
 	return depth, stack
 }
 
-func (s *jsonStyle) prettyJsonColon(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
+func (s *jsonLook) prettyJsonColon(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
 	curr := stack[len(stack)-1]
 	if curr == jsonObject {
 		stack = append(stack, jsonValue)
@@ -281,7 +319,7 @@ func (s *jsonStyle) prettyJsonColon(stack []jsonState, w *bytes.Buffer, ch byte)
 	return stack
 }
 
-func (s *jsonStyle) prettyJsonComma(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
+func (s *jsonLook) prettyJsonComma(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
 	curr := stack[len(stack)-1]
 	if curr == jsonValue {
 		stack = stack[:len(stack)-1]
@@ -290,13 +328,13 @@ func (s *jsonStyle) prettyJsonComma(stack []jsonState, w *bytes.Buffer, ch byte)
 	return stack
 }
 
-func (s *jsonStyle) pretttJsonBackslash(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
+func (s *jsonLook) pretttJsonBackslash(stack []jsonState, w *bytes.Buffer, ch byte) []jsonState {
 	stack = append(stack, jsonEscape)
 	w.WriteByte(ch)
 	return stack
 }
 
-func (s *jsonStyle) prettyJsonQuote(stack []jsonState, w *bytes.Buffer, ch byte, depth int) []jsonState {
+func (s *jsonLook) prettyJsonQuote(stack []jsonState, w *bytes.Buffer, ch byte, depth int) []jsonState {
 	curr := stack[len(stack)-1]
 	switch curr {
 	case jsonObject: // open key

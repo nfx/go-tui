@@ -781,6 +781,7 @@ type Theme struct {
 	Spinner   SpinnerStyle
 	Progress  ProgressStyle
 	Table     TableStyle
+	JSON      JSONStyle
 	// Funcs are custom template helpers, added to the built-in ones. They
 	// cannot replace a built-in helper, and must be safe for concurrent use.
 	Funcs template.FuncMap
@@ -822,6 +823,10 @@ func (in Theme) compile() (*compiledTheme, error) {
 		return nil, err
 	}
 	t.Table, err = t.Table.normalize()
+	if err != nil {
+		return nil, err
+	}
+	t.JSON, err = t.JSON.normalize()
 	if err != nil {
 		return nil, err
 	}
@@ -1063,6 +1068,7 @@ func presetTheme() Theme {
 		},
 		Progress: progressStyle,
 		Table:    tableStyle,
+		JSON:     jsonStyle,
 	}
 }
 
