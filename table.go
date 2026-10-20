@@ -15,6 +15,7 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"text/template"
@@ -51,7 +52,7 @@ type tableEnd struct {
 }
 
 func TableIter[T any](w io.Writer, rowTmpl string, iterator iter.Seq2[T, error], o ...opt) error {
-	t, err := newTable[T](w, rowTmpl, o...)
+	t, err := newTable[T](w, rowTmpl, false, o...)
 	if err != nil {
 		return fmt.Errorf("table: %w", err)
 	}
@@ -69,7 +70,7 @@ func TableIter[T any](w io.Writer, rowTmpl string, iterator iter.Seq2[T, error],
 }
 
 func Table[T any](w io.Writer, rowTmpl string, iterator []T, o ...opt) error {
-	t, err := newTable[T](w, rowTmpl, o...)
+	t, err := newTable[T](w, rowTmpl, themeRendering.Load(), o...)
 	if err != nil {
 		return fmt.Errorf("table: %w", err)
 	}
@@ -84,7 +85,7 @@ func Table[T any](w io.Writer, rowTmpl string, iterator []T, o ...opt) error {
 }
 
 func TableAuto[T any](w io.Writer, iterator []T, o ...opt) error {
-	t, err := newTable[T](w, "", o...)
+	t, err := newTable[T](w, "", themeRendering.Load(), o...)
 	if err != nil {
 		return fmt.Errorf("table: %w", err)
 	}
@@ -114,7 +115,7 @@ func Facts[T any](w io.Writer, data T, o ...opt) error {
 		}
 		rt = reflect.TypeOf(data)
 	}
-	t, err := newTableFor(rt, w, "", options...)
+	t, err := newTableFor(rt, w, "", false, options...)
 	if err != nil {
 		return fmt.Errorf("facts: %w", err)
 	}
@@ -254,15 +255,8 @@ func WithFloat64AsPercent() opt {
 }
 
 func WithFloat64AsPercentPositiveColored() opt {
-	return WithColumnTypeFormat(func(v float64) string {
-		out := percentString(v)
-		if v > 0 {
-			return green + out + reset
-		}
-		if v < 0 {
-			return red + out + reset
-		}
-		return out
+	return opT(func(t *table) error {
+		return WithColumnTypeFormat(t.signedPercent)(t)
 	})
 }
 
@@ -272,7 +266,7 @@ func WithFloat64AsPercentPositiveColored() opt {
 // rows are not recalculated.
 func WithColumnGreenRedScale(name string) opt {
 	return opT(func(t *table) error {
-		return t.setColumnScale(name, greenRedScalePalette[:])
+		return t.setColumnScale(name, false)
 	})
 }
 
@@ -282,8 +276,27 @@ func WithColumnGreenRedScale(name string) opt {
 // rows are not recalculated.
 func WithColumnRedGreenScale(name string) opt {
 	return opT(func(t *table) error {
-		return t.setColumnScale(name, redGreenScalePalette[:])
+		return t.setColumnScale(name, true)
 	})
+}
+
+// signedPercent formats v as a percentage, positive in the success role and
+// negative in the error role: a sign is data, not an outcome, so only this
+// option colors it. Legacy tables use green and red.
+func (t *table) signedPercent(v float64) string {
+	out := percentString(v)
+	var role text
+	switch {
+	case v > 0 && t.theme == nil:
+		return green + out + reset
+	case v < 0 && t.theme == nil:
+		return red + out + reset
+	case v > 0:
+		role = t.look.roles.success
+	case v < 0:
+		role = t.look.roles.failure
+	}
+	return t.look.style(role, text(out)).String()
 }
 
 // percentString scales values to percentages and truncates toward zero.
@@ -308,8 +321,6 @@ var (
 )
 
 var greenRedScalePalette = [...]string{brightGreen, green, yellow, red, brightRed}
-
-var redGreenScalePalette = [...]string{brightRed, red, yellow, green, brightGreen}
 
 type greenRedScalarFn func(v any) (float64, bool)
 
@@ -409,6 +420,12 @@ type table struct {
 	suppressHeaders  bool
 	multilineCells   bool
 
+	// theme is captured at construction, and bound to w before options
+	// run; nil keeps the legacy presentation.
+	theme        *compiledTheme
+	look         binding
+	header, cell boundSlot
+
 	customTemplateFuncs template.FuncMap
 	templateFuncSeq     int
 
@@ -434,11 +451,11 @@ type tableColumn struct {
 	meta       *fieldMetadata
 }
 
-func newTable[T any](w io.Writer, rowTmpl string, o ...opt) (*table, error) {
-	return newTableFor(reflect.TypeFor[T](), w, rowTmpl, o...)
+func newTable[T any](w io.Writer, rowTmpl string, themed bool, o ...opt) (*table, error) {
+	return newTableFor(reflect.TypeFor[T](), w, rowTmpl, themed, o...)
 }
 
-func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, o ...opt) (*table, error) {
+func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, themed bool, o ...opt) (*table, error) {
 	metadata, err := structFieldsForType(rt)
 	if err != nil {
 		return nil, fmt.Errorf("metadata: %w", err)
@@ -452,6 +469,12 @@ func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, o ...opt) (*table
 		colMinWidth:     1,
 		autoTemplate:    rowTmpl == "",
 		templateFuncSeq: 0,
+	}
+	if themed {
+		err = t.bind()
+		if err != nil {
+			return nil, err
+		}
 	}
 	err = opts(o).Apply(t)
 	if err != nil {
@@ -477,6 +500,90 @@ func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, o ...opt) (*table
 	}
 
 	return t, nil
+}
+
+// TableStyle is the layout of tables.
+type TableStyle struct {
+	// ColumnGap is the number of blank columns between the widest values
+	// of neighbouring columns, including the one a truncated value keeps.
+	// Zero takes 2.
+	ColumnGap int
+	// MinColumnWidth is the narrowest a column shrinks to fit the row
+	// width, without the gap. Zero takes 1.
+	MinColumnWidth int
+}
+
+// tableStyle is the theme preset: the legacy layout.
+var tableStyle = TableStyle{ColumnGap: 2, MinColumnWidth: 1}
+
+// normalize fills the preset and rejects negative sizes.
+func (s TableStyle) normalize() (TableStyle, error) {
+	for _, f := range []struct {
+		name string
+		v    *int
+		def  int
+	}{
+		{"ColumnGap", &s.ColumnGap, tableStyle.ColumnGap},
+		{"MinColumnWidth", &s.MinColumnWidth, tableStyle.MinColumnWidth},
+	} {
+		switch {
+		case *f.v < 0:
+			return s, fmt.Errorf("theme.Table.%s: %d: must not be negative", f.name, *f.v)
+		case *f.v == 0:
+			*f.v = f.def
+		}
+	}
+	return s, nil
+}
+
+// bind captures the installed theme and binds it to the writer without
+// probing, so that formatters, scales and slots encode for the destination.
+// The layout comes from [Theme.Table]; options such as [WithMaxWidth] still
+// apply on top of it.
+func (t *table) bind() error {
+	t.theme = defaultIO.currentTheme()
+	t.look = defaultIO.bindTheme(context.Background(), t.theme, t.w, nil)
+	style := t.theme.source.Table
+	// a value keeps one trailing column when it is truncated or padded
+	t.cellPad, t.colMinWidth = style.ColumnGap-1, style.MinColumnWidth
+	slots := t.theme.templates.Table
+	var errs [2]error
+	t.header, errs[0] = slots.Header.bind(t.look.funcs)
+	t.cell, errs[1] = slots.Cell.bind(t.look.funcs)
+	return errors.Join(errs[:]...)
+}
+
+// columnView is the data of the Table.Header slot.
+type columnView struct {
+	Header string
+	Name   string // the field path, such as Owner.Name
+	Kind   string // the reflect kind, such as string or int
+}
+
+// cellView is the data of the Table.Cell slot: one physical line of a
+// formatted value, which may carry SGR and hyperlinks, in its column.
+type cellView struct {
+	columnView
+	Value string
+}
+
+// column is the view of the column of meta.
+func (*table) column(meta *fieldMetadata) columnView {
+	return columnView{Header: text(meta.header).oneLine(), Name: meta.name, Kind: meta.kind.String()}
+}
+
+// heading renders the header of a column: bold in the legacy presentation,
+// otherwise through the Header slot.
+func (t *table) heading(meta *fieldMetadata) (text, error) {
+	if t.theme == nil {
+		return t.mkBold(meta.header), nil
+	}
+	return t.header.render(t.column(meta))
+}
+
+// headerRow reports whether the table shows a header row.
+func (t *table) headerRow() bool {
+	return !t.suppressHeaders && (t.theme == nil || t.header.tmpl != nil)
 }
 
 type factCell struct {
@@ -644,7 +751,10 @@ func (t *table) Append(v any) error {
 	if err != nil {
 		return fmt.Errorf("render: %w", err)
 	}
-	t.addRecord(cells, t.scaleColors(v))
+	err = t.addRecord(cells, t.scaleColors(v))
+	if err != nil {
+		return fmt.Errorf("render: %w", err)
+	}
 	t.consumed++
 	if t.consumed%t.batchSize == 0 {
 		err = t.flush(false)
@@ -741,7 +851,9 @@ func (t *table) renderCells(v any) ([]string, error) {
 }
 
 // addRecord keeps each cell line and its color on the same physical row.
-func (t *table) addRecord(cells, colors []string) {
+// A themed table carries styles across the lines of a cell, and decorates
+// each line.
+func (t *table) addRecord(cells, colors []string) error {
 	lines := make([][]string, len(cells))
 	count := 1
 	for i, text := range cells {
@@ -756,6 +868,9 @@ func (t *table) addRecord(cells, colors []string) {
 			text = strings.ReplaceAll(text, "\n", " ")
 		}
 		lines[i] = strings.Split(text, "\n")
+		if t.theme != nil {
+			t.carryStyles(lines[i])
+		}
 		count = max(count, len(lines[i]))
 	}
 	for k := range count {
@@ -773,8 +888,100 @@ func (t *table) addRecord(cells, colors []string) {
 				rowColors[i] = colors[i]
 			}
 		}
+		if t.theme != nil {
+			err := t.decorate(row, rowColors)
+			if err != nil {
+				return err
+			}
+			rowColors = nil
+		}
 		t.addRow(row, rowColors)
 	}
+	return nil
+}
+
+// carryStyles reopens on each line of a cell the SGR in effect at the end of
+// the line before, so a style spanning a line break continues; truncation
+// closes every line, so it cannot bleed into the next column.
+func (*table) carryStyles(lines []string) {
+	var open text
+	var active sgrChannel
+	for k, line := range lines {
+		if k > 0 && len(open) > 0 && line != "" {
+			lines[k] = string(open) + line
+		}
+		for seg := range text(line).segments() {
+			if _, sgr := seg.sgrParams(); !sgr {
+				continue
+			}
+			set, cleared := seg.sgrEffect()
+			active = (active | set) &^ cleared
+			if active == 0 {
+				open = open[:0]
+				continue
+			}
+			open = append(open, seg.text...)
+		}
+	}
+}
+
+// decorate wraps each line of an automatic row template in its scale color
+// and then in the Cell slot. Explicit row templates are left as rendered.
+func (t *table) decorate(row []text, colors []string) error {
+	if !t.autoTemplate {
+		return nil
+	}
+	for i, line := range row {
+		if i >= len(t.columns) {
+			break // addRow drops cells beyond the columns
+		}
+		line = t.cellText(line)
+		if len(line) == 0 {
+			continue
+		}
+		if i < len(colors) {
+			line = t.look.style(text(colors[i]), line)
+		}
+		meta := t.columns[i].meta
+		out, err := t.cell.execute(cellView{columnView: t.column(meta), Value: line.String()})
+		if err == nil {
+			err = t.cellOutput(out)
+		}
+		if err != nil {
+			return fmt.Errorf("column %q: %w", meta.name, err)
+		}
+		row[i] = out
+	}
+	return nil
+}
+
+// cellSegment reports whether seg may appear in a cell line: text, SGR or a
+// hyperlink. Invalid bytes become U+FFFD when the line is truncated.
+func (*table) cellSegment(seg segment) bool {
+	_, sgr := seg.sgrParams()
+	_, link := seg.osc8()
+	return seg.isText() || seg.isInvalid || seg.isEscape && (sgr || link)
+}
+
+// cellText drops the controls and escape sequences a cell line cannot keep.
+func (t *table) cellText(line text) text {
+	var out text
+	for seg := range line.segments() {
+		if t.cellSegment(seg) {
+			out = append(out, seg.text...)
+		}
+	}
+	return out
+}
+
+// cellOutput reports Cell slot output that a cell line cannot keep.
+func (t *table) cellOutput(out text) error {
+	for seg := range out.segments() {
+		if !t.cellSegment(seg) {
+			return fmt.Errorf("theme.Templates.Table.Cell: %q: want text, SGR and hyperlinks only", seg.text)
+		}
+	}
+	return nil
 }
 
 // addRow queues one physical row, keeping exactly one cell per column.
@@ -795,7 +1002,26 @@ func (t *table) addRow(texts []text, colors []string) {
 	t.pending = append(t.pending, row)
 }
 
-func (t *table) setColumnScale(name string, palette []string) error {
+// scalePalette is the color of each rank bucket: green to red, or red to
+// green when reversed. A themed table derives it from the success, foreground
+// and error roles, keeping the five buckets even where colors coincide, so a
+// rank means the same on every palette.
+func (t *table) scalePalette(reversed bool) []string {
+	var palette []string
+	if t.theme == nil {
+		palette = slices.Clone(greenRedScalePalette[:])
+	} else {
+		for _, c := range t.look.diverging() {
+			palette = append(palette, c.String())
+		}
+	}
+	if reversed {
+		slices.Reverse(palette)
+	}
+	return palette
+}
+
+func (t *table) setColumnScale(name string, reversed bool) error {
 	if !t.autoTemplate {
 		return nil
 	}
@@ -810,7 +1036,7 @@ func (t *table) setColumnScale(name string, palette []string) error {
 	t.ensureAutoTemplateMaps()
 	t.columnScales[name] = &columnScale{
 		toScalar:    toScalar,
-		palette:     append([]string(nil), palette...),
+		palette:     t.scalePalette(reversed),
 		roundFloats: t.isFloatKind(meta.kind),
 	}
 	return nil
@@ -955,6 +1181,7 @@ func (t *table) headers() error {
 		if !ok {
 			meta = &fieldMetadata{
 				header:     strings.ToUpper(headers[i]),
+				name:       headers[i],
 				kind:       reflect.String,
 				autoHeader: true,
 			}
@@ -964,9 +1191,15 @@ func (t *table) headers() error {
 			Header: meta.header,
 			Kind:   meta.kind.String(),
 		}
-		bold[i] = t.mkBold(meta.header)
+		if !t.headerRow() {
+			continue
+		}
+		bold[i], err = t.heading(meta)
+		if err != nil {
+			return err
+		}
 	}
-	if t.suppressHeaders {
+	if !t.headerRow() {
 		return nil
 	}
 	if t.eventSink != nil {
@@ -989,9 +1222,16 @@ func (t *table) autoHeaders() error {
 			Header: meta.header,
 			Kind:   meta.kind.String(),
 		}
-		headers[i] = t.mkBold(meta.header)
+		if !t.headerRow() {
+			continue
+		}
+		var err error
+		headers[i], err = t.heading(meta)
+		if err != nil {
+			return err
+		}
 	}
-	if t.suppressHeaders {
+	if !t.headerRow() {
 		return nil
 	}
 	if t.eventSink != nil {
@@ -1062,11 +1302,15 @@ func (t *table) formatterTemplate(fnName string, meta *fieldMetadata) string {
 	return call
 }
 
-// templateFuncs merges shared color functions with per-table formatter functions.
+// templateFuncs merges shared color functions with per-table formatter
+// functions. A themed table takes the helpers bound to its writer.
 func (t *table) templateFuncs() template.FuncMap {
-	legacy := legacyTemplateFuncs()
-	funcs := make(template.FuncMap, len(legacy)+len(t.customTemplateFuncs)+2)
-	maps.Copy(funcs, legacy)
+	shared := legacyTemplateFuncs()
+	if t.theme != nil {
+		shared = t.look.funcs
+	}
+	funcs := make(template.FuncMap, len(shared)+len(t.customTemplateFuncs)+2)
+	maps.Copy(funcs, shared)
 	funcs["tableString"] = tableString
 	funcs["__cellSep"] = t.cellSeparator
 	for name, fn := range t.customTemplateFuncs {

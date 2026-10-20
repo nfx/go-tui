@@ -780,6 +780,7 @@ type Theme struct {
 	Templates Templates
 	Spinner   SpinnerStyle
 	Progress  ProgressStyle
+	Table     TableStyle
 	// Funcs are custom template helpers, added to the built-in ones. They
 	// cannot replace a built-in helper, and must be safe for concurrent use.
 	Funcs template.FuncMap
@@ -817,6 +818,10 @@ func (in Theme) compile() (*compiledTheme, error) {
 		return nil, err
 	}
 	t.Progress, err = t.Progress.normalize()
+	if err != nil {
+		return nil, err
+	}
+	t.Table, err = t.Table.normalize()
 	if err != nil {
 		return nil, err
 	}
@@ -1057,6 +1062,7 @@ func presetTheme() Theme {
 			Interval: spinnerInterval,
 		},
 		Progress: progressStyle,
+		Table:    tableStyle,
 	}
 }
 
@@ -1101,22 +1107,13 @@ func (c *compiledTheme) roles(p colorProfile, pal resolvedPalette) roleStyles {
 	if p < profileANSI16 {
 		return roleStyles{}
 	}
-	v := c.palette.dark
-	if pal.Light {
-		v = c.palette.light
-	}
+	v := c.variant(pal)
 	style := func(override slot, rgb sRGB, target float64, neutral bool) text {
-		switch {
-		case override.set:
-			return p.fg(override.rgb)
-		case neutral && !pal.Known && !c.source.Light:
-			return nil
-		}
-		readable, ok := p.readable(rgb, pal.Background, target)
+		shown, ok := c.role(p, pal, override, rgb, target, neutral)
 		if !ok {
 			return nil
 		}
-		return p.fg(readable)
+		return p.fg(shown)
 	}
 	return roleStyles{
 		foreground: style(v.foreground, pal.Foreground, contrastText, true),
@@ -1128,21 +1125,83 @@ func (c *compiledTheme) roles(p colorProfile, pal resolvedPalette) roleStyles {
 	}
 }
 
+// variant is the parsed palette variant that pal selected.
+func (c *compiledTheme) variant(pal resolvedPalette) parsedVariant {
+	if pal.Light {
+		return c.palette.light
+	}
+	return c.palette.dark
+}
+
+// role is the color a role renders in, or false when it keeps the terminal
+// default; see [compiledTheme.roles].
+func (c *compiledTheme) role(
+	p colorProfile,
+	pal resolvedPalette,
+	override slot,
+	rgb sRGB,
+	target float64,
+	neutral bool,
+) (sRGB, bool) {
+	switch {
+	case override.set:
+		return override.rgb, true
+	case neutral && !pal.Known && !c.source.Light:
+		return sRGB{}, false
+	}
+	return p.readable(rgb, pal.Background, target)
+}
+
+// scaleLevels is the number of levels of a diverging scale.
+const scaleLevels = 5
+
+// diverging encodes a scale of [scaleLevels] foregrounds from the success
+// role through the foreground to the error role. The levels between them
+// are halfway in OKLab between the rendered role and the foreground, held to
+// [contrastText] like the roles. Levels may encode alike on small palettes;
+// an empty level keeps the terminal default.
+func (c *compiledTheme) diverging(p colorProfile, pal resolvedPalette, roles roleStyles) []text {
+	if p < profileANSI16 {
+		return make([]text, scaleLevels)
+	}
+	v := c.variant(pal)
+	half := func(override slot, rgb sRGB) text {
+		end, ok := c.role(p, pal, override, rgb, contrastText, false)
+		if !ok {
+			return nil
+		}
+		mid, ok := p.readable(end.oklab().mix(pal.Foreground.oklab(), 0.5), pal.Background, contrastText)
+		if !ok {
+			return nil
+		}
+		return p.fg(mid)
+	}
+	return []text{
+		roles.success,
+		half(v.success, pal.Success),
+		roles.foreground,
+		half(v.err, pal.Error),
+		roles.failure,
+	}
+}
+
 // bind resolves the palette against the background of a destination with
 // profile p. The variant follows a measured background, or else the theme
 // and the estimate in bg.
 func (c *compiledTheme) bind(p colorProfile, bg background) binding {
 	pal := c.palette.resolve(c.source.Light || bg.light, bg.rgb, bg.measured)
 	roles := c.roles(p, pal)
-	return binding{theme: c, roles: roles, funcs: c.funcs(p, roles)}
+	return binding{theme: c, profile: p, palette: pal, roles: roles, funcs: c.funcs(p, roles)}
 }
 
 // binding is a compiled theme bound to the destination of one operation.
 // Renderers take helpers, roles and geometry from it, never from the
 // installed default, so one operation cannot mix two themes.
 type binding struct {
-	theme *compiledTheme
-	roles roleStyles
+	theme   *compiledTheme
+	profile colorProfile
+	palette resolvedPalette
+	roles   roleStyles
 	// funcs are the helpers of theme slots and per-call templates. Templates
 	// only read the map.
 	funcs template.FuncMap
@@ -1163,6 +1222,9 @@ func (binding) style(role, content text) text {
 	}
 	return destination{}.newSpan(fgDefault, role).wrap(content)
 }
+
+// diverging is the diverging scale of [compiledTheme.diverging] for the destination.
+func (b binding) diverging() []text { return b.theme.diverging(b.profile, b.palette, b.roles) }
 
 // themeRendering routes migrated widgets through the theme they capture. It
 // stays off, keeping the legacy presentation, until every widget family has
@@ -1226,6 +1288,7 @@ type Templates struct {
 	FilePicker  SelectTemplates
 	Spinner     SpinnerTemplates
 	Progress    ProgressTemplates
+	Table       TableTemplates
 }
 
 // templates are the compiled [Templates], with inheritance resolved.
@@ -1244,6 +1307,7 @@ type templates struct {
 
 	Spinner  spinnerTemplates
 	Progress progressTemplates
+	Table    tableTemplates
 }
 
 // builtinTemplates are the built-in sources of the root slots, shared by
@@ -1290,13 +1354,19 @@ var builtinTemplates = Templates{
 		Frame: `{{ with .Label }}{{ . }} {{ end }}{{ accent (printf "%3d%%" .Percent) }} ` +
 			`{{ .Bar }}{{ with .Metrics }} {{ . }}{{ end }}`,
 	},
+	// Table slots name a [columnView] and a [cellView]. Weight sets the
+	// header apart; values stay in the foreground unless a caller colors them.
+	Table: TableTemplates{
+		Header: `{{ bold (text .Header) }}`,
+		Cell:   `{{ text .Value }}`,
+	},
 }
 
 // compile resolves isolated slot inheritance over base and reports errors at defining slots.
 func (t *Templates) compile(funcs template.FuncMap, base templates) (templates, error) {
 	root := templated[struct{}, struct{}]{Funcs: funcs}
 	var out templates
-	var errs [11]error
+	var errs [12]error
 	out.Prompt, errs[0] = t.prompt(root.nest("Prompt", t.Prompt, base.Prompt))
 	out.Input, errs[1] = t.prompt(root.nest("Input", t.Input, out.Prompt))
 	out.Password, errs[2] = t.secret(root.nest("Password", t.Password, out.Input))
@@ -1318,6 +1388,7 @@ func (t *Templates) compile(funcs template.FuncMap, base templates) (templates, 
 	out.FilePicker, errs[8] = t.choiceFamily(root.nest("FilePicker", t.FilePicker, picker))
 	out.Spinner, errs[9] = t.spinner(root.nest("Spinner", t.Spinner, base.Spinner))
 	out.Progress, errs[10] = t.progress(root.nest("Progress", t.Progress, base.Progress))
+	out.Table, errs[11] = t.table(root.nest("Table", t.Table, base.Table))
 	if err := errors.Join(errs[:]...); err != nil {
 		return templates{}, err
 	}
@@ -1532,6 +1603,27 @@ func (*Templates) usesBar(n parse.Node) bool {
 		return n.Field[0] == "Bar"
 	}
 	return false
+}
+
+// TableTemplates are the header and the cells of tables. A hidden Header
+// drops the header row. Cell wraps each formatted value of an automatic row
+// template, one physical line at a time, after any column template,
+// formatter or scale; an explicit row template keeps its own presentation.
+type TableTemplates struct {
+	Header Template
+	Cell   Template
+}
+
+// tableTemplates are the compiled [TableTemplates].
+type tableTemplates struct{ Header, Cell *compiledSlot }
+
+// table compiles the table slots, which have no cross-family parent. Only
+// the header may be hidden: a cell keeps its value.
+func (t *Templates) table(in templated[TableTemplates, tableTemplates]) (out tableTemplates, _ error) {
+	var errs [2]error
+	out.Header, errs[0] = t.slot(in.nest("Header", in.Src.Header, in.Parent.Header), true)
+	out.Cell, errs[1] = t.slot(in.nest("Cell", in.Src.Cell, in.Parent.Cell), false)
+	return out, errors.Join(errs[:]...)
 }
 
 // compiledSlot is one parsed presentation slot. A hidden slot renders nothing
