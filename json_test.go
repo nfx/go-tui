@@ -161,17 +161,19 @@ func shadeBefore(t *testing.T, out, token string) string {
 func TestPrettyJSONRolesFollowPalette(t *testing.T) {
 	out := renderJSON(t, "FORCE_COLOR=3", `{"key":"value","n":-1.5,"t":true,"z":null}`)
 	pal := jsonPalette()
-	fg := string(profileTrueColor.fg(pal.Foreground))
+	assert.True(t, !pal.Known)
 	assert.Equal(t, string(profileTrueColor.fg(pal.Accent))+bold, shadeBefore(t, out, `"key"`))
+	// the background is unknown, so values keep the terminal default
+	// foreground and brackets are bold rather than a fixed neutral
 	for _, v := range []string{`"value"`, `-1.5`, `true`, `null`} {
-		assert.Equal(t, fg, shadeBefore(t, out, v))
+		assert.Contains(t, out, ": "+v)
 	}
-	assert.Contains(t, out, string(profileTrueColor.fg(pal.Muted))+"{")
+	assert.Contains(t, out, bold+"{")
 }
 
 func TestJSONStyleDerivesFromResolvedRoles(t *testing.T) {
 	resolve := func(p Palette) resolvedPalette {
-		pal, err := p.resolve(false, sRGB{}, false)
+		pal, err := p.resolve(false, sRGB{0x12, 0x12, 0x12}, true) // known, so neutrals are emitted
 		assert.NoError(t, err)
 		return pal
 	}
@@ -261,15 +263,15 @@ func TestPrettyJSONDeeperKeysAreDimmer(t *testing.T) {
 	// past the last level, the dimmest shade repeats
 	assert.Equal(t, shadeBefore(t, out, `"e"`), shadeBefore(t, out, `"f"`))
 	// values do not dim with depth
-	assert.Equal(t, shadeBefore(t, out, `"s"`), shadeBefore(t, out, `-7`))
+	assert.Contains(t, out, `: "s"`)
+	assert.Contains(t, out, `: -7`)
 	top := renderJSON(t, "FORCE_COLOR=3", `{"f":"s"}`)
-	assert.Equal(t, shadeBefore(t, out, `"s"`), shadeBefore(t, top, `"s"`))
+	assert.Contains(t, top, `: "s"`)
 }
 
 func TestPrettyJSONScalarsAtRootAndInArrays(t *testing.T) {
 	for _, in := range []string{`42`, `true`, `"s"`, `[1,false,"x",[null]]`} {
 		out := renderJSON(t, "FORCE_COLOR=3", in)
-		assert.Contains(t, out, "\x1b[38;2;")
 		assert.True(t, strings.HasSuffix(out, reset+"\n"))
 		assert.Equal(t, renderJSON(t, "FORCE_COLOR=0", in), regexpSGR.ReplaceAllString(out, ""))
 	}
@@ -301,4 +303,12 @@ func TestJSONStyleWithoutColor(t *testing.T) {
 	assert.Equal(t, text(bold), st.punct)
 	assert.Equal(t, 0, len(st.keys))
 	assert.Equal(t, 0, len(st.value))
+}
+
+func TestJSONStyleWithKnownBackgroundColorsNeutrals(t *testing.T) {
+	pal, err := Palette{}.resolve(false, sRGB{0xFF, 0xFF, 0xFF}, true)
+	assert.NoError(t, err)
+	st := newJSONStyle(profileTrueColor, pal)
+	assert.Equal(t, string(profileTrueColor.fg(pal.Foreground)), string(st.value))
+	assert.Equal(t, string(profileTrueColor.fg(pal.Muted)), string(st.punct))
 }

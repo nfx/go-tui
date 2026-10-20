@@ -250,7 +250,7 @@ func TestContrastReferenceValues(t *testing.T) {
 func TestLightBoundaryEqualisesBlackAndWhite(t *testing.T) {
 	// A background exactly at the boundary has equal contrast to both.
 	y := lightBoundary
-	assert.True(t, (1.05)/(y+0.05)-(y+0.05)/0.05 < 1e-6)
+	assert.True(t, math.Abs((1.05)/(y+0.05)-(y+0.05)/0.05) < 1e-6)
 	assert.True(t, sRGB{255, 255, 255}.isLight())
 	assert.True(t, !sRGB{0, 0, 0}.isLight())
 	assert.True(t, !sRGB{0x12, 0x12, 0x12}.isLight())

@@ -48,10 +48,19 @@ type jsonStyle struct {
 }
 
 // newJSONStyle maps the resolved palette onto JSON: keys are Accent, dimmed
-// with depth, values are Foreground and punctuation is Muted.
+// with depth, values are Foreground and punctuation is Muted. Neutrals are
+// only emitted when the background is known: otherwise they could be nearly
+// invisible, so values keep the terminal's default foreground and
+// punctuation is bold.
 func newJSONStyle(p colorProfile, pal resolvedPalette) jsonStyle {
 	if p < profileANSI16 {
 		return jsonStyle{punct: text(bold)}
+	}
+	if !pal.Known {
+		return jsonStyle{
+			keys:  jsonDimming(p, pal.Accent, pal.Background),
+			punct: text(bold),
+		}
 	}
 	return jsonStyle{
 		keys:  jsonDimming(p, pal.Accent, pal.Background),
