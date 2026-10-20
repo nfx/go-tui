@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/iotest"
 	"text/template"
 	"time"
 
@@ -1379,42 +1380,35 @@ func TestThemedProgressRoles(t *testing.T) {
 	assert.Equal(t, 60, row.width())
 }
 
-// themedProgress is a bar towards size rendering through th on a terminal
-// 40 columns wide. tick renders at the given time since the start; each
-// write is one receive from frames. restored reports a released terminal.
-func themedProgress(
-	t *testing.T,
-	th Theme,
-	size int64,
-) (*Progressbar, frameWriter, func(time.Duration), *atomic.Bool) {
+// fakeTerminal is a terminal for a bar, with manual ticks. tick renders at
+// the given time since the start; each write is one receive from frames.
+// restored reports a released terminal.
+type fakeTerminal struct {
+	frames   frameWriter
+	tick     func(time.Duration)
+	restored *atomic.Bool
+	terminal opt
+}
+
+// newFakeTerminal is a terminal width columns wide.
+func newFakeTerminal(t *testing.T, width int) fakeTerminal {
 	t.Helper()
-	useTheme(t, th)
-	restored := &atomic.Bool{}
-	frames := make(frameWriter)
+	ft := fakeTerminal{frames: make(frameWriter), restored: &atomic.Bool{}}
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
-	var clock atomic.Int64
-	p, err := NewMaxProgressBar(t.Context(), "build", size, WithOutput(frames), opT(func(pb *Progressbar) error {
+	clock := &atomic.Int64{}
+	ft.terminal = opT(func(pb *Progressbar) error {
 		pb.now = func() time.Time { return start.Add(time.Duration(clock.Load())) }
 		pb.ticks = ticks
 		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
-			return &termIO{in: in, out: frames, Width: 40, Height: 10, Restore: func() error {
-				restored.Store(true)
+			return &termIO{in: in, out: ft.frames, Width: width, Height: 10, Restore: func() error {
+				ft.restored.Store(true)
 				return nil
 			}}, nil
 		}
 		return nil
-	}))
-	assert.NoError(t, err)
-	t.Cleanup(func() {
-		go func() {
-			for range frames { // the final clear of a bar a test left open
-			}
-		}()
-		_ = p.Close() //nolint:errcheck // test cleanup; tests check their own errors
-		close(frames)
 	})
-	tick := func(at time.Duration) {
+	ft.tick = func(at time.Duration) {
 		t.Helper()
 		clock.Store(int64(at))
 		select {
@@ -1423,7 +1417,42 @@ func themedProgress(
 			t.Fatal("tick not delivered")
 		}
 	}
-	return p, frames, tick, restored
+	return ft
+}
+
+// options make a bar write to the terminal.
+func (ft fakeTerminal) options() []opt {
+	return []opt{WithOutput(ft.frames), ft.terminal}
+}
+
+// closeOnCleanup closes p after the test, receiving the final clear of a bar
+// the test left open.
+func (ft fakeTerminal) closeOnCleanup(t *testing.T, p *Progressbar) {
+	t.Helper()
+	t.Cleanup(func() {
+		go func() {
+			for range ft.frames {
+			}
+		}()
+		_ = p.Close() //nolint:errcheck // test cleanup; tests check their own errors
+		close(ft.frames)
+	})
+}
+
+// themedProgress is a bar towards size rendering through th on a terminal
+// 40 columns wide.
+func themedProgress(
+	t *testing.T,
+	th Theme,
+	size int64,
+) (*Progressbar, frameWriter, func(time.Duration), *atomic.Bool) {
+	t.Helper()
+	useTheme(t, th)
+	ft := newFakeTerminal(t, 40)
+	p, err := NewMaxProgressBar(t.Context(), "build", size, ft.options()...)
+	assert.NoError(t, err)
+	ft.closeOnCleanup(t, p)
+	return p, ft.frames, ft.tick, ft.restored
 }
 
 // untilProgressStopped returns everything the bar writes until its loop
@@ -1604,6 +1633,13 @@ func TestThemedProgressWithoutTerminal(t *testing.T) {
 		got = append(got, v)
 	}
 	assert.Equal(t, []int{1, 2}, got)
+	var sum atomic.Int64
+	err = NewParallelProgressBar(t.Context(), "items", []int{1, 2, 3}, func(v int) error {
+		sum.Add(int64(v))
+		return nil
+	}, WithWorkers(2), noTTY)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(6), sum.Load())
 }
 
 func TestThemedProgressCapturesTheme(t *testing.T) {
@@ -1632,18 +1668,482 @@ func TestProgressStaysLegacyWhenOff(t *testing.T) {
 	assert.NoError(t, p.Close())
 }
 
-func TestParallelProgressStaysLegacyWhenThemed(t *testing.T) {
+// parallelRun is a parallel bar running in the background on a terminal 40
+// columns wide; done receives its result.
+type parallelRun struct {
+	fakeTerminal
+	done chan error
+}
+
+// runParallel runs yield over items with NewParallelProgressBar under the
+// installed theme and gate.
+func runParallel(ctx context.Context, t *testing.T, items []int, yield func(int) error, o ...opt) parallelRun {
+	t.Helper()
+	r := parallelRun{fakeTerminal: newFakeTerminal(t, 40), done: make(chan error, 1)}
+	o = append(r.options(), o...)
+	go func() { r.done <- NewParallelProgressBar(ctx, "build", items, yield, o...) }()
+	return r
+}
+
+// wait returns everything written until the run ends, and its result.
+func (r parallelRun) wait(t *testing.T) (string, error) {
+	t.Helper()
+	var out strings.Builder
+	timeout := time.After(time.Second)
+	for {
+		select {
+		case f := <-r.frames:
+			out.WriteString(f)
+		case err := <-r.done:
+			return out.String(), err
+		case <-timeout:
+			t.Fatal("parallel run did not end")
+		}
+	}
+}
+
+// openedWithin blocks a worker until gate closes, failing its item after a
+// second, so that a broken test ends instead of hanging.
+func openedWithin(gate <-chan struct{}) error {
+	select {
+	case <-gate:
+		return nil
+	case <-time.After(time.Second):
+		return errors.New("gate not opened")
+	}
+}
+
+// receiveN receives n values from ch, failing the test after a second.
+func receiveN[T any](t *testing.T, ch <-chan T, n int) {
+	t.Helper()
+	for range n {
+		select {
+		case <-ch:
+		case <-time.After(time.Second):
+			t.Fatal("not received")
+		}
+	}
+}
+
+func TestThemedParallelProgressCompletes(t *testing.T) {
 	useTheme(t, NewTheme())
-	var look *progressLook
-	err := NewParallelProgressBar(t.Context(), "build", []int{1}, func(int) error { return nil },
-		opT(func(pb *Progressbar) error {
-			pb.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { return nil, ErrNoTTY }
-			return nil
-		}),
-		opT(func(pb *Progressbar) error {
-			look = pb.look
-			return nil
-		}))
+	started := make(chan int, 4)
+	gates := []chan struct{}{make(chan struct{}), make(chan struct{}), make(chan struct{}), make(chan struct{})}
+	r := runParallel(t.Context(), t, []int{0, 1, 2, 3}, func(v int) error {
+		started <- v
+		return openedWithin(gates[v])
+	}, WithWorkers(2))
+	receiveN(t, started, 2)
+	close(gates[0])
+	close(gates[1])
+	// a worker takes its next item only after adding the last one
+	receiveN(t, started, 2)
+	r.tick(time.Second)
+	assert.Equal(t, "\rbuild  50% "+strings.Repeat("█", 11)+strings.Repeat("░", 10)+" 0.00/s\n\r", <-r.frames)
+	close(gates[2])
+	close(gates[3])
+	out, err := r.wait(t)
 	assert.NoError(t, err)
-	assert.True(t, look == nil)
+	// done: the row is erased, and no completion line is retained
+	assert.Equal(t, "\x1b[1A\r\x1b[K", out)
+	assert.True(t, r.restored.Load())
+}
+
+func TestThemedParallelProgressSharesOneRow(t *testing.T) {
+	th := NewTheme()
+	th.Symbols.BarEmpty = "-"
+	useTheme(t, th)
+	var active, maxActive atomic.Int64
+	all := make(chan struct{})
+	gate := make(chan struct{})
+	var once sync.Once
+	r := runParallel(t.Context(), t, []int{0, 1, 2, 3, 4, 5}, func(int) error {
+		n := active.Add(1)
+		for prev := maxActive.Load(); n > prev && !maxActive.CompareAndSwap(prev, n); prev = maxActive.Load() {
+		}
+		if n == 3 {
+			once.Do(func() { close(all) })
+		}
+		err := openedWithin(gate)
+		active.Add(-1)
+		return err
+	}, WithWorkers(3))
+	receiveN(t, all, 1)
+	// a theme installed while the workers run does not reach the bar
+	later := NewTheme()
+	later.Symbols.BarEmpty = "."
+	assert.NoError(t, defaultIO.installTheme(later))
+	r.tick(time.Second)
+	// three workers, one row in the theme captured at the start
+	assert.Equal(t, "\rbuild   0% "+strings.Repeat("-", 21)+" 0.00/s\n\r", <-r.frames)
+	close(gate)
+	out, err := r.wait(t)
+	assert.NoError(t, err)
+	assert.Equal(t, "\x1b[1A\r\x1b[K", out)
+	assert.Equal(t, int64(3), maxActive.Load())
+}
+
+func TestThemedParallelProgressFirstFailure(t *testing.T) {
+	useTheme(t, NewTheme())
+	fail := errors.New("fail")
+	started := make(chan int, 3)
+	gate0, gate1 := make(chan struct{}), make(chan struct{})
+	r := runParallel(t.Context(), t, []int{0, 1, 2}, func(v int) error {
+		switch v {
+		case 0:
+			started <- v
+			return openedWithin(gate0)
+		case 1:
+			started <- v
+			if err := openedWithin(gate1); err != nil {
+				return err
+			}
+			return fail
+		}
+		return nil
+	}, WithWorkers(2))
+	receiveN(t, started, 2)
+	r.tick(time.Second)
+	assert.Equal(t, "\rbuild   0% "+strings.Repeat("░", 21)+" 0.00/s\n\r", <-r.frames)
+	close(gate1)
+	close(gate0)
+	out, err := r.wait(t)
+	// the failure alone, and the row is erased rather than completed
+	assert.ErrorIs(t, err, fail)
+	assert.Equal(t, "fail", err.Error())
+	assert.Equal(t, "\x1b[1A\r\x1b[K", out)
+	assert.True(t, r.restored.Load())
+}
+
+func TestThemedParallelProgressCancel(t *testing.T) {
+	useTheme(t, NewTheme())
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	started := make(chan int, 2)
+	gate := make(chan struct{})
+	r := runParallel(ctx, t, []int{0, 1}, func(v int) error {
+		started <- v
+		return openedWithin(gate)
+	}, WithWorkers(1))
+	receiveN(t, started, 1)
+	r.tick(time.Second)
+	assert.Equal(t, "\rbuild   0% "+strings.Repeat("░", 21)+" 0.00/s\n\r", <-r.frames)
+	cancel()
+	close(gate)
+	out, err := r.wait(t)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, "\x1b[1A\r\x1b[K", out)
+	assert.True(t, r.restored.Load())
+}
+
+func TestThemedParallelProgressRenderError(t *testing.T) {
+	th := NewTheme()
+	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
+	th.Templates.Progress.Label = `{{ if eq .Current 1 }}{{ boom }}{{ end }}{{ .Label }}`
+	useTheme(t, th)
+	items := make([]int, 64)
+	for i := range items {
+		items[i] = i
+	}
+	var processed atomic.Int64
+	second := make(chan struct{})
+	gate := make(chan struct{})
+	r := runParallel(t.Context(), t, items, func(v int) error {
+		processed.Add(1)
+		if v == 1 {
+			close(second)
+			return openedWithin(gate)
+		}
+		return nil
+	}, WithWorkers(1))
+	// the only worker added the first item before taking the second
+	receiveN(t, second, 1)
+	r.tick(time.Second)
+	close(gate)
+	out, err := r.wait(t)
+	// nothing was drawn, so nothing is cleared
+	assert.Equal(t, "", out)
+	assert.True(t, r.restored.Load())
+	// why rendering ended, not that it cancelled the workers
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "redraw: theme.Templates.Progress.Label")
+	assert.Contains(t, err.Error(), "boom")
+	assert.True(t, !errors.Is(err, context.Canceled))
+	assert.True(t, processed.Load() < int64(len(items)))
+}
+
+func TestParallelProgressStaysLegacyWhenOff(t *testing.T) {
+	keepTheme(t)
+	prev := themeRendering.Swap(false)
+	t.Cleanup(func() { themeRendering.Store(prev) })
+	started := make(chan int, 1)
+	gate := make(chan struct{})
+	r := runParallel(t.Context(), t, []int{0}, func(v int) error {
+		started <- v
+		return openedWithin(gate)
+	})
+	receiveN(t, started, 1)
+	r.tick(time.Second)
+	assert.Equal(t, "\rbuild 0% [>"+strings.Repeat(" ", 18)+"] (0.00/s)\n\r", <-r.frames)
+	close(gate)
+	_, err := r.wait(t)
+	assert.NoError(t, err)
+}
+
+func TestByteSize(t *testing.T) {
+	for _, tc := range []struct {
+		n    float64
+		want string
+	}{
+		{0, "0 B"},
+		{1023, "1023 B"},
+		{1023.6, "1.0 KiB"},
+		{1024, "1.0 KiB"},
+		{1536, "1.5 KiB"},
+		{1<<20 - 1, "1.0 MiB"},
+		{10 << 20, "10.0 MiB"},
+		{1.5 * (1 << 30), "1.5 GiB"},
+		{1 << 70, "1024.0 EiB"},
+	} {
+		assert.Equal(t, tc.want, byteSize(tc.n))
+	}
+}
+
+// halfFile is a file halfway through 10 MiB at 1 MiB per second, one
+// second in, with every metric shown.
+func halfFile(now time.Time) progressState {
+	state := halfDone(now)
+	state.bytes = true
+	state.maxNum, state.currentNum, state.sinceRedrawNum = 10<<20, 5<<20, 5<<20
+	state.rollingRates = []float64{1 << 20}
+	return state
+}
+
+func TestThemedFileProgressByteMetrics(t *testing.T) {
+	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
+	const amount, rate = " 5.0 MiB / 10.0 MiB", " · 1.0 MiB/s"
+	for _, tc := range []struct {
+		width int
+		want  string
+	}{
+		{80, amount + rate + " · 5s remaining · 1s elapsed"},
+		{60, amount + rate + " · 5s remaining"},
+		{45, amount + rate},
+		{35, amount},
+		{30, ""},
+	} {
+		p := themedBar(t, NewTheme(), halfFile(now))
+		row, err := p.themedRow(tc.width, now)
+		assert.NoError(t, err)
+		// the amount is the last metric to go
+		assert.Equal(t, tc.want, afterTrack(row))
+		assert.Equal(t, tc.width, row.width())
+	}
+
+	// without a total, the bytes read alone
+	state := halfFile(now)
+	state.maxNum, state.showElapsed = 0, false
+	p := themedBar(t, NewTheme(), state)
+	row, err := p.themedRow(40, now)
+	assert.NoError(t, err)
+	assert.Equal(t, "build   0% "+strings.Repeat("░", 9)+" 5.0 MiB · 1.0 MiB/s", row.String())
+
+	// WithFormatRate formats the rate of a file too
+	state = halfFile(now)
+	state.fmtRate = func(r float64) string { return fmt.Sprintf("%.0f bytes", r) }
+	th := NewTheme()
+	th.Templates.Progress.Metrics = `{{ .Amount }}|{{ .Rate }}|{{ .Current }}/{{ .Total }}`
+	p = themedBar(t, th, state)
+	row, err = p.themedRow(80, now)
+	assert.NoError(t, err)
+	assert.Equal(t, " 5.0 MiB / 10.0 MiB|1048576 bytes|5242880/10485760", afterTrack(row))
+
+	// a counted bar has no amount
+	p = themedBar(t, th, halfDone(now))
+	row, err = p.themedRow(80, now)
+	assert.NoError(t, err)
+	assert.Equal(t, " |50.00|50/100", afterTrack(row))
+}
+
+// afterTrack is what a row shows after the empty track of its bar.
+func afterTrack(row text) string {
+	s := row.String()
+	return s[strings.LastIndex(s, "░")+len("░"):]
+}
+
+// scriptedFile returns its reads in order, then EOF, without touching the
+// buffer, and counts the calls.
+type scriptedFile struct {
+	size  int64
+	reads []fileRead
+	calls int
+}
+
+type fileRead struct {
+	n   int
+	err error
+}
+
+func (r *scriptedFile) Read([]byte) (int, error) {
+	r.calls++
+	if len(r.reads) == 0 {
+		return 0, io.EOF
+	}
+	c := r.reads[0]
+	r.reads = r.reads[1:]
+	return c.n, c.err
+}
+
+func (r *scriptedFile) Size() int64 { return r.size }
+
+// themedFile is a file reader over src rendering through th on a terminal
+// 60 columns wide.
+func themedFile(t *testing.T, th Theme, src io.Reader) (*wrapReader, fakeTerminal) {
+	t.Helper()
+	useTheme(t, th)
+	ft := newFakeTerminal(t, 60)
+	r, err := NewFileProgressReader(t.Context(), src, "build", ft.options()...)
+	assert.NoError(t, err)
+	ft.closeOnCleanup(t, r.p)
+	return r, ft
+}
+
+func TestThemedFileProgressFinalEOF(t *testing.T) {
+	src := &scriptedFile{size: 4 << 20, reads: []fileRead{{1 << 20, nil}, {3 << 20, io.EOF}}}
+	r, ft := themedFile(t, NewTheme(), src)
+	buf := make([]byte, 4<<20)
+	n, err := r.Read(buf)
+	assert.Equal(t, 1<<20, n)
+	assert.NoError(t, err)
+	ft.tick(time.Second)
+	assert.Equal(t, "\rbuild  25% █░░ 1.0 MiB / 4.0 MiB · 1.0 MiB/s · 3s remaining\n\r", <-ft.frames)
+	// the last bytes come with EOF, exactly as read
+	n, err = r.Read(buf)
+	assert.Equal(t, 3<<20, n)
+	assert.ErrorIs(t, err, io.EOF)
+	// EOF ends the bar: its row is erased, with no completion line
+	assert.Equal(t, "\x1b[1A\r\x1b[K", untilProgressStopped(t, r.p, ft.frames))
+	assert.True(t, ft.restored.Load())
+	assert.NoError(t, r.Close())
+	// no read to find out that the file is complete
+	assert.Equal(t, 2, src.calls)
+}
+
+func TestThemedFileProgressEarlyEOF(t *testing.T) {
+	src := &scriptedFile{size: 100, reads: []fileRead{{30, io.EOF}}}
+	r, ft := themedFile(t, NewTheme(), src)
+	n, err := r.Read(make([]byte, 100))
+	assert.Equal(t, 30, n)
+	assert.ErrorIs(t, err, io.EOF)
+	// a short file ends the bar without a frame claiming it complete
+	assert.Equal(t, "", untilProgressStopped(t, r.p, ft.frames))
+	assert.True(t, ft.restored.Load())
+	assert.NoError(t, r.Close())
+	assert.Equal(t, 1, src.calls)
+}
+
+func TestThemedFileProgressReadError(t *testing.T) {
+	broken := errors.New("broken")
+	src := &scriptedFile{size: 100, reads: []fileRead{{30, nil}, {10, broken}}}
+	r, ft := themedFile(t, NewTheme(), src)
+	buf := make([]byte, 100)
+	_, err := r.Read(buf)
+	assert.NoError(t, err)
+	n, err := r.Read(buf)
+	// the partial bytes and the error, as read
+	assert.Equal(t, 10, n)
+	assert.ErrorIs(t, err, broken)
+	ft.tick(time.Second)
+	// the partial bytes count; the error is the caller's to report
+	assert.Equal(t, "\rbuild  40% "+strings.Repeat("█", 5)+strings.Repeat("░", 6)+
+		" 40 B / 100 B · 40 B/s · 1s remaining\n\r", <-ft.frames)
+	closed := make(chan error)
+	go func() { closed <- r.Close() }()
+	assert.Equal(t, "\x1b[1A\r\x1b[K", untilProgressStopped(t, r.p, ft.frames))
+	assert.NoError(t, <-closed)
+	assert.True(t, ft.restored.Load())
+	assert.Equal(t, 2, src.calls)
+}
+
+func TestThemedFileProgressZeroSize(t *testing.T) {
+	src := &scriptedFile{size: 0}
+	r, ft := themedFile(t, NewTheme(), src)
+	ft.tick(time.Second)
+	assert.Equal(t, "\rbuild   0% "+strings.Repeat("░", 36)+" 0 B · 0 B/s\n\r", <-ft.frames)
+	n, err := r.Read(make([]byte, 8))
+	assert.Equal(t, 0, n)
+	assert.ErrorIs(t, err, io.EOF)
+	assert.Equal(t, "\x1b[1A\r\x1b[K", untilProgressStopped(t, r.p, ft.frames))
+	assert.NoError(t, r.Close())
+}
+
+func TestThemedFileProgressRenderError(t *testing.T) {
+	th := NewTheme()
+	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
+	th.Templates.Progress.Metrics = `{{ boom }}`
+	src := &scriptedFile{size: 100, reads: []fileRead{{30, nil}, {20, nil}}}
+	r, ft := themedFile(t, th, src)
+	buf := make([]byte, 100)
+	_, err := r.Read(buf)
+	assert.NoError(t, err)
+	ft.tick(time.Second)
+	assert.Equal(t, "", untilProgressStopped(t, r.p, ft.frames))
+	assert.True(t, ft.restored.Load())
+	// reading goes on: the bar no longer receives bytes, and nothing blocks
+	n, err := r.Read(buf)
+	assert.Equal(t, 20, n)
+	assert.NoError(t, err)
+	err = r.Close()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "progress: redraw: theme.Templates.Progress.Metrics")
+}
+
+func TestThemedFileProgressLogsWithoutTerminal(t *testing.T) {
+	th := NewTheme()
+	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
+	th.Templates.Progress.Label = `{{ boom }}`
+	th.Templates.Progress.Metrics = `{{ boom }}`
+	th.Templates.Progress.Frame = `{{ boom }}{{ .Bar }}`
+	useTheme(t, th)
+	var logs, out bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	r, err := NewFileProgressReader(t.Context(), &progressSizedReader{
+		Reader: strings.NewReader(strings.Repeat("x", 100)), size: 100,
+	}, "Download", WithOutput(&out))
+	assert.NoError(t, err)
+	data, err := io.ReadAll(iotest.OneByteReader(r))
+	assert.NoError(t, err)
+	assert.Equal(t, 100, len(data))
+	assert.NoError(t, r.Close())
+	// the same milestones as without a theme, and nothing on the output
+	assert.Equal(t, "", out.String())
+	var percentages []int
+	decoder := json.NewDecoder(&logs)
+	for decoder.More() {
+		var entry struct {
+			Percent int `json:"percent"`
+		}
+		assert.NoError(t, decoder.Decode(&entry))
+		percentages = append(percentages, entry.Percent)
+	}
+	assert.Equal(t, []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100}, percentages)
+}
+
+func TestFileProgressStaysLegacyWhenOff(t *testing.T) {
+	keepTheme(t)
+	prev := themeRendering.Swap(false)
+	t.Cleanup(func() { themeRendering.Store(prev) })
+	ft := newFakeTerminal(t, 40)
+	r, err := NewFileProgressReader(t.Context(), &scriptedFile{size: 100, reads: []fileRead{{50, nil}}}, "build",
+		ft.options()...)
+	assert.NoError(t, err)
+	ft.closeOnCleanup(t, r.p)
+	assert.True(t, r.p.look == nil)
+	_, err = r.Read(make([]byte, 100))
+	assert.NoError(t, err)
+	ft.tick(time.Second)
+	// the legacy rate is a plain number, even for bytes
+	assert.Equal(t, "\rbuild 50% [=> ] (50.00/s, 1s remaining)\n\r", <-ft.frames)
 }

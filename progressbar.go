@@ -130,8 +130,7 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, themed
 		return nil, fmt.Errorf("apply option: %w", err)
 	}
 	if themed {
-		// output only: no lease, so no probe
-		p.look, err = p.bind(defaultIO.bindTheme(ctx, p.theme, p.out, nil))
+		err = p.bindLook(ctx)
 		if err != nil {
 			p.cancel(err)
 			p.ticker.Stop()
@@ -227,7 +226,8 @@ func NewParallelProgressBar[T any](
 	yield func(T) error,
 	opts ...opt,
 ) error {
-	p, err := newStartedProgressBar(ctx, label, int64(len(slice)), false, opts...)
+	// one bar, theme and binding for all workers; they only add to it
+	p, err := newStartedProgressBar(ctx, label, int64(len(slice)), themeRendering.Load(), opts...)
 	if err != nil {
 		return err
 	}
@@ -568,6 +568,8 @@ type progressState struct {
 	showEstimate   bool
 	showRate       bool
 	showElapsed    bool
+	// bytes counts the bytes of a file, shown in binary units when themed
+	bytes bool
 }
 
 func (p *progressState) isDone() bool {
@@ -760,12 +762,16 @@ type progressView struct {
 	Total   int64
 	// Percent is the completion, 0 to 100; 0 without a positive Total.
 	Percent int
-	// Rate is formatted by [WithFormatRate], without the "/s" unit.
+	// Amount is the bytes read of a file and, with a positive Total, its
+	// size, in binary units: "3.0 MiB / 10.0 MiB". Empty for counted bars.
+	Amount string
+	// Rate is formatted by [WithFormatRate], without the "/s" unit; for a
+	// file, in binary units without it.
 	Rate      string
 	Remaining string
 	Elapsed   string
 	// Values are the shown metrics with their units, in the order they are
-	// kept: rate, remaining and elapsed time.
+	// kept: amount, rate, remaining and elapsed time.
 	Values []string
 }
 
@@ -783,6 +789,13 @@ func (p *Progressbar) view(rate float64, rateText string, n int) progressView {
 			*field = value
 			v.Values = append(v.Values, shown)
 		}
+	}
+	if p.bytes {
+		amount := byteSize(float64(p.currentNum))
+		if p.maxNum > 0 {
+			amount += " / " + byteSize(float64(p.maxNum))
+		}
+		add(&v.Amount, amount, amount)
 	}
 	if p.showRate {
 		add(&v.Rate, rateText, rateText+"/s")
@@ -809,7 +822,9 @@ func (p *Progressbar) themedRow(width int, now time.Time) (text, error) {
 	}
 	rate := p.rollingRate()
 	rateText := ""
-	if p.showRate {
+	if p.showRate && p.bytes && p.fmtRate == nil {
+		rateText = byteSize(rate)
+	} else if p.showRate {
 		rateText = text(p.formatRate(rate)).oneLine()
 	}
 	style := p.look.style
@@ -834,6 +849,25 @@ func (p *Progressbar) themedRow(width int, now time.Time) (text, error) {
 	return nil, nil
 }
 
+// byteUnits are the binary units above bytes.
+var byteUnits = [...]string{"KiB", "MiB", "GiB", "TiB", "PiB", "EiB"}
+
+// byteSize formats n bytes in binary units: whole bytes below 1 KiB, then
+// one decimal, as "512 B" or "1.5 MiB".
+func byteSize(n float64) string {
+	if math.Round(n) < 1024 {
+		return fmt.Sprintf("%.0f B", n)
+	}
+	n /= 1024
+	unit := 0
+	// move up once the value would print as 1024.0
+	for unit < len(byteUnits)-1 && math.Round(n*10) >= 1024*10 {
+		n /= 1024
+		unit++
+	}
+	return fmt.Sprintf("%.1f %s", n, byteUnits[unit])
+}
+
 // progressBarMark stands in for the bar while the frame renders. Slots
 // cannot emit it, since it is a control character.
 const progressBarMark = "\x00"
@@ -844,6 +878,13 @@ type progressLook struct {
 	style                 ProgressStyle
 	symbols               Symbols
 	label, metrics, frame boundSlot
+}
+
+// bindLook binds the captured theme to the output of a themed bar. Output
+// only: without a lease, it never probes the terminal.
+func (p *Progressbar) bindLook(ctx context.Context) (err error) {
+	p.look, err = p.bind(defaultIO.bindTheme(ctx, p.theme, p.out, nil))
+	return err
 }
 
 // bind attaches the destination helpers of look to every progress slot.
@@ -941,6 +982,13 @@ func NewFileProgressReader(ctx context.Context, r io.Reader, label string, o ...
 	if err != nil {
 		return nil, fmt.Errorf("size: %w", err)
 	}
+	if themeRendering.Load() {
+		err = p.bindLook(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	p.bytes = true
 	p.showRate = true
 	p.showEstimate = true
 	p.maxNum = size
