@@ -1105,6 +1105,51 @@ func TestBuiltinPromptSlots(t *testing.T) {
 	assert.Equal(t, Template(""), c.editable().Templates.Prompt.Label)
 }
 
+func TestBuiltinMultichoiceSlots(t *testing.T) {
+	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = ASCIISymbols() })
+	assert.NoError(t, err)
+	render := func(s *compiledSlot, data any) string {
+		t.Helper()
+		b, err := s.bind(c.funcs(profilePlain, roleStyles{}))
+		assert.NoError(t, err)
+		out, err := b.render(data)
+		assert.NoError(t, err)
+		return out.String()
+	}
+	tt := c.templates.Multichoice
+	for _, tc := range []struct {
+		row  multichoiceRow
+		want string
+	}{
+		{multichoiceRow{Value: "v", Active: true, Selected: true}, "> x v"},
+		{multichoiceRow{Value: "v", Active: true}, "> o v"},
+		{multichoiceRow{Value: "v", Selected: true}, "  x v"},
+		{multichoiceRow{Value: "v"}, "  o v"},
+	} {
+		assert.Equal(t, tc.want, render(tt.Row, tc.row))
+	}
+	assert.Equal(t, "a, b", render(tt.AnswerValue, collectionView{Values: []string{"a", "b"}, Count: 2}))
+	assert.Equal(t, "none", render(tt.AnswerValue, collectionView{}))
+	assert.Equal(t, "No matches", render(tt.Empty, emptyView{"zz"}))
+	assert.Equal(t, "+ Pick · a, b", render(tt.Answer, answerView{Label: "Pick", Value: "a, b"}))
+}
+
+func TestMultichoiceRowAndAnswerValueFallBackToBuiltins(t *testing.T) {
+	c, err := compileTemplates(t, func(th *Theme) {
+		th.Templates.Multichoice.Label = "family"
+		th.Templates.Multichoice.AnswerValue = Hidden
+	})
+	assert.NoError(t, err)
+	builtin, err := builtinTemplates.compile(c.funcs(profilePlain, roleStyles{}), templates{})
+	assert.NoError(t, err)
+	tt := c.templates.Multichoice
+	assert.Equal(t, builtin.Multichoice.Row.tmpl.Root.String(), tt.Row.tmpl.Root.String())
+	assert.True(t, tt.AnswerValue.hidden)
+	// a family edit does not reach the other families
+	assert.Equal(t, "family", tt.Label.tmpl.Root.String())
+	assert.True(t, c.templates.Dropdown.Label.tmpl.Root.String() != "family")
+}
+
 func TestColorLiteralsFailInstallation(t *testing.T) {
 	for _, src := range []Template{
 		`{{ fg "#2D9B5" .Label }}`,

@@ -2424,33 +2424,49 @@ func TestDropdownLazyAutomaticAnswerCancelsWhileProducerBlocked(t *testing.T) {
 	}
 }
 
-// themedDropdownOpt routes a Dropdown family prompt through th on a scripted
-// terminal of the given width and ten rows. Each key is one read; without
-// keys, reads block until the test ends. restored reports a released terminal.
-func themedDropdownOpt(t *testing.T, th Theme, width int, keys ...string) (o opt, out *bytes.Buffer, restored *bool) {
+// scriptedTerminal is a terminal of a fixed width and ten rows that a themed
+// prompt acquires. Each key is one read; without keys, reads block until the
+// test ends. restored reports a released terminal.
+type scriptedTerminal struct {
+	in       io.Reader
+	out      *bytes.Buffer
+	restored *bool
+	width    int
+}
+
+// scripted installs th for the test and scripts a terminal for one prompt.
+func scripted(t *testing.T, th Theme, width int, keys ...string) *scriptedTerminal {
 	t.Helper()
 	useTheme(t, th)
-	var in io.Reader
+	s := &scriptedTerminal{out: &bytes.Buffer{}, restored: new(bool), width: width}
 	if len(keys) == 0 {
 		blocking := newBlockingByteReader()
 		t.Cleanup(blocking.Close)
-		in = blocking
-	} else {
-		var chunks [][]byte
-		for _, k := range keys {
-			chunks = append(chunks, []byte(k))
-		}
-		in = &chunkReader{chunks: chunks}
+		s.in = blocking
+		return s
 	}
-	out, restored = &bytes.Buffer{}, new(bool)
+	var chunks [][]byte
+	for _, k := range keys {
+		chunks = append(chunks, []byte(k))
+	}
+	s.in = &chunkReader{chunks: chunks}
+	return s
+}
+
+// makeTermIO exposes scripted terminal dimensions and records restoration.
+func (s *scriptedTerminal) makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
+	restore := func() error { *s.restored = true; return nil }
+	return &termIO{in: in, out: out, Width: s.width, Height: 10, Restore: restore}, nil
+}
+
+// themedDropdownOpt routes a themed dropdown through a scripted terminal.
+func themedDropdownOpt(t *testing.T, th Theme, width int, keys ...string) (o opt, out *bytes.Buffer, restored *bool) {
+	t.Helper()
+	s := scripted(t, th, width, keys...)
 	return opT(func(d *dropdown) error {
-		d.in, d.out = in, out
-		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-			restore := func() error { *restored = true; return nil }
-			return &termIO{in: in, out: out, Width: width, Height: 10, Restore: restore}, nil
-		}
+		d.in, d.out, d.makeTermIO = s.in, s.out, s.makeTermIO
 		return nil
-	}), out, restored
+	}), s.out, s.restored
 }
 
 // boundDropdown is a themed dropdown over items, parsed and bound to a
@@ -2537,11 +2553,12 @@ func TestThemedDropdownMoreRowAndShortTerminals(t *testing.T) {
 		want   string
 	}{
 		{10, "\r? Fruit\n\r| > a\n\r|   b\n\r|   c\n\r|   d\n\r|   e\n\r| up/down move · type filter\n\r"},
-		// three of five rows fit; the count of the rest follows them
-		{6, "\r? Fruit\n\r| > a\n\r|   b\n\r|   c\n\r| . 2 more\n\r| up/down move · type filter\n\r"},
-		// the hint goes first
-		{4, "\r? Fruit\n\r| > a\n\r|   b\n\r| . 3 more\n\r"},
-		{3, "\r? Fruit\n\r| > a\n\r| . 4 more\n\r"},
+		// three of five rows fit with the count of the rest; the cursor row
+		// below the frame leaves no row for the hint, which goes first
+		{6, "\r? Fruit\n\r| > a\n\r|   b\n\r|   c\n\r| . 2 more\n\r"},
+		// then the count, then the label
+		{4, "\r? Fruit\n\r| > a\n\r|   b\n\r"},
+		{3, "\r? Fruit\n\r| > a\n\r"},
 	} {
 		t.Run(strconv.Itoa(tc.height), func(t *testing.T) {
 			d, tt := boundDropdown(t, asciiTheme(false), 40, tc.height, items)
@@ -2638,7 +2655,7 @@ func TestThemedDropdownSlotPrecedence(t *testing.T) {
 }
 
 func TestThemedDropdownPerCallMoreAndLabelKeepPayloads(t *testing.T) {
-	d, tt := boundDropdown(t, asciiTheme(false), 40, 4, []any{"a", "b", "c", "d"},
+	d, tt := boundDropdown(t, asciiTheme(false), 40, 5, []any{"a", "b", "c", "d"},
 		WithMoreItemsTemplate(`{{ .More }}/{{ .Total }}`), WithLabelTemplate(`<{{ . }}>`))
 	assert.Equal(t, "\r<Fruit> \n\r| > a\n\r|   b\n\r| 2/4\n\r", frame(t, d, tt))
 }
@@ -2774,4 +2791,21 @@ func TestThemedDropdownRolesStyleFocusAndRows(t *testing.T) {
 	assert.Contains(t, got, string(roles.accent)+">")
 	assert.Contains(t, got, string(roles.accent)+"a")
 	assert.Contains(t, got, string(roles.foreground)+"b")
+}
+
+func TestThemedDropdownFullHeightFrameKeepsLabelOnScreen(t *testing.T) {
+	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 60, "\x1b[B", "\x1b[B", "\x1b[A", "\x1b[B", "\r")
+	six := opT(func(d *dropdown) error {
+		next := d.makeTermIO
+		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			tt, err := next(in, out)
+			tt.Height = 6
+			return tt, err
+		}
+		return nil
+	})
+	got, err := Dropdown(t.Context(), "Fruit", []string{"a", "b", "c", "d", "e"}, o, six)
+	assert.NoError(t, err)
+	assert.Equal(t, "c", got)
+	frameStaysOnScreen(t, out.String())
 }
