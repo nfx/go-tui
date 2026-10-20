@@ -607,3 +607,131 @@ func TestParsedPaletteResolveMatchesAdapter(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, want, pp.resolve(false, sRGB{0x20, 0x20, 0x20}, true))
 }
+
+// compileTemplates compiles a Guided theme with test-specific edits.
+func compileTemplates(t *testing.T, edit func(*Theme)) (*compiledTheme, error) {
+	t.Helper()
+	th := GuidedTheme()
+	edit(&th)
+	return th.compile()
+}
+
+func TestTemplateZeroInheritsAndEmptyHides(t *testing.T) {
+	c, err := compileTemplates(t, func(th *Theme) {
+		th.Templates.Prompt.Label = Template("{{ bold .Label }}")
+		th.Templates.Dropdown.Hint = Hidden
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tt := c.templates
+	for p, s := range map[string]*compiledSlot{
+		"Prompt": tt.Prompt.Label, "Input": tt.Input.Label, "Password": tt.Password.Label,
+		"Number": tt.Number.Label, "Dropdown": tt.Dropdown.Label, "Multichoice": tt.Multichoice.Label,
+		"Confirm": tt.Confirm.Label, "FilePicker": tt.FilePicker.Label,
+	} {
+		if s == nil || s.tmpl == nil {
+			t.Errorf("%s.Label did not inherit the shared label", p)
+		}
+	}
+	if s := tt.Dropdown.Hint; s == nil || !s.hidden {
+		t.Error("explicit empty did not hide Dropdown.Hint")
+	}
+	if tt.Multichoice.Hint != nil {
+		t.Error("unset slot must fall to the built-in default")
+	}
+}
+
+func TestTemplateFamilyOverrideStaysLocal(t *testing.T) {
+	c, err := compileTemplates(t, func(th *Theme) {
+		th.Templates.Prompt.Label = Template("shared")
+		th.Templates.Input.Label = Template("input")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tt := c.templates
+	for _, tc := range []struct {
+		path string
+		slot *compiledSlot
+		want string
+	}{
+		{"Prompt.Label", tt.Prompt.Label, "shared"},
+		{"Input.Label", tt.Input.Label, "input"},
+		{"Password.Label", tt.Password.Label, "input"},
+		{"Number.Label", tt.Number.Label, "input"},
+		{"Dropdown.Label", tt.Dropdown.Label, "shared"},
+	} {
+		if got := tc.slot.tmpl.Root.String(); got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.path, got, tc.want)
+		}
+	}
+}
+
+func TestTemplateRequiredSlotRejectsEmpty(t *testing.T) {
+	for _, path := range []string{"Choice.Active", "Choice.Inactive", "Choice.Value", "Multichoice.Row"} {
+		_, err := compileTemplates(t, func(th *Theme) {
+			switch path {
+			case "Choice.Active":
+				th.Templates.Choice.Active = Hidden
+			case "Choice.Inactive":
+				th.Templates.Choice.Inactive = Hidden
+			case "Choice.Value":
+				th.Templates.Choice.Value = Hidden
+			default:
+				th.Templates.Multichoice.Row = Hidden
+			}
+		})
+		if err == nil || !strings.Contains(err.Error(), path) {
+			t.Errorf("%s: want path-qualified error, got %v", path, err)
+		}
+	}
+}
+
+func TestTemplateErrorNamesDefiningSlot(t *testing.T) {
+	_, err := compileTemplates(t, func(th *Theme) {
+		th.Templates.Prompt.Answer = Template("{{ .Value ")
+	})
+	if err == nil || !strings.Contains(err.Error(), "theme.Templates.Prompt.Answer") {
+		t.Fatalf("got %v", err)
+	}
+	_, err = compileTemplates(t, func(th *Theme) {
+		th.Templates.Input.Label = Template("{{ nosuchhelper .Label }}")
+	})
+	if err == nil || !strings.Contains(err.Error(), "theme.Templates.Input.Label") {
+		t.Fatalf("unknown helper: got %v", err)
+	}
+}
+
+func TestTemplateDefineIsIsolatedPerSlot(t *testing.T) {
+	c, err := compileTemplates(t, func(th *Theme) {
+		th.Templates.Prompt.Label = Template(`{{ define "x" }}A{{ end }}{{ template "x" }}`)
+		th.Templates.Prompt.Hint = Template(`{{ define "x" }}B{{ end }}{{ template "x" }}`)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec := func(s *compiledSlot) string {
+		var b strings.Builder
+		if err := s.tmpl.Execute(&b, nil); err != nil {
+			t.Fatal(err)
+		}
+		return b.String()
+	}
+	if a, b := exec(c.templates.Prompt.Label), exec(c.templates.Prompt.Hint); a != "A" || b != "B" {
+		t.Fatalf("define leaked between slots: %q %q", a, b)
+	}
+}
+
+func TestThemeRoundTripKeepsTemplateSources(t *testing.T) {
+	c, err := compileTemplates(t, func(th *Theme) { th.Templates.Choice.More = Hidden })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.editable().Templates.Choice.More; got != Hidden {
+		t.Fatalf("explicit empty lost in round trip: %+v", got)
+	}
+	if c.editable().Templates.Choice.Empty != "" {
+		t.Fatal("inherited slot became explicit")
+	}
+}
