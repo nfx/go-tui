@@ -362,7 +362,7 @@ func (m *multichoice) addItem(item any) error {
 	m.trie.Add(inactive, i)
 	score := 0
 	if m.hint != "" {
-		score = choiceScore(m.choicePlainText(inactive), m.hintRunes)
+		score = choiceScore(choiceLabels{}.plainText(inactive), m.hintRunes)
 	}
 	m.scores = append(m.scores, score)
 	matches := true
@@ -382,19 +382,6 @@ func (m *multichoice) addItem(item any) error {
 		}
 	}
 	return nil
-}
-
-// choicePlainText removes terminal styling and preserves word boundaries for ranking.
-func (m *multichoice) choicePlainText(t text) string {
-	var b strings.Builder
-	for seg := range t.segments() {
-		if seg.isText() {
-			b.Write(seg.text)
-		} else if bytes.Equal(seg.text, []byte{'\n'}) || bytes.Equal(seg.text, []byte{'\t'}) {
-			b.WriteByte(' ')
-		}
-	}
-	return b.String()
 }
 
 // less ranks by the default hint, using arrival order to break ties.

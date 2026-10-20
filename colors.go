@@ -840,7 +840,7 @@ func (in Theme) compileFuncs(builtins, funcs template.FuncMap) error {
 }
 
 // widgetHelpers are the names of helpers that widgets add to the builtins.
-var widgetHelpers = []string{"label", "tableString"}
+var widgetHelpers = []string{"tableString"}
 
 // generatedHelperPrefixes are the prefixes of names that tables generate.
 var generatedHelperPrefixes = []string{"__", "tableColumnTypeFormat", "tableColumnNameFormat"}
@@ -1215,6 +1215,13 @@ var builtinTemplates = Templates{
 		Hint: `{{ range $i, $b := .Bindings }}{{ if $i }}{{ muted " · " }}{{ end }}` +
 			`{{ text $b.Key }} {{ muted $b.Action }}{{ end }}`,
 		Feedback: `{{ error (symbol "Error") }} {{ error .Message }}`,
+	},
+	Choice: ChoiceTemplates{
+		Value:    `{{ label . }}`,
+		Details:  Hidden,
+		Active:   `{{ bold (accent .Value) }}{{ with .Details }} {{ muted . }}{{ end }}`,
+		Inactive: `{{ text .Value }}`,
+		More:     `{{ muted (printf "%s %d more" (symbol "Ellipsis") .More) }}`,
 	},
 }
 
@@ -1664,6 +1671,7 @@ func (d destination) funcs() template.FuncMap {
 	funcs["fg"] = d.color(false)
 	funcs["bg"] = d.color(true)
 	funcs["symbol"] = d.symbols.named
+	funcs["label"] = choiceLabels{}.itemLabel
 	return funcs
 }
 
