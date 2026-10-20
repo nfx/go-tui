@@ -59,9 +59,13 @@ func (r *fdByteReader) Fd() uintptr {
 }
 
 func startChanIO(ctx context.Context, width, height int) *chanIO {
+	return startChanIOTo(ctx, io.Discard, width, height)
+}
+
+func startChanIOTo(ctx context.Context, out io.Writer, width, height int) *chanIO {
 	cio := newUnstartedIO(ctx, width, height, 0)
 	go cio.handleViewports(ctx)
-	go cio.forwardTo(ctx, io.Discard)
+	go cio.forwardTo(ctx, out)
 	return cio
 }
 

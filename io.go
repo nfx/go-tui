@@ -401,6 +401,7 @@ func newUnstartedIO(ctx context.Context, width, height, fd int) *chanIO {
 		Out:    make(chan string, 1024),
 		done:   make(chan struct{}),
 		syncCh: make(chan chan error),
+		ctl:    make(chan controlWrite),
 		vreply: make(chan chan *viewport),
 		notify: make(chan viewportChanged, 1024), // buffered to avoid blocking
 		width:  width,
@@ -416,9 +417,10 @@ func newUnstartedIO(ctx context.Context, width, height, fd int) *chanIO {
 type chanIO struct {
 	In     chan string
 	Out    chan string
-	done   chan struct{}   // closed by forwardTo after draining all pending output
-	syncCh chan chan error // used by Flush to synchronize with forwardTo
-	err    error           // first output failure, readable once done is closed
+	done   chan struct{}     // closed by forwardTo after draining all pending output
+	syncCh chan chan error   // used by Flush to synchronize with forwardTo
+	ctl    chan controlWrite // verbatim terminal requests, see [chanIO.writeControl]
+	err    error             // first output failure, readable once done is closed
 
 	ctx context.Context
 
@@ -714,6 +716,11 @@ func (i *chanIO) forwardTo(ctx context.Context, out io.Writer) {
 			}
 		case chunk := <-i.Out:
 			prevH = i.handleExternalWrite(w, prevH, &pending, &nl, chunk)
+		case req := <-i.ctl:
+			// Reached only between other writes, and it prints nothing,
+			// so the cursor and the managed rows stay where they were.
+			_, err := w.Write(req.p)
+			req.reply <- err
 		case reply := <-i.syncCh:
 			prevH = i.flushOut(w, prevH, &pending, &nl)
 			if pending.Len() > 0 {
@@ -995,6 +1002,30 @@ func (*chanIO) writeViewport(curr *viewport, w io.Writer, height int) (writeToRe
 			return writeToResponse{}, res.err
 		}
 		return res, nil
+	}
+}
+
+// controlWrite is a request for the arbiter to write bytes verbatim.
+type controlWrite struct {
+	p     []byte
+	reply chan error
+}
+
+// writeControl is serialized with all other terminal output by [chanIO.forwardTo].
+func (i *chanIO) writeControl(ctx context.Context, p []byte) error {
+	reply := make(chan error, 1)
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-i.ctx.Done():
+		return i.ctx.Err()
+	case i.ctl <- controlWrite{p: p, reply: reply}:
+	}
+	select {
+	case <-i.ctx.Done():
+		return i.ctx.Err()
+	case err := <-reply:
+		return err
 	}
 }
 
