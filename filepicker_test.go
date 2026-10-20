@@ -4,9 +4,14 @@
 package tui
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
+	"text/template"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
@@ -140,4 +145,246 @@ func TestFilePickerDefaults(t *testing.T) {
 	// a cycle is rejected instead of looping
 	_, err = FilePicker(ctx, "File", io, WithStartDir(only), WithDefault(".."))
 	assert.Error(t, err)
+}
+
+// pickerTree is a start directory with a.txt and sub/inner.txt.
+func pickerTree(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	assert.NoError(t, os.Mkdir(filepath.Join(root, "sub"), 0o755))
+	for _, name := range []string{"a.txt", "sub/inner.txt"} {
+		assert.NoError(t, os.WriteFile(filepath.Join(root, name), nil, 0o600))
+	}
+	return root
+}
+
+// clearPicker erases one directory frame of three rows below the label.
+const clearPicker = "\r\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"
+
+func TestThemedFilePickerNavigatesAndRetainsPathOnce(t *testing.T) {
+	root := pickerTree(t)
+	o, out, restored := themedDropdownOpt(t, asciiTheme(false), 40, "\x1b[B", "\r", "\x1b[B", "\r")
+	got, err := FilePicker(t.Context(), "File", WithStartDir(root), o)
+	assert.NoError(t, err)
+	want := filepath.Join(root, "sub", "inner.txt")
+	assert.Equal(t, want, got)
+	assert.True(t, *restored)
+	hint := "\r| up/down move · type filter\n"
+	// each directory erases its frame once and retains nothing; the chosen
+	// path is retained once, as the answer of the whole invocation
+	assert.Equal(t, ""+
+		"\r? File\n\r| > a.txt\n\r|   sub/\n"+hint+clearPicker+
+		"\r? File\n\r|   a.txt\n\r| > sub/\n"+hint+clearPicker+
+		"\r? File\n\r| > ..\n\r|   inner.txt\n"+hint+clearPicker+
+		"\r? File\n\r|   ..\n\r| > inner.txt\n"+hint+clearPicker+
+		"+ File · "+want+"\n", out.String())
+}
+
+func TestThemedFilePickerParentEntryAndFileView(t *testing.T) {
+	root := pickerTree(t)
+	th := asciiTheme(false)
+	th.Funcs = template.FuncMap{"under": func(p string) string { return strings.TrimPrefix(p, root) }}
+	th.Templates.FilePicker.Value = `{{ if .Parent }}up{{ else }}{{ under .Path }}{{ if .IsDir }} dir{{ end }}{{ end }}`
+	o, out, _ := themedDropdownOpt(t, th, 60, "\x1b[B", "\r", "\r", "\r")
+	got, err := FilePicker(t.Context(), "File", WithStartDir(root), o)
+	assert.NoError(t, err)
+	// into sub, back up through the parent entry, then the first file
+	assert.Equal(t, filepath.Join(root, "a.txt"), got)
+	sep := string(os.PathSeparator)
+	assert.Contains(t, out.String(), "\r| > "+sep+"a.txt\n\r|   "+sep+"sub dir\n")
+	assert.Contains(t, out.String(), "\r| > up\n\r|   "+filepath.Join(sep+"sub", "inner.txt")+"\n")
+	// the answer is the returned path, not the projection
+	assert.True(t, strings.HasSuffix(out.String(), "+ File · "+got+"\n"))
+}
+
+func TestThemedFilePickerMutesParentEntry(t *testing.T) {
+	withEnv(t, "FORCE_COLOR=3")
+	th := asciiTheme(false)
+	th.Light = true
+	o, out, _ := themedDropdownOpt(t, th, 40, "\x1b[B", "\r", "\x1b[B", "\r")
+	_, err := FilePicker(t.Context(), "File", WithStartDir(pickerTree(t)), o)
+	assert.NoError(t, err)
+	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), out, nil).roles
+	assert.True(t, len(roles.muted) > 0)
+	assert.Contains(t, out.String(), string(roles.muted)+"..")
+	assert.True(t, !strings.Contains(out.String(), string(roles.muted)+"inner.txt"))
+}
+
+func TestThemedFilePickerKeepsOneThemeAcrossDirectories(t *testing.T) {
+	root := pickerTree(t)
+	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "\x1b[B", "\r", "\x1b[B", "\r")
+	other := asciiTheme(false)
+	other.Templates.Prompt.Label = `other {{ .Label }}`
+	other.Templates.Prompt.Answer = `other {{ .Value }}`
+	terminals := 0
+	install := opT(func(d *dropdown) error {
+		next := d.makeTermIO
+		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			terminals++
+			if terminals == 2 {
+				// a new default between directories reaches later invocations only
+				assert.NoError(t, defaultIO.installTheme(other))
+			}
+			return next(in, out)
+		}
+		return nil
+	})
+	_, err := FilePicker(t.Context(), "File", WithStartDir(root), o, install)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, terminals)
+	assert.True(t, !strings.Contains(out.String(), "other"))
+	// two frames in each directory, all through the captured theme
+	assert.Equal(t, 4, strings.Count(out.String(), "\r? File\n"))
+}
+
+func TestFilePickerNextDropdownInheritsThemeAndBinding(t *testing.T) {
+	useTheme(t, asciiTheme(false))
+	f, first, err := newFilePicker(t.Context(), WithStartDir(t.TempDir()))
+	assert.NoError(t, err)
+	assert.True(t, first.themed)
+	f.look = defaultIO.bindTheme(t.Context(), f.theme, first.out, nil)
+	assert.NoError(t, defaultIO.installTheme(asciiTheme(true)))
+	next, err := f.nextDropdown(t.Context(), nil)
+	assert.NoError(t, err)
+	assert.True(t, next.theme == f.theme && next.themed)
+	assert.True(t, next.inherit.theme == f.theme)
+	assert.True(t, next.destination(t.Context(), nil).theme == f.theme)
+	assert.True(t, next.family.Value == f.theme.templates.FilePicker.Value)
+}
+
+func TestThemedFilePickerSlotPrecedence(t *testing.T) {
+	dir := t.TempDir()
+	assert.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), nil, 0o600))
+	run := func(th Theme) string {
+		t.Helper()
+		o, out, _ := themedDropdownOpt(t, th, 40, "\r")
+		_, err := FilePicker(t.Context(), "File", WithStartDir(dir), o)
+		assert.NoError(t, err)
+		return out.String()
+	}
+	// a shared projection reaches the picker's entries
+	th := asciiTheme(false)
+	th.Templates.Choice.Value = `{{ .Name }}!`
+	th.Templates.Prompt.Answer = `{{ .Label }}={{ .Value }}`
+	th.Templates.Dropdown.Label = `dropdown {{ .Label }}`
+	th.Templates.Dropdown.Value = `dropdown`
+	got := run(th)
+	assert.True(t, strings.HasPrefix(got, "\r? File\n\r| > a.txt!\n"))
+	assert.True(t, strings.HasSuffix(got, "File="+filepath.Join(dir, "a.txt")+"\n"))
+
+	// the family wins locally; Hidden hides the hint
+	th.Templates.FilePicker.Value = `[{{ .Name }}]`
+	th.Templates.FilePicker.Label = `pick {{ .Label }}`
+	th.Templates.FilePicker.Hint = Hidden
+	got = run(th)
+	assert.True(t, strings.HasPrefix(got, "\rpick File\n\r| > [a.txt]\n\r\x1b[2A"))
+}
+
+func TestThemedFilePickerPerCallOptions(t *testing.T) {
+	root := pickerTree(t)
+	// type to filter in each directory; the projection and the answer
+	// template take the raw entry, and the answer retains every step
+	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "s", "\r", "i", "\r")
+	got, err := FilePicker(t.Context(), "File", WithStartDir(root), o,
+		WithTemplate(".Name"), WithAnswerTemplate(`picked {{ .Answer.Name }}`))
+	assert.NoError(t, err)
+	assert.Equal(t, filepath.Join(root, "sub", "inner.txt"), got)
+	assert.Contains(t, out.String(), "\r|   sub\n")
+	assert.Contains(t, out.String(), "picked sub\n")
+	assert.True(t, strings.HasSuffix(out.String(), "picked inner.txt\n"))
+	assert.True(t, !strings.Contains(out.String(), "+ File"))
+}
+
+func TestThemedFilePickerHiddenAnswer(t *testing.T) {
+	dir := t.TempDir()
+	assert.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), nil, 0o600))
+	th := asciiTheme(false)
+	th.Templates.FilePicker.Answer = Hidden
+	o, out, _ := themedDropdownOpt(t, th, 40, "\r")
+	_, err := FilePicker(t.Context(), "File", WithStartDir(dir), o)
+	assert.NoError(t, err)
+	// the frame is erased and nothing is retained
+	assert.True(t, strings.HasSuffix(out.String(), "| up/down move · type filter\n\r"+
+		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"))
+
+	o, out, _ = themedDropdownOpt(t, asciiTheme(false), 40, "\r")
+	_, err = FilePicker(t.Context(), "File", WithStartDir(dir), o, WithHide())
+	assert.NoError(t, err)
+	assert.True(t, !strings.Contains(out.String(), "+ File"))
+}
+
+func TestThemedFilePickerDefaultsWithoutTerminal(t *testing.T) {
+	boom := errors.New("boom")
+	th := asciiTheme(false)
+	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
+	// without a terminal only the projection runs, never a presentation slot
+	th.Templates.Prompt.Label = `{{ fails .Label }}`
+	th.Templates.FilePicker.Active = `{{ fails .Value }}`
+	th.Templates.FilePicker.Inactive = `{{ fails .Value }}`
+	th.Templates.FilePicker.Answer = `{{ fails .Value }}`
+	useTheme(t, th)
+	io := quiet(t)
+	ctx := t.Context()
+	root := t.TempDir()
+	assert.NoError(t, os.Mkdir(filepath.Join(root, "notes"), 0o755))
+	for _, name := range []string{"main.go", "notes.md", "notes/n.txt"} {
+		assert.NoError(t, os.WriteFile(filepath.Join(root, name), nil, 0o600))
+	}
+	dir := WithStartDir(root)
+	got, err := FilePicker(ctx, "File", io, dir, WithDefault("main"))
+	assert.NoError(t, err)
+	assert.Equal(t, filepath.Join(root, "main.go"), got)
+	// the exact name of an entry wins over the hint
+	got, err = FilePicker(ctx, "File", io, dir, WithDefault("notes.md"))
+	assert.NoError(t, err)
+	assert.Equal(t, filepath.Join(root, "notes.md"), got)
+	// "notes" names the directory, and is missing inside of it
+	_, err = FilePicker(ctx, "File", io, dir, WithDefault("notes"))
+	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = FilePicker(ctx, "File", io, dir)
+	assert.ErrorIs(t, err, ErrNoTTY)
+
+	// hints match the FilePicker projection
+	th.Templates.FilePicker.Value = `x{{ .Name }}`
+	useTheme(t, th)
+	got, err = FilePicker(ctx, "File", io, dir, WithDefault("xma"))
+	assert.NoError(t, err)
+	assert.Equal(t, filepath.Join(root, "main.go"), got)
+}
+
+func TestThemedFilePickerUnreadableDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Getuid() == 0 {
+		t.Skip("permissions are not enforced")
+	}
+	root := t.TempDir()
+	locked := filepath.Join(root, "locked")
+	assert.NoError(t, os.Mkdir(locked, 0o755))
+	assert.NoError(t, os.WriteFile(filepath.Join(root, "a.txt"), nil, 0o600))
+	assert.NoError(t, os.Chmod(locked, 0))
+	t.Cleanup(func() { assert.NoError(t, os.Chmod(locked, 0o755)) })
+	o, out, restored := themedDropdownOpt(t, asciiTheme(false), 40, "\x1b[B", "\r")
+	_, err := FilePicker(t.Context(), "File", WithStartDir(root), o)
+	assert.ErrorIs(t, err, os.ErrPermission)
+	assert.True(t, *restored)
+	assert.True(t, strings.HasSuffix(out.String(), clearPicker))
+}
+
+func TestThemedFilePickerHelperErrorRestoresTerminal(t *testing.T) {
+	boom := errors.New("boom")
+	th := asciiTheme(false)
+	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
+	th.Templates.FilePicker.Inactive = `{{ fails .Value }}`
+	o, out, restored := themedDropdownOpt(t, th, 40, "\r")
+	_, err := FilePicker(t.Context(), "File", WithStartDir(pickerTree(t)), o)
+	assert.ErrorIs(t, err, boom)
+	assert.True(t, *restored)
+	assert.True(t, !strings.Contains(out.String(), "+ File"))
+}
+
+func TestFilePickerStaysLegacyWhenOff(t *testing.T) {
+	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "\r")
+	themeRendering.Store(false)
+	_, err := FilePicker(t.Context(), "File", WithStartDir(pickerTree(t)), o)
+	assert.NoError(t, err)
+	assert.Contains(t, out.String(), "→ ")
 }

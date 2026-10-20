@@ -111,11 +111,14 @@ type dropdown struct {
 	// theme is the snapshot captured at construction. When themed, the
 	// dropdown renders through it: family are the slots of the widget that
 	// runs it, look is its binding to the destination, slot the bound
-	// slots, label and hint the rows rendered once per run.
+	// slots, label and hint the rows rendered once per run. A wrapper that
+	// runs several dropdowns hands the binding of an earlier one on as
+	// inherit, so that one invocation keeps one appearance.
 	theme       *compiledTheme
 	themed      bool
 	family      choiceFamily
 	look        binding
+	inherit     binding
 	slot        choiceSlots
 	label, hint text
 	// content is the projected main content of every item, and search the
@@ -689,10 +692,21 @@ func (d *dropdown) setContentTemplate(main string, activeDetails ...string) {
 
 // projection is the content of a themed choice list set by [WithTemplate]
 // or [WithFieldTemplate]. It replaces the Value and Details slots of the
-// theme and leaves the presentation alone.
+// theme and leaves the presentation alone. view adapts a raw item to the
+// payload of those slots; nil passes it unchanged. Per-call templates always
+// take the raw item.
 type projection struct {
 	mainSource, detailsSource     string
 	mainTemplate, detailsTemplate *template.Template
+	view                          func(any) any
+}
+
+// slotItem is the payload of the Value and Details slots for item.
+func (p *projection) slotItem(item any) any {
+	if p.view == nil {
+		return item
+	}
+	return p.view(item)
 }
 
 // setProjection preserves WithTemplate expressions while leaving presentation to the theme.
@@ -1105,7 +1119,16 @@ func (d *dropdown) bindOnce() error {
 	if d.look.theme != nil {
 		return nil
 	}
-	return d.bind(defaultIO.bindTheme(d.Ctx, d.theme, d.out, nil))
+	return d.bind(d.destination(d.Ctx, nil))
+}
+
+// destination is the inherited binding, or binds the theme to the output,
+// probing through tio when it holds the prompt lease.
+func (d *dropdown) destination(ctx context.Context, tio *termIO) binding {
+	if d.inherit.theme != nil {
+		return d.inherit
+	}
+	return defaultIO.bindTheme(ctx, d.theme, d.out, tio)
 }
 
 // renderChrome renders the label and hint rows once per run.
@@ -1117,7 +1140,7 @@ func (d *dropdown) renderChrome() (err error) {
 // projectContent renders the per-call projection or falls back to the bound Value slot.
 func (p *projection) projectContent(value boundSlot, item any) (text, error) {
 	if p.mainTemplate == nil {
-		return value.render(item)
+		return value.render(p.slotItem(item))
 	}
 	var out text
 	err := p.mainTemplate.Execute(&out, item)
@@ -1131,7 +1154,7 @@ func (p *projection) projectContent(value boundSlot, item any) (text, error) {
 func (p *projection) projectDetails(details boundSlot, item any) (text, error) {
 	switch {
 	case p.mainTemplate == nil:
-		return details.render(item)
+		return details.render(p.slotItem(item))
 	case p.detailsTemplate == nil:
 		return nil, nil
 	}
@@ -1220,7 +1243,20 @@ func (d *dropdown) themedAnswer(label string, i int) error {
 	} else if content, err = d.projectContent(d.slot.value, d.Items[i]); err != nil {
 		return err
 	}
-	value := content.String()
+	return d.retain(label, content.String())
+}
+
+// retain writes the answer slot for a formatted value, such as the path that
+// several dropdowns of a [FilePicker] chose; a hidden or empty answer writes
+// nothing.
+func (d *dropdown) retain(label, value string) error {
+	if d.Hide {
+		return nil
+	}
+	err := d.bindOnce()
+	if err != nil {
+		return err
+	}
 	out, err := d.slot.answer.render(answerView{Label: label, Value: value, Values: []string{value}, Count: 1})
 	if err != nil || out.width() == 0 {
 		return err
@@ -1761,7 +1797,7 @@ func (d *dropdown) run(ctx context.Context) (int, error) {
 	}
 	if d.themed {
 		// before the event reader starts, as binding may probe the background
-		err = d.bind(defaultIO.bindTheme(ctx, d.theme, d.out, io))
+		err = d.bind(d.destination(ctx, io))
 		if err == nil {
 			err = d.renderChrome()
 		}

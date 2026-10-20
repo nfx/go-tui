@@ -19,6 +19,12 @@ type filePicker struct {
 	showHidden bool
 	ignoreDirs bool
 	ignoreUp   bool
+
+	// theme is captured once per invocation for the dropdowns of every
+	// directory; look is the binding of the latest one that bound.
+	theme  *compiledTheme
+	themed bool
+	look   binding
 }
 
 var upEntry = &dirEntry{name: "..", isDir: true}
@@ -103,6 +109,8 @@ func newFilePicker(ctx context.Context, o ...opt) (*filePicker, *dropdown, error
 		extensions: map[string]bool{},
 	}
 	d := newDropdown(ctx)
+	f.theme, f.themed = d.theme, themeRendering.Load()
+	f.adopt(d)
 	for _, option := range o {
 		err := applyToAny(option, f, d)
 		if err != nil {
@@ -151,28 +159,51 @@ func FilePicker(ctx context.Context, title string, o ...opt) (string, error) {
 				return "", err
 			}
 		}
-		items := make([]any, len(entries))
-		for i, e := range entries {
-			items[i] = e
-		}
-		i, err := f.choose(ctx, d, title, entries, items)
+		entry, err := f.step(ctx, d, title, dirName, entries)
 		if err != nil {
 			return "", err
 		}
+		if !entry.IsDir() {
+			path := filepath.Join(dirName, entry.Name())
+			err = f.answer(d, title, path)
+			if err != nil {
+				return "", err
+			}
+			return path, nil
+		}
 		d = nil
-		entry := entries[i]
 		if entry.Name() == ".." {
 			if len(stack) > 1 {
 				stack = stack[:len(stack)-1]
 			}
 			continue
 		}
-		if !entry.IsDir() {
-			return filepath.Join(dirName, entry.Name()), nil
-		}
 		stack = append(stack, entry)
 	}
 	return stack[len(stack)-1].Name(), nil
+}
+
+// step asks for one of the entries of dir, keeping the binding of d for the
+// dropdown of the next directory.
+func (f *filePicker) step(
+	ctx context.Context,
+	d *dropdown,
+	title, dir string,
+	entries []os.DirEntry,
+) (os.DirEntry, error) {
+	items := make([]any, len(entries))
+	for i, e := range entries {
+		items[i] = e
+	}
+	d.view = f.viewIn(dir)
+	i, err := f.choose(ctx, d, title, entries, items)
+	if err != nil {
+		return nil, err
+	}
+	if d.look.theme != nil {
+		f.look = d.look
+	}
+	return entries[i], nil
 }
 
 // nextDropdown configures the dropdown of the next directory. Options were
@@ -180,11 +211,58 @@ func FilePicker(ctx context.Context, title string, o ...opt) (string, error) {
 // configure the picker itself.
 func (f *filePicker) nextDropdown(ctx context.Context, o []opt) (*dropdown, error) {
 	d := newDropdown(ctx)
+	f.adopt(d)
 	err := WithOptions(o...)(d)
 	if err != nil && !errors.Is(err, ErrWrongWidget) {
 		return nil, err
 	}
 	return d, nil
+}
+
+// adopt makes d render through the captured theme, the FilePicker slots and
+// the binding of the previous directory, so that navigation never switches
+// appearance.
+func (f *filePicker) adopt(d *dropdown) {
+	d.theme, d.themed, d.inherit = f.theme, f.themed, f.look
+	d.family = f.theme.templates.FilePicker
+}
+
+// viewIn presents the entries of dir to the theme slots.
+func (f *filePicker) viewIn(dir string) func(any) any {
+	return func(item any) any {
+		e, ok := item.(os.DirEntry)
+		if !ok {
+			return item // the picker lists nothing else
+		}
+		return fileView{
+			Name:   e.Name(),
+			Path:   filepath.Join(dir, e.Name()),
+			IsDir:  e.IsDir(),
+			Parent: e == os.DirEntry(upEntry),
+		}
+	}
+}
+
+// fileView is the payload of the FilePicker Value and Details slots: one
+// entry of the listed directory, whatever its type and String method. Path
+// joins the directory and the name; Parent marks the way up.
+type fileView struct {
+	Name, Path    string
+	IsDir, Parent bool
+}
+
+// answer retains the chosen path once, after every directory dropdown has
+// cleared. Without a terminal nothing is retained; a per-call answer
+// template already ran on each chosen entry.
+func (f *filePicker) answer(d *dropdown, title, path string) error {
+	if !f.themed || d.answerSet || !outputIsTerminal(d.out) {
+		return nil
+	}
+	err := d.retain(title, path)
+	if err != nil {
+		return fmt.Errorf("answer: %w", err)
+	}
+	return nil
 }
 
 // canAnswer reports whether a default or the single-entry shortcut is set.
@@ -217,10 +295,15 @@ func (f *filePicker) choose(
 	entries []os.DirEntry,
 	items []any,
 ) (int, error) {
-	if outputIsTerminal(d.out) {
-		return d.pick(ctx, title, items)
+	if !outputIsTerminal(d.out) {
+		return f.answerFromDefault(ctx, d, title, entries, items)
 	}
-	return f.answerFromDefault(ctx, d, title, entries, items)
+	if f.themed && !d.answerSet {
+		// the path is retained once, by answer
+		d.Label, d.Items = title, items
+		return d.dropdownIndex(ctx)
+	}
+	return d.pick(ctx, title, items)
 }
 
 // soleEntry returns the only entry that is not the way up.
