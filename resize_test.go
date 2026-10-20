@@ -274,8 +274,8 @@ func TestSpinnerRedrawTruncatesLongMessage(t *testing.T) {
 			tick:    0,
 		},
 	}
-	s.displayed = 1
-	prevActive := s.redraw(0)
+	prevActive, err := s.redraw(0)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, prevActive)
 	out, ok := s.io.out.(*bytes.Buffer)
 	assert.True(t, ok)

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 	"text/template"
+	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
@@ -1252,4 +1253,65 @@ func TestBindingStylesGuideAndValue(t *testing.T) {
 	assert.Equal(t, 2, lead.width())
 	assert.Equal(t, "", b.style(b.roles.foreground, nil).String())
 	assert.Equal(t, "| ", c.bind(profilePlain, background{}).geometry(10, 5).lead(true).String())
+}
+
+func TestBuiltinSpinnerSlots(t *testing.T) {
+	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = ASCIISymbols() })
+	assert.NoError(t, err)
+	render := func(s *compiledSlot, data spinnerView) string {
+		t.Helper()
+		b, err := s.bind(c.funcs(profilePlain, roleStyles{}))
+		assert.NoError(t, err)
+		out, err := b.render(data)
+		assert.NoError(t, err)
+		return out.String()
+	}
+	tt := c.templates.Spinner
+	assert.Equal(t, ".. job: m", render(tt.Running, spinnerView{Frame: "..", Prefix: "job", Message: "m"}))
+	assert.Equal(t, ".. m", render(tt.Running, spinnerView{Frame: "..", Message: "m"}))
+	assert.Equal(t, "- job: m", render(tt.Stopped, spinnerView{Frame: "..", Prefix: "job", Message: "m"}))
+	assert.Equal(t, "! m", render(tt.Failed, spinnerView{Frame: "..", Message: "m"}))
+}
+
+func TestSpinnerSlotsRejectHidden(t *testing.T) {
+	_, err := compileTemplates(t, func(th *Theme) { th.Templates.Spinner.Stopped = Hidden })
+	assert.Contains(t, err.Error(), "theme.Templates.Spinner.Stopped: empty source is not allowed")
+}
+
+func TestSpinnerStyleValidation(t *testing.T) {
+	c, err := Theme{}.compile()
+	assert.NoError(t, err)
+	assert.Equal(t, spinnerFrames, c.source.Spinner.Frames)
+	assert.Equal(t, 100*time.Millisecond, c.source.Spinner.Interval)
+	for _, tc := range []struct {
+		style SpinnerStyle
+		want  string
+	}{
+		{SpinnerStyle{Interval: -time.Second}, "theme.Spinner.Interval: -1s: must not be negative"},
+		{SpinnerStyle{Frames: []string{"ab", "abc"}}, "theme.Spinner.frames[1]: \"abc\": width 3, want 2 as frames[0]"},
+		{SpinnerStyle{Frames: []string{"a\n"}}, "theme.Spinner.frames[0]"},
+	} {
+		th := NewTheme()
+		th.Spinner = tc.style
+		_, err := th.compile()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), tc.want)
+	}
+}
+
+func TestSpinnerFramesAreCopied(t *testing.T) {
+	keepTheme(t)
+	th := NewTheme()
+	th.Spinner.Frames = []string{"a", "b"}
+	assert.NoError(t, defaultIO.installTheme(th))
+	installed := defaultIO.currentTheme()
+	th.Spinner.Frames[0] = "x"
+	got := installed.editable()
+	got.Spinner.Frames[1] = "y"
+	assert.Equal(t, []string{"a", "b"}, installed.source.Spinner.Frames)
+	// the preset does not share the exported legacy style
+	SpinnerStyleDocs[0], NewTheme().Spinner.Frames[1] = "?", "?"
+	t.Cleanup(func() { SpinnerStyleDocs[0] = ".  " })
+	assert.Equal(t, ".  ", NewTheme().Spinner.Frames[0])
+	assert.Equal(t, ".. ", spinnerFrames[1])
 }
