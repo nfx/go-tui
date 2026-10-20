@@ -12,7 +12,9 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
@@ -420,7 +422,7 @@ func TestSpinnersUpdateOffsetSends(t *testing.T) {
 func TestSpinnersUpdateOffsetContextDone(t *testing.T) {
 	s := newSpinners(t.Context())
 	s.updates = make(chan updateOffset, 1)
-	s.cancel()
+	s.cancel(nil)
 	s.updateOffset(1, "msg", nil)
 	select {
 	case <-s.updates:
@@ -431,7 +433,7 @@ func TestSpinnersUpdateOffsetContextDone(t *testing.T) {
 
 func TestSpinnersAddContextDone(t *testing.T) {
 	s := newSpinners(t.Context())
-	s.cancel()
+	s.cancel(nil)
 	_, err := s.Add(t.Context())
 	if err == nil {
 		t.Fatalf("expected error")
@@ -451,7 +453,7 @@ func TestSpinnersAddWithCanceledContext(t *testing.T) {
 
 func TestSpinnersMustAddBackgroundPanics(t *testing.T) {
 	s := newSpinners(t.Context())
-	s.cancel()
+	s.cancel(nil)
 	defer func() {
 		if recover() == nil {
 			t.Fatalf("expected panic")
@@ -649,4 +651,290 @@ func TestCheckFrames(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), tc.want)
 	}
+}
+
+// frameWriter delivers every write as one receive. Unlike a [chanIO]
+// without a viewport, spinners clear their rows on it when they stop.
+type frameWriter chan string
+
+func (w frameWriter) Write(p []byte) (int, error) {
+	w <- string(p)
+	return len(p), nil
+}
+
+// themedSpinners is a spinner group rendering through th on a terminal of the
+// given width, with manual ticks. Each write is one receive from frames.
+// restored reports a released terminal.
+func themedSpinners(t *testing.T, th Theme, width int, o ...opt) (*Spinners, frameWriter, func(), *atomic.Bool) {
+	t.Helper()
+	useTheme(t, th)
+	restored := &atomic.Bool{}
+	frames := make(frameWriter)
+	cio, tick, options := testIOforSpinners(t, width, 10, append([]opt{opT(func(s *Spinners) error {
+		s.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
+			return &termIO{in: in, out: frames, Width: width, Height: 10, Restore: func() error {
+				restored.Store(true)
+				return nil
+			}}, nil
+		}
+		return nil
+	})}, o...)...)
+	s, err := NewSpinners(cio.ctx, options)
+	assert.NoError(t, err)
+	t.Cleanup(func() {
+		go func() {
+			for range frames { // the final clear of a group a test left open
+			}
+		}()
+		s.Close()
+		close(frames)
+	})
+	return s, frames, tick, restored
+}
+
+// untilStopped returns everything the group writes until its loop ends,
+// failing the test unless it ends within a second.
+func untilStopped(t *testing.T, s *Spinners, frames frameWriter) string {
+	t.Helper()
+	var out strings.Builder
+	timeout := time.After(time.Second)
+	for {
+		select {
+		case f := <-frames:
+			out.WriteString(f)
+		case <-s.stopped:
+			return out.String()
+		case <-timeout:
+			t.Fatal("spinner group did not stop")
+		}
+	}
+}
+
+func TestThemedSpinnerStates(t *testing.T) {
+	s, frames, tick, restored := themedSpinners(t, asciiTheme(false), 40)
+	build, err := s.Add(t.Context(), WithPrefixf("build"), WithKeep())
+	assert.NoError(t, err)
+	lint, err := s.Add(t.Context(), WithPrefixf("lint"))
+	assert.NoError(t, err)
+	docs, err := s.Add(t.Context())
+	assert.NoError(t, err)
+	build.Update("compiling")
+	lint.Update("checking")
+	docs.Update("writing")
+	tick()
+	assert.Equal(t, "\r... build: compiling\n\r\r .. lint: checking\n\r\r  . writing\n\r", <-frames)
+
+	// kept after Close is stopped, not a success; failed stays; the rest goes
+	assert.NoError(t, build.Close())
+	lint.Fail(errors.New("3 problems"))
+	assert.NoError(t, docs.Close())
+	tick()
+	rows := "\r- build: compiling\n\r\r! lint: 3 problems\n\r"
+	assert.Equal(t, "\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"+rows, <-frames)
+	// ended spinners no longer animate
+	tick()
+	assert.Equal(t, "\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r"+rows, <-frames)
+
+	go s.Close()
+	assert.Equal(t, "\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r", untilStopped(t, s, frames))
+	assert.True(t, restored.Load())
+}
+
+func TestThemedSpinnerFramesPrecedenceAndGroupTheme(t *testing.T) {
+	th := asciiTheme(false)
+	th.Spinner.Frames = []string{"[a]", "[b]"}
+	s, frames, tick, _ := themedSpinners(t, th, 40)
+	themed, err := s.Add(t.Context())
+	assert.NoError(t, err)
+	themed.Update("theme")
+	own, err := s.Add(t.Context(), WithFrames([]string{"<1>", "<2>", "<3>"}))
+	assert.NoError(t, err)
+	own.Update("own")
+
+	// a theme installed later reaches neither the group nor its later spinners
+	later := asciiTheme(false)
+	later.Spinner.Frames = []string{"(x)"}
+	later.Templates.Spinner.Running = `changed`
+	assert.NoError(t, defaultIO.installTheme(later))
+	added, err := s.Add(t.Context())
+	assert.NoError(t, err)
+	added.Update("later")
+	tick()
+	assert.Equal(t, "\r[a] theme\n\r\r<1> own\n\r\r[a] later\n\r", <-frames)
+}
+
+func TestThemedSpinnerSlotsAndView(t *testing.T) {
+	th := asciiTheme(false)
+	th.Templates.Spinner.Running = `{{ .State }} {{ .Frame }} {{ .Prefix }}={{ .Message }}`
+	th.Templates.Spinner.Failed = `{{ .State }} {{ .Frame }} {{ .Message }}`
+	s, frames, tick, _ := themedSpinners(t, th, 40)
+	sp, err := s.Add(t.Context(), WithPrefixf("p"))
+	assert.NoError(t, err)
+	sp.Update("line\none\ttab\x1b[2K")
+	tick()
+	assert.Equal(t, "\rrunning ... p=line one tab\n\r", <-frames)
+	sp.Fail(errors.New("bad"))
+	tick()
+	// the failed row shows the frame it stopped at
+	assert.Equal(t, "\x1b[1A\r\x1b[K\rfailed ... bad\n\r", <-frames)
+}
+
+func TestThemedSpinnerClipsBeforeLastColumn(t *testing.T) {
+	s, frames, tick, _ := themedSpinners(t, asciiTheme(false), 10)
+	sp, err := s.Add(t.Context())
+	assert.NoError(t, err)
+	sp.Update("a long message")
+	tick()
+	assert.Equal(t, "\r... a lo…\n\r", <-frames)
+}
+
+func TestThemedSpinnerRoles(t *testing.T) {
+	withEnv(t, "FORCE_COLOR=3")
+	th := asciiTheme(false)
+	th.Light = true
+	s, frames, tick, _ := themedSpinners(t, th, 40)
+	run, err := s.Add(t.Context())
+	assert.NoError(t, err)
+	run.Update("run")
+	kept, err := s.Add(t.Context(), WithKeep())
+	assert.NoError(t, err)
+	assert.NoError(t, kept.Close())
+	failed, err := s.Add(t.Context())
+	assert.NoError(t, err)
+	failed.Fail(errors.New("no"))
+	tick()
+	out := <-frames
+	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), s.out, nil).roles
+	assert.True(t, len(roles.accent) > 0 && len(roles.muted) > 0 && len(roles.failure) > 0)
+	assert.Contains(t, out, string(roles.accent)+"...")
+	assert.Contains(t, out, string(roles.muted)+"-")
+	assert.Contains(t, out, string(roles.failure)+"!")
+	// Close is not success
+	assert.True(t, !strings.Contains(out, string(roles.success)))
+}
+
+func TestThemedSpinnerRenderErrorEndsGroup(t *testing.T) {
+	th := asciiTheme(false)
+	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
+	th.Templates.Spinner.Running = `{{ if eq .Message "bad" }}{{ boom }}{{ end }}{{ .Message }}`
+	s, frames, tick, restored := themedSpinners(t, th, 40)
+	sp, err := s.Add(t.Context())
+	assert.NoError(t, err)
+	sp.Update("ok")
+	tick()
+	assert.Equal(t, "\rok\n\r", <-frames)
+
+	sp.Update("bad")
+	tick()
+	// no partial frame: only the drawn row is cleared
+	assert.Equal(t, "\x1b[1A\r\x1b[K", untilStopped(t, s, frames))
+	assert.True(t, restored.Load())
+	_, err = s.Add(t.Context())
+	assert.Contains(t, err.Error(), "theme.Templates.Spinner.Running")
+	assert.Contains(t, err.Error(), "boom")
+	err = sp.Close()
+	assert.Contains(t, err.Error(), "boom")
+	sp.Update("ignored") // does not block
+}
+
+func TestThemedSpinnerWriteErrorEndsGroup(t *testing.T) {
+	gone := errors.New("terminal gone")
+	var released atomic.Bool
+	s, frames, tick, _ := themedSpinners(t, asciiTheme(false), 40, opT(func(s *Spinners) error {
+		s.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
+			return &termIO{in: in, out: failingWriter{gone}, Width: 40, Height: 10, Restore: func() error {
+				released.Store(true)
+				return nil
+			}}, nil
+		}
+		return nil
+	}))
+	_, err := s.Add(t.Context())
+	assert.NoError(t, err)
+	tick()
+	assert.Equal(t, "", untilStopped(t, s, frames))
+	assert.True(t, released.Load())
+	_, err = s.Add(t.Context())
+	assert.ErrorIs(t, err, gone)
+}
+
+func TestThemedSpinnerInterval(t *testing.T) {
+	realTicks := opT(func(s *Spinners) error {
+		s.ticks = s.ticker.C
+		return nil
+	})
+	th := asciiTheme(false)
+	th.Spinner.Interval = time.Millisecond
+	s, frames, _, _ := themedSpinners(t, th, 40, realTicks)
+	_, err := s.Add(t.Context())
+	assert.NoError(t, err)
+	select {
+	case <-frames:
+	case <-time.After(time.Second):
+		t.Fatal("no frame at the theme interval")
+	}
+	go s.Close()
+	untilStopped(t, s, frames)
+
+	th.Spinner.Interval = time.Hour
+	s, frames, _, _ = themedSpinners(t, th, 40, realTicks)
+	_, err = s.Add(t.Context())
+	assert.NoError(t, err)
+	select {
+	case out := <-frames:
+		t.Fatalf("frame before the theme interval: %q", out)
+	case <-time.After(300 * time.Millisecond): // three legacy intervals
+	}
+}
+
+func TestThemedSpinnerLogsWithoutTerminal(t *testing.T) {
+	th := asciiTheme(false)
+	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
+	th.Templates.Spinner.Running = `{{ boom }}`
+	th.Templates.Spinner.Failed = `{{ boom }}`
+	useTheme(t, th)
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{
+		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey {
+				return slog.Attr{}
+			}
+			return a
+		},
+	})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	var out bytes.Buffer
+	s, err := NewSpinners(t.Context(), WithOutput(&out))
+	assert.NoError(t, err)
+	sp, err := s.Add(t.Context(), WithPrefixf("job"))
+	assert.NoError(t, err)
+	sp.Update("working")
+	sp.Fail(errors.New("lost"))
+	assert.NoError(t, sp.Close())
+	s.Close()
+	assert.Equal(t, ""+
+		"level=INFO msg=\"spinner started\" spinner=0 prefix=job status=started\n"+
+		"level=INFO msg=working spinner=0 prefix=job status=running\n"+
+		"level=ERROR msg=lost spinner=0 prefix=job status=failed\n", logs.String())
+	assert.Equal(t, 0, out.Len())
+}
+
+func TestSpinnerOneLine(t *testing.T) {
+	got := new(Spinners).oneLine(text("a\r\nb\tc\x1b[2Kd\x1b[31mred\x1b[0m\xff\x07"))
+	assert.Equal(t, "a  b cd\x1b[31mred\x1b[0m�", got)
+}
+
+func TestSpinnersStayLegacyWhenOff(t *testing.T) {
+	th := asciiTheme(false)
+	th.Spinner.Frames = []string{"[a]"}
+	useTheme(t, th)
+	themeRendering.Store(false)
+	s, cio, tick := spinnersForTest(t)
+	defer s.Close()
+	sp, err := s.Add(t.Context())
+	assert.NoError(t, err)
+	sp.Update("x")
+	tick()
+	assert.Equal(t, "\r... x\n\r", <-cio.Out)
 }

@@ -11,6 +11,7 @@ import (
 	"io"
 	"slices"
 	"sync"
+	"text/template"
 	"time"
 
 	"log/slog"
@@ -20,6 +21,39 @@ import (
 // See https://github.com/sindresorhus/cli-spinners/blob/main/spinners.json for more spinner styles.
 var DefaultSpinnerStyle = []string{"⠉⠉", "⠈⠙", "⠀⠹", "⠀⢸", "⠀⣰", "⢀⣠", "⣀⣀", "⣄⡀", "⣆⠀", "⡇⠀", "⠏⠀", "⠋⠁"}
 var SpinnerStyleDocs = []string{".  ", ".. ", "...", " ..", "  .", "   "}
+
+// spinnerFrames and spinnerInterval are the theme preset, immune to edits of
+// the exported styles above.
+var spinnerFrames = []string{".  ", ".. ", "...", " ..", "  .", "   "}
+
+const spinnerInterval = 100 * time.Millisecond
+
+// SpinnerStyle is the animation of spinners. [WithFrames] replaces the frames
+// of one spinner; the interval belongs to the whole [Spinners] group.
+type SpinnerStyle struct {
+	// Frames are nonempty, equally wide single-line strings. Empty takes the
+	// preset.
+	Frames []string
+	// Interval is the animation step. Zero takes 100ms.
+	Interval time.Duration
+}
+
+// normalize fills the preset and validates the frames and interval.
+func (s SpinnerStyle) normalize() (SpinnerStyle, error) {
+	switch {
+	case s.Interval < 0:
+		return s, fmt.Errorf("theme.Spinner.Interval: %v: must not be negative", s.Interval)
+	case s.Interval == 0:
+		s.Interval = spinnerInterval
+	}
+	if len(s.Frames) == 0 {
+		s.Frames = slices.Clone(spinnerFrames)
+	}
+	if err := new(Spinners).checkFrames(s.Frames); err != nil {
+		return s, fmt.Errorf("theme.Spinner.%w", err)
+	}
+	return s, nil
+}
 
 var longRunningNewSpinners = NewSpinners
 
@@ -79,7 +113,8 @@ type spinnerGroupClosed struct {
 
 type Spinners struct {
 	config
-	cancel  context.CancelFunc
+	// cancel ends the group; a render failure is its cause.
+	cancel  context.CancelCauseFunc
 	io      *termIO
 	stopped chan struct{}
 
@@ -91,15 +126,25 @@ type Spinners struct {
 	ticks   <-chan time.Time
 
 	state      []*spinnerState
-	displayed  int
 	makeTermIO func(io.Reader, io.Writer) (*termIO, error)
 	eventSink  func(spinnerEvent)
+
+	// theme is captured with the group, so a spinner added later keeps it.
+	theme  *compiledTheme
+	themed bool
+	// rows are the theme slots bound to the destination of the group.
+	rows spinnerSlots
 }
 
 // newSpinners initializes spinner updates without taking ownership of terminal mode.
 func newSpinners(ctx context.Context) *Spinners {
-	ctx, cancel := context.WithCancel(ctx)
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ctx, cancel := context.WithCancelCause(ctx)
+	theme, themed := defaultIO.currentTheme(), themeRendering.Load()
+	interval := spinnerInterval
+	if themed {
+		interval = theme.source.Spinner.Interval
+	}
+	ticker := time.NewTicker(interval)
 	in, out := defaultStreams(ctx)
 	return &Spinners{
 		ctx:        ctx,
@@ -108,6 +153,8 @@ func newSpinners(ctx context.Context) *Spinners {
 		ticker:     ticker,
 		ticks:      ticker.C,
 		cancel:     cancel,
+		theme:      theme,
+		themed:     themed,
 		stopped:    make(chan struct{}),
 		makeTermIO: makeOutputIO,
 		creates:    make(chan createSpinner),
@@ -121,13 +168,21 @@ func NewSpinners(ctx context.Context, opt ...opt) (*Spinners, error) {
 	started := false
 	defer func() {
 		if !started {
-			s.cancel()
+			s.cancel(nil)
 			s.ticker.Stop()
 		}
 	}()
 	err := opts(opt).Apply(s)
 	if err != nil {
 		return nil, err
+	}
+	if s.themed {
+		// output only: no lease, so no probe
+		look := defaultIO.bindTheme(ctx, s.theme, s.out, nil)
+		s.rows, err = s.theme.templates.Spinner.bind(look.funcs)
+		if err != nil {
+			return nil, err
+		}
 	}
 	s.io, err = s.makeTermIO(s.in, s.out)
 	if err != nil {
@@ -150,7 +205,7 @@ func (s *Spinners) Close() {
 	if s == nil {
 		return // NewSpinners failed
 	}
-	s.cancel()
+	s.cancel(nil)
 	if s.stopped != nil {
 		<-s.stopped
 	}
@@ -195,9 +250,13 @@ func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 	// we don't want to cancel the parent context.
 	ctx, cancel := context.WithCancel(ctx)
 	replyOffset := make(chan int, 1)
+	frames := SpinnerStyleDocs
+	if s.themed {
+		frames = s.theme.source.Spinner.Frames
+	}
 	req := createSpinner{
 		cancel:      cancel,
-		frames:      SpinnerStyleDocs,
+		frames:      frames,
 		replyOffset: replyOffset,
 	}
 	err := opts(opt).Apply(&req)
@@ -215,7 +274,7 @@ func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 	select {
 	case <-s.ctx.Done():
 		cancel()
-		return nil, s.ctx.Err()
+		return nil, s.err()
 	case <-ctx.Done():
 		cancel()
 		return nil, ctx.Err()
@@ -223,7 +282,7 @@ func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 		select {
 		case <-s.ctx.Done(): // spinner group is done
 			cancel()
-			return nil, s.ctx.Err()
+			return nil, s.err()
 		case <-ctx.Done(): // what created this spinner is done
 			cancel()
 			return nil, ctx.Err()
@@ -239,6 +298,9 @@ func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 	}
 }
 
+// err is why the group ended: a render failure, or the cancellation.
+func (s *Spinners) err() error { return context.Cause(s.ctx) }
+
 func (s *Spinners) emit(ev spinnerEvent) {
 	if s.eventSink == nil {
 		return
@@ -246,26 +308,20 @@ func (s *Spinners) emit(ev spinnerEvent) {
 	s.eventSink(ev)
 }
 
+// start is the group loop. A failed redraw ends the group with the error as
+// the cause, which [Spinners.Add] and [Spinner.Close] then return.
 func (s *Spinners) start(ctx context.Context) {
 	defer close(s.stopped)
-	// defer s.stop()
 	var onResize <-chan struct{}
 	if s.io != nil {
 		onResize = s.io.onResize
 	}
 	var prevActive int
 	for {
+		var err error
 		select {
 		case <-ctx.Done():
-			for offset, spinner := range s.state {
-				if spinner == nil {
-					continue
-				}
-				slog.Debug("cancelling spinner")
-				spinner.cancel()
-				s.markDone(offset)
-			}
-			s.stop()
+			s.shutdown(prevActive)
 			return
 		case ns := <-s.creates:
 			// TODO: write serially in CI mode, as well as when number of spinners
@@ -278,12 +334,31 @@ func (s *Spinners) start(ctx context.Context) {
 			s.stopSpinner(offset)
 		case <-s.ticks:
 			s.drainQueues()
-			prevActive = s.redraw(prevActive)
+			prevActive, err = s.redraw(prevActive)
 		case <-onResize:
 			s.drainQueues()
-			prevActive = s.redraw(prevActive)
+			prevActive, err = s.redraw(prevActive)
+		}
+		if err != nil {
+			s.cancel(fmt.Errorf("spinners: %w", err))
+			s.shutdown(prevActive)
+			return
 		}
 	}
+}
+
+// shutdown cancels every spinner and releases the terminal, clearing the
+// rows the last frame drew.
+func (s *Spinners) shutdown(drawn int) {
+	for offset, spinner := range s.state {
+		if spinner == nil {
+			continue
+		}
+		slog.Debug("cancelling spinner")
+		spinner.cancel()
+		s.markDone(offset)
+	}
+	s.stop(drawn)
 }
 
 // drainQueues ensures we apply pending spinner mutations before rendering a frame.
@@ -365,12 +440,12 @@ func (s *Spinners) stopOffset(offset int) error {
 	// enqueue once stopped.
 	select {
 	case <-s.ctx.Done():
-		return s.ctx.Err()
+		return s.err()
 	default:
 	}
 	select {
 	case <-s.ctx.Done():
-		return s.ctx.Err()
+		return s.err()
 	case s.stops <- offset:
 		return nil
 	}
@@ -391,7 +466,6 @@ func (s *Spinners) stopSpinner(offset int) {
 		}
 		// remove spinner at offset
 		s.state[offset] = nil
-		s.displayed--
 		s.emit(spinnerRemoved{Index: offset})
 	}
 }
@@ -414,15 +488,17 @@ func (s *Spinners) markDone(offset int) {
 	s.wg.Done()
 }
 
-// redraw renders all active spinners as single terminal rows.
-//
-//nolint:errcheck // TODO: add error handling in Spinners state
-func (s *Spinners) redraw(prevActive int) int {
+// redraw renders all displayed spinners as single terminal rows, replacing
+// the prevActive rows of the previous frame. It returns the rows drawn, and
+// writes nothing when a row fails to render.
+func (s *Spinners) redraw(prevActive int) (int, error) {
 	s.io.refreshSize()
 	frame := bytes.NewBuffer(make([]byte, 2*s.io.Width))
 	frame.Reset()
 	if prevActive > 0 {
-		s.io.clear(prevActive, frame)
+		if err := s.io.clear(prevActive, frame); err != nil {
+			return prevActive, err
+		}
 	}
 	currActive := 0
 	var line text
@@ -430,31 +506,94 @@ func (s *Spinners) redraw(prevActive int) int {
 		if spinner == nil {
 			continue
 		}
-		spinner.next()
-		frame.WriteByte('\r')
-		line = append(line[:0], spinner.frames[spinner.tick]...)
-		line = append(line, ' ')
-		if len(spinner.Prefix) > 0 {
-			line = append(append(line, spinner.Prefix...), ": "...)
-		}
-		line = append(line, spinner.Message...)
-		// truncate to terminal width so each spinner stays on one row
-		if s.io.Width > 0 && line.width() > s.io.Width {
-			frame.Write(line.truncateVisible(s.io.Width, ' '))
+		if s.themed {
+			row, err := s.themedRow(spinner)
+			if err != nil {
+				return prevActive, err
+			}
+			line = row
 		} else {
-			frame.Write(line)
+			line = s.legacyRow(line[:0], spinner)
 		}
+		frame.WriteByte('\r')
+		frame.Write(line)
 		frame.WriteByte('\n')
 		frame.WriteByte('\r')
 		currActive++
 	}
-	frame.WriteTo(s.io)
-	return currActive
+	if _, err := frame.WriteTo(s.io); err != nil {
+		return currActive, fmt.Errorf("write: %w", err)
+	}
+	return currActive, nil
 }
 
-func (s *Spinners) stop() {
+// legacyRow appends the animated row of a spinner to line, truncated to the
+// terminal width.
+func (s *Spinners) legacyRow(line text, spinner *spinnerState) text {
+	spinner.next()
+	line = append(line, spinner.frames[spinner.tick]...)
+	line = append(line, ' ')
+	if len(spinner.Prefix) > 0 {
+		line = append(append(line, spinner.Prefix...), ": "...)
+	}
+	line = append(line, spinner.Message...)
+	if s.io.Width > 0 && line.width() > s.io.Width {
+		return line.truncateVisible(s.io.Width, ' ')
+	}
+	return line
+}
+
+// themedRow renders a spinner through the slot of its state. Only a running
+// spinner advances its frame. The row is clipped before the last column, so
+// that it cannot autowrap.
+func (s *Spinners) themedRow(spinner *spinnerState) (text, error) {
+	slot, state := s.rows.running, "running"
+	switch {
+	case spinner.Failed:
+		slot, state = s.rows.failed, "failed"
+	case spinner.Done:
+		slot, state = s.rows.stopped, "stopped"
+	default:
+		spinner.next()
+	}
+	row, err := slot.render(spinnerView{
+		Frame:   spinner.frames[spinner.tick],
+		Prefix:  s.oneLine(spinner.Prefix),
+		Message: s.oneLine(spinner.Message),
+		State:   state,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if cols := s.theme.geometry(s.io.Width, 0).columns(nil); row.width() > cols {
+		row = row.truncateColumns(cols)
+	}
+	return row, nil
+}
+
+// oneLine keeps the text and SGR of caller content on one row: line breaks
+// and tabs become spaces, invalid bytes U+FFFD, and other controls and
+// escape sequences are dropped.
+func (*Spinners) oneLine(t text) string {
+	var out text
+	for seg := range t.segments() {
+		_, sgr := seg.sgrParams()
+		switch {
+		case seg.isText(), seg.isEscape && sgr:
+			out = append(out, seg.text...)
+		case seg.isInvalid:
+			out = append(out, "\uFFFD"...)
+		case seg.isControl && bytes.ContainsAny(seg.text, "\r\n\t"):
+			out = append(out, ' ')
+		}
+	}
+	return out.String()
+}
+
+// stop clears the drawn rows of the last frame and releases the terminal.
+func (s *Spinners) stop(drawn int) {
 	s.emit(spinnerGroupClosed{})
-	s.clearOnStop()
+	s.clearOnStop(drawn)
 	s.restoreOnStop()
 	s.ticker.Stop()
 	// channels are not closed: senders exit via s.ctx.Done()
@@ -470,15 +609,15 @@ func (s *Spinners) restoreOnStop() {
 	}
 }
 
-func (s *Spinners) clearOnStop() {
-	if s.io == nil {
+func (s *Spinners) clearOnStop(drawn int) {
+	if s.io == nil || drawn == 0 {
 		return
 	}
 	_, ok := s.io.out.(*chanIO)
 	if ok && s.io.vp == nil {
 		return
 	}
-	err := s.io.clear(s.displayed, s.io)
+	err := s.io.clear(drawn, s.io)
 	if err != nil {
 		slog.Debug("clear spinners", "err", err)
 	}
@@ -502,7 +641,6 @@ func (s *Spinners) newSpinner(ns createSpinner) {
 		active: true,
 		keep:   ns.keep,
 	})
-	s.displayed++
 	s.logStage(slog.LevelInfo, "spinner started", offset, "started")
 	s.emit(spinnerAdded{
 		Name:  ns.prefix,
@@ -541,6 +679,28 @@ type spinnerState struct {
 
 func (ss *spinnerState) next() {
 	ss.tick = (ss.tick + 1) % len(ss.frames)
+}
+
+// spinnerView is the data of the spinner slots. Prefix and Message are
+// caller text on one line; State is running, stopped or failed, as in the
+// non-terminal logs.
+type spinnerView struct {
+	Frame   string
+	Prefix  string
+	Message string
+	State   string
+}
+
+// spinnerSlots are the spinner slots bound to the destination of a group.
+type spinnerSlots struct{ running, stopped, failed boundSlot }
+
+// bind attaches destination helpers to every spinner slot.
+func (t spinnerTemplates) bind(funcs template.FuncMap) (s spinnerSlots, _ error) {
+	var errs [3]error
+	s.running, errs[0] = t.Running.bind(funcs)
+	s.stopped, errs[1] = t.Stopped.bind(funcs)
+	s.failed, errs[2] = t.Failed.bind(funcs)
+	return s, errors.Join(errs[:]...)
 }
 
 type Spinner struct {

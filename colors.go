@@ -778,6 +778,7 @@ type Theme struct {
 	Palette   Palette
 	Symbols   Symbols
 	Templates Templates
+	Spinner   SpinnerStyle
 	// Funcs are custom template helpers, added to the built-in ones. They
 	// cannot replace a built-in helper, and must be safe for concurrent use.
 	Funcs template.FuncMap
@@ -786,6 +787,7 @@ type Theme struct {
 // clone copies theme configuration without isolating helper closures.
 func (t Theme) clone() Theme {
 	t.Funcs = maps.Clone(t.Funcs)
+	t.Spinner.Frames = slices.Clone(t.Spinner.Frames)
 	return t
 }
 
@@ -808,6 +810,10 @@ func (in Theme) compile() (*compiledTheme, error) {
 	t.Symbols, err = t.Symbols.normalize()
 	if err != nil {
 		return nil, fmt.Errorf("symbols: %w", err)
+	}
+	t.Spinner, err = t.Spinner.normalize()
+	if err != nil {
+		return nil, err
 	}
 	builtins := destination{symbols: t.Symbols}.funcs()
 	err = in.compileFuncs(builtins, t.Funcs)
@@ -1021,6 +1027,10 @@ func presetTheme() Theme {
 	return Theme{
 		Palette: Palette{},
 		Symbols: unicodeSymbols,
+		Spinner: SpinnerStyle{
+			Frames:   slices.Clone(spinnerFrames),
+			Interval: spinnerInterval,
+		},
 	}
 }
 
@@ -1188,6 +1198,7 @@ type Templates struct {
 	Multichoice MultichoiceTemplates
 	Confirm     SelectTemplates
 	FilePicker  SelectTemplates
+	Spinner     SpinnerTemplates
 }
 
 // templates are the compiled [Templates], with inheritance resolved.
@@ -1203,6 +1214,8 @@ type templates struct {
 	Multichoice multichoiceTemplates
 	Confirm     choiceFamily
 	FilePicker  choiceFamily
+
+	Spinner spinnerTemplates
 }
 
 // builtinTemplates are the built-in sources of the root slots, shared by
@@ -1234,13 +1247,20 @@ var builtinTemplates = Templates{
 	FilePicker: SelectTemplates{ChoiceTemplates: ChoiceTemplates{
 		Value: `{{ if .Parent }}{{ muted .Name }}{{ else }}{{ .Name }}{{ if .IsDir }}/{{ end }}{{ end }}`,
 	}},
+	// Spinner rows name a [spinnerView]. Only a running spinner animates; a
+	// stopped one is neutral, since closing it says nothing about success.
+	Spinner: SpinnerTemplates{
+		Running: `{{ accent .Frame }} {{ with .Prefix }}{{ text . }}{{ muted ":" }} {{ end }}{{ text .Message }}`,
+		Stopped: `{{ muted (symbol "Cancel") }} {{ with .Prefix }}{{ text . }}{{ muted ":" }} {{ end }}{{ text .Message }}`,
+		Failed:  `{{ error (symbol "Error") }} {{ with .Prefix }}{{ text . }}{{ muted ":" }} {{ end }}{{ text .Message }}`,
+	},
 }
 
 // compile resolves isolated slot inheritance over base and reports errors at defining slots.
 func (t *Templates) compile(funcs template.FuncMap, base templates) (templates, error) {
 	root := templated[struct{}, struct{}]{Funcs: funcs}
 	var out templates
-	var errs [9]error
+	var errs [10]error
 	out.Prompt, errs[0] = t.prompt(root.nest("Prompt", t.Prompt, base.Prompt))
 	out.Input, errs[1] = t.prompt(root.nest("Input", t.Input, out.Prompt))
 	out.Password, errs[2] = t.secret(root.nest("Password", t.Password, out.Input))
@@ -1260,6 +1280,7 @@ func (t *Templates) compile(funcs template.FuncMap, base templates) (templates, 
 		picker.Value = base.FilePicker.Value
 	}
 	out.FilePicker, errs[8] = t.choiceFamily(root.nest("FilePicker", t.FilePicker, picker))
+	out.Spinner, errs[9] = t.spinner(root.nest("Spinner", t.Spinner, base.Spinner))
 	if err := errors.Join(errs[:]...); err != nil {
 		return templates{}, err
 	}
@@ -1372,6 +1393,26 @@ func (t *Templates) multichoice(
 	out.choiceFamily, errs[0] = t.choiceFamily(in.nest("", in.Src.SelectTemplates, in.Parent.choiceFamily))
 	out.Row, errs[1] = t.slot(in.nest("Row", in.Src.Row, in.Parent.Row), false)
 	out.AnswerValue, errs[2] = t.slot(in.nest("AnswerValue", in.Src.AnswerValue, in.Parent.AnswerValue), true)
+	return out, errors.Join(errs[:]...)
+}
+
+// SpinnerTemplates are the rows of a spinner in each state of its lifecycle.
+type SpinnerTemplates struct {
+	Running Template
+	Stopped Template // closed and kept with [WithKeep]; not a success
+	Failed  Template
+}
+
+// spinnerTemplates are the compiled [SpinnerTemplates].
+type spinnerTemplates struct{ Running, Stopped, Failed *compiledSlot }
+
+// spinner compiles the spinner rows, which have no cross-family parent and
+// cannot be hidden: a displayed spinner keeps its row.
+func (t *Templates) spinner(in templated[SpinnerTemplates, spinnerTemplates]) (out spinnerTemplates, _ error) {
+	var errs [3]error
+	out.Running, errs[0] = t.slot(in.nest("Running", in.Src.Running, in.Parent.Running), false)
+	out.Stopped, errs[1] = t.slot(in.nest("Stopped", in.Src.Stopped, in.Parent.Stopped), false)
+	out.Failed, errs[2] = t.slot(in.nest("Failed", in.Src.Failed, in.Parent.Failed), false)
 	return out, errors.Join(errs[:]...)
 }
 
