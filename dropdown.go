@@ -109,10 +109,12 @@ type dropdown struct {
 	projection
 
 	// theme is the snapshot captured at construction. When themed, the
-	// dropdown renders through it: look is its binding to the destination,
-	// slot the bound slots, label and hint the rows rendered once per run.
+	// dropdown renders through it: family are the slots of the widget that
+	// runs it, look is its binding to the destination, slot the bound
+	// slots, label and hint the rows rendered once per run.
 	theme       *compiledTheme
 	themed      bool
+	family      choiceFamily
 	look        binding
 	slot        choiceSlots
 	label, hint text
@@ -174,16 +176,22 @@ type lazyResult struct {
 
 var confirmRunner = defaultConfirmRunner
 
+// Confirmf is [Confirm] with a formatted action.
 func Confirmf(ctx context.Context, format string, a ...any) bool {
 	return Confirm(ctx, fmt.Sprintf(format, a...))
 }
 
+// Confirm asks to choose Yes or No and reports whether Yes was chosen. No is a
+// normal answer, retained like Yes; an error also returns false.
 func Confirm(ctx context.Context, action string, opts ...opt) bool {
 	return confirmRunner(ctx, action, opts...)
 }
 
+// defaultConfirmRunner runs a dropdown over Yes and No through the Confirm slots.
 func defaultConfirmRunner(ctx context.Context, action string, o ...opt) bool {
 	d := newDropdown(ctx)
+	d.themed = themeRendering.Load()
+	d.family = d.theme.templates.Confirm
 	d.target = targetOf[string]()
 	d.normalize = confirmDefault
 	err := opts(o).Apply(d)
@@ -738,6 +746,7 @@ func WithAnswerTemplate(tmpl string) opt {
 
 func newDropdown(ctx context.Context) *dropdown {
 	in, out := defaultStreams(ctx)
+	theme := defaultIO.currentTheme()
 	return &dropdown{
 		in:                   in,
 		out:                  out,
@@ -751,7 +760,8 @@ func newDropdown(ctx context.Context) *dropdown {
 		AnswerTemplate:       DefaultDropdownAnswerTemplate,
 		IterBatchSize:        10,
 		trie:                 newTrie(),
-		theme:                defaultIO.currentTheme(),
+		theme:                theme,
+		family:               theme.templates.Dropdown,
 	}
 }
 
@@ -1085,7 +1095,7 @@ func (d *dropdown) bind(look binding) error {
 	if err != nil {
 		return err
 	}
-	d.slot, err = d.theme.templates.Dropdown.bind(look.funcs)
+	d.slot, err = d.family.bind(look.funcs)
 	return err
 }
 
@@ -1100,7 +1110,7 @@ func (d *dropdown) bindOnce() error {
 
 // renderChrome renders the label and hint rows once per run.
 func (d *dropdown) renderChrome() (err error) {
-	d.label, d.hint, err = d.theme.templates.Dropdown.chrome(d.look.funcs, d.labelTemplate, d.Label, dropdownKeys)
+	d.label, d.hint, err = d.family.chrome(d.look.funcs, d.labelTemplate, d.Label, dropdownKeys)
 	return err
 }
 
