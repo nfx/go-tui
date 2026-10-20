@@ -987,6 +987,80 @@ func (t Template) source() string {
 	return string(t)
 }
 
+// templated is the input of one compile step: the source slots Src, named
+// Name, inheriting unset slots from the compiled Parent.
+type templated[A, B any] struct {
+	Funcs  template.FuncMap
+	Name   string
+	Src    A
+	Parent B
+}
+
+// nest preserves helpers and qualifies nested slots with nonempty field names.
+func (in *templated[A, B]) nest[C, D any](field string, src C, parent D) templated[C, D] {
+	name := in.Name
+	switch {
+	case name == "":
+		name = field
+	case field != "":
+		name += "." + field
+	}
+	return templated[C, D]{Funcs: in.Funcs, Name: name, Src: src, Parent: parent}
+}
+
+// Templates are the typed presentation slots of a theme. An unset slot
+// inherits from its parent family and finally from the built-in default, so a
+// shared edit still reaches every family that has not overridden it.
+type Templates struct {
+	Prompt PromptTemplates
+	Choice ChoiceTemplates
+
+	Input    PromptTemplates
+	Password SecretTemplates
+	Number   SecretTemplates
+
+	Dropdown    SelectTemplates
+	Multichoice MultichoiceTemplates
+	Confirm     SelectTemplates
+	FilePicker  SelectTemplates
+}
+
+// templates are the compiled [Templates], with inheritance resolved.
+type templates struct {
+	Prompt promptTemplates
+	Choice choiceTemplates
+
+	Input    promptTemplates
+	Password secretTemplates
+	Number   secretTemplates
+
+	Dropdown    choiceFamily
+	Multichoice multichoiceTemplates
+	Confirm     choiceFamily
+	FilePicker  choiceFamily
+}
+
+// compile resolves slot inheritance in isolated namespaces and reports errors at defining slots.
+func (t *Templates) compile() (templates, error) {
+	root := templated[struct{}, struct{}]{Funcs: t.funcs()}
+	var out templates
+	var errs [9]error
+	out.Prompt, errs[0] = t.prompt(root.nest("Prompt", t.Prompt, promptTemplates{}))
+	out.Input, errs[1] = t.prompt(root.nest("Input", t.Input, out.Prompt))
+	out.Password, errs[2] = t.secret(root.nest("Password", t.Password, out.Input))
+	out.Number, errs[3] = t.secret(root.nest("Number", t.Number, out.Input))
+	out.Choice, errs[4] = t.choice(root.nest("Choice", t.Choice, choiceTemplates{}))
+	family := choiceFamily{out.Prompt, out.Choice}
+	out.Dropdown, errs[5] = t.choiceFamily(root.nest("Dropdown", t.Dropdown, family))
+	out.Multichoice, errs[6] = t.multichoice(root.nest("Multichoice", t.Multichoice, family))
+	out.Confirm, errs[7] = t.choiceFamily(root.nest("Confirm", t.Confirm, family))
+	out.FilePicker, errs[8] = t.choiceFamily(root.nest("FilePicker", t.FilePicker, family))
+	if err := errors.Join(errs[:]...); err != nil {
+		return templates{}, err
+	}
+	return out, nil
+}
+
 // PromptTemplates are the presentation slots shared by all prompts.
 type PromptTemplates struct {
 	Label    Template
@@ -1094,59 +1168,6 @@ func (t *Templates) multichoice(in templated[MultichoiceTemplates, choiceFamily]
 	return out, errors.Join(errs[:]...)
 }
 
-// Templates are the typed presentation slots of a theme. An unset slot
-// inherits from its parent family and finally from the built-in default, so a
-// shared edit still reaches every family that has not overridden it.
-type Templates struct {
-	Prompt PromptTemplates
-	Choice ChoiceTemplates
-
-	Input    PromptTemplates
-	Password SecretTemplates
-	Number   SecretTemplates
-
-	Dropdown    SelectTemplates
-	Multichoice MultichoiceTemplates
-	Confirm     SelectTemplates
-	FilePicker  SelectTemplates
-}
-
-// templates are the compiled [Templates], with inheritance resolved.
-type templates struct {
-	Prompt promptTemplates
-	Choice choiceTemplates
-
-	Input    promptTemplates
-	Password secretTemplates
-	Number   secretTemplates
-
-	Dropdown    choiceFamily
-	Multichoice multichoiceTemplates
-	Confirm     choiceFamily
-	FilePicker  choiceFamily
-}
-
-// compile resolves slot inheritance in isolated namespaces and reports errors at defining slots.
-func (t *Templates) compile() (templates, error) {
-	root := templated[struct{}, struct{}]{Funcs: t.funcs()}
-	var out templates
-	var errs [9]error
-	out.Prompt, errs[0] = t.prompt(root.nest("Prompt", t.Prompt, promptTemplates{}))
-	out.Input, errs[1] = t.prompt(root.nest("Input", t.Input, out.Prompt))
-	out.Password, errs[2] = t.secret(root.nest("Password", t.Password, out.Input))
-	out.Number, errs[3] = t.secret(root.nest("Number", t.Number, out.Input))
-	out.Choice, errs[4] = t.choice(root.nest("Choice", t.Choice, choiceTemplates{}))
-	family := choiceFamily{out.Prompt, out.Choice}
-	out.Dropdown, errs[5] = t.choiceFamily(root.nest("Dropdown", t.Dropdown, family))
-	out.Multichoice, errs[6] = t.multichoice(root.nest("Multichoice", t.Multichoice, family))
-	out.Confirm, errs[7] = t.choiceFamily(root.nest("Confirm", t.Confirm, family))
-	out.FilePicker, errs[8] = t.choiceFamily(root.nest("FilePicker", t.FilePicker, family))
-	if err := errors.Join(errs[:]...); err != nil {
-		return templates{}, err
-	}
-	return out, nil
-}
-
 // compiledSlot is one parsed presentation slot. A hidden slot renders nothing
 // and reserves no space; a nil slot uses the built-in default.
 type compiledSlot struct {
@@ -1183,25 +1204,4 @@ func (t *Templates) funcs() template.FuncMap {
 	funcs["fg"] = func(string, ...any) (string, error) { return "", nil }
 	funcs["bg"] = func(string, ...any) (string, error) { return "", nil }
 	return funcs
-}
-
-// templated is the input of one compile step: the source slots Src, named
-// Name, inheriting unset slots from the compiled Parent.
-type templated[A, B any] struct {
-	Funcs  template.FuncMap
-	Name   string
-	Src    A
-	Parent B
-}
-
-// nest preserves helpers and qualifies nested slots with nonempty field names.
-func (in *templated[A, B]) nest[C, D any](field string, src C, parent D) templated[C, D] {
-	name := in.Name
-	switch {
-	case name == "":
-		name = field
-	case field != "":
-		name += "." + field
-	}
-	return templated[C, D]{Funcs: in.Funcs, Name: name, Src: src, Parent: parent}
 }
