@@ -1315,3 +1315,117 @@ func TestSpinnerFramesAreCopied(t *testing.T) {
 	assert.Equal(t, ".  ", NewTheme().Spinner.Frames[0])
 	assert.Equal(t, ".. ", spinnerFrames[1])
 }
+
+func TestBuiltinProgressSlots(t *testing.T) {
+	c, err := compileTemplates(t, func(*Theme) {})
+	assert.NoError(t, err)
+	render := func(s *compiledSlot, data progressView) string {
+		t.Helper()
+		b, err := s.bind(c.funcs(profilePlain, roleStyles{}))
+		assert.NoError(t, err)
+		out, err := b.render(data)
+		assert.NoError(t, err)
+		return out.String()
+	}
+	tt := c.templates.Progress
+	view := progressView{Label: "build", Percent: 7, Values: []string{"1.00/s", "3s remaining"}, Bar: "##"}
+	assert.Equal(t, "build", render(tt.Label, view))
+	assert.Equal(t, "1.00/s · 3s remaining", render(tt.Metrics, view))
+	assert.Equal(t, "", render(tt.Metrics, progressView{}))
+	view.Metrics = "m"
+	assert.Equal(t, "build   7% ## m", render(tt.Frame, view))
+	assert.Equal(t, "100% ##", render(tt.Frame, progressView{Percent: 100, Bar: "##"}))
+}
+
+func TestProgressFrameInsertsBarOnce(t *testing.T) {
+	for _, frame := range []Template{
+		`{{ .Bar }}`,
+		`{{ .Label }} [{{- .Bar -}}] {{ with .Metrics }}{{ . }}{{ end }}`,
+		`{{ define "m" }}{{ .Metrics }}{{ end }}{{ .Bar }}{{ template "m" . }}`,
+	} {
+		_, err := compileTemplates(t, func(th *Theme) { th.Templates.Progress.Frame = frame })
+		assert.NoError(t, err)
+	}
+	for _, frame := range []Template{
+		`{{ .Label }}`,
+		`{{ .Bar }}{{ .Bar }}`,
+		`{{ if .Label }}{{ .Bar }}{{ end }}`,
+		`{{ with .Label }}{{ $.Bar }}{{ end }}`,
+		`{{ printf "%s" .Bar }}`,
+		`{{ .Bar | printf "%s" }}`,
+		`{{ $b := .Bar }}{{ $b }}`,
+		`{{ .Bar }}{{ len .Bar }}`,
+		`{{ .Bar }}{{ if .Bar }}x{{ end }}`,
+		`{{ .Bar }}{{ $.Bar }}`,
+		`{{ .Bar }}{{ (.).Bar }}`,
+		`{{ define "b" }}{{ .Bar }}{{ end }}{{ template "b" . }}`,
+		`{{ define "b" }}{{ .Bar }}{{ end }}`,
+	} {
+		_, err := compileTemplates(t, func(th *Theme) { th.Templates.Progress.Frame = frame })
+		assert.Error(t, err)
+		assert.Contains(
+			t,
+			err.Error(),
+			"theme.Templates.Progress.Frame: want one top-level {{ .Bar }} and no other use of .Bar",
+		)
+	}
+	_, err := compileTemplates(t, func(th *Theme) { th.Templates.Progress.Frame = Hidden })
+	assert.Contains(t, err.Error(), "theme.Templates.Progress.Frame: empty source is not allowed")
+	// label and metrics may be hidden, and other slots stay unchecked
+	c, err := compileTemplates(t, func(th *Theme) {
+		th.Templates.Progress.Label = Hidden
+		th.Templates.Progress.Metrics = `{{ .Bar }}{{ .Bar }}`
+	})
+	assert.NoError(t, err)
+	assert.True(t, c.templates.Progress.Label.hidden)
+}
+
+func TestProgressStyleValidation(t *testing.T) {
+	c, err := Theme{}.compile()
+	assert.NoError(t, err)
+	assert.Equal(t, progressStyle, c.source.Progress)
+	th := NewTheme()
+	th.Progress = ProgressStyle{MaxBarWidth: 3}
+	th.Symbols.BarFill, th.Symbols.BarHead = "#", ""
+	c, err = th.compile()
+	assert.NoError(t, err)
+	assert.Equal(t, ProgressStyle{MinBarWidth: 1, MaxBarWidth: 3}, c.source.Progress)
+	assert.Equal(t, "#", c.source.Symbols.BarFill)
+	assert.Equal(t, "█", c.source.Symbols.BarHead)
+	for _, tc := range []struct {
+		style ProgressStyle
+		want  string
+	}{
+		{ProgressStyle{MinBarWidth: -1}, "theme.Progress.MinBarWidth: -1: must not be negative"},
+		{ProgressStyle{MaxBarWidth: -1}, "theme.Progress.MaxBarWidth: -1: must not be negative"},
+		{ProgressStyle{MinBarWidth: 5, MaxBarWidth: 4}, "theme.Progress.MaxBarWidth: 4: below MinBarWidth 5"},
+	} {
+		th := NewTheme()
+		th.Progress = tc.style
+		_, err := th.compile()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), tc.want)
+	}
+}
+
+func TestBarSymbolsValidation(t *testing.T) {
+	for _, tc := range []struct {
+		edit func(*Symbols)
+		want string
+	}{
+		{func(s *Symbols) { s.BarFill = "##" }, `theme.Symbols.BarFill: "##": want one display column, got 2`},
+		{func(s *Symbols) { s.BarHead = "Ａ" }, `theme.Symbols.BarHead: "Ａ": want one display column, got 2`},
+		{func(s *Symbols) { s.BarEmpty = "\t" }, `theme.Symbols.BarEmpty: "\t": control character`},
+	} {
+		th := NewTheme()
+		tc.edit(&th.Symbols)
+		_, err := th.compile()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), tc.want)
+	}
+	for name, want := range map[string]string{"BarFill": "=", "BarHead": ">", "BarEmpty": "-"} {
+		got, err := ASCIISymbols().named(name)
+		assert.NoError(t, err)
+		assert.Equal(t, want, got)
+	}
+}

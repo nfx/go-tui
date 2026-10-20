@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
@@ -60,7 +62,7 @@ func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
 
-	p, err := newStartedProgressBar(t.Context(), "download", 20,
+	p, err := newStartedProgressBar(t.Context(), "download", 20, false,
 		WithInput(cio),
 		WithOutput(cio),
 		opT(func(pb *Progressbar) error {
@@ -129,7 +131,7 @@ func TestProgressbarTickRenders(t *testing.T) {
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
 
-	p, err := newStartedProgressBar(t.Context(), "download", 20,
+	p, err := newStartedProgressBar(t.Context(), "download", 20, false,
 		WithInput(cio),
 		WithOutput(cio),
 		opT(func(pb *Progressbar) error {
@@ -207,7 +209,7 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 	now := start
 	events := make(chan progressEvent, 16)
 
-	p, err := newStartedProgressBar(t.Context(), "download", 20,
+	p, err := newStartedProgressBar(t.Context(), "download", 20, false,
 		WithInput(cio),
 		WithOutput(cio),
 		opT(func(pb *Progressbar) error {
@@ -275,7 +277,7 @@ func TestProgressbarDoneEmitsClosed(t *testing.T) {
 	now := start
 	events := make(chan progressEvent, 16)
 
-	p, err := newStartedProgressBar(t.Context(), "sync", 2,
+	p, err := newStartedProgressBar(t.Context(), "sync", 2, false,
 		WithInput(cio),
 		WithOutput(cio),
 		opT(func(pb *Progressbar) error {
@@ -866,7 +868,7 @@ func TestProgressbarCloseWithIO(t *testing.T) {
 
 func TestProgressbarCloseWaitsForBackgroundStop(t *testing.T) {
 	restoreDelay := 50 * time.Millisecond
-	p, err := newStartedProgressBar(t.Context(), "sync", 1, opT(func(pb *Progressbar) error {
+	p, err := newStartedProgressBar(t.Context(), "sync", 1, false, opT(func(pb *Progressbar) error {
 		pb.ticks = make(chan time.Time)
 		pb.ticker = time.NewTicker(time.Hour)
 		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -1035,7 +1037,7 @@ func TestMetricsSnapshotZeroMax(t *testing.T) {
 
 func TestProgressBarWithContextCancelBound(t *testing.T) {
 	parentCtx := t.Context()
-	p, err := newStartedProgressBar(parentCtx, "test", 10,
+	p, err := newStartedProgressBar(parentCtx, "test", 10, false,
 		opT(func(pb *Progressbar) error {
 			pb.ticks = make(chan time.Time)
 			pb.ticker = time.NewTicker(time.Hour)
@@ -1150,4 +1152,498 @@ func TestProgressStateFilledBarLineOrdersHeadAfterFill(t *testing.T) {
 	assert.Equal(t, "[====>     ]", ps.filledBarLine(10, 0.4))
 	assert.Equal(t, "[=========>]", ps.filledBarLine(10, 0.95))
 	assert.Equal(t, "[==========]", ps.filledBarLine(10, 1))
+}
+
+// themedBar is a bar of the given state rendering through th to a plain
+// destination, for driving themedRow directly.
+func themedBar(t *testing.T, th Theme, state progressState) *Progressbar {
+	t.Helper()
+	c, err := th.compile()
+	assert.NoError(t, err)
+	p := &Progressbar{progressState: state, label: text("build"), theme: c}
+	p.look, err = p.bind(c.bind(profilePlain, background{}))
+	assert.NoError(t, err)
+	return p
+}
+
+// halfDone is a bar halfway to 100 at 50 per second, one second in, with
+// every metric shown.
+func halfDone(now time.Time) progressState {
+	return progressState{
+		maxNum:         100,
+		currentNum:     50,
+		sinceRedrawNum: 50,
+		startedAt:      now.Add(-time.Second),
+		rollingRates:   []float64{50},
+		showRate:       true,
+		showEstimate:   true,
+		showElapsed:    true,
+	}
+}
+
+func TestThemedProgressRowDropsMetricsToFit(t *testing.T) {
+	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
+	bar := func(fill, head, empty int) string {
+		return strings.Repeat("█", fill+head) + strings.Repeat("░", empty)
+	}
+	const all, two, one = " 50.00/s · 1s remaining · 1s elapsed", " 50.00/s · 1s remaining", " 50.00/s"
+	for _, tc := range []struct {
+		width int
+		want  string
+	}{
+		{60, "build  50% " + bar(6, 1, 6) + all},
+		{48, "build  50% " + bar(0, 1, 0) + all},
+		{47, "build  50% " + bar(6, 1, 6) + two},
+		{35, "build  50% " + bar(0, 1, 0) + two},
+		{34, "build  50% " + bar(7, 1, 7) + one},
+		{20, "build  50% " + bar(0, 1, 0) + one},
+		{19, "build  50% " + bar(4, 0, 4)},
+		{12, "build  50% " + bar(0, 1, 0)},
+		{11, "build  50% "},
+		{8, "build  …"},
+		{0, ""},
+		{-1, ""},
+	} {
+		p := themedBar(t, NewTheme(), halfDone(now))
+		row, err := p.themedRow(tc.width, now)
+		assert.NoError(t, err)
+		assert.Equal(t, tc.want, row.String())
+		assert.True(t, row.width() <= max(tc.width, 0))
+	}
+}
+
+func TestThemedProgressASCIISymbols(t *testing.T) {
+	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
+	p := themedBar(t, asciiTheme(false), halfDone(now))
+	row, err := p.themedRow(47, now)
+	assert.NoError(t, err)
+	assert.Equal(t, "build  50% ======>------ 50.00/s · 1s remaining", row.String())
+}
+
+func TestThemedProgressBarWidthBounds(t *testing.T) {
+	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
+	th := NewTheme()
+	th.Progress.MaxBarWidth = 4
+	p := themedBar(t, th, halfDone(now))
+	row, err := p.themedRow(80, now)
+	assert.NoError(t, err)
+	assert.Equal(t, "build  50% ██░░ 50.00/s · 1s remaining · 1s elapsed", row.String())
+
+	th = NewTheme()
+	th.Progress.MinBarWidth = 10
+	p = themedBar(t, th, halfDone(now))
+	row, err = p.themedRow(47, now)
+	assert.NoError(t, err)
+	assert.Equal(t, "build  50% "+strings.Repeat("█", 7)+strings.Repeat("░", 6)+" 50.00/s · 1s remaining", row.String())
+	// a 6-column bar is below the minimum, so the remaining time goes
+	row, err = p.themedRow(40, now)
+	assert.NoError(t, err)
+	assert.Equal(t, "build  50% "+strings.Repeat("█", 11)+strings.Repeat("░", 10)+" 50.00/s", row.String())
+}
+
+func TestThemedProgressHeadMarksPartialCell(t *testing.T) {
+	l := &progressLook{style: progressStyle, symbols: ASCIISymbols()}
+	l.symbols.BarEmpty = "."
+	for _, tc := range []struct {
+		completion float64
+		want       string
+	}{
+		{0, ".........."},
+		{0.01, ">........."},
+		{0.5, "=====....."},
+		{0.55, "=====>...."},
+		{0.99, "=========>"},
+		{1, "=========="},
+		{1.5, "=========="},
+		{-0.5, ".........."},
+	} {
+		assert.Equal(t, tc.want, l.bar(10, tc.completion).String())
+	}
+	assert.Equal(t, "", l.bar(0, 0.5).String())
+}
+
+func TestThemedProgressUnknownAndExceededTotals(t *testing.T) {
+	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
+	// no total: no percent, no estimate, an empty track
+	state := halfDone(now)
+	state.maxNum, state.showElapsed = 0, false
+	p := themedBar(t, NewTheme(), state)
+	row, err := p.themedRow(30, now)
+	assert.NoError(t, err)
+	assert.Equal(t, "build   0% "+strings.Repeat("░", 11)+" 50.00/s", row.String())
+
+	// past the total: full bar, nothing remaining, which is not unknown
+	state = halfDone(now)
+	state.currentNum, state.sinceRedrawNum, state.showElapsed = 150, 150, false
+	p = themedBar(t, NewTheme(), state)
+	row, err = p.themedRow(40, now)
+	assert.NoError(t, err)
+	assert.Equal(t, "build 100% "+strings.Repeat("█", 6)+" 50.00/s · 0s remaining", row.String())
+
+	// no rate yet: the estimate is unknown, not zero
+	state = halfDone(now)
+	state.rollingRates, state.showElapsed = nil, false
+	p = themedBar(t, NewTheme(), state)
+	row, err = p.themedRow(30, now)
+	assert.NoError(t, err)
+	assert.Equal(t, "build  50% "+strings.Repeat("█", 6)+strings.Repeat("░", 6)+" 0.00/s", row.String())
+}
+
+func TestThemedProgressView(t *testing.T) {
+	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
+	th := NewTheme()
+	th.Templates.Progress.Label = `<{{ .Label }}>`
+	th.Templates.Progress.Metrics = `{{ .Current }}/{{ .Total }}{{ with .Rate }} at {{ . }}{{ end }}` +
+		`{{ with .Remaining }} eta {{ . }}{{ end }}{{ with .Elapsed }} after {{ . }}{{ end }}`
+	th.Templates.Progress.Frame = `{{ .Label }} {{ .Percent }} [{{ .Bar }}] {{ .Metrics }} {{ len .Values }}`
+	state := halfDone(now)
+	state.fmtRate = func(r float64) string { return fmt.Sprintf("%.0f\nitems", r) }
+	p := themedBar(t, th, state)
+	p.label = text("multi\nline\x1b[2K")
+	row, err := p.themedRow(80, now)
+	assert.NoError(t, err)
+	// the rate is formatted by WithFormatRate and kept on one line
+	assert.Equal(
+		t,
+		"<multi line> 50 ["+strings.Repeat("█", 13)+strings.Repeat("░", 12)+"] 50/100 at 50 items eta 1s after 1s 3",
+		row.String(),
+	)
+	// the metrics slot sees only the metrics that fit
+	row, err = p.themedRow(50, now)
+	assert.NoError(t, err)
+	assert.Equal(t, "<multi line> 50 [██░░] 50/100 at 50 items eta 1s 2", row.String())
+}
+
+func TestThemedProgressHiddenSlots(t *testing.T) {
+	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
+	th := NewTheme()
+	th.Templates.Progress.Label = Hidden
+	th.Templates.Progress.Metrics = Hidden
+	p := themedBar(t, th, halfDone(now))
+	row, err := p.themedRow(16, now)
+	assert.NoError(t, err)
+	assert.Equal(t, " 50% ██████░░░░░", row.String())
+}
+
+func TestThemedProgressFrameErrors(t *testing.T) {
+	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
+	for _, tc := range []struct {
+		funcs template.FuncMap
+		frame Template
+		want  string
+	}{
+		{
+			template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }},
+			`{{ boom }}{{ .Bar }}`, "theme.Templates.Progress.Frame: template: Progress.Frame:1:3: executing",
+		},
+		{
+			template.FuncMap{"raw": func(v any) string { return fmt.Sprint(v) }},
+			`{{ .Bar }}{{ raw . }}`, "theme.Templates.Progress.Frame: want the bar once",
+		},
+		{
+			template.FuncMap{"erase": func() string { return "\x1b[2K" }},
+			`{{ erase }}{{ .Bar }}`, `theme.Templates.Progress.Frame: "\x1b[2K": want text and SGR only`,
+		},
+	} {
+		th := NewTheme()
+		th.Funcs = tc.funcs
+		th.Templates.Progress.Frame = tc.frame
+		p := themedBar(t, th, halfDone(now))
+		_, err := p.themedRow(40, now)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), tc.want)
+	}
+}
+
+func TestThemedProgressRoles(t *testing.T) {
+	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
+	th := NewTheme()
+	th.Light = true
+	c, err := th.compile()
+	assert.NoError(t, err)
+	look := c.bind(profileTrueColor, background{light: true})
+	roles := look.roles
+	assert.True(t, len(roles.accent) > 0 && len(roles.guide) > 0 && len(roles.muted) > 0 && len(roles.foreground) > 0)
+	p := &Progressbar{progressState: halfDone(now), label: text("build"), theme: c}
+	p.look, err = p.bind(look)
+	assert.NoError(t, err)
+	row, err := p.themedRow(60, now)
+	assert.NoError(t, err)
+	out := row.String()
+	assert.Contains(t, out, string(roles.foreground)+"build")
+	assert.Contains(t, out, string(roles.accent)+" 50%")
+	assert.Contains(t, out, string(roles.accent)+"███████"+fgDefault+string(roles.guide)+"░░░░░░"+fgDefault)
+	assert.Contains(t, out, string(roles.muted)+"50.00/s")
+	// running work is not a success or a failure
+	assert.True(t, !strings.Contains(out, string(roles.success)) && !strings.Contains(out, string(roles.failure)))
+	assert.Equal(t, 60, row.width())
+}
+
+// themedProgress is a bar towards size rendering through th on a terminal
+// 40 columns wide. tick renders at the given time since the start; each
+// write is one receive from frames. restored reports a released terminal.
+func themedProgress(
+	t *testing.T,
+	th Theme,
+	size int64,
+) (*Progressbar, frameWriter, func(time.Duration), *atomic.Bool) {
+	t.Helper()
+	useTheme(t, th)
+	restored := &atomic.Bool{}
+	frames := make(frameWriter)
+	ticks := make(chan time.Time)
+	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
+	var clock atomic.Int64
+	p, err := NewMaxProgressBar(t.Context(), "build", size, WithOutput(frames), opT(func(pb *Progressbar) error {
+		pb.now = func() time.Time { return start.Add(time.Duration(clock.Load())) }
+		pb.ticks = ticks
+		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
+			return &termIO{in: in, out: frames, Width: 40, Height: 10, Restore: func() error {
+				restored.Store(true)
+				return nil
+			}}, nil
+		}
+		return nil
+	}))
+	assert.NoError(t, err)
+	t.Cleanup(func() {
+		go func() {
+			for range frames { // the final clear of a bar a test left open
+			}
+		}()
+		_ = p.Close() //nolint:errcheck // test cleanup; tests check their own errors
+		close(frames)
+	})
+	tick := func(at time.Duration) {
+		t.Helper()
+		clock.Store(int64(at))
+		select {
+		case ticks <- time.Time{}:
+		case <-time.After(time.Second):
+			t.Fatal("tick not delivered")
+		}
+	}
+	return p, frames, tick, restored
+}
+
+// untilProgressStopped returns everything the bar writes until its loop
+// ends, failing the test unless it ends within a second.
+func untilProgressStopped(t *testing.T, p *Progressbar, frames frameWriter) string {
+	t.Helper()
+	var out strings.Builder
+	timeout := time.After(time.Second)
+	for {
+		select {
+		case f := <-frames:
+			out.WriteString(f)
+		case <-p.stopped:
+			return out.String()
+		case <-timeout:
+			t.Fatal("progress bar did not stop")
+		}
+	}
+}
+
+func TestThemedProgressCompletes(t *testing.T) {
+	p, frames, tick, restored := themedProgress(t, NewTheme(), 100)
+	p.Add(50)
+	tick(time.Second)
+	assert.Equal(t, "\rbuild  50% ███░░ 50.00/s · 1s remaining\n\r", <-frames)
+	p.Add(50)
+	tick(2 * time.Second)
+	assert.Equal(t, "\x1b[1A\r\x1b[K\rbuild 100% █████ 50.00/s · 0s remaining\n\r", <-frames)
+	// done: the row is erased, and no completion line is retained
+	assert.Equal(t, "\x1b[1A\r\x1b[K", untilProgressStopped(t, p, frames))
+	assert.True(t, restored.Load())
+	assert.NoError(t, p.Close())
+}
+
+func TestThemedProgressCloseBeforeDone(t *testing.T) {
+	p, frames, tick, restored := themedProgress(t, NewTheme(), 100)
+	p.Add(5)
+	tick(time.Second)
+	assert.Equal(t, "\rbuild   5% ██"+strings.Repeat("░", 19)+" 0.00/s\n\r", <-frames)
+	closed := make(chan error)
+	go func() { closed <- p.Close() }()
+	// stopping looks like completing: the row is erased
+	assert.Equal(t, "\x1b[1A\r\x1b[K", untilProgressStopped(t, p, frames))
+	assert.NoError(t, <-closed)
+	assert.True(t, restored.Load())
+}
+
+func TestThemedProgressResize(t *testing.T) {
+	p, frames, tick, _ := themedProgress(t, NewTheme(), 100)
+	p.Add(50)
+	tick(time.Second)
+	assert.Equal(t, 39, text(<-frames).width())
+	// the 39-column row wraps on 20 columns, so two rows are cleared
+	p.io.Width = 20
+	tick(2 * time.Second)
+	assert.Equal(t, "\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r\rbuild  50% ████░░░░\n\r", <-frames)
+}
+
+func TestThemedProgressRenderErrorEndsBar(t *testing.T) {
+	th := NewTheme()
+	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
+	th.Templates.Progress.Label = `{{ if eq .Current 150 }}{{ boom }}{{ end }}{{ .Label }}`
+	p, frames, tick, restored := themedProgress(t, th, 200)
+	p.Add(100)
+	tick(time.Second)
+	assert.Equal(t, "\rbuild  50% ██░░ 100.00/s · 1s remaining\n\r", <-frames)
+	p.Add(50)
+	tick(2 * time.Second)
+	// no partial frame: only the drawn row is cleared
+	assert.Equal(t, "\x1b[1A\r\x1b[K", untilProgressStopped(t, p, frames))
+	assert.True(t, restored.Load())
+	err := p.Close()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "redraw: theme.Templates.Progress.Label")
+	assert.Contains(t, err.Error(), "boom")
+	// nobody renders anymore, and Add does not block
+	p.Add(1)
+}
+
+func TestThemedProgressWriteErrorEndsBar(t *testing.T) {
+	useTheme(t, NewTheme())
+	restored := false
+	p, err := NewMaxProgressBar(t.Context(), "build", 10, opT(func(pb *Progressbar) error {
+		pb.ticks = time.After(0)
+		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
+			return &termIO{in: in, out: errWriterPB{}, Width: 40, Height: 1, Restore: func() error {
+				restored = true
+				return nil
+			}}, nil
+		}
+		return nil
+	}))
+	assert.NoError(t, err)
+	<-p.stopped
+	err = p.Close()
+	assert.ErrorIs(t, err, io.EOF)
+	assert.True(t, restored)
+}
+
+func TestThemedSliceProgress(t *testing.T) {
+	useTheme(t, NewTheme())
+	frames := make(frameWriter, 16)
+	ticks := make(chan time.Time)
+	var clock atomic.Int64
+	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
+	items := []string{"a", "b", "c", "d"}
+	seq := NewSliceProgressBar(t.Context(), "items", items, opT(func(pb *Progressbar) error {
+		pb.now = func() time.Time { return start.Add(time.Duration(clock.Load())) }
+		pb.ticks = ticks
+		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
+			return &termIO{in: in, out: frames, Width: 30, Height: 10, Restore: func() error { return nil }}, nil
+		}
+		return nil
+	}))
+	var got []string
+	for v, err := range seq {
+		assert.NoError(t, err)
+		got = append(got, v)
+		if v == "c" {
+			clock.Store(int64(time.Second))
+			ticks <- time.Time{}
+			// two items done; too few for a rate, so no estimate
+			assert.Equal(t, "\ritems  50% ██████░░░░░ 0.00/s\n\r", <-frames)
+		}
+	}
+	assert.Equal(t, items, got)
+	// the iterator closed the bar, which erased its row
+	close(frames)
+	var rest strings.Builder
+	for f := range frames {
+		rest.WriteString(f)
+	}
+	assert.Equal(t, "\x1b[1A\r\x1b[K", rest.String())
+}
+
+func TestThemedSliceProgressReturnsRenderError(t *testing.T) {
+	th := NewTheme()
+	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
+	th.Templates.Progress.Metrics = `{{ boom }}`
+	useTheme(t, th)
+	ticks := make(chan time.Time)
+	seq := NewSliceProgressBar(t.Context(), "items", []int{1, 2}, opT(func(pb *Progressbar) error {
+		pb.ticks = ticks
+		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
+			return &termIO{in: in, out: io.Discard, Width: 30, Height: 10, Restore: func() error { return nil }}, nil
+		}
+		return nil
+	}))
+	var errs []error
+	for v, err := range seq {
+		if v == 1 {
+			ticks <- time.Time{}
+		}
+		errs = append(errs, err)
+	}
+	assert.Equal(t, 3, len(errs))
+	assert.Contains(t, errs[2].Error(), "theme.Templates.Progress.Metrics")
+}
+
+func TestThemedProgressWithoutTerminal(t *testing.T) {
+	th := NewTheme()
+	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
+	th.Templates.Progress.Label = `{{ boom }}`
+	th.Templates.Progress.Metrics = `{{ boom }}`
+	th.Templates.Progress.Frame = `{{ boom }}{{ .Bar }}`
+	useTheme(t, th)
+	noTTY := opT(func(pb *Progressbar) error {
+		pb.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { return nil, ErrNoTTY }
+		return nil
+	})
+	p, err := NewMaxProgressBar(t.Context(), "build", 3, noTTY)
+	assert.NoError(t, err)
+	p.Add(3)
+	assert.NoError(t, p.Close())
+	var got []int
+	for v, err := range NewSliceProgressBar(t.Context(), "items", []int{1, 2}, noTTY) {
+		assert.NoError(t, err)
+		got = append(got, v)
+	}
+	assert.Equal(t, []int{1, 2}, got)
+}
+
+func TestThemedProgressCapturesTheme(t *testing.T) {
+	th := NewTheme()
+	th.Symbols.BarFill = "#"
+	p, frames, tick, _ := themedProgress(t, th, 100)
+	// a theme installed later does not reach the running bar
+	later := NewTheme()
+	later.Symbols.BarFill = "="
+	assert.NoError(t, defaultIO.installTheme(later))
+	p.Add(60)
+	tick(time.Second)
+	assert.Equal(t, "\rbuild  60% ###░░ 60.00/s · 0s remaining\n\r", <-frames)
+}
+
+func TestProgressStaysLegacyWhenOff(t *testing.T) {
+	keepTheme(t)
+	prev := themeRendering.Swap(false)
+	t.Cleanup(func() { themeRendering.Store(prev) })
+	p, err := NewMaxProgressBar(t.Context(), "build", 10, opT(func(pb *Progressbar) error {
+		pb.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { return nil, ErrNoTTY }
+		return nil
+	}))
+	assert.NoError(t, err)
+	assert.True(t, p.look == nil)
+	assert.NoError(t, p.Close())
+}
+
+func TestParallelProgressStaysLegacyWhenThemed(t *testing.T) {
+	useTheme(t, NewTheme())
+	var look *progressLook
+	err := NewParallelProgressBar(t.Context(), "build", []int{1}, func(int) error { return nil },
+		opT(func(pb *Progressbar) error {
+			pb.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { return nil, ErrNoTTY }
+			return nil
+		}),
+		opT(func(pb *Progressbar) error {
+			look = pb.look
+			return nil
+		}))
+	assert.NoError(t, err)
+	assert.True(t, look == nil)
 }
