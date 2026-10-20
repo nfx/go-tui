@@ -81,14 +81,34 @@ type tio struct {
 	bgGen uint64
 	// bgMu serializes probes; acquire before mu and release mu before probing.
 	bgMu sync.Mutex
-	// theme is the installed snapshot, set only on defaultIO. Installing
-	// is compile-then-store with no shared read-modify-write, so it needs no lock.
+	// theme is the installed snapshot, set only on defaultIO. Renderers load
+	// it without locking.
 	theme atomic.Pointer[compiledTheme]
+	// themeMu serializes installations, so that an edit of the installed
+	// theme cannot lose a concurrent one. It is never held while rendering.
+	themeMu sync.Mutex
 }
 
 func (t *tio) currentTheme() *compiledTheme { return t.theme.Load() }
 
+// installTheme replaces the configuration and custom helpers only after validation.
 func (t *tio) installTheme(th Theme) error {
+	t.themeMu.Lock()
+	defer t.themeMu.Unlock()
+	return t.storeThemeLocked(th)
+}
+
+// updateTheme serializes edits to the installed configuration to prevent lost updates.
+func (t *tio) updateTheme(edit func(*Theme)) error {
+	t.themeMu.Lock()
+	defer t.themeMu.Unlock()
+	th := t.currentTheme().editable()
+	edit(&th)
+	return t.storeThemeLocked(th)
+}
+
+// storeThemeLocked publishes a validated theme while the caller holds themeMu.
+func (t *tio) storeThemeLocked(th Theme) error {
 	c, err := th.compile()
 	if err != nil {
 		return err

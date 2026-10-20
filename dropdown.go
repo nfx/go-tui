@@ -680,8 +680,9 @@ type choiceLabels struct{}
 
 // choiceTemplateFuncs gives each template set its own shared label and color helpers.
 func choiceTemplateFuncs() template.FuncMap {
-	funcs := make(template.FuncMap, len(colorFns)+1)
-	maps.Copy(funcs, colorFns)
+	legacy := legacyTemplateFuncs()
+	funcs := make(template.FuncMap, len(legacy)+1)
+	maps.Copy(funcs, legacy)
 	funcs["label"] = choiceLabels{}.itemLabel
 	return funcs
 }

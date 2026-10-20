@@ -4,21 +4,24 @@
 package tui
 
 import (
+	"errors"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"text/template"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
 
-func TestAnsciiFormatterHandlesTypes(t *testing.T) {
+func TestSpanHelperHandlesTypes(t *testing.T) {
 	str := "hi"
 	ptr := &str
 	arr := []string{"alpha", "beta"}
 	num := 5
-	formatter := ansciiFormatter("\x1b[31m", "\x1b[1m")
+	formatter := destination{}.newSpan(reset, text("\x1b[31m"), text("\x1b[1m")).helper()
 
 	got := formatter(ptr, arr, &num, "end")
 	if !strings.HasPrefix(got, "\x1b[31m\x1b[1m") {
@@ -32,31 +35,6 @@ func TestAnsciiFormatterHandlesTypes(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, reset) {
 		t.Fatalf("expected reset suffix, got %q", got)
-	}
-}
-
-func TestWithFnRegistersFunc(t *testing.T) {
-	name := "testFunc"
-	orig, had := colorFns[name]
-	WithFn(name, func(...any) string { return "ok" })
-	t.Cleanup(func() {
-		if had {
-			colorFns[name] = orig
-		} else {
-			delete(colorFns, name)
-		}
-	})
-
-	raw, ok := colorFns[name]
-	if !ok {
-		t.Fatalf("registration failed")
-	}
-	fn, ok := raw.(func(...any) string)
-	if !ok {
-		t.Fatalf("unexpected function type")
-	}
-	if fn() != "ok" {
-		t.Fatalf("unexpected return value")
 	}
 }
 
@@ -734,4 +712,359 @@ func TestThemeRoundTripKeepsTemplateSources(t *testing.T) {
 	if c.editable().Templates.Choice.Empty != "" {
 		t.Fatal("inherited slot became explicit")
 	}
+}
+
+// keepTheme restores the installed theme after a test.
+func keepTheme(t *testing.T) *compiledTheme {
+	t.Helper()
+	prev := defaultIO.currentTheme()
+	t.Cleanup(func() { defaultIO.theme.Store(prev) })
+	return prev
+}
+
+// execute renders src with funcs and fails the test on any error.
+func execute(t *testing.T, funcs template.FuncMap, src string, data any) string {
+	t.Helper()
+	tmpl, err := template.New("t").Funcs(funcs).Parse(src)
+	assert.NoError(t, err)
+	var b strings.Builder
+	assert.NoError(t, tmpl.Execute(&b, data))
+	return b.String()
+}
+
+func TestWithFnRegistersForFutureOperations(t *testing.T) {
+	before := keepTheme(t)
+	WithFn("shout", func(s string) string { return strings.ToUpper(s) + "!" })
+
+	assert.Equal(t, "HI!", execute(t, legacyTemplateFuncs(), `{{ shout "hi" }}`, nil))
+	_, ok := before.legacy["shout"]
+	assert.True(t, !ok) // an operation that started earlier keeps its helpers
+	_, ok = defaultIO.currentTheme().editable().Funcs["shout"]
+	assert.True(t, ok)
+
+	WithFn("shout", func(s string) string { return s + "?" })
+	assert.Equal(t, "hi?", execute(t, legacyTemplateFuncs(), `{{ shout "hi" }}`, nil))
+}
+
+func TestWithFnReachesWidgetTemplates(t *testing.T) {
+	keepTheme(t)
+	WithFn("shout", strings.ToUpper)
+	funcs := choiceTemplateFuncs()
+	assert.Equal(t, "A", execute(t, funcs, `{{ shout "a" }}`, nil))
+	assert.Equal(t, "x", execute(t, funcs, `{{ label "x" }}`, nil))
+}
+
+func TestWithFnPanicsAndKeepsInstalled(t *testing.T) {
+	keepTheme(t)
+	for name, fn := range map[string]any{
+		"red":                    strings.ToUpper,
+		"fg":                     strings.ToUpper,
+		"accent":                 strings.ToUpper,
+		"symbol":                 strings.ToUpper,
+		"label":                  strings.ToUpper,
+		"ago":                    strings.ToUpper,
+		"tableString":            strings.ToUpper,
+		"__cellSep":              strings.ToUpper,
+		"tableColumnTypeFormat0": strings.ToUpper,
+		"1st":                    strings.ToUpper,
+		"a-b":                    strings.ToUpper,
+		"":                       strings.ToUpper,
+		"notFunc":                "x",
+		"nilFunc":                (func() string)(nil),
+		"untyped":                nil,
+		"noResult":               func() {},
+		"badSecond":              func() (string, string) { return "", "" },
+		"threeResults":           func() (int, int, error) { return 0, 0, nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			installed := defaultIO.currentTheme()
+			defer func() {
+				r := recover()
+				err, ok := r.(error)
+				if !ok {
+					t.Fatalf("want a panic with an error, got %v", r)
+				}
+				assert.Contains(t, err.Error(), "tui.WithFn: theme.Funcs."+name+":")
+				assert.True(t, defaultIO.currentTheme() == installed)
+			}()
+			WithFn(name, fn)
+		})
+	}
+}
+
+func TestWithFnAcceptsErrorResult(t *testing.T) {
+	keepTheme(t)
+	boom := errors.New("boom")
+	WithFn("fails", func() (string, error) { return "", boom })
+	tmpl, err := template.New("t").Funcs(legacyTemplateFuncs()).Parse(`{{ fails }}`)
+	assert.NoError(t, err)
+	assert.ErrorIs(t, tmpl.Execute(&strings.Builder{}, nil), boom)
+}
+
+func TestConcurrentWithFnLosesNothing(t *testing.T) {
+	keepTheme(t)
+	var wg sync.WaitGroup
+	for i := range 16 {
+		wg.Go(func() { WithFn(fmt.Sprintf("fn%d", i), strings.ToUpper) })
+	}
+	wg.Wait()
+	funcs := defaultIO.currentTheme().editable().Funcs
+	for i := range 16 {
+		_, ok := funcs[fmt.Sprintf("fn%d", i)]
+		assert.True(t, ok)
+	}
+}
+
+func TestInstallReplacesFuncs(t *testing.T) {
+	keepTheme(t)
+	WithFn("forgotten", strings.ToUpper)
+	th := GuidedTheme()
+	th.Funcs = template.FuncMap{"kept": strings.ToLower}
+	assert.NoError(t, defaultIO.installTheme(th))
+	funcs := defaultIO.currentTheme().editable().Funcs
+	_, forgotten := funcs["forgotten"]
+	_, kept := funcs["kept"]
+	assert.True(t, !forgotten && kept)
+}
+
+func TestThemeFuncsAreCopied(t *testing.T) {
+	keepTheme(t)
+	th := GuidedTheme()
+	th.Funcs = template.FuncMap{"h": strings.ToUpper}
+	assert.NoError(t, defaultIO.installTheme(th))
+	th.Funcs["h"] = strings.ToLower
+	th.Funcs["extra"] = strings.ToLower
+	got := defaultIO.currentTheme().editable()
+	got.Funcs["h"] = strings.ToLower
+	assert.Equal(t, "A", execute(t, legacyTemplateFuncs(), `{{ h "a" }}`, nil))
+	_, ok := defaultIO.currentTheme().editable().Funcs["extra"]
+	assert.True(t, !ok)
+}
+
+func TestThemeFuncsReachSlotsAndAreValidated(t *testing.T) {
+	c, err := compileTemplates(t, func(th *Theme) {
+		th.Funcs = template.FuncMap{"shout": strings.ToUpper}
+		th.Templates.Prompt.Label = `{{ shout .Label }}`
+	})
+	assert.NoError(t, err)
+	b, err := c.templates.Input.Label.bind(c.funcs(profilePlain, roleStyles{}))
+	assert.NoError(t, err)
+	out, err := b.render(struct{ Label string }{"name"})
+	assert.NoError(t, err)
+	assert.Equal(t, "NAME", out.String())
+
+	_, err = compileTemplates(t, func(th *Theme) {
+		th.Funcs = template.FuncMap{"bold": strings.ToUpper, "ok": strings.ToUpper, "bad": 1}
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "theme.Funcs.bold: reserved")
+	assert.Contains(t, err.Error(), "theme.Funcs.bad: want a function")
+	assert.NotContains(t, err.Error(), "theme.Funcs.ok")
+}
+
+// truecolor supplies test helpers with truecolor output and an accent role.
+func truecolor() template.FuncMap {
+	return destination{
+		profile: profileTrueColor,
+		roles:   roleStyles{accent: text("\x1b[38;2;0;173;216m")},
+		symbols: unicodeSymbols,
+	}.funcs()
+}
+
+func TestStandaloneLegacyHelpersAreByteIdentical(t *testing.T) {
+	funcs := truecolor()
+	for src, want := range map[string]string{
+		`{{ red "x" }}`:                 "\x1b[31mx\x1b[0m",
+		`{{ bold "x" 1 }}`:              "\x1b[1mx1\x1b[0m",
+		`{{ bgBlue "x" }}`:              "\x1b[44mx\x1b[0m",
+		`{{ red (bold "x") }}`:          "\x1b[31m\x1b[1mx\x1b[0m\x1b[0m",
+		`{{ red "" }}`:                  "\x1b[31m\x1b[0m",
+		`{{ strike .S }}`:               "\x1b[9ma, b\x1b[0m",
+		`{{ red (printf "%d" 5) }}`:     "\x1b[31m5\x1b[0m",
+		`{{ dim "a\x1b[2Kb" }}`:         "\x1b[2ma\x1b[2Kb\x1b[0m", // cursor control is not a style
+		`{{ red "\x1b[38;5;0mx" }}`:     "\x1b[31m\x1b[38;5;0mx\x1b[0m",
+		`{{ red "\x1b[48;2;0;0;0mx" }}`: "\x1b[31m\x1b[48;2;0;0;0mx\x1b[0m",
+	} {
+		assert.Equal(t, want, execute(t, funcs, src, struct{ S []string }{[]string{"a", "b"}}))
+	}
+}
+
+func TestNestedHelpersRestoreOuterStyle(t *testing.T) {
+	funcs := truecolor()
+	const accent = "\x1b[38;2;0;173;216m"
+	for _, tc := range []struct{ name, src, want string }{
+		{"legacy in legacy", `{{ red (bold "x") " y" }}`, "\x1b[31m\x1b[1mx\x1b[0m\x1b[31m y\x1b[0m"},
+		{"fg in bg", `{{ bg "#000" (fg "#FFF" "a") "b" }}`,
+			"\x1b[48;2;0;0;0m\x1b[38;2;255;255;255ma\x1b[39mb\x1b[49m"},
+		{"legacy in fg", `{{ fg "#F00" (bgBlue "a") "b" }}`,
+			"\x1b[38;2;255;0;0m\x1b[44ma\x1b[0m\x1b[38;2;255;0;0mb\x1b[39m"},
+		{"fg in fg", `{{ fg "#F00" "a" (fg "#0F0" "b") "c" }}`,
+			"\x1b[38;2;255;0;0ma\x1b[38;2;0;255;0mb\x1b[39m\x1b[38;2;255;0;0mc\x1b[39m"},
+		{"legacy in semantic", `{{ accent (bold "a") "b" }}`, accent + "\x1b[1ma\x1b[0m" + accent + "b\x1b[39m"},
+		{"semantic in legacy", `{{ bold (accent "a") "b" }}`, "\x1b[1m" + accent + "a\x1b[39mb\x1b[0m"},
+		{"bold and dim share 22", `{{ dim "\x1b[1mx\x1b[22my" }}`, "\x1b[2m\x1b[1mx\x1b[22m\x1b[2my\x1b[0m"},
+		{"selective reset of another channel", `{{ bold "\x1b[39mx" }}`, "\x1b[1m\x1b[39mx\x1b[0m"},
+		{"three levels", `{{ red (bold (underline "a") "b") "c" }}`,
+			"\x1b[31m\x1b[1m\x1b[4ma\x1b[0m\x1b[31m\x1b[1mb\x1b[0m\x1b[31mc\x1b[0m"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, execute(t, funcs, tc.src, nil))
+		})
+	}
+}
+
+func TestHelpersFollowProfile(t *testing.T) {
+	attrs := destination{profile: profileAttrs}.funcs()
+	plain := destination{profile: profilePlain}.funcs()
+	for _, tc := range []struct {
+		funcs     template.FuncMap
+		src, want string
+	}{
+		{attrs, `{{ red "x" }}`, "x"},
+		{attrs, `{{ bold "x" }}`, "\x1b[1mx\x1b[0m"},
+		{attrs, `{{ red (bold "x") "y" }}`, "\x1b[1mx\x1b[0my"},
+		{attrs, `{{ fg "#F00" "x" }}`, "x"},
+		{attrs, `{{ accent "x" }}`, "x"},
+		{plain, `{{ bold (red "x") }}`, "x"},
+		{plain, `{{ bg "#000" "x" }}`, "x"},
+	} {
+		assert.Equal(t, tc.want, execute(t, tc.funcs, tc.src, nil))
+	}
+	ansi16 := destination{profile: profileANSI16}.funcs()
+	assert.Equal(t, "\x1b[91mx\x1b[39m", execute(t, ansi16, `{{ fg "#F00" "x" }}`, nil))
+}
+
+func TestColorHelpersComposeWithStringHelpers(t *testing.T) {
+	up := template.FuncMap{"upper": func(s string) string { return "<" + s + ">" }}
+	for _, tc := range []struct {
+		profile   colorProfile
+		src, want string
+	}{
+		{profileANSI16, `{{ fg "#F00" "hi" | upper }}`, "<\x1b[91mhi\x1b[39m>"},
+		{profileANSI16, `{{ bg "#F00" "hi" | upper }}`, "<\x1b[101mhi\x1b[49m>"},
+		{profilePlain, `{{ fg "#F00" "hi" | upper }}`, "<hi>"},
+		{profilePlain, `{{ bg "#F00" "hi" | upper }}`, "<hi>"},
+	} {
+		funcs := destination{profile: tc.profile}.funcs()
+		for k, v := range up {
+			funcs[k] = v
+		}
+		assert.Equal(t, tc.want, execute(t, funcs, tc.src, nil))
+	}
+}
+
+func TestColorHelperRejectsMalformedAtExecution(t *testing.T) {
+	for _, src := range []string{`{{ fg "red" "x" }}`, `{{ bg "" "x" }}`, `{{ fg .C "x" }}`} {
+		tmpl, err := template.New("t").Funcs(truecolor()).Parse(src)
+		assert.NoError(t, err)
+		err = tmpl.Execute(&strings.Builder{}, struct{ C string }{"#12"})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "want \"#RRGGBB\"")
+	}
+}
+
+func TestSymbolHelper(t *testing.T) {
+	funcs := destination{symbols: ASCIISymbols()}.funcs()
+	assert.Equal(t, ">", execute(t, funcs, `{{ symbol "Focus" }}`, nil))
+	tmpl, err := template.New("t").Funcs(funcs).Parse(`{{ symbol "Nope" }}`)
+	assert.NoError(t, err)
+	assert.Error(t, tmpl.Execute(&strings.Builder{}, nil))
+}
+
+func TestClippingNestedHelpersKeepsStyleBalanced(t *testing.T) {
+	out := text(execute(t, truecolor(), `{{ red (bold "ab") "cd" }}`, nil)).truncateColumns(3)
+	assert.Equal(t, 3, out.width())
+	assert.Equal(t, "\x1b[31m\x1b[1mab\x1b[0m\x1b[31m…\x1b[0m", out.String())
+}
+
+func TestConcurrentHelperExecutions(t *testing.T) {
+	tmpl, err := template.New("t").Funcs(truecolor()).Parse(`{{ red (bold .) " y" }}`)
+	assert.NoError(t, err)
+	var wg sync.WaitGroup
+	for i := range 16 {
+		wg.Go(func() {
+			var b strings.Builder
+			if err := tmpl.Execute(&b, i); err != nil {
+				t.Error(err)
+				return
+			}
+			want := fmt.Sprintf("\x1b[31m\x1b[1m%d\x1b[0m\x1b[31m y\x1b[0m", i)
+			if b.String() != want {
+				t.Errorf("got %q, want %q", b.String(), want)
+			}
+		})
+	}
+	wg.Wait()
+}
+
+func TestSGREffect(t *testing.T) {
+	for _, tc := range []struct {
+		seq          string
+		set, cleared sgrChannel
+	}{
+		{"\x1b[m", 0, sgrAll},
+		{"\x1b[0m", 0, sgrAll},
+		{"\x1b[31m", sgrForeground, 0},
+		{"\x1b[0;31m", sgrForeground, sgrAll &^ sgrForeground},
+		{"\x1b[31;0m", 0, sgrAll},
+		{"\x1b[1;22m", 0, sgrIntensity},
+		{"\x1b[22m", 0, sgrIntensity},
+		{"\x1b[23;24;29m", 0, sgrItalic | sgrUnderline | sgrStrike},
+		{"\x1b[39;49m", 0, sgrForeground | sgrBackground},
+		{"\x1b[38;5;0m", sgrForeground, 0},
+		{"\x1b[38;2;0;0;0m", sgrForeground, 0},
+		{"\x1b[48:2::0:0:0m", sgrBackground, 0},
+		{"\x1b[58;5;0;1m", sgrIntensity, 0},
+		{"\x1b[97;104m", sgrForeground | sgrBackground, 0},
+		{"\x1b[99999999999999999999m", 0, 0},
+		{"\x1b[2K", 0, 0},
+		{"\x1b[>4m", 0, 0},
+	} {
+		set, cleared := text(tc.seq).scan().sgrEffect()
+		if set != tc.set || cleared != tc.cleared {
+			t.Errorf("%q: got set %06b cleared %06b, want %06b %06b", tc.seq, set, cleared, tc.set, tc.cleared)
+		}
+	}
+}
+
+func TestBoundSlotRendersOrFailsWhole(t *testing.T) {
+	boom := errors.New("boom")
+	c, err := compileTemplates(t, func(th *Theme) {
+		th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
+		th.Templates.Prompt.Label = `{{ bold .Label }}`
+		th.Templates.Prompt.Hint = `{{ red "partial" }}{{ fails .Label }}`
+		th.Templates.Prompt.Feedback = "{{ .Label }}\n"
+		th.Templates.Prompt.Answer = "{{ .Label }}\x1b[2K"
+		th.Templates.Choice.More = Hidden
+	})
+	assert.NoError(t, err)
+	data := struct{ Label string }{"x"}
+	render := func(s *compiledSlot, p colorProfile) (text, error) {
+		b, err := s.bind(c.funcs(p, roleStyles{}))
+		assert.NoError(t, err)
+		return b.render(data)
+	}
+
+	out, err := render(c.templates.Prompt.Label, profileTrueColor)
+	assert.NoError(t, err)
+	assert.Equal(t, "\x1b[1mx\x1b[0m", out.String())
+	out, err = render(c.templates.Prompt.Label, profilePlain)
+	assert.NoError(t, err)
+	assert.Equal(t, "x", out.String()) // binding does not change the installed slot
+
+	out, err = render(c.templates.Prompt.Hint, profileTrueColor)
+	assert.ErrorIs(t, err, boom)
+	assert.Contains(t, err.Error(), "theme.Templates.Prompt.Hint")
+	assert.True(t, out == nil)
+
+	for _, s := range []*compiledSlot{c.templates.Prompt.Feedback, c.templates.Prompt.Answer} {
+		out, err = render(s, profileTrueColor)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "want text and SGR only")
+		assert.True(t, out == nil)
+	}
+
+	out, err = render(c.templates.Choice.More, profileTrueColor)
+	assert.NoError(t, err)
+	assert.True(t, out == nil)
 }
