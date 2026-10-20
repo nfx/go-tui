@@ -1605,10 +1605,11 @@ func (*Templates) usesBar(n parse.Node) bool {
 	return false
 }
 
-// TableTemplates are the header and the cells of tables. A hidden Header
-// drops the header row. Cell wraps each formatted value of an automatic row
-// template, one physical line at a time, after any column template,
-// formatter or scale; an explicit row template keeps its own presentation.
+// TableTemplates are the header and the cells of tables, and the keys and
+// values of facts. A hidden Header drops the header row, or the keys. Cell
+// wraps each formatted value of an automatic row template, one physical line
+// at a time, after any column template, formatter or scale; an explicit row
+// template keeps its own presentation.
 type TableTemplates struct {
 	Header Template
 	Cell   Template
