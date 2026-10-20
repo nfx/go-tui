@@ -1579,20 +1579,366 @@ func TestTableStaysLegacyWhenOff(t *testing.T) {
 	assert.Equal(t, "NAME   RATE  AMOUNT \nA       "+green+"50%"+reset+"       1 \n", buf.String())
 }
 
-func TestTableIterAndFactsStayLegacyWhenThemed(t *testing.T) {
+// streamedRows are two batches and a bit: the twelfth row is wider than the
+// first batch allows.
+func streamedRows() []themedRow {
+	data := make([]themedRow, 12)
+	for i := range data {
+		data[i] = themedRow{Name: fmt.Sprintf("n%02d", i), Amount: i}
+	}
+	data[11] = themedRow{Name: "a much longer name", Amount: 123456789, Note: "much later"}
+	return data
+}
+
+// lines splits output into its rows, without the final line break.
+func lines(out string) []string {
+	return strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+}
+
+func TestThemedTableIterMatchesTable(t *testing.T) {
+	data := streamedRows()
+	for _, env := range [][]string{nil, {"FORCE_COLOR=3"}} {
+		th := NewTheme()
+		th.Light = true
+		themedTable(t, th, env...)
+		iterated, whole := &bytes.Buffer{}, &bytes.Buffer{}
+		assert.NoError(t, TableIter(iterated, "", iterate(data)))
+		assert.NoError(t, TableAuto(whole, data))
+		assert.Equal(t, whole.String(), iterated.String())
+		// widths lock after the first batch, decoration not counted
+		assert.Equal(t, "a m…   12345… muc…  ", stripSGR(lines(iterated.String())[12]))
+	}
+	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), &bytes.Buffer{}, nil).roles
+	buf := &bytes.Buffer{}
+	assert.NoError(t, TableIter(buf, "", iterate(data[:1])))
+	fg := func(s string) string { return string(roles.foreground) + s + fgDefault }
+	assert.Equal(t, bold+fg("NAME")+reset+"   "+bold+fg("AMOUNT")+reset+" "+bold+fg("NOTE")+reset+"  \n"+
+		fg("n00")+reset+"         "+fg("0")+reset+"       \n", buf.String())
+
+	// a plain writer gets exactly the legacy bytes
+	withEnv(t)
+	themed := &bytes.Buffer{}
+	assert.NoError(t, TableIter(themed, "", iterate(data)))
+	themeRendering.Store(false)
+	legacy := &bytes.Buffer{}
+	assert.NoError(t, TableIter(legacy, "", iterate(data)))
+	assert.Equal(t, legacy.String(), themed.String())
+}
+
+func TestThemedTableIterKeepsOneSnapshot(t *testing.T) {
+	data := streamedRows()
+	th := NewTheme()
+	th.Light = true
+	themedTable(t, th, "FORCE_COLOR=3")
+	want := &bytes.Buffer{}
+	assert.NoError(t, TableIter(want, "", iterate(data)))
+
+	other := NewTheme()
+	other.Templates.Table.Header = Hidden
+	other.Templates.Table.Cell = `<{{ .Value }}>`
+	other.Table = TableStyle{ColumnGap: 5}
+	buf := &bytes.Buffer{}
+	var firstBatch string
+	changing := func(yield func(themedRow, error) bool) {
+		for i, v := range data {
+			switch i {
+			case 0:
+				// the theme is captured before the first row
+				assert.NoError(t, defaultIO.installTheme(other))
+			case 10:
+				// the first batch is out, and later batches keep the
+				// writer's capabilities
+				firstBatch = buf.String()
+				withEnv(t)
+			}
+			if !yield(v, nil) {
+				return
+			}
+		}
+	}
+	assert.NoError(t, TableIter(buf, "", changing))
+	assert.Equal(t, want.String(), buf.String())
+	assert.Equal(t, strings.Join(lines(want.String())[:11], "\n")+"\n", firstBatch)
+
+	// the next table takes the new theme and environment
+	buf.Reset()
+	assert.NoError(t, TableIter(buf, "", iterate(data[:1])))
+	assert.Equal(t, "<n00>         <0>       \n", buf.String())
+}
+
+func TestThemedTableIterScaleRanksSeenSoFar(t *testing.T) {
+	type row struct {
+		Value int
+	}
+	var data []row
+	for i := 1; i <= 10; i++ {
+		data = append(data, row{i * 10})
+	}
+	data = append(data, row{0}, row{55}, row{100})
+	// every value of the first batch is the largest so far; later ones rank
+	// against everything seen, and earlier rows keep their colors
+	want := []int{-1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 2, 4}
+	th := NewTheme()
+	th.Light = true
+	themedTable(t, th, "FORCE_COLOR=3")
+	buf := &bytes.Buffer{}
+	var firstBatch string
+	watched := func(yield func(row, error) bool) {
+		for i, v := range data {
+			if i == 10 {
+				firstBatch = buf.String()
+			}
+			if !yield(v, nil) {
+				return
+			}
+		}
+	}
+	assert.NoError(t, TableIter(buf, "", watched, WithColumnGreenRedScale("Value")))
+	look := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil)
+	scale := look.diverging()
+	out := lines(buf.String())
+	assert.Equal(t, len(data)+1, len(out))
+	assert.True(t, strings.HasPrefix(buf.String(), firstBatch))
+	assert.Equal(t, strings.Join(out[:11], "\n")+"\n", firstBatch)
+	for i, bucket := range want {
+		line, value := out[i+1], strings.TrimSpace(stripSGR(out[i+1]))
+		if bucket < 0 {
+			assert.Equal(t, "    "+string(look.roles.foreground)+value+fgDefault+reset+" ", line)
+			continue
+		}
+		assert.Contains(t, line, string(scale[bucket])+value)
+	}
+}
+
+func TestThemedTableIterErrors(t *testing.T) {
+	data := streamedRows()
+	th := NewTheme()
+	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
+	th.Templates.Table.Cell = `{{ if eq .Value "n10" }}{{ boom }}{{ end }}{{ .Value }}`
+	themedTable(t, th)
+	want := &bytes.Buffer{}
+	assert.NoError(t, TableIter(want, "", iterate(data[:10])))
+	firstBatch := want.String()
+
+	// a producer failure keeps the rows already written, and drops the rest
+	failing := func(yield func(themedRow, error) bool) {
+		for _, v := range data[:10] {
+			if !yield(v, nil) {
+				return
+			}
+		}
+		yield(themedRow{}, errors.New("gone"))
+	}
+	buf := &bytes.Buffer{}
+	err := TableIter(buf, "", failing)
+	assert.Error(t, err)
+	assert.Equal(t, "row 10: fetch: gone", err.Error())
+	assert.Equal(t, firstBatch, buf.String())
+
+	// so does a Cell slot failing in a later batch
+	buf.Reset()
+	err = TableIter(buf, "", iterate(data))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), `row 10: append: render: column "Name": theme.Templates.Table.Cell: `)
+	assert.Contains(t, err.Error(), "boom")
+	assert.Equal(t, firstBatch, buf.String())
+
+	err = TableIter(errWriterTable{}, "", iterate(data))
+	assert.ErrorIs(t, err, io.EOF)
+}
+
+// ttyWidth makes every writer report width columns.
+func ttyWidth(t *testing.T, width int) {
+	t.Helper()
+	orig := termGetSize
+	termGetSize = func(int) (int, int, error) { return width, 40, nil }
+	t.Cleanup(func() { termGetSize = orig })
+}
+
+type factsRow struct {
+	Left  string
+	Count int
+	Right string `header:"RIGHT,align-right"`
+	Owner Person
+}
+
+var factsData = factsRow{Left: "left", Count: 7, Right: "x", Owner: Person{"Alice", 30}}
+
+func TestThemedFactsMatchesLegacyOnPlainWriter(t *testing.T) {
+	type four struct{ Alpha, Beta, Gamma, Delta string }
+	render := func() []string {
+		var outs []string
+		for _, tc := range []struct {
+			width int
+			run   func(w io.Writer) error
+		}{
+			{120, func(w io.Writer) error { return Facts(w, factsData) }},
+			{14, func(w io.Writer) error { return Facts(w, four{"a", "b", "c", "d"}) }},
+			{120, func(w io.Writer) error { return Facts(w, four{"1234567", "B", "g", "d"}, WithMaxWidth(24)) }},
+			{120, func(w io.Writer) error { return Facts(w, factsData, WithMaxWidth(12)) }},
+			{120, func(w io.Writer) error {
+				return Facts(w, tableFormatRow{"A", 0.1, 9}, WithIncludeColumns("Name", "Rate"),
+					WithColumnFormat("Rate", func(v float64) string { return fmt.Sprintf("rate=%.1f", v) }))
+			}},
+			{120, func(w io.Writer) error { return Facts[any](w, dummyPets[0]) }},
+		} {
+			ttyWidth(t, tc.width)
+			buf := &bytes.Buffer{}
+			assert.NoError(t, tc.run(buf))
+			outs = append(outs, buf.String())
+		}
+		return outs
+	}
+	withEnv(t)
+	legacy := render()
+	themedTable(t, NewTheme())
+	themed := render()
+	assert.Equal(t, legacy, themed)
+	for _, out := range themed {
+		assert.NotContains(t, out, "\x1b")
+	}
+}
+
+func TestThemedFactsRoles(t *testing.T) {
+	ttyWidth(t, 120)
+	th := NewTheme()
+	th.Light = true
+	themedTable(t, th, "FORCE_COLOR=3")
+	buf := &bytes.Buffer{}
+	assert.NoError(t, Facts(buf, factsData))
+	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
+	assert.True(t, len(roles.foreground) > 0)
+	out := buf.String()
+	assert.Contains(t, out, bold+string(roles.foreground)+"OWNER.NAME"+fgDefault+reset)
+	assert.Contains(t, out, string(roles.foreground)+"Alice"+fgDefault)
+	for _, role := range []text{roles.accent, roles.success, roles.failure, roles.muted} {
+		assert.NotContains(t, out, string(role))
+	}
+	plain := &bytes.Buffer{}
+	withEnv(t)
+	assert.NoError(t, Facts(plain, factsData))
+	assert.Equal(t, plain.String(), stripSGR(out))
+}
+
+func TestThemedFactsSlots(t *testing.T) {
+	ttyWidth(t, 120)
+	th := NewTheme()
+	th.Templates.Table.Header = `{{ .Name }}:{{ .Kind }}`
+	th.Templates.Table.Cell = `[{{ .Value }}]`
+	themedTable(t, th)
+	buf := &bytes.Buffer{}
+	assert.NoError(t, Facts(buf, factsRow{Left: "l", Count: 3, Owner: Person{Name: "Bo"}},
+		WithColumnTemplate("Left", "T:{{.Left}}"),
+		WithColumnFormat("Count", func(int) string { return "named" }),
+		WithColumnTypeFormat(func(int) string { return "typed" })))
+	// the value wraps the chosen format; an empty value stays empty
+	assert.Equal(t, "Left:string   Count:int  Right:string Owner.Name:string  Owner.Age:int  \n"+
+		"[T:l]           [named]               [Bo]               [typed]        \n\n", buf.String())
+}
+
+func TestThemedFactsHiddenKey(t *testing.T) {
+	ttyWidth(t, 120)
 	th := NewTheme()
 	th.Templates.Table.Header = Hidden
+	themedTable(t, th)
+	buf := &bytes.Buffer{}
+	assert.NoError(t, Facts(buf, factsData))
+	assert.Equal(t, "left   7  x Alice  30  \n\n", buf.String())
+}
+
+func TestThemedFactsStyle(t *testing.T) {
+	ttyWidth(t, 120)
+	th := NewTheme()
+	th.Table = TableStyle{ColumnGap: 4, MinColumnWidth: 3}
+	themedTable(t, th)
+	buf := &bytes.Buffer{}
+	assert.NoError(t, Facts(buf, tableFormatRow{"A", 0.5, 1}))
+	assert.Equal(t, "NAME       RATE    AMOUNT \nA          0.50         1 \n\n", buf.String())
+
+	// the minimum column width is a floor under the max width, as in tables
+	buf.Reset()
+	assert.NoError(t, Facts(buf, tableFormatRow{"Alpha", 0.5, 1}, WithMaxWidth(4)))
+	assert.Equal(t, "NA…    \nAl…    \n\n   RA… \n   0.… \n\n   AM… \n     1 \n\n", buf.String())
+}
+
+func TestThemedFactsSignedPercent(t *testing.T) {
+	ttyWidth(t, 120)
+	themedTable(t, NewTheme(), "FORCE_COLOR=3")
+	buf := &bytes.Buffer{}
+	assert.NoError(t, Facts(buf, tableFormatRow{"A", -0.5, 1}, WithFloat64AsPercentPositiveColored()))
+	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
+	assert.Contains(t, buf.String(), string(roles.failure)+"-50%"+fgDefault)
+	assert.NotContains(t, buf.String(), red)
+}
+
+func TestThemedFactsValueLine(t *testing.T) {
+	ttyWidth(t, 120)
+	type row struct {
+		Note string
+		Link string
+	}
+	th := NewTheme()
+	th.Templates.Table.Cell = `<{{ .Value }}>`
+	themedTable(t, th)
+	link := "\x1b]8;;https://example.com\x1b\\site\x1b]8;;\x1b\\"
+	buf := &bytes.Buffer{}
+	// the line the legacy presentation shows, without controls
+	assert.NoError(t, Facts(buf, row{Note: "a\x07b\x1b[2Jc\nhidden", Link: link}))
+	assert.Equal(t, "NOTE   LINK    \n<abc>  <"+link+">  \n\n", buf.String())
+}
+
+func TestThemedFactsErrors(t *testing.T) {
+	ttyWidth(t, 120)
+	boom := template.FuncMap{
+		"boom": func(string) (string, error) { return "", errors.New("boom") },
+		"bell": func() string { return "\a" },
+	}
+	for _, tc := range []struct {
+		edit func(*TableTemplates)
+		want string
+	}{
+		{
+			func(s *TableTemplates) {
+				s.Header = `{{ if eq .Name "Count" }}{{ boom .Header }}{{ end }}{{ .Header }}`
+			},
+			`facts: column "Count": theme.Templates.Table.Header: `,
+		},
+		{
+			func(s *TableTemplates) { s.Header = `{{ .Header }}{{ bell }}` },
+			`facts: column "Left": theme.Templates.Table.Header: "\a": want text and SGR only`,
+		},
+		{func(s *TableTemplates) { s.Cell = `{{ boom .Value }}` }, `facts: column "Left": theme.Templates.Table.Cell: `},
+		{
+			func(s *TableTemplates) { s.Cell = `{{ .Value }}{{ bell }}` },
+			`facts: column "Left": theme.Templates.Table.Cell: "\a": want text, SGR and hyperlinks only`,
+		},
+	} {
+		th := NewTheme()
+		th.Funcs = boom
+		tc.edit(&th.Templates.Table)
+		themedTable(t, th)
+		buf := &bytes.Buffer{}
+		err := Facts(buf, factsData)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), tc.want)
+		assert.Equal(t, "", buf.String())
+	}
+
+	themedTable(t, NewTheme())
+	assert.ErrorIs(t, Facts(errWriterTable{}, factsData), io.EOF)
+}
+
+func TestFactsStaysLegacyWhenOff(t *testing.T) {
+	ttyWidth(t, 120)
+	keepTheme(t)
+	prev := themeRendering.Swap(false)
+	t.Cleanup(func() { themeRendering.Store(prev) })
+	th := NewTheme()
 	th.Templates.Table.Cell = `<{{ .Value }}>`
 	th.Table = TableStyle{ColumnGap: 5}
-	themedTable(t, th)
-	data := []tableFormatRow{{"A", 0.5, 1}, {"B", -0.5, 2}}
+	assert.NoError(t, defaultIO.installTheme(th))
+	withEnv(t)
 	buf := &bytes.Buffer{}
-	assert.NoError(t, TableIter(buf, "", iterate(data), WithFloat64AsPercentPositiveColored()))
-	assert.Equal(t, "NAME   RATE  AMOUNT \nA       "+green+"50%"+reset+"       1 \n"+
-		"B      "+red+"-50%"+reset+"       2 \n", buf.String())
-
-	buf.Reset()
-	assert.NoError(t, Facts(buf, data[0]))
-	assert.NotContains(t, buf.String(), "<")
-	assert.Contains(t, factPlain(buf.String()), "NAME")
+	assert.NoError(t, Facts(buf, tableFormatRow{"A", 0.5, 1}, WithFloat64AsPercentPositiveColored()))
+	assert.Equal(t, "NAME   RATE  AMOUNT \nA       "+green+"50%"+reset+"       1 \n\n", buf.String())
 }

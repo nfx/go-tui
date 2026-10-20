@@ -51,8 +51,12 @@ type tableEnd struct {
 	Rows int
 }
 
+// TableIter renders rows as the iterator yields them, writing every ten.
+// Column widths lock after the first batch, scales rank the values seen so
+// far, and written rows are never repainted. The theme and the writer's
+// capabilities are captured before the first row, and hold for every batch.
 func TableIter[T any](w io.Writer, rowTmpl string, iterator iter.Seq2[T, error], o ...opt) error {
-	t, err := newTable[T](w, rowTmpl, false, o...)
+	t, err := newTable[T](w, rowTmpl, themeRendering.Load(), o...)
 	if err != nil {
 		return fmt.Errorf("table: %w", err)
 	}
@@ -115,7 +119,7 @@ func Facts[T any](w io.Writer, data T, o ...opt) error {
 		}
 		rt = reflect.TypeOf(data)
 	}
-	t, err := newTableFor(rt, w, "", false, options...)
+	t, err := newTableFor(rt, w, "", themeRendering.Load(), options...)
 	if err != nil {
 		return fmt.Errorf("facts: %w", err)
 	}
@@ -593,8 +597,16 @@ type factCell struct {
 	alignRight bool
 }
 
+// facts present one record as keys over values, laid out and rendered as a
+// table: a key is a column header and a value a cell.
 type facts struct {
 	*table
+}
+
+// minColumn is the narrowest fact column: as in tables, the minimum visible
+// text plus the truncation tailer, then the gap.
+func (f *facts) minColumn() int {
+	return f.colMinWidth + 1 + f.cellPad
 }
 
 func (f *facts) factsMaxWidth(w io.Writer) int {
@@ -606,9 +618,7 @@ func (f *facts) factsMaxWidth(w io.Writer) int {
 			maxWidth = f.maxWidth
 		}
 	}
-	if maxWidth < f.colMinWidth+f.cellPad {
-		maxWidth = f.colMinWidth + f.cellPad
-	}
+	maxWidth = max(maxWidth, f.minColumn())
 	return maxWidth
 }
 
@@ -678,11 +688,13 @@ func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 		if err != nil {
 			return nil, fmt.Errorf("column %q render: %w", meta.name, err)
 		}
-		header := f.mkBold(strings.ReplaceAll(meta.header, "\t", " "))
-		value := text(bytes.ReplaceAll(bytes.TrimRight(buf, "\r\n"), []byte{'\t'}, []byte{' '}))
+		header, value, err := f.fact(meta, buf)
+		if err != nil {
+			return nil, fmt.Errorf("column %q: %w", meta.name, err)
+		}
 		cellWidth := max(
 			max(header.width(), value.width())+f.cellPad+1,
-			f.colMinWidth+f.cellPad)
+			f.minColumn())
 		cells[i] = factCell{
 			title:      header,
 			value:      value,
@@ -693,8 +705,29 @@ func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 	return cells, nil
 }
 
+// fact presents a key and its formatted value: a bold key and the value as
+// rendered in the legacy presentation, otherwise the Header and Cell slots,
+// the latter over the line of the value the legacy presentation shows. An
+// empty value stays empty, as in tables.
+func (f *facts) fact(meta *fieldMetadata, out text) (key, value text, err error) {
+	value = text(bytes.ReplaceAll(bytes.TrimRight(out, "\r\n"), []byte{'\t'}, []byte{' '}))
+	if f.theme == nil {
+		return f.mkBold(strings.ReplaceAll(meta.header, "\t", " ")), value, nil
+	}
+	view := cellView{columnView: f.column(meta), Value: f.cellText(value.beforeNewline()).String()}
+	key, err = f.header.render(view.columnView)
+	if err != nil || view.Value == "" {
+		return key, nil, err
+	}
+	value, err = f.cell.execute(view)
+	if err == nil {
+		err = f.cellOutput(f.cell, value)
+	}
+	return key, value, err
+}
+
 func (f *facts) maxFactsColumns(cells []factCell, maxWidth int) int {
-	maxCell := f.colMinWidth + f.cellPad
+	maxCell := f.minColumn()
 	for _, cell := range cells {
 		w := min(cell.width, maxWidth)
 		if w > maxCell {
@@ -721,9 +754,7 @@ func (f *facts) packFactRows(cells []factCell, cols, maxWidth int) ([][]factCell
 		}
 	}
 	for i := range colWidths {
-		if colWidths[i] < f.colMinWidth+f.cellPad {
-			colWidths[i] = f.colMinWidth + f.cellPad
-		}
+		colWidths[i] = max(colWidths[i], f.minColumn())
 	}
 	return rows, colWidths
 }
@@ -732,17 +763,22 @@ func (f *facts) packFactRows(cells []factCell, cols, maxWidth int) ([][]factCell
 func (f *facts) renderFactRow(row []factCell, colWidths []int) error {
 	headers := make([]text, len(row))
 	values := make([]text, len(row))
+	keys := false
 	f.columns = make([]tableColumn, len(row))
 	for i, cell := range row {
-		maxLen := max(colWidths[i]-f.cellPad, f.colMinWidth)
+		maxLen := colWidths[i] - f.cellPad
 		headers[i] = cell.title.truncateVisible(maxLen, ' ')
+		keys = keys || len(cell.title) > 0
 		values[i] = cell.value.truncateVisible(maxLen, ' ')
 		f.columns[i] = tableColumn{
 			width: colWidths[i],
 			meta:  &fieldMetadata{alignRight: cell.alignRight},
 		}
 	}
-	f.rows = append(f.rows, headers, values)
+	if keys || f.theme == nil {
+		f.rows = append(f.rows, headers)
+	}
+	f.rows = append(f.rows, values)
 	return f.flush(false)
 }
 
@@ -945,7 +981,7 @@ func (t *table) decorate(row []text, colors []string) error {
 		meta := t.columns[i].meta
 		out, err := t.cell.execute(cellView{columnView: t.column(meta), Value: line.String()})
 		if err == nil {
-			err = t.cellOutput(out)
+			err = t.cellOutput(t.cell, out)
 		}
 		if err != nil {
 			return fmt.Errorf("column %q: %w", meta.name, err)
@@ -974,11 +1010,11 @@ func (t *table) cellText(line text) text {
 	return out
 }
 
-// cellOutput reports Cell slot output that a cell line cannot keep.
-func (t *table) cellOutput(out text) error {
+// cellOutput reports output of slot that a cell line cannot keep.
+func (t *table) cellOutput(slot boundSlot, out text) error {
 	for seg := range out.segments() {
 		if !t.cellSegment(seg) {
-			return fmt.Errorf("theme.Templates.Table.Cell: %q: want text, SGR and hyperlinks only", seg.text)
+			return fmt.Errorf("theme.Templates.%s: %q: want text, SGR and hyperlinks only", slot.tmpl.Name(), seg.text)
 		}
 	}
 	return nil
