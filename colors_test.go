@@ -1429,3 +1429,110 @@ func TestBarSymbolsValidation(t *testing.T) {
 		assert.Equal(t, want, got)
 	}
 }
+
+func TestBuiltinTableSlots(t *testing.T) {
+	c, err := compileTemplates(t, func(*Theme) {})
+	assert.NoError(t, err)
+	render := func(p colorProfile, s *compiledSlot, data any) string {
+		t.Helper()
+		roles := roleStyles{foreground: text(cyan)}
+		if p < profileANSI16 {
+			roles = roleStyles{}
+		}
+		b, err := s.bind(c.funcs(p, roles))
+		assert.NoError(t, err)
+		out, err := b.render(data)
+		assert.NoError(t, err)
+		return out.String()
+	}
+	tt := c.templates.Table
+	column := columnView{Header: "NAME", Name: "Name", Kind: "string"}
+	assert.Equal(t, "NAME", render(profilePlain, tt.Header, column))
+	assert.Equal(t, bold+"NAME"+reset, render(profileAttrs, tt.Header, column))
+	assert.Equal(t, bold+cyan+"NAME"+fgDefault+reset, render(profileTrueColor, tt.Header, column))
+	assert.Equal(t, "x", render(profilePlain, tt.Cell, cellView{columnView: column, Value: "x"}))
+	assert.Equal(t, cyan+"x"+fgDefault, render(profileTrueColor, tt.Cell, cellView{columnView: column, Value: "x"}))
+}
+
+func TestTableSlotsHiding(t *testing.T) {
+	c, err := compileTemplates(t, func(th *Theme) { th.Templates.Table.Header = Hidden })
+	assert.NoError(t, err)
+	assert.True(t, c.templates.Table.Header.hidden)
+	_, err = compileTemplates(t, func(th *Theme) { th.Templates.Table.Cell = Hidden })
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "theme.Templates.Table.Cell: empty source is not allowed")
+	_, err = compileTemplates(t, func(th *Theme) { th.Templates.Table.Cell = `{{ fg "#12" .Value }}` })
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "theme.Templates.Table.Cell: ")
+}
+
+func TestTableStyleValidation(t *testing.T) {
+	c, err := Theme{}.compile()
+	assert.NoError(t, err)
+	assert.Equal(t, tableStyle, c.source.Table)
+	th := NewTheme()
+	th.Table = TableStyle{MinColumnWidth: 2}
+	c, err = th.compile()
+	assert.NoError(t, err)
+	assert.Equal(t, TableStyle{ColumnGap: 2, MinColumnWidth: 2}, c.source.Table)
+	for _, tc := range []struct {
+		style TableStyle
+		want  string
+	}{
+		{TableStyle{ColumnGap: -1}, "theme.Table.ColumnGap: -1: must not be negative"},
+		{TableStyle{MinColumnWidth: -2}, "theme.Table.MinColumnWidth: -2: must not be negative"},
+	} {
+		th := NewTheme()
+		th.Table = tc.style
+		_, err := th.compile()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), tc.want)
+	}
+}
+
+func TestDivergingScale(t *testing.T) {
+	th := NewTheme()
+	th.Light = true
+	c, err := th.compile()
+	assert.NoError(t, err)
+	look := c.bind(profileTrueColor, background{light: true})
+	scale := look.diverging()
+	assert.Equal(t, scaleLevels, len(scale))
+	assert.Equal(t, look.roles.success, scale[0])
+	assert.Equal(t, look.roles.foreground, scale[2])
+	assert.Equal(t, look.roles.failure, scale[4])
+	seen := map[string]bool{}
+	for _, level := range scale {
+		assert.True(t, len(level) > 0)
+		seen[string(level)] = true
+	}
+	assert.Equal(t, scaleLevels, len(seen))
+	// the halfway levels are readable text
+	for i, role := range []sRGB{look.palette.Success, look.palette.Error} {
+		end, ok := c.role(profileTrueColor, look.palette, slot{}, role, contrastText, false)
+		assert.True(t, ok)
+		mid, ok := profileTrueColor.readable(end.oklab().mix(look.palette.Foreground.oklab(), 0.5),
+			look.palette.Background, contrastText)
+		assert.True(t, ok)
+		assert.Equal(t, profileTrueColor.fg(mid), scale[1+2*i])
+		assert.True(t, mid.contrast(look.palette.Background) >= contrastText)
+	}
+
+	// an override renders literally at the end and seeds the level next to it
+	th.Palette.Light.Success = "#00FF00"
+	c, err = th.compile()
+	assert.NoError(t, err)
+	over := c.bind(profileTrueColor, background{light: true}).diverging()
+	assert.Equal(t, profileTrueColor.fg(RGB("#00FF00").must()), over[0])
+	assert.True(t, string(over[1]) != string(scale[1]))
+	assert.Equal(t, scale[3], over[3])
+
+	for _, p := range []colorProfile{profilePlain, profileAttrs} {
+		assert.Equal(t, make([]text, scaleLevels), c.bind(p, background{light: true}).diverging())
+	}
+	// an assumed background keeps the neutral middle at the terminal default
+	dark, err := NewTheme().compile()
+	assert.NoError(t, err)
+	mid := dark.bind(profileTrueColor, background{}).diverging()[2]
+	assert.Equal(t, 0, len(mid))
+}
