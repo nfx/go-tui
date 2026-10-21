@@ -140,13 +140,6 @@ func MultichoiceLazy[T any](ctx context.Context, label string, items iter.Seq2[T
 // ErrInvalidOption identifies invalid configuration values.
 var ErrInvalidOption = errors.New("invalid option")
 
-// DefaultMultichoiceItemTemplate decorates item content with focus and check state.
-var DefaultMultichoiceItemTemplate = `{{if .Active}}→{{else}} {{end}} [{{if .Selected}}x{{else}} {{end}}] {{.Value}}`
-
-// DefaultMultichoiceAnswerTemplate lists selected labels, or explicitly says none.
-var DefaultMultichoiceAnswerTemplate = `{{ dim "✔ " .Label " …" }} ` +
-	`{{range $i, $item := .Answer}}{{if $i}}, {{end}}{{bold (label $item)}}{{else}}none{{end}}`
-
 type multichoice struct {
 	Ctx   context.Context
 	Label string

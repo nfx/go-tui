@@ -594,13 +594,6 @@ func (d *dropdown) seedFirst(relevant []int) {
 	}
 }
 
-var DefaultLabelTemplate = `{{ "?" | green }} {{ . | bold }}`
-var DefaultDropdownActiveItemTemplate = `{{ cyan "→ " (label .) }}`
-var DefaultDropdownInactiveItemTemplate = `{{ dim "→ " (label .) }}`
-var DefaultMoreItemsTemplate = ` {{ dim "↓ " .More " more … (" .Total " total)" | italic }}`
-var DefaultAnswerTemplate = `{{ dim "✔ " .Label " …" }} {{ .Answer | bold }}`
-var DefaultDropdownAnswerTemplate = `{{ dim "✔ " .Label " …" }} {{ bold (label .Answer) }}`
-
 type dropdownAnswer struct {
 	Label  string
 	Answer any
@@ -633,10 +626,9 @@ func WithFieldTemplate(fieldName ...string) opt {
 
 // setFieldTemplate keeps row fields and the single-item answer in sync.
 func (d *dropdown) setFieldTemplate(fieldName ...string) {
-	var single, answer []string
+	single := make([]string, 0, len(fieldName))
 	for _, f := range fieldName {
 		single = append(single, "."+f)
-		answer = append(answer, ".Answer."+f)
 	}
 	d.setProjection(strings.Join(single, ` ", " `))
 }
@@ -753,6 +745,9 @@ func (d choiceLabels) itemLabel(item any) string {
 	}
 	return fmt.Sprint(item)
 }
+
+// rowLabel flattens item labels to fit single-line choice slots.
+func (d choiceLabels) rowLabel(item any) string { return text(d.itemLabel(item)).oneLine() }
 
 // plainText removes terminal styling and preserves word boundaries for ranking.
 func (choiceLabels) plainText(t text) string {

@@ -122,9 +122,12 @@ line breaks and tabs replaced with spaces and terminal control characters
 removed. The rendered feedback is limited to its first line and clipped to
 the available terminal width. Keep custom templates to one row.
 
-`DefaultFeedbackTemplate` is `{{ red (bold "Error: ") .Message }}`. An empty
-`WithFeedbackTemplate("")` uses that default. Templates support the same color
-and style helpers listed in [Template Functions](template-functions.md).
+Without `WithFeedbackTemplate`, or with an empty one, feedback uses the
+`Feedback` slot of the theme, `✖ message` by default; see [Themes](themes.md).
+Templates support the same color and style helpers listed in
+[Template Functions](template-functions.md). A password always shows
+`Invalid value` instead of a custom validator message, which could repeat
+the secret; messages of `WithNonEmpty` and `WithRegex` still show.
 Showing rejection feedback requires two terminal rows; a shorter terminal
 returns `ErrNoSpace`.
 

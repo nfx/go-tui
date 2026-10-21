@@ -28,6 +28,7 @@ func TestMultichoiceRenderInitializes(t *testing.T) {
 
 	frame := &bytes.Buffer{}
 	assert.NoError(t, m.prepare(nil))
+	assert.NoError(t, m.bindRun(t.Context(), io))
 
 	assert.NoError(t, m.render(io, frame))
 }
@@ -39,6 +40,7 @@ func TestMultichoiceRenderMoreItems(t *testing.T) {
 	io := newTestTermIO(5, 4)
 	frame := &bytes.Buffer{}
 	assert.NoError(t, m.prepare(nil))
+	assert.NoError(t, m.bindRun(t.Context(), io))
 
 	assert.NoError(t, m.render(io, frame))
 }
@@ -207,8 +209,8 @@ func TestMultichoiceRunRerendersOnResize(t *testing.T) {
 	go func() { done <- m.run(m.Ctx) }()
 	waitBufferContains(t, out, "2 more")
 
-	// shrink the terminal without pressing a key
-	tio.Height = 4
+	// shrink the terminal without pressing a key, to two rows and the count
+	tio.Height = 5
 	select {
 	case resized <- struct{}{}:
 	case <-time.After(time.Second):
@@ -322,7 +324,8 @@ func preparedMultichoice(t *testing.T, items []any, o ...opt) *multichoice {
 	if err := m.prepare(o); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.resolveDefault(); err != nil {
+	// binding projects the items and resolves the default, as run does
+	if err := m.bindRun(t.Context(), newTestTermIO(60, 10)); err != nil {
 		t.Fatal(err)
 	}
 	return m
@@ -371,7 +374,11 @@ func TestMultichoiceStateAndGeometry(t *testing.T) {
 		m.Label = "very long label"
 		tio := newTestTermIO(width, 6)
 		var frame bytes.Buffer
-		if err := m.render(tio, &frame); err != nil {
+		err := m.render(tio, &frame)
+		if width <= 2 && errors.Is(err, ErrNoSpace) {
+			continue // the guide and the autowrap column leave no room for a row
+		}
+		if err != nil {
 			t.Fatal(err)
 		}
 		for _, line := range strings.Split(frame.String(), "\n") {
@@ -420,7 +427,12 @@ func TestMultichoicePreparationAndCapabilities(t *testing.T) {
 	acquired := false
 	invalid.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { acquired = true; return nil, ErrNoTTY }
 	for _, option := range []opt{WithAnswerTemplate("{{"), WithInactiveItemTemplate("{{.Missing}}"), WithLabelTemplate("{{.Missing}}")} {
-		if err := invalid.prepare([]opt{option}); err == nil {
+		// syntax fails preparation; templates run when the theme binds
+		err := invalid.prepare([]opt{option})
+		if err == nil {
+			err = invalid.bindRun(t.Context(), newTestTermIO(60, 10))
+		}
+		if err == nil {
 			t.Fatal("invalid preparation passed")
 		}
 		if acquired || out.Len() != 0 {
@@ -474,7 +486,7 @@ func TestMultichoiceLifecycleFailures(t *testing.T) {
 			m.Items = []any{"one"}
 			m.in = strings.NewReader(tc.keys)
 			m.out = tc.writer
-			m.AnswerTemplate = "ANSWER {{.Count}}"
+			assert.NoError(t, WithAnswerTemplate("ANSWER {{.Count}}")(m))
 			restores := 0
 			m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{
@@ -614,6 +626,9 @@ func TestMultichoiceLazyDefaultState(t *testing.T) {
 			if err := m.prepare(nil); err != nil {
 				t.Fatal(err)
 			}
+			if err := m.bindRun(t.Context(), newTestTermIO(60, 10)); err != nil {
+				t.Fatal(err)
+			}
 			for _, item := range tc.items {
 				if err := m.addItem(item); err != nil {
 					t.Fatal(err)
@@ -646,6 +661,9 @@ func TestMultichoiceLazyArrivalsAndFocus(t *testing.T) {
 	m.loading = true
 	m.hint = "cat"
 	if err := m.prepare(nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.bindRun(t.Context(), newTestTermIO(60, 10)); err != nil {
 		t.Fatal(err)
 	}
 	for _, item := range []string{"xxxx", "yyyy", "bat"} {
@@ -770,7 +788,7 @@ func TestMultichoiceIndependentReaders(t *testing.T) {
 	first.out = out
 	done := make(chan error, 1)
 	go func() { done <- first.run(first.Ctx) }()
-	waitBufferContains(t, out, "[ ] one")
+	waitBufferContains(t, out, "○ one")
 	got, err := Multichoice(
 		t.Context(),
 		"Independent",
@@ -851,7 +869,7 @@ func TestMultichoiceLazyPublicLoading(t *testing.T) {
 	}()
 	waitBufferContains(t, out, "Lazy")
 	arrivals <- "api"
-	waitBufferContains(t, out, "[ ] api")
+	waitBufferContains(t, out, "○ api")
 	if _, err := typing.Write([]byte{'\r'}); err != nil {
 		t.Fatal(err)
 	}
@@ -862,10 +880,10 @@ func TestMultichoiceLazyPublicLoading(t *testing.T) {
 	if _, err := typing.Write([]byte{0x7f}); err != nil {
 		t.Fatal(err)
 	}
-	waitBufferContains(t, out, "[ ] api")
+	waitBufferContains(t, out, "○ api")
 	arrivals <- "worker"
 	close(arrivals)
-	waitBufferContains(t, out, "[x] api")
+	waitBufferContains(t, out, "◉ api")
 	select {
 	case err := <-failure:
 		t.Fatalf("queued Enter confirmed after loading: %v", err)
@@ -1080,7 +1098,7 @@ func TestMultichoicePasteModeLifetime(t *testing.T) {
 }
 
 // completionChecklistIO waits for the unique default to be checked after
-// exhaustion, which a frame shows with marker, "[x]" when empty.
+// exhaustion, which a frame shows with marker, the checked glyph when empty.
 type completionChecklistIO struct {
 	ready  chan struct{}
 	sent   bool
@@ -1092,7 +1110,7 @@ type completionChecklistIO struct {
 func (s *completionChecklistIO) Write(p []byte) (int, error) {
 	marker := s.marker
 	if marker == "" {
-		marker = "[x]"
+		marker = "◉"
 	}
 	if !s.sent && strings.Contains(string(p), marker) {
 		s.sent = true
@@ -1250,7 +1268,7 @@ func TestMultichoiceLegacyHandoffPreservesPasteFraming(t *testing.T) {
 				items, err := Multichoice(ctx, "Next", []string{"one", "two"}, WithInput(in), WithOutput(out))
 				done <- promptChoiceResult{items, err}
 			}()
-			waitBufferContains(t, out, "[ ] one")
+			waitBufferContains(t, out, "○ one")
 			if _, err := typing.Write([]byte("\x1b[200~" + payload + "\x1b[201~")); err != nil {
 				t.Fatal(err)
 			}
@@ -1291,7 +1309,7 @@ func TestMultichoiceFreshPasteAfterCancelledRead(t *testing.T) {
 		items, err := Multichoice(ctx, "Next", []string{"one", "two"}, WithInput(in), WithOutput(out))
 		done <- promptChoiceResult{items, err}
 	}()
-	waitBufferContains(t, out, "[ ] one")
+	waitBufferContains(t, out, "○ one")
 	if _, err := typing.Write([]byte("\x1b[200~two\x1b[201~ \r")); err != nil {
 		t.Fatal(err)
 	}
@@ -1565,7 +1583,7 @@ func TestTypedDefaultChecksInteractiveMultichoice(t *testing.T) {
 		WithInput(strings.NewReader("\r")), WithOutput(&out), WithDefault([]string{"c", "a"}))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"a", "c"}, got)
-	assert.Contains(t, out.String(), "[x] c")
+	assert.Contains(t, out.String(), "◉ c")
 }
 
 func TestMultichoiceLazyAutomaticAnswerCancelsWhileProducerBlocked(t *testing.T) {
@@ -2042,14 +2060,6 @@ func TestThemedMultichoiceRolesStyleMarks(t *testing.T) {
 	assert.Contains(t, got, string(roles.accent)+">")
 	assert.Contains(t, got, string(roles.accent)+"x")
 	assert.Contains(t, got, string(roles.muted)+"o")
-}
-
-func TestThemedMultichoiceOffKeepsLegacyRows(t *testing.T) {
-	keepTheme(t)
-	var out bytes.Buffer
-	_, err := Multichoice(t.Context(), "Fruit", fruits, WithInput(strings.NewReader(" \r")), WithOutput(&out))
-	assert.NoError(t, err)
-	assert.Contains(t, out.String(), "→ [x] apple")
 }
 
 // frameStaysOnScreen replays out, the output of a prompt over a, b, c, d, e

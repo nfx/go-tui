@@ -111,7 +111,9 @@ for the default template and clipping behavior.
 
 ## Adding custom functions
 
-Use `WithFn(name, fn)` to register your own global helper.
+Add helpers to `Theme.Funcs` and install the theme with `SetDefaultTheme`,
+which returns an error for an invalid helper; see [Themes](themes.md).
+`WithFn(name, fn)` adds one helper to the installed theme.
 
 ```go
 tui.WithFn("upper", strings.ToUpper)
@@ -121,8 +123,10 @@ The helper applies to prompts, tables, and other operations started after the
 call; an operation already running keeps its helpers. Registering the same name
 again replaces the helper. `fn` must return one value, or a value and an error.
 `WithFn` panics immediately on an invalid name or signature, or on the name of
-a built-in helper such as `red`, `bold`, or `label`. Earlier versions only
-failed later, when a template was parsed. Helpers must be safe for concurrent
+a built-in helper such as `red`, `bold`, or `label`, and leaves the installed
+theme unchanged. Earlier versions only failed later, when a template was
+parsed. A later `SetDefaultTheme` replaces helpers registered with `WithFn`
+unless its theme started from `DefaultTheme()`. Helpers must be safe for concurrent
 use.
 
 Color helpers nest: `{{ red (bold "Error:") " details" }}` keeps the text after

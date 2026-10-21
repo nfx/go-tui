@@ -64,6 +64,3 @@ func ProbingKeyboard(t *testing.T, fd uintptr) {
 		termMakeRaw, termRestore = prevRaw, prevRestore
 	})
 }
-
-// InstallTheme replaces the installed theme.
-func InstallTheme(th Theme) error { return defaultIO.installTheme(th) }

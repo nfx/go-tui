@@ -1541,3 +1541,28 @@ func TestDivergingScale(t *testing.T) {
 	mid := dark.bind(profileTrueColor, background{}).diverging()[2]
 	assert.Equal(t, 0, len(mid))
 }
+
+func TestSetDefaultThemePublishesAndKeepsPreviousOnError(t *testing.T) {
+	keepTheme(t)
+	WithFn("shout", strings.ToUpper)
+	th := DefaultTheme()
+	// unset colors stay unset, so they keep adapting
+	assert.Equal(t, RGB(""), th.Palette.Dark.Foreground)
+	_, ok := th.Funcs["shout"]
+	assert.True(t, ok)
+
+	th.Palette.Accent = "#0AD"
+	th.Inline = true
+	assert.NoError(t, SetDefaultTheme(th))
+	th.Palette.Accent = "#FF0000" // later edits do not reach the installed copy
+	installed := DefaultTheme()
+	assert.Equal(t, RGB("#00AADD"), installed.Palette.Accent)
+	assert.True(t, installed.Inline)
+
+	bad := DefaultTheme()
+	bad.Palette.Error = "red"
+	err := SetDefaultTheme(bad)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Error")
+	assert.Equal(t, RGB("#00AADD"), DefaultTheme().Palette.Accent)
+}

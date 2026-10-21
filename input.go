@@ -712,10 +712,6 @@ func (p *input) parseTemplates() (err error) {
 	return p.parseFeedback(funcs)
 }
 
-// DefaultFeedbackTemplate renders the message shown below an input whose answer
-// was rejected. It receives the sanitized .Message.
-var DefaultFeedbackTemplate = `{{ red (bold "Error: ") .Message }}`
-
 // WithFeedbackTemplate overrides the one-row message shown below an [Input] or
 // [Password] for a rejected answer. An empty template restores the default.
 // The template sees only .Message.

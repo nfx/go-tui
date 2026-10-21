@@ -276,15 +276,11 @@ opts := tui.WithOptions(
 city, err := tui.Dropdown(ctx, "City", cities, opts)
 ```
 
-## Default templates
+## Default appearance
 
-Exported defaults:
-
-- `DefaultLabelTemplate`
-- `DefaultDropdownActiveItemTemplate`
-- `DefaultDropdownInactiveItemTemplate`
-- `DefaultMoreItemsTemplate`
-- `DefaultDropdownAnswerTemplate`
+Without per-call templates, a dropdown draws through the installed theme:
+the `Templates.Dropdown` slots, which inherit from `Templates.Prompt` and
+`Templates.Choice`. See [Themes](themes.md) to change it for every widget.
 
 ## Label resolution for struct items
 

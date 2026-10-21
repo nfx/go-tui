@@ -1062,8 +1062,17 @@ func presetTheme() Theme {
 	}
 }
 
-// NewTheme returns an independent, editable copy of the built-in theme.
+// NewTheme returns an editable copy of the built-in theme with adaptive colors.
 func NewTheme() Theme { return presetTheme() }
+
+// DefaultTheme returns an editable copy of the installed theme, preserving helpers and unset colors.
+func DefaultTheme() Theme { return defaultIO.currentTheme().editable() }
+
+// SetDefaultTheme validates and copies theme for operations started afterwards.
+// On error, the installed theme is unchanged; running operations keep their snapshot.
+// Funcs replaces existing helpers; start from [DefaultTheme] to retain them.
+// Helper closures must be safe for concurrent use. Per-call options take precedence.
+func SetDefaultTheme(theme Theme) error { return defaultIO.installTheme(theme) }
 
 // compiledTheme is an immutable snapshot of an installed theme. Nothing in it
 // is derived from a terminal: backgrounds and profiles are bound per operation.
@@ -1767,9 +1776,10 @@ func (b boundSlot) styled(out text) error {
 	return nil
 }
 
-// WithFn registers or replaces a custom helper for future operations.
-// Helpers must be safe for concurrent use and return one value or a value and error.
+// WithFn registers or replaces a helper for operations started afterwards.
+// Helpers must be safe for concurrent use and return a value or a value and an error.
 // Invalid or reserved names and invalid signatures panic without changing the theme.
+// Use [Theme.Funcs] with [SetDefaultTheme] to receive validation errors instead.
 func WithFn(name string, fn any) {
 	err := defaultIO.updateTheme(func(t *Theme) {
 		if t.Funcs == nil {
@@ -1943,7 +1953,7 @@ func (d destination) funcs() template.FuncMap {
 	funcs["fg"] = d.color(false)
 	funcs["bg"] = d.color(true)
 	funcs["symbol"] = d.symbols.named
-	funcs["label"] = choiceLabels{}.itemLabel
+	funcs["label"] = choiceLabels{}.rowLabel
 	return funcs
 }
 

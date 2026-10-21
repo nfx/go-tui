@@ -137,7 +137,8 @@ tui.WithFn("upper", strings.ToUpper)
 ```
 
 Then use it in templates: `{{ upper .Name }}`. It panics on an invalid name or
-signature, or on a built-in helper's name.
+signature, or on a built-in helper's name. `Theme.Funcs` with
+`SetDefaultTheme` returns an error instead; see [Themes](themes.md).
 
 All predefined helper functions are documented on
 [Template Functions](template-functions.md).

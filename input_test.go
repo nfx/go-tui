@@ -875,15 +875,17 @@ func TestInputChangedWithCursor(t *testing.T) {
 	assert.Equal(t, 3, i.cursor)
 }
 
-// renderInput renders a literal input with termWidth columns for its label
-// and value, and one more for the caret.
+// renderInput renders with termWidth content columns plus one spare, or unknown width when zero.
 func renderInput(t *testing.T, i *input, termWidth int) string {
 	t.Helper()
 	literalInputs(t)
 	i.LabelTemplate, i.labelSet = "{{.}} ", true
 	i.AnswerTemplate, i.answerSet = "{{.Answer}}", true
 	var out bytes.Buffer
-	tt := &termIO{out: &out, Width: termWidth + 1}
+	tt := &termIO{out: &out}
+	if termWidth > 0 { // zero is an unknown width
+		tt.Width = termWidth + 1
+	}
 	bindInput(t, i, tt)
 	err := i.render(tt, &bytes.Buffer{})
 	assert.NoError(t, err)
@@ -929,8 +931,9 @@ func TestInputRenderMasksPasswordByRune(t *testing.T) {
 }
 
 func TestInputRenderLabelFillsRow(t *testing.T) {
+	// the label is clipped to keep one value column, which shows the caret's cluster
 	got := renderInput(t, &input{Label: "Label", typed: "abc", cursor: 1}, 6)
-	assert.Equal(t, "\rLabel \x1b[K", got)
+	assert.Equal(t, "\rLabe…b\x1b[K\x1b[1D", got)
 }
 
 // blockingReader reports the start of each read and returns chunks on demand.
@@ -1111,7 +1114,7 @@ func TestInputValidatorRejectsThenAccepts(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "ab", got)
 	assert.Equal(t, []string{"a", "ab"}, seen)
-	assert.Contains(t, out, "Error: ")
+	assert.Contains(t, out, "✖ ")
 	assert.Contains(t, out, "too short")
 	assert.Contains(t, out, "\x1b[1A")
 }
@@ -1158,7 +1161,7 @@ func TestInputValidatorWrongWidget(t *testing.T) {
 func TestInputValidatesDefault(t *testing.T) {
 	_, out, err := runValidated(t, false, "\r", WithDefault("bad"), WithRegex(`[0-9]+`, "digits only"))
 	assert.ErrorIs(t, err, io.EOF)
-	assert.Contains(t, out, "Error: ")
+	assert.Contains(t, out, "✖ ")
 	assert.Contains(t, out, "digits only")
 	got, _, err := runValidated(t, false, "\r", WithDefault("42"), WithRegex(`[0-9]+`, "digits only"))
 	assert.NoError(t, err)
@@ -1217,8 +1220,9 @@ func TestInputFeedbackClippedToOneRow(t *testing.T) {
 		WithValidation(func(context.Context, string) error { return errors.New(strings.Repeat("é", 60)) }),
 		WithFeedbackTemplate(`{{ .Message }}`))
 	assert.ErrorIs(t, err, io.EOF)
-	assert.Contains(t, out, strings.Repeat("é", 38)+"…")
-	assert.True(t, !strings.Contains(out, strings.Repeat("é", 39)))
+	// 40 columns less the guide and the autowrap column
+	assert.Contains(t, out, strings.Repeat("é", 36)+"…")
+	assert.True(t, !strings.Contains(out, strings.Repeat("é", 37)))
 }
 
 func TestInputFeedbackTemplateIsPlain(t *testing.T) {
@@ -1243,8 +1247,9 @@ func TestPasswordRejectionStaysMasked(t *testing.T) {
 		WithValidation(func(context.Context, string) error { return errors.New("too weak") }),
 	)
 	assert.ErrorIs(t, err, io.EOF)
-	assert.Contains(t, out, "Error: ")
-	assert.Contains(t, out, "too weak")
+	// a custom message may repeat the secret, so a password shows a fixed one
+	assert.Contains(t, out, "✖ Invalid value")
+	assert.True(t, !strings.Contains(out, "too weak"))
 	assert.True(t, !strings.Contains(out, "secret"))
 }
 
