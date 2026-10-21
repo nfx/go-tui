@@ -370,6 +370,25 @@ func TestStderrReturnsCoordinatedWriterOnTTY(t *testing.T) {
 	assert.Equal(t, cio, defaultIO.arbiter)
 }
 
+func TestStderrReturnsRawWriterOnTTYInCI(t *testing.T) {
+	prevIn := defaultIO.input()
+	prevOut := defaultIO.rawOutput()
+	prevSize := termGetSize
+	t.Cleanup(func() {
+		termGetSize = prevSize
+		SetDefaultIO(prevIn, prevOut)
+	})
+	withEnv(t, "CI=true")
+	out := ttyWriter(t)
+	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
+	SetDefaultIO(bytes.NewBufferString("in"), out)
+
+	assert.Equal(t, out, Stderr())
+	_, defaultOut := defaultStreams(t.Context())
+	assert.Equal(t, out, defaultOut)
+	assert.True(t, defaultIO.arbiter == nil)
+}
+
 func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
 	prevIn := defaultIO.input()
 	prevOut := defaultIO.rawOutput()

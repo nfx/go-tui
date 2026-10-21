@@ -530,6 +530,76 @@ func TestFileProgressReaderLogsWithoutTTY(t *testing.T) {
 	}
 }
 
+func TestProgressBarLogsWithoutTTY(t *testing.T) {
+	noTTY := opT(func(p *Progressbar) error {
+		p.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { return nil, ErrNoTTY }
+		return nil
+	})
+	for _, tc := range []struct {
+		name string
+		run  func(t *testing.T)
+		want []int
+	}{
+		{"slice", func(t *testing.T) {
+			t.Helper()
+			for _, err := range NewSliceProgressBar(t.Context(), "Items", make([]int, 20), noTTY) {
+				assert.NoError(t, err)
+			}
+		}, []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100}},
+		{"parallel", func(t *testing.T) {
+			t.Helper()
+			err := NewParallelProgressBar(t.Context(), "Items", make([]int, 20), func(int) error {
+				return nil
+			}, WithWorkers(4), noTTY)
+			assert.NoError(t, err)
+		}, []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100}},
+		{"large steps", func(t *testing.T) {
+			t.Helper()
+			p, err := NewMaxProgressBar(t.Context(), "Items", 100, noTTY)
+			assert.NoError(t, err)
+			p.Add(55)
+			p.Add(45)
+			assert.NoError(t, p.Close())
+		}, []int{50, 100}},
+		{"ends early", func(t *testing.T) {
+			t.Helper()
+			p, err := NewMaxProgressBar(t.Context(), "Items", 100, noTTY)
+			assert.NoError(t, err)
+			p.Add(25)
+			assert.NoError(t, p.Close())
+			p.Add(75)
+		}, []int{20}},
+		{"empty", func(t *testing.T) {
+			t.Helper()
+			for range NewSliceProgressBar(t.Context(), "Items", []int{}, noTTY) {
+			}
+		}, []int{100}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			previous := slog.Default()
+			slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+			t.Cleanup(func() { slog.SetDefault(previous) })
+			tc.run(t)
+			var percentages []int
+			decoder := json.NewDecoder(&logs)
+			for decoder.More() {
+				var entry struct {
+					Msg     string `json:"msg"`
+					Label   string `json:"label"`
+					Percent int    `json:"percent"`
+					Total   int64  `json:"total"`
+				}
+				assert.NoError(t, decoder.Decode(&entry))
+				assert.Equal(t, "progress", entry.Msg)
+				assert.Equal(t, "Items", entry.Label)
+				percentages = append(percentages, entry.Percent)
+			}
+			assert.Equal(t, tc.want, percentages)
+		})
+	}
+}
+
 func TestFileProgressReaderReturnsTerminalErrors(t *testing.T) {
 	_, err := NewFileProgressReader(t.Context(), strings.NewReader("data"), "Download",
 		opT(func(p *Progressbar) error {

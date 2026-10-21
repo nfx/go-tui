@@ -28,7 +28,10 @@ effect when you pass an explicit row template.
 `WithDefault(d any)` is also the batch answer. Every prompt follows one rule:
 **when the output is not a terminal it returns its explicit default, otherwise
 an error wrapping `ErrNoTTY`**. A pipe, a redirected file or a `bytes.Buffer`
-is not a terminal, however the input is wrapped. The answer reads no input and
+is not a terminal, however the input is wrapped. Neither is any output when
+`CI` is set to anything but `0` or `false`, since nobody answers prompts or
+watches redraws in a CI job, even on a pseudo-terminal. Spinners and progress
+bars likewise draw nothing there. The answer reads no input and
 prints no prompt, answer or escape codes. An invalid, missing or ambiguous
 default is `ErrInvalidOption`, with the validation error still reachable through
 `errors.Is`. There is no extra option to enable this. See

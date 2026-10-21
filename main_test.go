@@ -22,9 +22,11 @@ func strictOutput(t *testing.T) {
 
 // Most tests drive interactive widgets through in-memory writers, so the test
 // binary treats them as a terminal. Tests of the production routing call
-// [strictOutput]. Environment fixtures read the same on every platform.
+// [strictOutput]. Environment fixtures read the same on every platform, and
+// the suite drives terminals the same in a CI job.
 func TestMain(m *testing.M) {
 	legacyConsoles = false
+	defaultIO.env.ci = false
 	outputIsTerminal = func(w io.Writer) bool {
 		if hostsTerminal(w) {
 			return true

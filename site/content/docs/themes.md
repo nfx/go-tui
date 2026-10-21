@@ -97,31 +97,7 @@ itself are kept. These terminals count as lacking them:
 ## Previewing other terminals
 
 Color depth and symbols come from the environment, so a program can be previewed as it looks elsewhere without
-leaving your terminal:
-
-```sh
-TERM=linux COLORTERM= go run ./examples/theme
-```
-
-| Looks like | Variables |
-| --- | --- |
-| iTerm2, Ghostty, kitty, WezTerm, Windows Terminal: 24-bit color | `COLORTERM=truecolor` |
-| macOS Terminal: 256 colors | `TERM=xterm-256color COLORTERM=` |
-| A basic xterm: 16 colors | `TERM=xterm COLORTERM=` |
-| The Linux virtual console: 16 colors, ASCII symbols | `TERM=linux COLORTERM=` |
-| The legacy Windows console: 16 colors, ASCII symbols | `TERM=xterm COLORTERM= LC_ALL=en_US.CP437` |
-| A CI log: Unicode symbols, no color | `CI=true` |
-| A CI log that opts into color | `CI=true FORCE_COLOR=3` |
-| A user who turned color off: bold and other attributes only | `NO_COLOR=1` |
-
-`FORCE_COLOR` picks the depth directly and wins over the others: `1` for 16 colors, `2` for 256, `3` for 24-bit
-and `0` for none. It also colors output to pipes and files. Clear `COLORTERM` when you aim for fewer colors, since
-your own terminal likely sets it. With 16 colors, your terminal draws them from its own palette, not the
-palette of the terminal you preview.
-
-`COLORFGBG=0;15` previews a light background for spinners, progress bars and tables, and `COLORFGBG=15;0` a dark
-one. A prompt asks the terminal for its background, so your own terminal decides how a prompt looks. Set
-`theme.Light = true` to preview prompts on a light background.
+leaving your terminal. See [Testing in Other Terminals](testing.md) for the variables to set.
 
 ## Templates
 

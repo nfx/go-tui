@@ -279,8 +279,8 @@ func (s *Spinners) start(ctx context.Context) {
 			s.shutdown(prevActive)
 			return
 		case ns := <-s.creates:
-			// TODO: write serially in CI mode, as well as when number of spinners
-			// is greater than the height of the terminal
+			// TODO: write serially when number of spinners is greater than the
+			// height of the terminal
 			s.newSpinner(ns)
 			s.wg.Add(1)
 		case update := <-s.updates:

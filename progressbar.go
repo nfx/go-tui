@@ -161,9 +161,10 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, o ...o
 	p.showRate = true
 	p.showEstimate = true
 	p.maxNum = size
+	p.label = text(label)
 	p.io, err = p.makeTermIO(p.in, p.out)
 	if errors.Is(err, ErrNoTTY) {
-		return p, nil // continue like nothing happens
+		return p, nil // logs milestones instead, see [Progressbar.logProgress]
 	} else if err != nil {
 		p.cancel(err)
 		return nil, fmt.Errorf("make io: %w", err)
@@ -173,7 +174,6 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, o ...o
 		p.cancel(err)
 		return nil, fmt.Errorf("restore: %w", err)
 	}
-	p.label = text(label)
 	p.startedAt = p.now()
 	p.redrawAt = p.startedAt
 	p.emit(progressInit{
@@ -202,6 +202,12 @@ type Progressbar struct {
 	rowWidths []int
 	eventSink func(progressEvent)
 	workers   int
+
+	// logMu guards the milestones logged without a terminal, which parallel
+	// workers reach concurrently.
+	logMu         sync.Mutex
+	logged        int64
+	loggedPercent int
 
 	// theme is captured with the bar; look binds it to the destination.
 	theme *compiledTheme
@@ -405,7 +411,10 @@ func (r *parallelProgressRunner[T]) enqueueJobs() {
 
 func (p *Progressbar) Add(num int64) {
 	if p.io == nil {
-		return // most likely no TTY
+		if p.ctx.Err() == nil {
+			p.logProgress(num, false)
+		}
+		return
 	}
 	select {
 	case <-p.ctx.Done():
@@ -418,6 +427,9 @@ func (p *Progressbar) Add(num int64) {
 
 func (p *Progressbar) Close() error {
 	if p.io == nil {
+		if p.ctx != nil && p.ctx.Err() == nil {
+			p.logProgress(0, true)
+		}
 		if p.cancel != nil {
 			p.cancel(nil)
 		}
@@ -431,6 +443,40 @@ func (p *Progressbar) Close() error {
 		<-p.stopped
 	}
 	return p.err
+}
+
+// logProgress reports the latest decile reached without a terminal, without
+// replaying skipped milestones. An empty bar is complete at its end; a bar
+// that ends early does not report the rest as done.
+func (p *Progressbar) logProgress(n int64, end bool) {
+	p.logMu.Lock()
+	defer p.logMu.Unlock()
+	p.logged += n
+	percent := 0
+	if p.maxNum > 0 {
+		percent = int(min(100, float64(p.logged)/float64(p.maxNum)*100)) / 10 * 10
+	} else if p.maxNum == 0 && p.logged == 0 && end {
+		percent = 100
+	}
+	if percent <= p.loggedPercent {
+		return
+	}
+	p.loggedPercent = percent
+	if p.bytes {
+		slog.Default().InfoContext(p.ctx, "file progress",
+			"label", p.label.String(),
+			"percent", percent,
+			"read", p.logged,
+			"size", p.maxNum,
+		)
+		return
+	}
+	slog.Default().InfoContext(p.ctx, "progress",
+		"label", p.label.String(),
+		"percent", percent,
+		"done", p.logged,
+		"total", p.maxNum,
+	)
 }
 
 // effectiveWorkers returns a bounded worker count for the current task.
@@ -1048,11 +1094,8 @@ type sized interface {
 var errNoSize = errors.New("unable to determine size of reader")
 
 type wrapReader struct {
-	r             io.Reader
-	p             *Progressbar
-	progressMu    sync.Mutex
-	read          int64
-	loggedPercent int
+	r io.Reader
+	p *Progressbar
 }
 
 func NewFileProgressReader(ctx context.Context, r io.Reader, label string, o ...opt) (*wrapReader, error) {
@@ -1126,39 +1169,16 @@ func (w *wrapReader) Size() (int64, error) {
 
 func (w *wrapReader) Read(p []byte) (n int, err error) {
 	n, err = w.r.Read(p)
-	if w.p.io == nil {
-		w.logProgress(n, errors.Is(err, io.EOF))
-	}
 	if n > 0 {
 		w.p.Add(int64(n))
 	}
 	if errors.Is(err, io.EOF) {
+		if w.p.io == nil && w.p.ctx.Err() == nil {
+			w.p.logProgress(0, true)
+		}
 		w.p.cancel(nil)
 	}
 	return n, err
-}
-
-// logProgress reports the latest decile reached by a read, without replaying skipped milestones.
-func (w *wrapReader) logProgress(n int, eof bool) {
-	w.progressMu.Lock()
-	defer w.progressMu.Unlock()
-	w.read += int64(n)
-	percent := 0
-	if w.p.maxNum > 0 {
-		percent = int(min(100, float64(w.read)/float64(w.p.maxNum)*100)) / 10 * 10
-	} else if w.p.maxNum == 0 && w.read == 0 && eof {
-		percent = 100
-	}
-	if percent <= w.loggedPercent {
-		return
-	}
-	w.loggedPercent = percent
-	slog.Default().InfoContext(w.p.ctx, "file progress",
-		"label", w.p.label.String(),
-		"percent", percent,
-		"read", w.read,
-		"size", w.p.maxNum,
-	)
 }
 
 func (w *wrapReader) Close() error {

@@ -35,7 +35,9 @@ type outputEnv struct {
 	// detection, read with the same lifetime as the color policy.
 	bgHint background
 	// ci is set in CI logs, which are rarely color-capable but are viewed in
-	// browsers with the Unicode glyphs.
+	// browsers with the Unicode glyphs. A CI job may run on a pseudo-terminal,
+	// but nobody answers prompts or watches redraws there, so it is never
+	// interactive, see [tio.interactiveWriter] and [hostsTerminal].
 	ci bool
 	// locale is the first set of LC_ALL, LC_CTYPE and LANG.
 	locale string
@@ -357,7 +359,7 @@ func (t *tio) outputLocked(ctx context.Context) io.Writer {
 	if cio, ok := t.writer.(*chanIO); ok {
 		return cio
 	}
-	if !t.isTerminalWriter(t.writer) {
+	if !t.interactiveWriter(t.writer) {
 		return t.writer
 	}
 	cio := t.ensureArbiterLocked(ctx)
@@ -455,7 +457,7 @@ func (t *tio) stderrWriter() io.Writer {
 	if ok {
 		return cio
 	}
-	if !t.isTerminalWriter(t.writer) {
+	if !t.interactiveWriter(t.writer) {
 		return t.writer
 	}
 	cio = t.ensureArbiterLocked(context.Background())
@@ -539,7 +541,7 @@ func (t *tio) ensureArbiterLocked(ctx context.Context) *chanIO {
 	if t.arbiter != nil {
 		return t.arbiter
 	}
-	if !t.isTerminalWriter(t.writer) {
+	if !t.interactiveWriter(t.writer) {
 		return nil
 	}
 	// the arbiter is shared by the whole process, so it must outlive the first caller's cancellation.
@@ -557,6 +559,12 @@ func (t *tio) ensureArbiterLocked(ctx context.Context) *chanIO {
 var termGetSize = term.GetSize
 var terminalWriterChecker = func(fd int) bool {
 	return term.IsTerminal(fd)
+}
+
+// interactiveWriter reports whether w is a terminal to redraw on: a terminal
+// outside of CI. Color depth still follows [tio.isTerminalWriter].
+func (t *tio) interactiveWriter(w io.Writer) bool {
+	return !t.env.ci && t.isTerminalWriter(w)
 }
 
 func (*tio) isTerminalWriter(w io.Writer) bool {
