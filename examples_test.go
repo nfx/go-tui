@@ -22,15 +22,22 @@ func ExampleDropdown_withStructs() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	// presentation lives in the theme: a custom focus mark and active row
+	theme := tui.DefaultTheme()
+	theme.Symbols.Focus = "→"
+	theme.Templates.Dropdown.Active = `{{ bold .Value }}{{ with .Details }} {{ dim . }}{{ end }}`
+	if err := tui.SetDefaultTheme(theme); err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
 	v, err := tui.Dropdown(ctx, "Samples", []Sample{
 		{Name: "Alice", Age: 20},
 		{Name: "Bob", Age: 30},
 		{Name: "Василь", Age: 50}, // supports Unicode
 		{Name: "Charlie", Age: 40},
 	},
-		// template overrides allow rendering different struct fields and methods
-		tui.WithActiveItemTemplate(`→ {{.Name}} {{ dim "(age: " .Age ")" }}`),
-		tui.WithInactiveItemTemplate(`~ {{.Name}}`),
+		// the projection picks the fields; details show on the active row only
+		tui.WithTemplate(`.Name`, `"(age: " .Age ")"`),
 		tui.WithHide(), // hides the dropdown after selection
 	)
 	if err != nil {

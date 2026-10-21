@@ -172,6 +172,7 @@ func (r *blockingByteReader) Close() {
 // testIOforDropdown provides channel-driven prompt I/O at a fixed terminal size.
 func testIOforDropdown(t *testing.T, width, height int, o ...opt) (*chanIO, opt) {
 	t.Helper()
+	useTheme(t, asciiTheme(false))
 	ctx, cancel := context.WithCancel(t.Context())
 	cio := &chanIO{
 		ctx: ctx,
@@ -198,11 +199,6 @@ func testIOforDropdown(t *testing.T, width, height int, o ...opt) (*chanIO, opt)
 			}
 			return nil
 		}),
-		WithLabelTemplate("{{ . }}"),
-		WithActiveItemTemplate("+ {{ . }}"),
-		WithInactiveItemTemplate("- {{ . }}"),
-		WithMoreItemsTemplate("~ {{ .More }} of {{ .Total }} more"),
-		WithAnswerTemplate("{{ .Label }}: {{ .Answer }}"),
 	}, o...,
 	)...)
 }
@@ -220,38 +216,38 @@ func confirmForTest(t *testing.T) (in, out chan string, result chan bool) {
 
 func TestSimpleCase(t *testing.T) {
 	in, out, res := confirmForTest(t)
-	assert.Equal(t, "\rAre you sure? \n\r│ + Yes\n\r│ - No\n\r│ up/down move · type filter\n\r", <-out)
+	assert.Equal(t, "\r? Are you sure?\n\r| > Yes\n\r|   No\n\r| up/down move · type filter\n\r", <-out)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r", <-out)
-	assert.Equal(t, "Are you sure?: Yes\n", waitForDropdownOutput(t, out, "Are you sure?: Yes\n"))
+	assert.Equal(t, "+ Are you sure? · Yes\n", waitForDropdownOutput(t, out, "+ Are you sure? · Yes\n"))
 	assert.Equal(t, true, <-res)
 }
 
 func TestDenyCase(t *testing.T) {
 	in, out, res := confirmForTest(t)
-	assert.Equal(t, "\rAre you sure? \n\r│ + Yes\n\r│ - No\n\r│ up/down move · type filter\n\r", <-out)
+	assert.Equal(t, "\r? Are you sure?\n\r| > Yes\n\r|   No\n\r| up/down move · type filter\n\r", <-out)
 	in <- "\x1b\x5b\x42" // down
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rAre you sure? \n\r│ - Yes\n\r│ + No\n\r│ up/down move · type filter\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\r? Are you sure?\n\r|   Yes\n\r| > No\n\r| up/down move · type filter\n\r",
 		<-out,
 	)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r", <-out)
-	assert.Equal(t, "Are you sure?: No\n", waitForDropdownOutput(t, out, "Are you sure?: No\n"))
+	assert.Equal(t, "+ Are you sure? · No\n", waitForDropdownOutput(t, out, "+ Are you sure? · No\n"))
 	assert.Equal(t, false, <-res)
 }
 
 func TestDownAndUpCase(t *testing.T) {
 	in, out, res := confirmForTest(t)
-	assert.Equal(t, "\rAre you sure? \n\r│ + Yes\n\r│ - No\n\r│ up/down move · type filter\n\r", <-out)
+	assert.Equal(t, "\r? Are you sure?\n\r| > Yes\n\r|   No\n\r| up/down move · type filter\n\r", <-out)
 	in <- "\x1b\x5b\x42" // down
 	<-out                // frame render
 	in <- "\x1b\x5b\x41" // up
 	<-out                // frame render
 	in <- "\x0d"         // enter
 	<-out                // clear
-	assert.Equal(t, "Are you sure?: Yes\n", waitForDropdownOutput(t, out, "Are you sure?: Yes\n"))
+	assert.Equal(t, "+ Are you sure? · Yes\n", waitForDropdownOutput(t, out, "+ Are you sure? · Yes\n"))
 	assert.Equal(t, true, <-res)
 }
 
@@ -289,68 +285,68 @@ func overflowForTest(t *testing.T) (in, out chan string, result chan picked) {
 
 func TestMoreItems(t *testing.T) {
 	in, out, res := overflowForTest(t)
-	assert.Equal(t, "\rPick letter \n\r│ + A\n\r│ - B\n\r│ ~ 3 of 5 more\n\r", <-out)
+	assert.Equal(t, "\r? Pick letter\n\r| > A\n\r|   B\n\r| . 3 more\n\r", <-out)
 	in <- "\x1b\x5b\x42" // down
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ + B\n\r│ - C\n\r│ ~ 2 of 5 more\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\r? Pick letter\n\r| > B\n\r|   C\n\r| . 2 more\n\r",
 		<-out,
 	)
 	in <- "\x1b\x5b\x42" // down
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ + C\n\r│ - D\n\r│ ~ 1 of 5 more\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\r? Pick letter\n\r| > C\n\r|   D\n\r| . 1 more\n\r",
 		<-out,
 	)
 	in <- "\x1b\x5b\x42" // down
 	// the key hint takes the row of the count
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ + D\n\r│ - E\n\r│ up/down move · type filter\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\r? Pick letter\n\r| > D\n\r|   E\n\r| up/down move · type filter\n\r",
 		<-out,
 	)
 	in <- "\x1b\x5b\x42" // down
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ - D\n\r│ + E\n\r│ up/down move · type filter\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\r? Pick letter\n\r|   D\n\r| > E\n\r| up/down move · type filter\n\r",
 		<-out,
 	)
 	in <- "\x1b\x5b\x42" // down, no more items, might bell
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ - D\n\r│ + E\n\r│ up/down move · type filter\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\r? Pick letter\n\r|   D\n\r| > E\n\r| up/down move · type filter\n\r",
 		<-out,
 	)
 	in <- "\x1b\x5b\x41" // up
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ + D\n\r│ - E\n\r│ up/down move · type filter\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\r? Pick letter\n\r| > D\n\r|   E\n\r| up/down move · type filter\n\r",
 		<-out,
 	)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r", <-out)
-	assert.Equal(t, "Pick letter: D\n", waitForDropdownOutput(t, out, "Pick letter: D\n"))
+	assert.Equal(t, "+ Pick letter · D\n", waitForDropdownOutput(t, out, "+ Pick letter · D\n"))
 	assertPicked(t, "D", res)
 }
 
 func TestMoreItemsUp(t *testing.T) {
 	in, out, res := overflowForTest(t)
-	assert.Equal(t, "\rPick letter \n\r│ + A\n\r│ - B\n\r│ ~ 3 of 5 more\n\r", <-out)
+	assert.Equal(t, "\r? Pick letter\n\r| > A\n\r|   B\n\r| . 3 more\n\r", <-out)
 	in <- "\x1b\x5b\x42" // down
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ + B\n\r│ - C\n\r│ ~ 2 of 5 more\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\r? Pick letter\n\r| > B\n\r|   C\n\r| . 2 more\n\r",
 		<-out,
 	)
 	in <- "\x1b\x5b\x41" // up
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ + A\n\r│ - B\n\r│ ~ 3 of 5 more\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\r? Pick letter\n\r| > A\n\r|   B\n\r| . 3 more\n\r",
 		<-out,
 	)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r", <-out)
-	assert.Equal(t, "Pick letter: A\n", waitForDropdownOutput(t, out, "Pick letter: A\n"))
+	assert.Equal(t, "+ Pick letter · A\n", waitForDropdownOutput(t, out, "+ Pick letter · A\n"))
 	assertPicked(t, "A", res)
 }
 
@@ -375,37 +371,37 @@ func otherDropdownForTest(t *testing.T) (in, out chan string, result chan picked
 
 func TestDropdownFiltering(t *testing.T) {
 	in, out, res := otherDropdownForTest(t)
-	assert.Equal(t, "\rNeque porro \n\r│ + Lorem ipsum\n\r│ - dolor sit amet\n\r│ ~ 3 of 5 more\n\r", <-out)
+	assert.Equal(t, "\r? Neque porro\n\r| > Lorem ipsum\n\r|   dolor sit amet\n\r| . 3 more\n\r", <-out)
 	in <- "c"
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rNeque porro \n\r│ + condimentum libero\n\r│ up/down move · type filter\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\r? Neque porro\n\r| > condimentum libero\n\r| up/down move · type filter\n\r",
 		<-out,
 	)
 	in <- "\x7f" // backspace
 	assert.Equal(
 		t,
-		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"+"\rNeque porro \n\r│ + Lorem ipsum\n\r│ - dolor sit amet\n\r│ ~ 3 of 5 more\n\r",
+		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"+"\r? Neque porro\n\r| > Lorem ipsum\n\r|   dolor sit amet\n\r| . 3 more\n\r",
 		<-out,
 	)
 	in <- "l"
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rNeque porro \n\r│ + Lorem ipsum\n\r│ - condimentum libero\n\r│ up/down move · type filter\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\r? Neque porro\n\r| > Lorem ipsum\n\r|   condimentum libero\n\r| up/down move · type filter\n\r",
 		<-out,
 	)
 	in <- "\x1b\x5b\x42" // down
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rNeque porro \n\r│ - Lorem ipsum\n\r│ + condimentum libero\n\r│ up/down move · type filter\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\r? Neque porro\n\r|   Lorem ipsum\n\r| > condimentum libero\n\r| up/down move · type filter\n\r",
 		<-out,
 	)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r", <-out)
 	assert.Equal(
 		t,
-		"Neque porro: condimentum libero\n",
-		waitForDropdownOutput(t, out, "Neque porro: condimentum libero\n"),
+		"+ Neque porro · condimentum libero\n",
+		waitForDropdownOutput(t, out, "+ Neque porro · condimentum libero\n"),
 	)
 	assertPicked(t, "condimentum libero", res)
 }
@@ -444,10 +440,10 @@ func TestDropdownKVEmpty(t *testing.T) {
 
 func TestDropdownKVSingleItem(t *testing.T) {
 	in, out, res := dropdownKVForTest(t, map[string]int{"apple": 42})
-	assert.Equal(t, "\rSelect item \n\r│ + {apple 42}\n\r│ up/down move · type filter\n\r", <-out)
+	assert.Equal(t, "\r? Select item\n\r| > apple\n\r| up/down move · type filter\n\r", <-out)
 	in <- "\x0d" // enter
 	<-out
-	assert.Equal(t, "Select item: {apple 42}\n", waitForDropdownOutput(t, out, "Select item: {apple 42}\n"))
+	assert.Equal(t, "+ Select item · apple\n", waitForDropdownOutput(t, out, "+ Select item · apple\n"))
 	result := <-res
 	assert.Equal(t, "apple", result.key)
 	assert.Equal(t, 42, result.value)
@@ -458,17 +454,17 @@ func TestDropdownKVMultipleItems(t *testing.T) {
 	in, out, res := dropdownKVForTest(t, map[string]int{"zebra": 1, "apple": 2, "banana": 3})
 	assert.Equal(
 		t,
-		"\rSelect item \n\r│ + {apple 2}\n\r│ - {banana 3}\n\r│ - {zebra 1}\n\r│ up/down move · type filter\n\r",
+		"\r? Select item\n\r| > apple\n\r|   banana\n\r|   zebra\n\r| up/down move · type filter\n\r",
 		<-out,
 	)
 	in <- "\x1b\x5b\x42" // down
 	clear5 := "\x1b[5A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[4A\r"
 	assert.Equal(t,
-		clear5+"\rSelect item \n\r│ - {apple 2}\n\r│ + {banana 3}\n\r│ - {zebra 1}\n\r│ up/down move · type filter\n\r",
+		clear5+"\r? Select item\n\r|   apple\n\r| > banana\n\r|   zebra\n\r| up/down move · type filter\n\r",
 		<-out)
 	in <- "\x0d" // enter
 	assert.Equal(t, clear5, <-out)
-	assert.Equal(t, "Select item: {banana 3}\n", waitForDropdownOutput(t, out, "Select item: {banana 3}\n"))
+	assert.Equal(t, "+ Select item · banana\n", waitForDropdownOutput(t, out, "+ Select item · banana\n"))
 	result := <-res
 	assert.Equal(t, "banana", result.key)
 	assert.Equal(t, 3, result.value)
@@ -1543,11 +1539,11 @@ func TestDropdownLazySelectsItem(t *testing.T) {
 	}()
 	waitForItems(t, ready)
 	cio.In <- "\x0d" // enter
-	final := waitForOutputContaining(t, out, "Select: red", 2*time.Second)
+	final := waitForOutputContaining(t, out, "+ Select · red", 2*time.Second)
 	res := <-resCh
 	assert.NoError(t, res.err)
 	assert.Equal(t, "red", res.value)
-	assert.Contains(t, final, "Select: red")
+	assert.Contains(t, final, "+ Select · red")
 }
 
 func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
@@ -2518,11 +2514,10 @@ func TestThemedDropdownGuidedFrameAndAnswer(t *testing.T) {
 }
 
 func TestDropdownConfirmClearsFrameOnce(t *testing.T) {
+	useTheme(t, asciiTheme(false))
 	var out bytes.Buffer
 	_, err := Dropdown(t.Context(), "Fruit", fruits, WithOutput(&out),
 		WithInput(&chunkReader{chunks: [][]byte{[]byte("\r")}}),
-		WithLabelTemplate("{{ . }}"), WithActiveItemTemplate("+ {{ . }}"),
-		WithInactiveItemTemplate("- {{ . }}"), WithAnswerTemplate("{{ .Answer }}"),
 		opT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{in: in, out: out, Width: 40, Height: 10, Restore: func() error { return nil }}, nil
@@ -2531,9 +2526,9 @@ func TestDropdownConfirmClearsFrameOnce(t *testing.T) {
 		}))
 	assert.NoError(t, err)
 	assert.Equal(t, ""+
-		"\rFruit \n\r│ + apple\n\r│ - banana\n\r│ - cherry\n\r│ up/down move · type filter\n\r"+
+		"\r? Fruit\n\r| > apple\n\r|   banana\n\r|   cherry\n\r| up/down move · type filter\n\r"+
 		"\x1b[5A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[4A\r"+
-		"apple\n", out.String())
+		"+ Fruit · apple\n", out.String())
 }
 
 func TestThemedDropdownInlineIndentsRowsUnderLabel(t *testing.T) {

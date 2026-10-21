@@ -23,8 +23,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	pet, err := tui.Dropdown(ctx, "Pet", pets,
-		tui.WithActiveItemTemplate(`→ {{ shout .Name | bold }}`))
+	pet, err := tui.Dropdown(ctx, "Pet", pets, tui.WithTemplate(`(shout .Name)`))
 	if err != nil {
 		panic(err)
 	}

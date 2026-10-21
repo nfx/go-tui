@@ -19,7 +19,7 @@ password, err := tui.Password(ctx, "API token")
 
 Validate answers with [WithNonEmpty](#withnonempty), [WithRegex](#withregex),
 or [WithValidation](#withvalidation), and customize rejection feedback with
-[WithFeedbackTemplate](#withfeedbacktemplate).
+the [feedback slot](#feedback-row) of the theme.
 
 ## WithDefault
 
@@ -102,29 +102,30 @@ the context error. A nil validator returns `ErrInvalidOption`.
 
 Password validators receive the unmasked value, but the user never sees their
 error messages: a rejected password shows `Invalid value` instead, so a message
-cannot repeat the secret. See [WithFeedbackTemplate](#withfeedbacktemplate).
+cannot repeat the secret. See the [feedback row](#feedback-row).
 Messages of `WithNonEmpty` and `WithRegex` still show.
 
-## WithFeedbackTemplate
+## Feedback row
 
-Customizes the single feedback row for either `Input` or `Password` when
-[WithNonEmpty](#withnonempty), [WithRegex](#withregex), or
-[WithValidation](#withvalidation) rejects an answer.
+The single feedback row for either `Input` or `Password` is drawn by the
+`Feedback` slot of the theme when [WithNonEmpty](#withnonempty),
+[WithRegex](#withregex), or [WithValidation](#withvalidation) rejects an answer.
 
 ```go
-value, err := tui.Input(ctx, "Project name",
-	tui.WithNonEmpty(),
-	tui.WithFeedbackTemplate(`{{ yellow "Check: " }}{{ .Message }}`),
-)
+theme := tui.DefaultTheme()
+theme.Templates.Input.Feedback = `{{ accent "Check: " }}{{ .Message }}`
+if err := tui.SetDefaultTheme(theme); err != nil {
+	return err
+}
+value, err := tui.Input(ctx, "Project name", tui.WithNonEmpty())
 ```
 
-The template receives only `.Message`, with no typed value. The message has
+The slot receives only `.Message`, with no typed value. The message has
 line breaks and tabs replaced with spaces and terminal control characters
 removed. The rendered feedback is limited to its first line and clipped to
 the available terminal width. Keep custom templates to one row.
 
-Without `WithFeedbackTemplate`, or with an empty one, feedback uses the
-`Feedback` slot of the theme, `✖ message` by default; see [Themes](themes.md).
+By default feedback is `✖ message`; see [Themes](themes.md).
 Templates support the same color and style helpers listed in
 [Template Functions](template-functions.md). A password always shows
 `Invalid value` instead of a custom validator message, which could repeat
@@ -172,7 +173,7 @@ value, err := tui.Input(ctx, "Project name", common)
 
 `Input` and `Password` validate when you press Enter. Rules run in option order
 and stop at the first error. A rejected answer stays editable, with the error
-shown below it using [WithFeedbackTemplate](#withfeedbacktemplate). Editing the
+shown below it using the [feedback row](#feedback-row). Editing the
 text clears the feedback; moving the cursor keeps it visible. Validation runs
 again on the next Enter.
 

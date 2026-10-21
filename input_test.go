@@ -1216,9 +1216,11 @@ func TestInputFeedbackSanitizesMessage(t *testing.T) {
 }
 
 func TestInputFeedbackClippedToOneRow(t *testing.T) {
+	th := NewTheme()
+	th.Templates.Input.Feedback = `{{ .Message }}`
+	useTheme(t, th)
 	_, out, err := runValidated(t, false, "a\r",
-		WithValidation(func(context.Context, string) error { return errors.New(strings.Repeat("é", 60)) }),
-		WithFeedbackTemplate(`{{ .Message }}`))
+		WithValidation(func(context.Context, string) error { return errors.New(strings.Repeat("é", 60)) }))
 	assert.ErrorIs(t, err, io.EOF)
 	// 40 columns less the guide and the autowrap column
 	assert.Contains(t, out, strings.Repeat("é", 36)+"…")
@@ -1226,9 +1228,11 @@ func TestInputFeedbackClippedToOneRow(t *testing.T) {
 }
 
 func TestInputFeedbackTemplateIsPlain(t *testing.T) {
+	th := NewTheme()
+	th.Templates.Input.Feedback = `!! {{ .Message }}`
+	useTheme(t, th)
 	_, out, err := runValidated(t, false, "a\r",
-		WithValidation(func(context.Context, string) error { return errors.New("bad") }),
-		WithFeedbackTemplate(`!! {{ .Message }}`))
+		WithValidation(func(context.Context, string) error { return errors.New("bad") }))
 	assert.ErrorIs(t, err, io.EOF)
 	assert.Contains(t, out, "!! bad")
 	assert.True(t, !strings.Contains(out, "\x1b[31m"))

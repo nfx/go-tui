@@ -100,8 +100,8 @@ cancellation. Bracketed-paste terminal mode is enabled only during this prompt.
 
 ## Templates
 
-Multichoice accepts the same `WithTemplate`, active/inactive item, label, answer,
-and more-items options as dropdown.
+Multichoice accepts the same `WithTemplate` as dropdown. Its label, rows, count
+and answer line come from the `Templates.Multichoice` theme slots.
 `WithOneReturn` is unsupported; direct use returns `ErrWrongWidget`. `WithOptions`
 keeps its usual skip semantics for unsupported members.
 
@@ -109,8 +109,6 @@ keeps its usual skip semantics for unsupported members.
 type Service struct { Name, Region string }
 selected, err := tui.Multichoice(ctx, "Services", services,
     tui.WithTemplate(".Name", ".Region"),
-    tui.WithAnswerTemplate(
-        `{{.Label}}:{{range .Answer}} {{.Name}}{{else}} none{{end}}`),
 )
 ```
 
@@ -126,7 +124,7 @@ display, search, and answer with keys by default. `WithTemplate(".Value.Name")`
 presents values instead. Both answer collections contain entries with `.Key`
 and `.Value`, regardless of the returned projection.
 
-Label dot is the label string. Answer data has `.Label`, `.Answer` (the selected
+The answer slot has `.Label`, `.Values` (the projected content of the selected
 items in source order), and `.Count`. Generated answers are collection-aware,
 and an empty default answer explicitly says “none”. `WithHide` suppresses the
 answer. The more-items template receives `.More` (matching choices below the

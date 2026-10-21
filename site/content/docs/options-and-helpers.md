@@ -10,9 +10,9 @@ misplaced option fails instead of silently doing nothing.
 | Option | Supported by |
 |---|---|
 | `WithInput`, `WithOutput` | `Input`, `Password`, dropdowns, multichoice, `Confirm`, `FilePicker`, `NewSpinners`, progress bars |
-| `WithDefault`, `WithHide`, `WithLabelTemplate`, `WithAnswerTemplate` | `Input`, `Password`, `Number`, dropdowns, multichoice, `Confirm`, `FilePicker` |
-| `WithNonEmpty`, `WithRegex`, `WithValidation`, `WithFeedbackTemplate` | `Input`, `Password` |
-| other `With*Template`, `WithTemplate` | dropdowns, multichoice, `Confirm`, `FilePicker` |
+| `WithDefault`, `WithHide` | `Input`, `Password`, `Number`, dropdowns, multichoice, `Confirm`, `FilePicker` |
+| `WithNonEmpty`, `WithRegex`, `WithValidation` | `Input`, `Password` |
+| `WithTemplate` | dropdowns, multichoice, `Confirm`, `FilePicker` |
 | `WithOneReturn` | dropdowns, `Confirm`, `FilePicker` |
 | `WithStartDir`, `WithExtensions`, `WithIgnoreUp`, `WithIgnoreDirs`, `WithShowHidden` | `FilePicker` |
 | `WithPrefixf`, `WithKeep` | `Spinners.Add` |
@@ -61,7 +61,7 @@ value, err := tui.Input(ctx, "Name")
 
 `WithNonEmpty`, `WithRegex`, and `WithValidation` check confirmed input in option
 order and display the first failure below the editable answer.
-`WithFeedbackTemplate` customizes that row. These options support both `Input`
+The `Feedback` slot of the theme customizes that row. These options support both `Input`
 and `Password`; see [Input and Password](input.md#withvalidation) for examples and
 the validator context contract.
 
