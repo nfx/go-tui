@@ -706,7 +706,11 @@ func (m *multichoice) renderThemed(tio *termIO, buf *bytes.Buffer) error {
 		}
 		rows = append(rows, frameRow{content: line, guided: true})
 	}
-	help, err := themedHint(m.help, m.multichoiceKeys(m.theme.source.Symbols), len(m.relevant)-m.offset-len(m.displayed))
+	help, err := themedHint(
+		m.help,
+		m.multichoiceKeys(m.theme.source.Symbols),
+		len(m.relevant)-m.offset-len(m.displayed),
+	)
 	if err != nil {
 		return err
 	}
