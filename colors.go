@@ -829,7 +829,8 @@ func (in Theme) compile() (*compiledTheme, error) {
 		return nil, err
 	}
 	funcs := t.withCustom(builtins)
-	base, err := builtinTemplates.compile(funcs, templates{})
+	sources := t.Progress.builtins()
+	base, err := sources.compile(funcs, templates{})
 	if err != nil {
 		return nil, fmt.Errorf("built-in %w", err)
 	}
@@ -924,6 +925,11 @@ type Symbols struct {
 	BarFill  string
 	BarHead  string
 	BarEmpty string
+	// Unknown stands for a value that is not known, such as the completion
+	// of a progress bar without a total.
+	Unknown string
+	// Separator separates the entries of a progress hint.
+	Separator string
 	// Spinner are the frames of a running spinner, in order. Each frame is
 	// a symbol, so it is a single display column like the others. Empty
 	// takes the preset.
@@ -945,9 +951,11 @@ var unicodeSymbols = Symbols{
 	Mask:      "*",
 	Up:        "↑",
 	Down:      "↓",
-	BarFill:   "█",
-	BarHead:   "█",
-	BarEmpty:  "░",
+	BarFill:   "━",
+	BarHead:   "╸",
+	BarEmpty:  "─",
+	Unknown:   "—",
+	Separator: "·",
 	Spinner:   []string{"▘", "▀", "▝", "▐", "▗", "▄", "▖", "▌"},
 }
 
@@ -992,6 +1000,10 @@ func (s Symbols) named(name string) (string, error) {
 		return s.BarHead, nil
 	case "BarEmpty":
 		return s.BarEmpty, nil
+	case "Unknown":
+		return s.Unknown, nil
+	case "Separator":
+		return s.Separator, nil
 	}
 	return "", fmt.Errorf("symbol %q: no such symbol", name)
 }
@@ -1019,6 +1031,8 @@ func (s Symbols) normalize() (Symbols, error) {
 		{"BarFill", &s.BarFill, &def.BarFill},
 		{"BarHead", &s.BarHead, &def.BarHead},
 		{"BarEmpty", &s.BarEmpty, &def.BarEmpty},
+		{"Unknown", &s.Unknown, &def.Unknown},
+		{"Separator", &s.Separator, &def.Separator},
 	} {
 		if *f.dst == "" {
 			*f.dst = *f.def
@@ -1081,6 +1095,8 @@ func ASCIISymbols() Symbols {
 		BarFill:   "=",
 		BarHead:   ">",
 		BarEmpty:  "-",
+		Unknown:   "?",
+		Separator: "|",
 		// the line spinner of cli-spinners (MIT License)
 		Spinner: []string{"|", "/", "-", `\`},
 	}
@@ -1382,13 +1398,16 @@ var builtinTemplates = Templates{
 		Stopped: `{{ muted (symbol "Cancel") }} {{ with .Prefix }}{{ text . }}{{ muted ":" }} {{ end }}{{ text .Message }}`,
 		Failed:  `{{ error (symbol "Error") }} {{ with .Prefix }}{{ text . }}{{ muted ":" }} {{ end }}{{ text .Message }}`,
 	},
-	// Progress slots name a [progressView]. The renderer draws the bar in
-	// the accent role and its empty track in the guide role.
+	// Progress slots name a [progressView], except Hint, which names the
+	// [hintView] of its metrics. The renderer draws the bar in the accent
+	// role and its empty track in the guide role. This Frame is the one of
+	// [ProgressStyle.Compact] bars; see [ProgressStyle.builtins].
 	Progress: ProgressTemplates{
 		Label:   `{{ text .Label }}`,
 		Metrics: `{{ range $i, $v := .Values }}{{ if $i }}{{ muted " · " }}{{ end }}{{ muted $v }}{{ end }}`,
-		Frame: `{{ with .Label }}{{ . }} {{ end }}{{ accent (printf "%3d%%" .Percent) }} ` +
-			`{{ .Bar }}{{ with .Metrics }} {{ . }}{{ end }}`,
+		Hint: `{{ range $i, $h := . }}{{ if $i }}{{ guide (printf " %s " (symbol "Separator")) }}{{ end }}` +
+			`{{ accent $h.Left }}{{ with $h.Right }} {{ guide . }}{{ end }}{{ end }}`,
+		Frame: `{{ with .Label }}{{ . }} {{ end }}` + progressPercent + ` {{ .Bar }}{{ with .Metrics }} {{ . }}{{ end }}`,
 	},
 	// Table slots name a [columnView] and a [cellView]. Weight sets the
 	// header apart; values stay in the foreground unless a caller colors them.
@@ -1558,28 +1577,35 @@ func (t *Templates) spinner(in templated[SpinnerTemplates, spinnerTemplates]) (o
 	return out, errors.Join(errs[:]...)
 }
 
-// ProgressTemplates are the row of a progress bar. Label and Metrics render
+// ProgressTemplates are the rows of a progress bar. Label and Metrics render
 // first; Frame then places their output around the bar, which it must insert
 // exactly once, as a top-level {{ .Bar }} that nothing else refers to, so
 // that the bar can take the columns the rest of the row leaves.
+//
+// Metrics is the end of the bar row of [ProgressStyle.Compact] bars. Other
+// bars show the metrics in the Hint row below the bar instead, and their
+// Frame receives an empty .Metrics. Hint renders the [hint] pairs of the metrics,
+// each with .Left and .Right, such as "6.2" and "MiB/s".
 type ProgressTemplates struct {
 	Label   Template
 	Metrics Template
+	Hint    Template
 	Frame   Template
 }
 
 // progressTemplates are the compiled [ProgressTemplates].
-type progressTemplates struct{ Label, Metrics, Frame *compiledSlot }
+type progressTemplates struct{ Label, Metrics, Hint, Frame *compiledSlot }
 
 // progress compiles the progress slots, which have no cross-family parent.
-// Label and Metrics may be hidden; the frame holds the bar, so it cannot.
+// Label, Metrics and Hint may be hidden; the frame holds the bar, so it cannot.
 func (t *Templates) progress(in templated[ProgressTemplates, progressTemplates]) (out progressTemplates, _ error) {
-	var errs [3]error
+	var errs [4]error
 	out.Label, errs[0] = t.slot(in.nest("Label", in.Src.Label, in.Parent.Label), true)
 	out.Metrics, errs[1] = t.slot(in.nest("Metrics", in.Src.Metrics, in.Parent.Metrics), true)
-	out.Frame, errs[2] = t.slot(in.nest("Frame", in.Src.Frame, in.Parent.Frame), false)
-	if errs[2] == nil && in.Src.Frame != "" {
-		errs[2] = t.barOnce(out.Frame)
+	out.Hint, errs[2] = t.slot(in.nest("Hint", in.Src.Hint, in.Parent.Hint), true)
+	out.Frame, errs[3] = t.slot(in.nest("Frame", in.Src.Frame, in.Parent.Frame), false)
+	if errs[3] == nil && in.Src.Frame != "" {
+		errs[3] = t.barOnce(out.Frame)
 	}
 	return out, errors.Join(errs[:]...)
 }

@@ -1376,13 +1376,44 @@ func TestBuiltinProgressSlots(t *testing.T) {
 		return out.String()
 	}
 	tt := c.templates.Progress
-	view := progressView{Label: "build", Percent: 7, Values: []string{"1.00/s", "3s remaining"}, Bar: "##"}
+	view := progressView{Label: "build", Total: 100, Percent: 7, Values: []string{"1.00/s", "3s remaining"}, Bar: "##"}
 	assert.Equal(t, "build", render(tt.Label, view))
 	assert.Equal(t, "1.00/s · 3s remaining", render(tt.Metrics, view))
 	assert.Equal(t, "", render(tt.Metrics, progressView{}))
+	// the stacked frame sets the label apart from a four-column percentage
+	assert.Equal(t, "build    7% ##", render(tt.Frame, view))
+	assert.Equal(t, "100% ##", render(tt.Frame, progressView{Total: 1, Percent: 100, Bar: "##"}))
+	// without a total, the completion is unknown rather than zero
+	assert.Equal(t, "build     — ##", render(tt.Frame, progressView{Label: "build", Bar: "##"}))
+
+	hint := func(s *compiledSlot, data hintView) string {
+		t.Helper()
+		b, err := s.bind(c.funcs(profilePlain, roleStyles{}))
+		assert.NoError(t, err)
+		out, err := b.render(data)
+		assert.NoError(t, err)
+		return out.String()
+	}
+	pairs := hintView{
+		{Left: text("62 / 100"), Right: text("MiB")},
+		{Left: text("900 KiB / 10 MiB")},
+		{Left: text("12s"), Right: text("left")},
+	}
+	assert.Equal(t, "62 / 100 MiB · 900 KiB / 10 MiB · 12s left", hint(tt.Hint, pairs))
+	assert.Equal(t, "", hint(tt.Hint, nil))
+	// a prompt hint edit does not reach progress, and ASCII separates with a bar
+	c, err = compileTemplates(t, func(th *Theme) {
+		th.Templates.Prompt.Hint = Hidden
+		th.Symbols = ASCIISymbols()
+		th.Progress.Compact = true
+	})
+	assert.NoError(t, err)
+	tt = c.templates.Progress
+	assert.Equal(t, "62 / 100 MiB | 900 KiB / 10 MiB | 12s left", hint(tt.Hint, pairs))
+	// the compact frame keeps one space after the label
 	view.Metrics = "m"
 	assert.Equal(t, "build   7% ## m", render(tt.Frame, view))
-	assert.Equal(t, "100% ##", render(tt.Frame, progressView{Percent: 100, Bar: "##"}))
+	assert.Equal(t, "build    ? ## m", render(tt.Frame, progressView{Label: "build", Bar: "##", Metrics: "m"}))
 }
 
 func TestProgressFrameInsertsBarOnce(t *testing.T) {
@@ -1429,7 +1460,11 @@ func TestProgressFrameInsertsBarOnce(t *testing.T) {
 }
 
 func TestProgressStyleValidation(t *testing.T) {
+	// a theme built by hand stacks the metrics below the bar, like the preset
 	c, err := Theme{}.compile()
+	assert.NoError(t, err)
+	assert.Equal(t, ProgressStyle{MinBarWidth: 1}, c.source.Progress)
+	c, err = NewTheme().compile()
 	assert.NoError(t, err)
 	assert.Equal(t, progressStyle, c.source.Progress)
 	th := NewTheme()
@@ -1439,7 +1474,7 @@ func TestProgressStyleValidation(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, ProgressStyle{MinBarWidth: 1, MaxBarWidth: 3}, c.source.Progress)
 	assert.Equal(t, "#", c.source.Symbols.BarFill)
-	assert.Equal(t, "█", c.source.Symbols.BarHead)
+	assert.Equal(t, "╸", c.source.Symbols.BarHead)
 	for _, tc := range []struct {
 		style ProgressStyle
 		want  string
@@ -1464,6 +1499,8 @@ func TestBarSymbolsValidation(t *testing.T) {
 		{func(s *Symbols) { s.BarFill = "##" }, `theme.Symbols.BarFill: "##": want one display column, got 2`},
 		{func(s *Symbols) { s.BarHead = "Ａ" }, `theme.Symbols.BarHead: "Ａ": want one display column, got 2`},
 		{func(s *Symbols) { s.BarEmpty = "\t" }, `theme.Symbols.BarEmpty: "\t": control character`},
+		{func(s *Symbols) { s.Unknown = "??" }, `theme.Symbols.Unknown: "??": want one display column, got 2`},
+		{func(s *Symbols) { s.Separator = "\n" }, `theme.Symbols.Separator: "\n": control character`},
 	} {
 		th := NewTheme()
 		tc.edit(&th.Symbols)
@@ -1471,7 +1508,9 @@ func TestBarSymbolsValidation(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), tc.want)
 	}
-	for name, want := range map[string]string{"BarFill": "=", "BarHead": ">", "BarEmpty": "-"} {
+	for name, want := range map[string]string{
+		"BarFill": "=", "BarHead": ">", "BarEmpty": "-", "Unknown": "?", "Separator": "|",
+	} {
 		got, err := ASCIISymbols().named(name)
 		assert.NoError(t, err)
 		assert.Equal(t, want, got)

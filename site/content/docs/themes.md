@@ -83,7 +83,8 @@ These variables are read once, when the program starts.
 
 `theme.Symbols` holds every glyph: the prompt, focus and guide marks,
 checkboxes, outcome marks, the ellipsis, the password mask, the arrow keys of hints (`Up`, `Down`), the progress
-bar cells and the spinner frames (`Spinner`). Each must be one column wide. Use `tui.ASCIISymbols()` for fonts
+bar cells (`BarFill`, `BarHead`, `BarEmpty`), the mark of an unknown value (`Unknown`), the separator of progress
+hints (`Separator`) and the spinner frames (`Spinner`). Each must be one column wide. Use `tui.ASCIISymbols()` for fonts
 without the Unicode glyphs:
 
 ```go
@@ -143,7 +144,8 @@ the name of a built-in helper.
 | Field | Controls |
 | --- | --- |
 | `theme.Symbols.Spinner`, `theme.Spinner.Interval` | the frames and step of new spinner groups |
-| `theme.Progress.MinBarWidth`, `MaxBarWidth` | how the bar shares its row with the metrics |
+| `theme.Progress.Compact` | keeps the metrics on the row of the bar instead of a hint row below it (the default) |
+| `theme.Progress.MinBarWidth`, `MaxBarWidth` | how the bar shares its row with the label and metrics |
 | `theme.Table.ColumnGap`, `MinColumnWidth` | table and facts layout |
 | `theme.JSON.Indent`, `theme.JSON.Compact` | `PrettyJSON` layout |
 

@@ -131,10 +131,70 @@ opts := tui.WithOptions(
 p, err := tui.NewMaxProgressBar(ctx, "Upload", 100, opts)
 ```
 
+## Appearance
+
+By default, a bar has two rows: the label, the percentage and the bar, and a
+hint row with the metrics below it.
+
+```text
+Download   62% ━━━━━━━━━━━━━━━━━━━╸────────────
+62.0 / 100.0 MiB · 6.2 MiB/s · 12s left
+```
+
+With `tui.ASCIISymbols()`:
+
+```text
+Download   62% ===================>------------
+62.0 / 100.0 MiB | 6.2 MiB/s | 12s left
+```
+
+The percentage always takes four columns, so the bar never moves as it
+grows. A bar without a total shows `—` (`?` in ASCII) instead of a
+percentage. The hint row shows the amount, the rate, the time left and, with
+the elapsed time enabled, the elapsed time. When the row is too narrow, it
+drops whole entries from the end; when even the first entry does not fit,
+the hint row goes. A long label is shortened before the bar is. A terminal
+too short for both rows gets the compact row. A bar on its own terminal
+through `WithOutput` also keeps a row below them for the cursor, so it needs
+three.
+
+The hint row is the `Templates.Progress.Hint` slot. Like a prompt's key
+hint, it receives a list of entries, each with `.Left` and `.Right`, such as
+`6.2` and `MiB/s`. It does not inherit from `Templates.Prompt.Hint`.
+
+```go
+theme := tui.NewTheme()
+theme.Templates.Progress.Hint = `{{ range . }}[{{ .Left }} {{ .Right }}] {{ end }}`
+```
+
+Set it to `tui.Hidden` to keep only the bar row.
+
+### Compact layout
+
+`theme.Progress.Compact = true` keeps everything on one row,
+as earlier versions did, and drops metrics from the end to keep the bar:
+
+```text
+Download  62% ━━━━━━━╸──── 6.2 MiB/s · 12s remaining
+```
+
+In the stacked layout, `Templates.Progress.Frame` receives an empty
+`.Metrics`. A custom frame that shows `.Metrics` after the bar keeps
+working once it selects the compact layout:
+
+```go
+theme := tui.NewTheme()
+theme.Progress.Compact = true
+theme.Templates.Progress.Frame = `{{ .Label }} [{{ .Bar }}] {{ .Metrics }}`
+```
+
+`Templates.Progress.Metrics` applies to the compact layout only, and
+`Templates.Progress.Hint` to the stacked layout only.
+
 ## Behavior notes
 
 - `NewMaxProgressBar`, `NewSliceProgressBar`, and `NewParallelProgressBar` tolerate non-TTY output and degrade to no-op updates.
-- `Close()` stops rendering and releases the progress bar's terminal resources.
+- `Close()` stops rendering, erases every row of the bar and releases its terminal resources.
 - Progress bars can share the default output with `Input` and `Password`, including their validation feedback. They do not change terminal input mode, so closing a bar leaves an active prompt's editing functional.
 
 For a runnable example combining background progress and validated prompts, run
