@@ -80,54 +80,20 @@ path, err := tui.FilePicker(ctx, "Pick file",
 )
 ```
 
-## WithLabelTemplate
+## Presentation
 
-Forwarded to dropdown label template. See [WithLabelTemplate](dropdowns.md#withlabeltemplate).
-
-```go
-path, err := tui.FilePicker(ctx, "Pick file",
-	tui.WithLabelTemplate(`{{ cyan "file:" }} {{ . }}`),
-)
-```
-
-## WithActiveItemTemplate
-
-Forwarded to dropdown active-row template. See [WithActiveItemTemplate](dropdowns.md#withactiveitemtemplate).
+`FilePicker` draws with the `Templates.FilePicker` slots of the theme, which
+inherit from the dropdown and choice slots. See
+[Presentation](dropdowns.md#presentation).
 
 ```go
-path, err := tui.FilePicker(ctx, "Pick file",
-	tui.WithActiveItemTemplate(`{{ green "> " . }}`),
-)
-```
-
-## WithInactiveItemTemplate
-
-Forwarded to dropdown inactive-row template. See [WithInactiveItemTemplate](dropdowns.md#withinactiveitemtemplate).
-
-```go
-path, err := tui.FilePicker(ctx, "Pick file",
-	tui.WithInactiveItemTemplate(`{{ dim "  " . }}`),
-)
-```
-
-## WithMoreItemsTemplate
-
-Forwarded to dropdown footer template. See [WithMoreItemsTemplate](dropdowns.md#withmoreitemstemplate).
-
-```go
-path, err := tui.FilePicker(ctx, "Pick file",
-	tui.WithMoreItemsTemplate(`{{ dim .More " hidden" }}`),
-)
-```
-
-## WithAnswerTemplate
-
-Forwarded to dropdown answer template. See [WithAnswerTemplate](dropdowns.md#withanswertemplate).
-
-```go
-path, err := tui.FilePicker(ctx, "Pick file",
-	tui.WithAnswerTemplate(`{{ green "picked:" }} {{ .Answer }}`),
-)
+theme := tui.DefaultTheme()
+theme.Templates.FilePicker.Label = `{{ accent "file:" }} {{ .Label }}`
+theme.Templates.FilePicker.Answer = `{{ success "picked:" }} {{ .Value }}`
+if err := tui.SetDefaultTheme(theme); err != nil {
+	return err
+}
+path, err := tui.FilePicker(ctx, "Pick file")
 ```
 
 ## WithHide

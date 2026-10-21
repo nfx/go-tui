@@ -27,78 +27,78 @@ import (
 )
 
 func TestDropdownDefaultSelectsClosestMatch(t *testing.T) {
-	term := newTerminal(t, 12)
+	term := newASCIITerminal(t)
 	res := prompt(func() (string, error) {
 		return tui.Dropdown(t.Context(), "Pick", []string{"apple pie", "banana", "apple"},
-			plain, tui.WithDefault("apple"))
+			tui.WithDefault("apple"))
 	})
 	// two items share the prefix, so the closest one is ranked first and selected
-	term.waitRows(t, "Pick", "│ * apple", "│ - apple pie", "│ - banana", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| > apple", "|   apple pie", "|   banana", "| up/down move...")
 	term.press(t, keyEnter)
 	assert.Equal(t, "apple", answer(t, res))
-	term.waitRows(t, "Pick: apple")
+	term.waitRows(t, "+ Pick · apple")
 }
 
 func TestDropdownLazyDefaultSelectsBestRankedArrival(t *testing.T) {
-	term := newTerminal(t, 12)
+	term := newASCIITerminal(t)
 	items := make(chan string)
 	res := prompt(func() (string, error) {
-		return tui.DropdownLazy(t.Context(), "Pick", feed(items), plain, tui.WithDefault("cat"))
+		return tui.DropdownLazy(t.Context(), "Pick", feed(items), tui.WithDefault("cat"))
 	})
 	read := term.blockedRead(t)
 	items <- "xxxx"
-	term.waitRows(t, "Pick", "│ * xxxx", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| > xxxx", "| up/down move...")
 	items <- "yyyy"
-	term.waitRows(t, "Pick", "│ * xxxx", "│ - yyyy", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| > xxxx", "|   yyyy", "| up/down move...")
 	// the closest match arrives last: it is ranked first, and without any
 	// navigation the selection follows the ranking
 	items <- "bat"
-	term.waitRows(t, "Pick", "│ * bat", "│ - xxxx", "│ - yyyy", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| > bat", "|   xxxx", "|   yyyy", "| up/down move...")
 	close(items)
 	read <- keyEnter
 	assert.Equal(t, "bat", answer(t, res))
 }
 
 func TestDropdownLazyDefaultKeepsNavigatedSelection(t *testing.T) {
-	term := newTerminal(t, 12)
+	term := newASCIITerminal(t)
 	items := make(chan string)
 	res := prompt(func() (string, error) {
-		return tui.DropdownLazy(t.Context(), "Pick", feed(items), plain, tui.WithDefault("cat"))
+		return tui.DropdownLazy(t.Context(), "Pick", feed(items), tui.WithDefault("cat"))
 	})
 	items <- "xxxx"
 	items <- "yyyy"
-	term.waitRows(t, "Pick", "│ * xxxx", "│ - yyyy", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| > xxxx", "|   yyyy", "| up/down move...")
 	term.press(t, keyDown)
-	term.waitRows(t, "Pick", "│ - xxxx", "│ * yyyy", "│ up/down move...")
+	term.waitRows(t, "? Pick", "|   xxxx", "| > yyyy", "| up/down move...")
 	read := term.blockedRead(t)
 	// once the user has moved, a better-ranked arrival does not take the selection
 	items <- "bat"
-	term.waitRows(t, "Pick", "│ - bat", "│ - xxxx", "│ * yyyy", "│ up/down move...")
+	term.waitRows(t, "? Pick", "|   bat", "|   xxxx", "| > yyyy", "| up/down move...")
 	close(items)
 	read <- keyEnter
 	assert.Equal(t, "yyyy", answer(t, res))
 }
 
 func TestDropdownLazyFilterAppliesToLaterItems(t *testing.T) {
-	term := newTerminal(t, 12)
+	term := newASCIITerminal(t)
 	items := make(chan string)
 	res := prompt(func() (string, error) {
-		return tui.DropdownLazy(t.Context(), "Pick", feed(items), plain)
+		return tui.DropdownLazy(t.Context(), "Pick", feed(items))
 	})
 	items <- "alpha"
 	items <- "beta"
-	term.waitRows(t, "Pick", "│ * alpha", "│ - beta", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| > alpha", "|   beta", "| up/down move...")
 	term.press(t, "a")
-	term.waitRows(t, "Pick", "│ * alpha", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| > alpha", "| up/down move...")
 	items <- "banana"
 	items <- "apricot"
-	term.waitRows(t, "Pick", "│ * alpha", "│ - apricot", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| > alpha", "|   apricot", "| up/down move...")
 	term.press(t, keyBackspace)
-	term.waitRows(t, "Pick", "│ * alpha", "│ - beta", "│ - banana", "│ - apricot", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| > alpha", "|   beta", "|   banana", "|   apricot", "| up/down move...")
 	term.press(t, "a")
-	term.waitRows(t, "Pick", "│ * alpha", "│ - apricot", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| > alpha", "|   apricot", "| up/down move...")
 	term.press(t, keyDown)
-	term.waitRows(t, "Pick", "│ - alpha", "│ * apricot", "│ up/down move...")
+	term.waitRows(t, "? Pick", "|   alpha", "| > apricot", "| up/down move...")
 	close(items)
 	term.press(t, keyEnter)
 	assert.Equal(t, "apricot", answer(t, res))
@@ -107,16 +107,16 @@ func TestDropdownLazyFilterAppliesToLaterItems(t *testing.T) {
 // testResizeWhileReading checks that resizing during a blocked read preserves selection and pending input.
 func testResizeWhileReading(t *testing.T, run func() (string, error)) {
 	t.Helper()
-	term := newTerminal(t, 12)
+	term := newASCIITerminal(t)
 	res := prompt(run)
-	term.waitRows(t, "Pick", "│ * a", "│ - b", "│ - c", "│ - d", "│ - e", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| > a", "|   b", "|   c", "|   d", "|   e", "| up/down move...")
 	term.press(t, keyDown)
-	term.waitRows(t, "Pick", "│ - a", "│ * b", "│ - c", "│ - d", "│ - e", "│ up/down move...")
+	term.waitRows(t, "? Pick", "|   a", "| > b", "|   c", "|   d", "|   e", "| up/down move...")
 	term.press(t, keyDown)
-	term.waitRows(t, "Pick", "│ - a", "│ - b", "│ * c", "│ - d", "│ - e", "│ up/down move...")
+	term.waitRows(t, "? Pick", "|   a", "|   b", "| > c", "|   d", "|   e", "| up/down move...")
 	read := term.blockedRead(t)
 	term.resize(t, 40, 5) // room for two items and the count
-	term.waitRows(t, "Pick", "│ - b", "│ * c", "│ ~ 2 more")
+	term.waitRows(t, "? Pick", "|   b", "| > c", "| . 2 more")
 	// a second reader would take this key and leave the prompt waiting
 	read <- keyEnter
 	assert.Equal(t, "c", answer(t, res))
@@ -124,40 +124,40 @@ func testResizeWhileReading(t *testing.T, run func() (string, error)) {
 
 func TestDropdownResizeWhileReadingKeepsSelection(t *testing.T) {
 	testResizeWhileReading(t, func() (string, error) {
-		return tui.Dropdown(t.Context(), "Pick", []string{"a", "b", "c", "d", "e"}, plain)
+		return tui.Dropdown(t.Context(), "Pick", []string{"a", "b", "c", "d", "e"})
 	})
 }
 
 func TestDropdownLazyResizeWhileReadingKeepsSelection(t *testing.T) {
 	testResizeWhileReading(t, func() (string, error) {
-		return tui.DropdownLazy(t.Context(), "Pick", values("a", "b", "c", "d", "e"), plain)
+		return tui.DropdownLazy(t.Context(), "Pick", values("a", "b", "c", "d", "e"))
 	})
 }
 
 func TestWidgetsShareTerminal(t *testing.T) {
-	term := newTerminal(t, 12)
+	term := newASCIITerminal(t)
 	p, err := tui.NewMaxProgressBar(t.Context(), "Download", 4)
 	assert.NoError(t, err)
 	p.Add(1)
 	term.waitRows(t, "Download  25%...")
 
 	res := prompt(func() (string, error) {
-		return tui.Dropdown(t.Context(), "Pick", []string{"a", "b"}, plain)
+		return tui.Dropdown(t.Context(), "Pick", []string{"a", "b"})
 	})
 	// the background overlay stays above the prompt that started later
-	term.waitRows(t, "Download  25%...", "Pick", "│ * a", "│ - b", "│ up/down move...")
+	term.waitRows(t, "Download  25%...", "? Pick", "| > a", "|   b", "| up/down move...")
 
 	// log output goes above both overlays
 	_, err = fmt.Fprintln(tui.Stderr(), "log line")
 	assert.NoError(t, err)
-	term.waitRows(t, "log line", "Download  25%...", "Pick", "│ * a", "│ - b", "│ up/down move...")
+	term.waitRows(t, "log line", "Download  25%...", "? Pick", "| > a", "|   b", "| up/down move...")
 
 	term.press(t, keyEnter)
 	assert.Equal(t, "a", answer(t, res))
-	term.waitRows(t, "log line", "Pick: a", "Download  25%...")
+	term.waitRows(t, "log line", "+ Pick · a", "Download  25%...")
 
 	p.Add(3) // completes the bar, which then disappears
-	term.waitRows(t, "log line", "Pick: a")
+	term.waitRows(t, "log line", "+ Pick · a")
 	assert.NoError(t, p.Close())
 
 	// the next prompt reads from the same keyboard and draws on the same screen
@@ -167,7 +167,7 @@ func TestWidgetsShareTerminal(t *testing.T) {
 	term.press(t, "x")
 	term.press(t, keyEnter)
 	assert.Equal(t, "x", answer(t, res))
-	term.waitRows(t, "log line", "Pick: a", "✔ Name · x")
+	term.waitRows(t, "log line", "+ Pick · a", "+ Name · x")
 }
 
 type scoredRow struct {
@@ -549,15 +549,21 @@ func (term *terminal) resize(t *testing.T, width, height int) {
 	resizeTTY(t, term.tty, width, height)
 }
 
-// plain renders dropdowns without colors: the active item is marked with "*"
-// and the others with "-".
-var plain = tui.WithOptions(
-	tui.WithLabelTemplate("{{ . }}"),
-	tui.WithActiveItemTemplate("* {{ . }}"),
-	tui.WithInactiveItemTemplate("- {{ . }}"),
-	tui.WithMoreItemsTemplate("~ {{ .More }} more"),
-	tui.WithAnswerTemplate("{{ .Label }}: {{ .Answer }}"),
-)
+// newASCIITerminal is newTerminal with the ASCII theme: the active row is
+// marked with ">" and the answer line starts with "+".
+func newASCIITerminal(t *testing.T) *terminal {
+	t.Helper()
+	asciiTheme(t)
+	return newTerminal(t, 12)
+}
+
+// asciiTheme installs the ASCII preset as the default theme for the test.
+func asciiTheme(t *testing.T) {
+	t.Helper()
+	th := tui.NewTheme()
+	th.Symbols = tui.ASCIISymbols()
+	tui.UseTheme(t, th)
+}
 
 type promptResult struct {
 	value string
@@ -650,15 +656,17 @@ func TestMultichoicePublic(t *testing.T) {
 func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 	type service struct{ Name, Region string }
 	items := []service{{"api", "eu"}, {"worker", "us"}}
+	th := tui.NewTheme()
+	th.Templates.Multichoice.Answer = `ANSWER {{ .Count }}{{ range .Values }} {{ . }}{{ else }} none{{ end }}`
+	tui.UseTheme(t, th)
 	var out bytes.Buffer
 	got, err := tui.Multichoice(t.Context(), "Services", items,
 		tui.WithInput(strings.NewReader("\r")), tui.WithOutput(&out),
-		tui.WithOptions(tui.WithOneReturn(), tui.WithTemplate(".Name", ".Region"), tui.WithDefault("worker")),
-		tui.WithAnswerTemplate(`ANSWER {{.Count}}{{range .Answer}} {{.Name}}/{{.Region}}{{else}} none{{end}}`))
+		tui.WithOptions(tui.WithOneReturn(), tui.WithTemplate(".Name", ".Region"), tui.WithDefault("worker")))
 	if err != nil || !reflect.DeepEqual(got, items[1:]) {
 		t.Fatalf("got %v, %v", got, err)
 	}
-	if strings.Count(out.String(), "ANSWER 1 worker/us") != 1 || !strings.Contains(out.String(), "◉ worker") {
+	if strings.Count(out.String(), "ANSWER 1 worker") != 1 || !strings.Contains(out.String(), "◉ worker") {
 		t.Fatal(out.String())
 	}
 	got[0].Name = "changed"
@@ -666,6 +674,7 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 		t.Fatal("result aliases source slice")
 	}
 	t.Run("generated collection answer", func(t *testing.T) {
+		tui.UseTheme(t, tui.NewTheme())
 		out.Reset()
 		_, err := tui.Multichoice(
 			t.Context(),
@@ -726,6 +735,9 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 
 func TestMultichoiceMapProjections(t *testing.T) {
 	values := map[string][]int{"beta": {1}, "alpha": {1}, "gamma": {3}}
+	th := tui.NewTheme()
+	th.Templates.Multichoice.Answer = `ANSWER {{ .Count }}{{ range .Values }} {{ . }}{{ end }}`
+	tui.UseTheme(t, th)
 	var out bytes.Buffer
 	keys, err := tui.MultichoiceKVK(
 		t.Context(),
@@ -734,12 +746,11 @@ func TestMultichoiceMapProjections(t *testing.T) {
 		tui.WithDefault("b"),
 		tui.WithInput(strings.NewReader("\x1b[B \r")),
 		tui.WithOutput(&out),
-		tui.WithAnswerTemplate(`ANSWER {{.Count}}{{range .Answer}} {{.Key}}={{index .Value 0}}{{end}}`),
 	)
 	if err != nil || !reflect.DeepEqual(keys, []string{"alpha", "beta"}) {
 		t.Fatalf("%v, %v", keys, err)
 	}
-	if strings.Count(out.String(), "ANSWER 2 alpha=1 beta=1") != 1 {
+	if strings.Count(out.String(), "ANSWER 2 alpha beta") != 1 {
 		t.Fatal(out.String())
 	}
 	out.Reset()
@@ -750,12 +761,11 @@ func TestMultichoiceMapProjections(t *testing.T) {
 		tui.WithDefault("b"),
 		tui.WithInput(strings.NewReader("\x1b[B \r")),
 		tui.WithOutput(&out),
-		tui.WithAnswerTemplate(`ANSWER {{.Count}}{{range .Answer}} {{.Key}}={{index .Value 0}}{{end}}`),
 	)
 	if err != nil || !reflect.DeepEqual(selected, [][]int{{1}, {1}}) {
 		t.Fatalf("%v, %v", selected, err)
 	}
-	if strings.Count(out.String(), "ANSWER 2 alpha=1 beta=1") != 1 {
+	if strings.Count(out.String(), "ANSWER 2 alpha beta") != 1 {
 		t.Fatal(out.String())
 	}
 	type payload struct{ Name string }
@@ -917,18 +927,8 @@ func ExampleMultichoiceKVV() {
 	// Output: [443] <nil>
 }
 
-var checklistPlain = tui.WithOptions(
-	tui.WithLabelTemplate("{{.}}"),
-	tui.WithActiveItemTemplate("{{.}}"),
-	tui.WithInactiveItemTemplate("{{.}}"),
-	tui.WithMoreItemsTemplate(
-		"~ {{.More}} more",
-	),
-	tui.WithAnswerTemplate(`{{.Label}}:{{range .Answer}} {{.}}{{else}} none{{end}}`),
-)
-
 func TestMultichoiceSharesTerminalWithProgressAndLogs(t *testing.T) {
-	term := newTerminal(t, 12)
+	term := newASCIITerminal(t)
 	progress, err := tui.NewMaxProgressBar(t.Context(), "Download", 4)
 	if err != nil {
 		t.Fatal(err)
@@ -936,27 +936,27 @@ func TestMultichoiceSharesTerminalWithProgressAndLogs(t *testing.T) {
 	progress.Add(1)
 	term.waitRows(t, "Download  25%...")
 	res := prompt(func() (string, error) {
-		values, err := tui.Multichoice(t.Context(), "Pick", []string{"a", "b"}, checklistPlain)
+		values, err := tui.Multichoice(t.Context(), "Pick", []string{"a", "b"})
 		return fmt.Sprint(values), err
 	})
-	term.waitRows(t, "Download  25%...", "Pick", "│ ❯ ○ a", "│   ○ b", "│ up/down move...")
+	term.waitRows(t, "Download  25%...", "? Pick", "| > o a", "|   o b", "| up/down move...")
 	if _, err := fmt.Fprintln(tui.Stderr(), "log line"); err != nil {
 		t.Fatal(err)
 	}
-	term.waitRows(t, "log line", "Download  25%...", "Pick", "│ ❯ ○ a", "│   ○ b", "│ up/down move...")
+	term.waitRows(t, "log line", "Download  25%...", "? Pick", "| > o a", "|   o b", "| up/down move...")
 	term.press(t, " ")
 	term.press(t, keyDown)
-	term.waitRows(t, "log line", "Download  25%...", "Pick", "│   ◉ a", "│ ❯ ○ b", "│ up/down move...")
+	term.waitRows(t, "log line", "Download  25%...", "? Pick", "|   x a", "| > o b", "| up/down move...")
 	term.press(t, keyEnter)
 	if got := answer(t, res); got != "[a]" {
 		t.Fatal(got)
 	}
-	term.waitRows(t, "log line", "Pick: a", "Download  25%...")
+	term.waitRows(t, "log line", "+ Pick · a", "Download  25%...")
 	progress.Add(3)
 	if err := progress.Close(); err != nil {
 		t.Fatal(err)
 	}
-	term.waitRows(t, "log line", "Pick: a")
+	term.waitRows(t, "log line", "+ Pick · a")
 	res = prompt(func() (string, error) { return tui.Input(t.Context(), "Next", tui.WithHide()) })
 	term.press(t, "x")
 	term.press(t, keyEnter)
@@ -966,49 +966,49 @@ func TestMultichoiceSharesTerminalWithProgressAndLogs(t *testing.T) {
 }
 
 func TestMultichoiceLazyManagedFilterAndConfirmation(t *testing.T) {
-	term := newTerminal(t, 12)
+	term := newASCIITerminal(t)
 	items := make(chan string)
 	res := prompt(func() (string, error) {
-		values, err := tui.MultichoiceLazy(t.Context(), "Pick", feed(items), checklistPlain, tui.WithDefault("api"))
+		values, err := tui.MultichoiceLazy(t.Context(), "Pick", feed(items), tui.WithDefault("api"))
 		return fmt.Sprint(values), err
 	})
-	term.waitRows(t, "Pick", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| up/down move...")
 	items <- "api"
-	term.waitRows(t, "Pick", "│ ❯ ○ api", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| > o api", "| up/down move...")
 	term.press(t, "z")
-	term.waitRows(t, "Pick", "│ No matches", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| No matches", "| up/down move...")
 	items <- "zzz"
-	term.waitRows(t, "Pick", "│ ❯ ○ zzz", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| > o zzz", "| up/down move...")
 	term.press(t, " ")
 	term.press(t, keyEnter)
-	term.waitRows(t, "Pick", "│ ❯ ◉ zzz", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| > x zzz", "| up/down move...")
 	read := term.blockedRead(t)
 	close(items)
 	read <- keyBackspace
-	term.waitRows(t, "Pick", "│   ◉ api", "│ ❯ ◉ zzz", "│ up/down move...")
+	term.waitRows(t, "? Pick", "|   x api", "| > x zzz", "| up/down move...")
 	term.press(t, keyEnter)
 	if got := answer(t, res); got != "[api zzz]" {
 		t.Fatal(got)
 	}
-	term.waitRows(t, "Pick: api zzz")
+	term.waitRows(t, "+ Pick · api, zzz")
 }
 
 func TestMultichoiceManagedResizePreservesIdentity(t *testing.T) {
-	term := newTerminal(t, 12)
+	term := newASCIITerminal(t)
 	res := prompt(func() (string, error) {
-		values, err := tui.Multichoice(t.Context(), "Pick", []string{"a", "b", "c", "d", "e"}, checklistPlain)
+		values, err := tui.Multichoice(t.Context(), "Pick", []string{"a", "b", "c", "d", "e"})
 		return fmt.Sprint(values), err
 	})
-	term.waitRows(t, "Pick", "│ ❯ ○ a", "│   ○ b", "│   ○ c", "│   ○ d", "│   ○ e", "│ up/down move...")
+	term.waitRows(t, "? Pick", "| > o a", "|   o b", "|   o c", "|   o d", "|   o e", "| up/down move...")
 	term.press(t, keyDown)
 	term.press(t, keyDown)
 	term.press(t, " ")
 	read := term.blockedRead(t)
 	// two rows and the count, with the row below the frame free
 	term.resize(t, 40, 5)
-	term.waitRows(t, "Pick", "│   ○ b", "│ ❯ ◉ c", "│ ~ 2 more")
+	term.waitRows(t, "? Pick", "|   o b", "| > x c", "| . 2 more")
 	term.resize(t, 40, 12)
-	term.waitRows(t, "Pick", "│   ○ a", "│   ○ b", "│ ❯ ◉ c", "│   ○ d", "│   ○ e", "│ up/down move...")
+	term.waitRows(t, "? Pick", "|   o a", "|   o b", "| > x c", "|   o d", "|   o e", "| up/down move...")
 	read <- keyEnter
 	if got := answer(t, res); got != "[c]" {
 		t.Fatal(got)
@@ -1018,7 +1018,7 @@ func TestMultichoiceManagedResizePreservesIdentity(t *testing.T) {
 func TestMultichoiceManagedCancelAndDeadline(t *testing.T) {
 	for _, deadline := range []bool{false, true} {
 		t.Run(strconv.FormatBool(deadline), func(t *testing.T) {
-			term := newTerminal(t, 12)
+			term := newASCIITerminal(t)
 			ctx, cancel := context.WithCancel(t.Context())
 			if deadline {
 				cancel()
@@ -1026,10 +1026,10 @@ func TestMultichoiceManagedCancelAndDeadline(t *testing.T) {
 			}
 			defer cancel()
 			res := prompt(func() (string, error) {
-				values, err := tui.Multichoice(ctx, "Pick", []string{"a"}, checklistPlain)
+				values, err := tui.Multichoice(ctx, "Pick", []string{"a"})
 				return fmt.Sprint(values), err
 			})
-			term.waitRows(t, "Pick", "│ ❯ ○ a", "│ up/down move...")
+			term.waitRows(t, "? Pick", "| > o a", "| up/down move...")
 			read := term.blockedRead(t)
 			if !deadline {
 				cancel()
@@ -1096,6 +1096,7 @@ var _ io.ReadWriter = (*lazyExampleIO)(nil)
 func TestMultichoicePTYKeyboardResizeAndRestore(t *testing.T) {
 	for _, abort := range []bool{false, true} {
 		t.Run(map[bool]string{false: "confirm", true: "cancel"}[abort], func(t *testing.T) {
+			asciiTheme(t)
 			master, tty, err := openPty()
 			if err != nil {
 				t.Skipf("no pseudo-terminal: %v", err)
@@ -1122,18 +1123,18 @@ func TestMultichoicePTYKeyboardResizeAndRestore(t *testing.T) {
 			result := make(chan error, 1)
 			selected := make(chan []string, 1)
 			go func() {
-				got, err := tui.Multichoice(ctx, "Pick", []string{"a", "b", "c", "d", "e"}, checklistPlain)
+				got, err := tui.Multichoice(ctx, "Pick", []string{"a", "b", "c", "d", "e"})
 				selected <- got
 				result <- err
 			}()
-			screen.waitRows(t, "Pick", "│ ❯ ○ a", "│   ○ b", "│   ○ c", "│   ○ d", "│   ○ e", "│ up/down move...")
+			screen.waitRows(t, "? Pick", "| > o a", "|   o b", "|   o c", "|   o d", "|   o e", "| up/down move...")
 			if _, err := master.WriteString("\x1b[B\x1b[B "); err != nil {
 				t.Fatal(err)
 			}
-			screen.waitRows(t, "Pick", "│   ○ a", "│   ○ b", "│ ❯ ◉ c", "│   ○ d", "│   ○ e", "│ up/down move...")
+			screen.waitRows(t, "? Pick", "|   o a", "|   o b", "| > x c", "|   o d", "|   o e", "| up/down move...")
 			// room for two items and the count, with the row below the frame free
 			resizeTTY(t, tty, 40, 5)
-			screen.waitRows(t, "Pick", "│   ○ b", "│ ❯ ◉ c", "│ ~ 2 more")
+			screen.waitRows(t, "? Pick", "|   o b", "| > x c", "| . 2 more")
 			if abort {
 				cancel()
 			} else {

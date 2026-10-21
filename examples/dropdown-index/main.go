@@ -11,14 +11,17 @@ func main() {
 	ctx := context.Background()
 	items := []any{"red", "green", "blue", "cyan", "magenta", "yellow", "black", "white"}
 
+	// the theme owns the label, the count row and the answer line
+	theme := tui.DefaultTheme()
+	theme.Templates.Dropdown.Label = `{{ "🎨" }} {{ .Label | bold | underline }}`
+	theme.Templates.Dropdown.More = ` {{ dim "… and " .More " other colors" | italic }}`
+	theme.Templates.Dropdown.Answer = `{{ success "✔ " }}{{ .Label }} is {{ .Value | bold }}`
+	if err := tui.SetDefaultTheme(theme); err != nil {
+		panic(err)
+	}
+
 	// DropdownIndex returns a position of the selected item instead of the item.
 	idx, err := tui.DropdownIndex(ctx, "Pick a color", items,
-		// WithOptions bundles several options into one
-		tui.WithOptions(
-			tui.WithLabelTemplate(`{{ "🎨" }} {{ . | bold | underline }}`),
-			tui.WithMoreItemsTemplate(` {{ dim "… and " .More " other colors" | italic }}`),
-			tui.WithAnswerTemplate(`{{ green "✔ " .Label " is " }}{{ .Answer | bold }}`),
-		),
 		// WithDefault ranks items by similarity to the hint, and returns
 		// immediately if exactly one item starts with it.
 		tui.WithDefault("gre"),

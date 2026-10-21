@@ -482,11 +482,13 @@ func TestMultichoiceLifecycleFailures(t *testing.T) {
 		{"primary and cleanup", choiceFailWriter{err: sentinel}, "\r", 8, restoreErr, sentinel},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			th := NewTheme()
+			th.Templates.Multichoice.Answer = `ANSWER {{ .Count }}`
+			useTheme(t, th)
 			m := newMultichoice(t.Context())
 			m.Items = []any{"one"}
 			m.in = strings.NewReader(tc.keys)
 			m.out = tc.writer
-			assert.NoError(t, WithAnswerTemplate("ANSWER {{.Count}}")(m))
 			restores := 0
 			m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{

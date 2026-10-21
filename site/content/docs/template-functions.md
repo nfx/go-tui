@@ -19,7 +19,7 @@ This page lists predefined helper functions available in widget templates.
 Example:
 
 ```go
-tui.WithLabelTemplate(`{{ green "Select:" }} {{ . | bold }}`)
+theme.Templates.Dropdown.Label = `{{ green "Select:" }} {{ .Label | bold }}`
 ```
 
 ## Bright foreground colors
@@ -36,7 +36,7 @@ tui.WithLabelTemplate(`{{ green "Select:" }} {{ . | bold }}`)
 Example:
 
 ```go
-tui.WithActiveItemTemplate(`{{ brightCyan "> " (label .) }}`)
+theme.Templates.Dropdown.Active = `{{ brightCyan "> " .Value }}`
 ```
 
 ## Background colors
@@ -53,7 +53,7 @@ tui.WithActiveItemTemplate(`{{ brightCyan "> " (label .) }}`)
 Example:
 
 ```go
-tui.WithActiveItemTemplate(`{{ bgBlue " " }} {{ label . }}`)
+theme.Templates.Dropdown.Active = `{{ bgBlue " " }} {{ .Value }}`
 ```
 
 ## Text styles
@@ -67,7 +67,7 @@ tui.WithActiveItemTemplate(`{{ bgBlue " " }} {{ label . }}`)
 Example:
 
 ```go
-tui.WithAnswerTemplate(`{{ dim "selected:" }} {{ bold (label .Answer) }}`)
+theme.Templates.Dropdown.Answer = `{{ dim "selected:" }} {{ bold .Value }}`
 ```
 
 ## Time formatter
@@ -79,7 +79,7 @@ Renders relative time such as `12sec ago`, `3hr ago`, or `in 2min`.
 Example:
 
 ```go
-tui.WithActiveItemTemplate(`{{ .Name }} {{ dim (ago .UpdatedAt) }}`)
+tui.WithTemplate(`.Name`, `(ago .UpdatedAt)`) // details show on the active row
 ```
 
 ## Choice label helper
@@ -93,20 +93,20 @@ Dropdown and multichoice templates also expose:
 Example:
 
 ```go
-tui.WithActiveItemTemplate(`{{ green "> " (label .) }}`)
+theme.Templates.Dropdown.Active = `{{ green "> " .Value }}`
 ```
 
 ## Input feedback templates
 
-`Input` and `Password` accept `WithFeedbackTemplate`. Its data contains only
+The `Feedback` slot of `Input` and `Password` contains only
 `.Message`, the sanitized validation error; it does not include the typed answer.
 Color and style helpers work here too:
 
 ```go
-tui.WithFeedbackTemplate(`{{ yellow (bold "Check: ") .Message }}`)
+theme.Templates.Input.Feedback = `{{ yellow (bold "Check: ") .Message }}`
 ```
 
-Feedback occupies one row. See [Input and Password](input.md#withfeedbacktemplate)
+Feedback occupies one row. See [Input and Password](input.md#feedback-row)
 for the default template and clipping behavior.
 
 ## Adding custom functions

@@ -146,5 +146,5 @@ the name of a built-in helper.
 - Each widget keeps the theme it started with: a running spinner group, a
   FilePicker moving between directories or a `TableIter` never mixes two
   themes.
-- Per-call options such as `WithLabelTemplate` or `WithTemplate`
-  win over the theme for that call.
+- Per-call `WithTemplate` picks the projection; it does not change how a
+  slot draws it.

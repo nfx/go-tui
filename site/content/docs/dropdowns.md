@@ -180,57 +180,36 @@ city, err := tui.Dropdown(ctx, "City", data,
 )
 ```
 
-Use this as the preferred template override.
+Use this to choose the fields an item shows.
 
-## WithLabelTemplate
+## Presentation
 
-Overrides prompt label rendering.
+A dropdown draws through the theme. Set the slots once with
+[SetDefaultTheme](themes.md); the same slots serve `Confirm` and `FilePicker`
+unless a family slot overrides them.
 
-```go
-city, err := tui.Dropdown(ctx, "City", cities,
-	tui.WithLabelTemplate(`{{ cyan "Select:" }} {{ . | bold }}`),
-)
-```
-
-## WithActiveItemTemplate
-
-Overrides active row template.
-
-```go
-city, err := tui.Dropdown(ctx, "City", cities,
-	tui.WithActiveItemTemplate(`{{ green "> " (label .) }}`),
-)
-```
-
-## WithInactiveItemTemplate
-
-Overrides inactive row template.
+| Slot | Payload | Draws |
+| --- | --- | --- |
+| `Templates.Dropdown.Label` | `.Label` | the prompt label |
+| `Templates.Dropdown.Active` | `.Value`, `.Details`, `.Index` | the focused row |
+| `Templates.Dropdown.Inactive` | `.Value`, `.Index` | the other rows |
+| `Templates.Dropdown.More` | `.More`, `.Total` | the "more items" row |
+| `Templates.Dropdown.Answer` | `.Label`, `.Value` | the confirmation line |
 
 ```go
-city, err := tui.Dropdown(ctx, "City", cities,
-	tui.WithInactiveItemTemplate(`{{ dim "  " (label .) }}`),
-)
+theme := tui.DefaultTheme()
+theme.Templates.Dropdown.Label = `{{ accent "Select:" }} {{ bold .Label }}`
+theme.Templates.Dropdown.Active = `{{ success .Value }}`
+theme.Templates.Dropdown.More = `{{ dim .More " hidden, " .Total " total" }}`
+theme.Templates.Dropdown.Answer = `{{ success "selected:" }} {{ .Value }}`
+if err := tui.SetDefaultTheme(theme); err != nil {
+	return err
+}
+city, err := tui.Dropdown(ctx, "City", cities)
 ```
 
-## WithMoreItemsTemplate
-
-Overrides the "more items" footer row.
-
-```go
-city, err := tui.Dropdown(ctx, "City", cities,
-	tui.WithMoreItemsTemplate(`{{ dim .More " hidden, " .Total " total" }}`),
-)
-```
-
-## WithAnswerTemplate
-
-Overrides rendered confirmation line.
-
-```go
-city, err := tui.Dropdown(ctx, "City", cities,
-	tui.WithAnswerTemplate(`{{ green "selected:" }} {{ label .Answer }}`),
-)
-```
+`.Value` is the item as projected by `WithTemplate`, so a struct item needs a
+projection to show its fields.
 
 ## WithInput
 
