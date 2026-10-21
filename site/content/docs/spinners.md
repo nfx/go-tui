@@ -85,28 +85,6 @@ sp, err := group.Add(context.Background(),
 )
 ```
 
-## WithFrames
-
-Overrides spinner animation frames for a spinner instance.
-
-```go
-sp, err := group.Add(context.Background(),
-	tui.WithFrames([]string{"-", "\\", "|", "/"}),
-)
-```
-
-Detailed behavior:
-
-- Frames are cycled in order on each spinner tick.
-- Ticks are driven by the spinner group ticker, every `Theme.Spinner.Interval`
-  (100ms by default).
-- After the last frame, animation loops back to the first frame.
-- New spinners use `Theme.Spinner.Frames`; see [Themes](themes.md).
-- You can switch one spinner to `DefaultSpinnerStyle` or any custom frame slice.
-- `Add` returns an error unless the frames are non-empty single lines of
-  text, optionally styled with color sequences, that all have the same
-  positive display width. Equal widths keep the animation from jittering.
-
 ## WithInput
 
 Overrides group input source.
@@ -135,12 +113,28 @@ common := tui.WithOptions(
 group, err := tui.NewSpinners(common)
 ```
 
-## Styles
+## Frames
 
-- `SpinnerStyleDocs` has the same frames as the default theme.
-- `DefaultSpinnerStyle` is a denser unicode animation set.
-- Changing these variables does not change the default; set
-  `Theme.Spinner.Frames` instead.
+The frames are `Theme.Symbols.Spinner`. Each frame is a symbol: a single
+display column, like every other symbol. The Unicode preset animates a block
+around the four quadrants of the cell (`▘▀▝▐▗▄▖▌`) and `ASCIISymbols()` uses
+`|/-\`.
+
+```go
+theme := tui.DefaultTheme()
+theme.Symbols.Spinner = []string{"-", "\\", "|", "/"}
+err := tui.SetDefaultTheme(theme)
+```
+
+- Frames are cycled in order on each tick, every `Theme.Spinner.Interval`
+  (100ms by default). After the last frame, the animation loops back to the
+  first.
+- An empty slice takes the preset. A frame that is empty, a control
+  character, or not exactly one column wide makes `SetDefaultTheme` fail with
+  `theme.Symbols.Spinner[i]`.
+- Color the frames with the spinner templates, see [Themes](themes.md), not
+  with escape codes inside the frames.
+- A spinner group keeps the frames it started with.
 
 ## Failure handling
 

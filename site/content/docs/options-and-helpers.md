@@ -12,10 +12,10 @@ misplaced option fails instead of silently doing nothing.
 | `WithInput`, `WithOutput` | `Input`, `Password`, dropdowns, multichoice, `Confirm`, `FilePicker`, `NewSpinners`, progress bars |
 | `WithDefault`, `WithHide`, `WithLabelTemplate`, `WithAnswerTemplate` | `Input`, `Password`, `Number`, dropdowns, multichoice, `Confirm`, `FilePicker` |
 | `WithNonEmpty`, `WithRegex`, `WithValidation`, `WithFeedbackTemplate` | `Input`, `Password` |
-| other `With*Template`, `WithTemplate`, `WithFieldTemplate` | dropdowns, multichoice, `Confirm`, `FilePicker` |
+| other `With*Template`, `WithTemplate` | dropdowns, multichoice, `Confirm`, `FilePicker` |
 | `WithOneReturn` | dropdowns, `Confirm`, `FilePicker` |
 | `WithStartDir`, `WithExtensions`, `WithIgnoreUp`, `WithIgnoreDirs`, `WithShowHidden` | `FilePicker` |
-| `WithPrefixf`, `WithKeep`, `WithFrames` | `Spinners.Add` |
+| `WithPrefixf`, `WithKeep` | `Spinners.Add` |
 | `WithFormatRate`, `WithWorkers` | progress bars |
 | `WithColumn*`, `WithIncludeColumns`, `WithSkipColumns`, `WithMaxWidth`, `WithMultilineCells`, `WithFloat64*` | `Table`, `TableAuto`, `TableIter`, `Facts` |
 

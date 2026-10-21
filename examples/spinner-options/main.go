@@ -23,10 +23,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	// WithFrames replaces the animation, see also tui.SpinnerStyleDocs.
-	custom, err := spinners.Add(ctx,
-		tui.WithPrefixf("deploy"),
-		tui.WithFrames(tui.SpinnerStyleDocs))
+	custom, err := spinners.Add(ctx, tui.WithPrefixf("deploy"))
 	if err != nil {
 		panic(err)
 	}

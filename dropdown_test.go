@@ -702,7 +702,7 @@ func TestDropdownOptionHelpers(t *testing.T) {
 	for _, opt := range []opt{
 		WithOneReturn(),
 		WithHide(),
-		WithFieldTemplate("Label"),
+		WithTemplate(".Label"),
 		WithTemplate(".Label"),
 		WithLabelTemplate("{{.}} "),
 		WithActiveItemTemplate("{{.}}>"),
@@ -2598,9 +2598,9 @@ func TestThemedDropdownProjectionMatchesAndAnswers(t *testing.T) {
 	assert.True(t, strings.HasSuffix(s, "+ Fruit · banana\n"))
 }
 
-func TestThemedDropdownFieldTemplateProjects(t *testing.T) {
+func TestThemedDropdownMultiFieldProjects(t *testing.T) {
 	items := []themedFruit{{"apple", "red"}, {"banana", "yellow"}}
-	d, tt := boundDropdown(t, asciiTheme(false), 40, 10, []any{items[0], items[1]}, WithFieldTemplate("Name", "Color"))
+	d, tt := boundDropdown(t, asciiTheme(false), 40, 10, []any{items[0], items[1]}, WithTemplate(`.Name ", " .Color`))
 	assert.Equal(t,
 		"\r? Fruit\n\r| > apple, red\n\r|   banana, yellow\n\r| up/down move · type filter\n\r",
 		frame(t, d, tt))

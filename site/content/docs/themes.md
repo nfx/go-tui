@@ -83,7 +83,7 @@ These variables are read once, when the program starts.
 
 `theme.Symbols` holds every glyph: the prompt, focus and guide marks,
 checkboxes, outcome marks, the ellipsis, the password mask and the progress
-bar cells. Each must be one column wide. Use `tui.ASCIISymbols()` for fonts
+bar cells and the spinner frames (`Spinner`). Each must be one column wide. Use `tui.ASCIISymbols()` for fonts
 without the Unicode glyphs:
 
 ```go
@@ -133,7 +133,7 @@ the name of a built-in helper.
 
 | Field | Controls |
 | --- | --- |
-| `theme.Spinner.Frames`, `theme.Spinner.Interval` | the animation of new spinner groups |
+| `theme.Symbols.Spinner`, `theme.Spinner.Interval` | the frames and step of new spinner groups |
 | `theme.Progress.MinBarWidth`, `MaxBarWidth` | how the bar shares its row with the metrics |
 | `theme.Table.ColumnGap`, `MinColumnWidth` | table and facts layout |
 | `theme.JSON.Indent`, `theme.JSON.Compact` | `PrettyJSON` layout |
@@ -146,5 +146,5 @@ the name of a built-in helper.
 - Each widget keeps the theme it started with: a running spinner group, a
   FilePicker moving between directories or a `TableIter` never mixes two
   themes.
-- Per-call options such as `WithLabelTemplate`, `WithTemplate` or `WithFrames`
+- Per-call options such as `WithLabelTemplate` or `WithTemplate`
   win over the theme for that call.

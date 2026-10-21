@@ -101,7 +101,7 @@ cancellation. Bracketed-paste terminal mode is enabled only during this prompt.
 ## Templates
 
 Multichoice accepts the same `WithTemplate`, active/inactive item, label, answer,
-and more-items options as dropdown. Deprecated `WithFieldTemplate` also works.
+and more-items options as dropdown.
 `WithOneReturn` is unsupported; direct use returns `ErrWrongWidget`. `WithOptions`
 keeps its usual skip semantics for unsupported members.
 

@@ -147,7 +147,6 @@ func (c *config) setWriter(w io.Writer) {
 // Private capabilities keep existing option constructors shared by choice widgets.
 type withChoiceContent interface {
 	setContentTemplate(main string, details ...string)
-	setFieldTemplate(fields ...string)
 }
 type withActiveItemTemplate interface{ setActiveItemTemplate(tmpl string) }
 type withInactiveItemTemplate interface{ setInactiveItemTemplate(tmpl string) }
