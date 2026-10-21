@@ -120,6 +120,9 @@ func acquireTermIO(
 			onResize: resizeNotify(),
 		}, restore), nil
 	}
+	if defaultIO.env.ci {
+		return nil, fmt.Errorf("stderr: CI: %w", ErrNoTTY)
+	}
 	fd := int(stderr.Fd())
 	width, height, err := termGetSize(fd)
 	if err != nil {
@@ -1031,12 +1034,16 @@ var outputIsTerminal = hostsTerminal
 
 // hostsTerminal accepts a managed terminal or a descriptor of a real one. A
 // writer without terminal capabilities, such as [bytes.Buffer], a pipe or a
-// redirected file, is not a terminal, however the input is wrapped.
+// redirected file, is not a terminal, however the input is wrapped. Neither is
+// a real one in CI, where nobody answers prompts.
 func hostsTerminal(out io.Writer) bool {
 	switch w := out.(type) {
 	case *chanIO, *viewport, *Tui:
 		return true
 	case descriptor:
+		if defaultIO.env.ci {
+			return false
+		}
 		_, _, err := termGetSize(int(w.Fd()))
 		return err == nil
 	}

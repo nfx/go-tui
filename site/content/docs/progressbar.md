@@ -67,13 +67,20 @@ _, err = io.Copy(dst, wrapped)
 
 Requires size discovery through `Stat().Size()` or `Size() int64`.
 
-Without a TTY, reads continue normally and progress is logged through
-`slog.Default()` at INFO. Records include `label`, `percent`, `read` (bytes), and
-`size` (bytes). A record is emitted when a read reaches a new 10% milestone.
-Large reads log only the latest milestone reached; a single read of the whole
-file logs 100% once. Repeated reads within the same milestone produce no logs.
-An empty file logs 100% on EOF; an early EOF does not report unread bytes as
-complete. Configure the default logger to choose the destination and format.
+Without a terminal, reads continue normally and progress is logged as
+`file progress` records with `read` and `size` in bytes, see
+[Without a terminal](#without-a-terminal). An empty file logs 100% on EOF; an
+early EOF does not report unread bytes as complete.
+
+## Without a terminal
+
+When the output is not a terminal, or `CI` is set, a bar draws nothing and
+logs its progress through `slog.Default()` at INFO instead. A record is
+emitted when the bar reaches a new 10% milestone and includes `label`,
+`percent`, `done` and `total`. Large steps log only the latest milestone
+reached, so a single step to the end logs 100% once. An empty bar logs 100%
+when it closes; a bar closed early does not report the rest as done. Configure
+the default logger to choose the destination and format.
 
 ## WithFormatRate
 
@@ -198,5 +205,5 @@ theme.Templates.Progress.Frame = `{{ .Label }} [{{ .Bar }}] {{ .Metrics }}`
 - Progress bars can share the default output with `Input` and `Password`, including their validation feedback. They do not change terminal input mode, so closing a bar leaves an active prompt's editing functional.
 
 For a runnable example combining background progress and validated prompts, run
-`go run ./examples/input-validation-progress` from the repository root. See
+`go -C examples run ./input-validation-progress` from the repository root. See
 [Input and Password](input.md#withvalidation) for validation options.
