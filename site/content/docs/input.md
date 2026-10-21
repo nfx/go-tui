@@ -100,9 +100,10 @@ context to network requests or other blocking work so cancellation can finish
 promptly. Validation errors keep the prompt open; prompt cancellation returns
 the context error. A nil validator returns `ErrInvalidOption`.
 
-Password validators receive the unmasked value. Keep their error messages
-independent of the secret: feedback is displayed even though the password is
-masked and its answer line is hidden.
+Password validators receive the unmasked value, but the user never sees their
+error messages: a rejected password shows `Invalid value` instead, so a message
+cannot repeat the secret. See [WithFeedbackTemplate](#withfeedbacktemplate).
+Messages of `WithNonEmpty` and `WithRegex` still show.
 
 ## WithFeedbackTemplate
 
