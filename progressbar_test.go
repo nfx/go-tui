@@ -1847,7 +1847,7 @@ func TestByteSize(t *testing.T) {
 		{1.5 * (1 << 30), "1.5 GiB"},
 		{1 << 70, "1024.0 EiB"},
 	} {
-		assert.Equal(t, tc.want, byteSize(tc.n))
+		assert.Equal(t, tc.want, new(Progressbar).byteSize(tc.n))
 	}
 }
 

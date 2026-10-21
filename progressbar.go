@@ -668,9 +668,9 @@ func (p *Progressbar) view(rate float64, rateText string, n int) progressView {
 		}
 	}
 	if p.bytes {
-		amount := byteSize(float64(p.currentNum))
+		amount := p.byteSize(float64(p.currentNum))
 		if p.maxNum > 0 {
-			amount += " / " + byteSize(float64(p.maxNum))
+			amount += " / " + p.byteSize(float64(p.maxNum))
 		}
 		add(&v.Amount, amount, amount)
 	}
@@ -700,7 +700,7 @@ func (p *Progressbar) row(width int, now time.Time) (text, error) {
 	rate := p.rollingRate()
 	rateText := ""
 	if p.showRate && p.bytes && p.fmtRate == nil {
-		rateText = byteSize(rate)
+		rateText = p.byteSize(rate)
 	} else if p.showRate {
 		rateText = text(p.formatRate(rate)).oneLine()
 	}
@@ -731,7 +731,7 @@ var byteUnits = [...]string{"KiB", "MiB", "GiB", "TiB", "PiB", "EiB"}
 
 // byteSize formats n bytes in binary units: whole bytes below 1 KiB, then
 // one decimal, as "512 B" or "1.5 MiB".
-func byteSize(n float64) string {
+func (p *Progressbar) byteSize(n float64) string {
 	if math.Round(n) < 1024 {
 		return fmt.Sprintf("%.0f B", n)
 	}

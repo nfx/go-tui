@@ -193,14 +193,14 @@ unless a family slot overrides them.
 | `Templates.Dropdown.Label` | `.Label` | the prompt label |
 | `Templates.Dropdown.Active` | `.Value`, `.Details`, `.Index` | the focused row |
 | `Templates.Dropdown.Inactive` | `.Value`, `.Index` | the other rows |
-| `Templates.Dropdown.More` | `.More`, `.Total` | the "more items" row |
+| `Templates.Dropdown.Hint` | a list with `.Left`, `.Right` | the key hints, led by the count of hidden items |
 | `Templates.Dropdown.Answer` | `.Label`, `.Value` | the confirmation line |
 
 ```go
 theme := tui.DefaultTheme()
 theme.Templates.Dropdown.Label = `{{ accent "Select:" }} {{ bold .Label }}`
 theme.Templates.Dropdown.Active = `{{ success .Value }}`
-theme.Templates.Dropdown.More = `{{ dim .More " hidden, " .Total " total" }}`
+theme.Templates.Dropdown.Hint = `{{ range . }}{{ .Left }}={{ .Right }} {{ end }}`
 theme.Templates.Dropdown.Answer = `{{ success "selected:" }} {{ .Value }}`
 if err := tui.SetDefaultTheme(theme); err != nil {
 	return err

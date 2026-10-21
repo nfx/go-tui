@@ -1620,7 +1620,7 @@ func mframe(t *testing.T, m *multichoice, tt *termIO) string {
 	return buf.String()
 }
 
-const multichoiceHelp = "| up/down move · space toggle · type filter\n\r"
+const multichoiceHelp = "| ^v move · space toggle · type filter\n\r"
 
 func TestThemedMultichoiceGuidedFrameStatesAndAnswer(t *testing.T) {
 	o, out, restored := themedMultichoiceOpt(t, asciiTheme(false), " ", "\x1b[B", " ", "\r")
@@ -1653,7 +1653,7 @@ func TestThemedMultichoiceInlineHasNoGuide(t *testing.T) {
 	m, tt := boundMultichoice(t, asciiTheme(true), 10, []any{"apple", "banana"})
 	m.handleKey(' ')
 	assert.Equal(t,
-		"\r? Fruit\n\r> x apple\n\r  o banana\n\rup/down move · space toggle · type filter\n\r",
+		"\r? Fruit\n\r> x apple\n\r  o banana\n\r^v move · space toggle · type filter\n\r",
 		mframe(t, m, tt))
 }
 
@@ -1713,7 +1713,7 @@ func TestThemedMultichoiceMoreRowAndShortTerminals(t *testing.T) {
 		{10, "\r? Fruit\n\r| > o a\n\r|   o b\n\r|   o c\n\r|   o d\n\r|   o e\n\r" + multichoiceHelp},
 		// three of five rows fit with the count of the rest; the cursor row
 		// below the frame leaves no row for the hint, which goes first
-		{6, "\r? Fruit\n\r| > o a\n\r|   o b\n\r|   o c\n\r| . 2 more\n\r"},
+		{6, "\r? Fruit\n\r| > o a\n\r|   o b\n\r|   o c\n\r| 2 more · ^v move · space toggle · type filter\n\r"},
 		// then the count, then the label
 		{4, "\r? Fruit\n\r| > o a\n\r|   o b\n\r"},
 		{3, "\r? Fruit\n\r| > o a\n\r"},
@@ -1774,7 +1774,6 @@ func TestThemedMultichoiceSlotPrecedence(t *testing.T) {
 	th.Templates.Multichoice.Active = `[{{ .Value }}]`
 	th.Templates.Dropdown.Inactive = `dropdown only`
 	th.Templates.Multichoice.Row = `{{ if .Selected }}+{{ else }}.{{ end }}{{ .Value }}#{{ .Index }}`
-	th.Templates.Choice.More = Hidden
 	th.Templates.Prompt.Hint = Hidden
 	th.Templates.Multichoice.Label = `{{ .Label }}:`
 	m, tt := boundMultichoice(t, th, 4, []any{"a", "b", "c", "d"})

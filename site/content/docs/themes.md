@@ -33,7 +33,7 @@ value, the list and the feedback below it start with a guide glyph.
 ◆ Color
 │ ❯ blue
 │   green
-│ up/down move · type filter
+│ ↑↓ move · type filter
 ```
 
 Set `theme.Inline = true` to keep the label on the row of the value or the
@@ -82,7 +82,7 @@ These variables are read once, when the program starts.
 ## Symbols
 
 `theme.Symbols` holds every glyph: the prompt, focus and guide marks,
-checkboxes, outcome marks, the ellipsis, the password mask and the progress
+checkboxes, outcome marks, the ellipsis, the password mask, the arrow keys of hints (`Up`, `Down`), the progress
 bar cells and the spinner frames (`Spinner`). Each must be one column wide. Use `tui.ASCIISymbols()` for fonts
 without the Unicode glyphs:
 
@@ -110,8 +110,17 @@ theme.Templates.Multichoice.Row = `{{ if .Active }}→{{ else }} {{ end }} ` +
 	`[{{ if .Selected }}x{{ else }} {{ end }}] {{ .Value }}`
 ```
 
-Slot templates can use the role helpers `text`, `muted`, `accent`, `success`
-and `error`, `symbol "Focus"` and the other symbol names, `fg` and `bg` with a
+The key hint receives a list of hints, each with `.Left` and `.Right`: a key
+and what it does, such as `↑↓` and `move`. A choice list with items below
+the window leads with their count, as in `3 more · ↑↓ move · type filter`.
+A hidden hint hides the count too.
+
+```go
+theme.Templates.Prompt.Hint = `{{ range . }}[{{ .Left }}] {{ .Right }} {{ end }}`
+```
+
+Slot templates can use the role helpers `text`, `muted`, `guide` (the
+faintest, as for the guide symbol), `accent`, `success` and `error`, `symbol "Focus"` and the other symbol names, `fg` and `bg` with a
 hex color, and the helpers listed in [Template Functions](template-functions.md).
 Every slot renders on one row; line breaks or cursor movement in its output
 are an error.

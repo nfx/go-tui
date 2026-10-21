@@ -1591,8 +1591,8 @@ func TestThemedInputColorsFollowDestination(t *testing.T) {
 	accent := string(i.look.roles.accent)
 	assert.True(t, strings.HasPrefix(accent, "\x1b[38;2;"))
 	assert.Contains(t, out.String(), "\r"+accent+"?\x1b[39m \x1b[1mLabel\x1b[0m\x1b[K\n")
-	// the background is unknown, so the guide and the value keep the default
-	assert.Contains(t, out.String(), "\n\r| a\x1b[K")
+	// the background is unknown, so the value keeps the default and the guide is faint
+	assert.Contains(t, out.String(), "\n\r\x1b[2m|\x1b[22m a\x1b[K")
 
 	withEnv(t)
 	i, out, _ = themedInput(t, asciiTheme(false), 20, 5, "a", "\r")

@@ -452,7 +452,9 @@ const (
 
 const (
 	fgDefault = "\x1b[39m"
-	bgDefault = "\x1b[49m"
+	// intensityDefault ends bold and faint.
+	intensityDefault = "\x1b[22m"
+	bgDefault        = "\x1b[49m"
 )
 
 // attrs reports whether text attributes are accepted.
@@ -914,6 +916,9 @@ type Symbols struct {
 	Cancel    string
 	Ellipsis  string
 	Mask      string
+	// Up and Down name the arrow keys in key hints.
+	Up   string
+	Down string
 	// BarFill draws the done cells of a progress bar, BarHead the partly
 	// done cell after them, and BarEmpty the rest of its track.
 	BarFill  string
@@ -938,6 +943,8 @@ var unicodeSymbols = Symbols{
 	Cancel:    "■",
 	Ellipsis:  "…",
 	Mask:      "*",
+	Up:        "↑",
+	Down:      "↓",
 	BarFill:   "█",
 	BarHead:   "█",
 	BarEmpty:  "░",
@@ -975,6 +982,10 @@ func (s Symbols) named(name string) (string, error) {
 		return s.Ellipsis, nil
 	case "Mask":
 		return s.Mask, nil
+	case "Up":
+		return s.Up, nil
+	case "Down":
+		return s.Down, nil
 	case "BarFill":
 		return s.BarFill, nil
 	case "BarHead":
@@ -1003,6 +1014,8 @@ func (s Symbols) normalize() (Symbols, error) {
 		{"Cancel", &s.Cancel, &def.Cancel},
 		{"Ellipsis", &s.Ellipsis, &def.Ellipsis},
 		{"Mask", &s.Mask, &def.Mask},
+		{"Up", &s.Up, &def.Up},
+		{"Down", &s.Down, &def.Down},
 		{"BarFill", &s.BarFill, &def.BarFill},
 		{"BarHead", &s.BarHead, &def.BarHead},
 		{"BarEmpty", &s.BarEmpty, &def.BarEmpty},
@@ -1045,6 +1058,9 @@ func (Symbols) singleColumn(s string) error {
 	return nil
 }
 
+// arrows names the up and down arrow keys in key hints.
+func (s Symbols) arrows() text { return text(s.Up + s.Down) }
+
 // ASCIISymbols is the symbol set for terminals whose fonts lack the Unicode
 // glyphs.
 func ASCIISymbols() Symbols {
@@ -1060,6 +1076,8 @@ func ASCIISymbols() Symbols {
 		Cancel:    "-",
 		Ellipsis:  ".",
 		Mask:      "*",
+		Up:        "^",
+		Down:      "v",
 		BarFill:   "=",
 		BarHead:   ">",
 		BarEmpty:  "-",
@@ -1124,7 +1142,8 @@ func (c *compiledTheme) geometry(width, height int) geometry {
 // terminal default on an assumed background, where it could be nearly
 // invisible, unless the theme forces the light variant. A role that no
 // displayed shade keeps readable also keeps the terminal default, and the
-// symbols of the templates still carry its meaning.
+// symbols of the templates still carry its meaning. A guide without a color
+// is faint instead, so it stays quieter than the muted role.
 func (c *compiledTheme) roles(p colorProfile, pal resolvedPalette) roleStyles {
 	if p < profileANSI16 {
 		return roleStyles{}
@@ -1137,10 +1156,14 @@ func (c *compiledTheme) roles(p colorProfile, pal resolvedPalette) roleStyles {
 		}
 		return p.fg(shown)
 	}
+	guide := style(v.guide, pal.Guide, contrastGuide, true)
+	if guide == nil {
+		guide = text(dim)
+	}
 	return roleStyles{
 		foreground: style(v.foreground, pal.Foreground, contrastText, true),
 		muted:      style(v.muted, pal.Muted, contrastText, true),
-		guide:      style(v.guide, pal.Guide, contrastGuide, true),
+		guide:      guide,
 		accent:     style(v.accent, pal.Accent, contrastText, false),
 		success:    style(v.success, pal.Success, contrastText, false),
 		failure:    style(v.err, pal.Error, contrastText, false),
@@ -1242,7 +1265,7 @@ func (binding) style(role, content text) text {
 	if len(content) == 0 {
 		return content
 	}
-	return destination{}.newSpan(fgDefault, role).wrap(content)
+	return destination{}.roleSpan(role).wrap(content)
 }
 
 // diverging is the diverging scale of [compiledTheme.diverging] for the destination.
@@ -1331,8 +1354,8 @@ var builtinTemplates = Templates{
 	Prompt: PromptTemplates{
 		Label:  `{{ accent (symbol "Prompt") }} {{ bold (text .Label) }}`,
 		Answer: `{{ success (symbol "Success") }} {{ text .Label }} {{ muted "·" }} {{ text .Value }}`,
-		Hint: `{{ range $i, $b := .Bindings }}{{ if $i }}{{ muted " · " }}{{ end }}` +
-			`{{ text $b.Key }} {{ muted $b.Action }}{{ end }}`,
+		Hint: `{{ range $i, $h := . }}{{ if $i }}{{ guide " · " }}{{ end }}` +
+			`{{ accent $h.Left }} {{ guide $h.Right }}{{ end }}`,
 		Feedback: `{{ error (symbol "Error") }} {{ error .Message }}`,
 	},
 	Choice: ChoiceTemplates{
@@ -1340,7 +1363,6 @@ var builtinTemplates = Templates{
 		Details:  Hidden,
 		Active:   `{{ bold (accent .Value) }}{{ with .Details }} {{ muted . }}{{ end }}`,
 		Inactive: `{{ text .Value }}`,
-		More:     `{{ muted (printf "%s %d more" (symbol "Ellipsis") .More) }}`,
 		Empty:    `{{ muted "No matches" }}`,
 	},
 	Multichoice: MultichoiceTemplates{
@@ -1455,22 +1477,20 @@ type ChoiceTemplates struct {
 	Details  Template // active-only details
 	Active   Template
 	Inactive Template
-	More     Template
 	Empty    Template
 }
 
 // choiceTemplates are the compiled [ChoiceTemplates].
-type choiceTemplates struct{ Value, Details, Active, Inactive, More, Empty *compiledSlot }
+type choiceTemplates struct{ Value, Details, Active, Inactive, Empty *compiledSlot }
 
 // choice compiles inherited choice slots, rejecting Hidden for Value, Active, and Inactive.
 func (t *Templates) choice(in templated[ChoiceTemplates, choiceTemplates]) (out choiceTemplates, _ error) {
-	var errs [6]error
+	var errs [5]error
 	out.Value, errs[0] = t.slot(in.nest("Value", in.Src.Value, in.Parent.Value), false)
 	out.Details, errs[1] = t.slot(in.nest("Details", in.Src.Details, in.Parent.Details), true)
 	out.Active, errs[2] = t.slot(in.nest("Active", in.Src.Active, in.Parent.Active), false)
 	out.Inactive, errs[3] = t.slot(in.nest("Inactive", in.Src.Inactive, in.Parent.Inactive), false)
-	out.More, errs[4] = t.slot(in.nest("More", in.Src.More, in.Parent.More), true)
-	out.Empty, errs[5] = t.slot(in.nest("Empty", in.Src.Empty, in.Parent.Empty), true)
+	out.Empty, errs[4] = t.slot(in.nest("Empty", in.Src.Empty, in.Parent.Empty), true)
 	return out, errors.Join(errs[:]...)
 }
 
@@ -1917,6 +1937,16 @@ func (d destination) newSpan(closer string, seqs ...text) span {
 	return s
 }
 
+// roleSpan wraps text in a role style: a color, or the faint fallback of
+// the guide, which needs its own reset.
+func (d destination) roleSpan(role text) span {
+	s := d.newSpan(fgDefault, role)
+	if s.channels&sgrIntensity != 0 {
+		s.closer = intensityDefault
+	}
+	return s
+}
+
 // legacy returns the helpers of per-call templates: named styles and ago.
 func (d destination) legacy() template.FuncMap {
 	var namedStyles = map[string]string{
@@ -1964,11 +1994,12 @@ func (d destination) funcs() template.FuncMap {
 	for name, seq := range map[string]text{
 		"text":    d.roles.foreground,
 		"muted":   d.roles.muted,
+		"guide":   d.roles.guide,
 		"accent":  d.roles.accent,
 		"success": d.roles.success,
 		"error":   d.roles.failure,
 	} {
-		funcs[name] = d.newSpan(fgDefault, seq).helper()
+		funcs[name] = d.roleSpan(seq).helper()
 	}
 	funcs["fg"] = d.color(false)
 	funcs["bg"] = d.color(true)

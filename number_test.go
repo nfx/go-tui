@@ -447,10 +447,10 @@ func TestThemedNumberGuidedFrameHintAndAnswer(t *testing.T) {
 	assert.True(t, *restored)
 	assert.Equal(t, ""+
 		// the hint is a guided row below the value; the caret stays on the value
-		"\r? Count\x1b[K\n\r| \x1b[K\n\r| up/down adjust\x1b[K\x1b[1A\x1b[3G"+
-		"\x1b[1A\r? Count\x1b[K\n\r| 4\x1b[K\n\r| up/down adjust\x1b[K\x1b[1A\x1b[4G"+
-		"\x1b[1A\r? Count\x1b[K\n\r| 41\x1b[K\n\r| up/down adjust\x1b[K\x1b[1A\x1b[5G"+
-		"\x1b[1A\r? Count\x1b[K\n\r| 42\x1b[K\n\r| up/down adjust\x1b[K\x1b[1A\x1b[5G"+
+		"\r? Count\x1b[K\n\r| \x1b[K\n\r| ^v adjust\x1b[K\x1b[1A\x1b[3G"+
+		"\x1b[1A\r? Count\x1b[K\n\r| 4\x1b[K\n\r| ^v adjust\x1b[K\x1b[1A\x1b[4G"+
+		"\x1b[1A\r? Count\x1b[K\n\r| 41\x1b[K\n\r| ^v adjust\x1b[K\x1b[1A\x1b[5G"+
+		"\x1b[1A\r? Count\x1b[K\n\r| 42\x1b[K\n\r| ^v adjust\x1b[K\x1b[1A\x1b[5G"+
 		// from the caret row below the frame, then up over all three rows
 		"\n\n\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"+
 		"+ Count · 42\n", out.String())
@@ -460,7 +460,7 @@ func TestThemedNumberInlineHintHasNoGuide(t *testing.T) {
 	n, out, _ := themedNumber[int](t, asciiTheme(true), 30, 5, "7", "\r")
 	_, err := n.read(t.Context())
 	assert.NoError(t, err)
-	assert.Contains(t, out.String(), "\r? Count 7\x1b[K\n\rup/down adjust\x1b[K\x1b[1A\x1b[10G")
+	assert.Contains(t, out.String(), "\r? Count 7\x1b[K\n\r^v adjust\x1b[K\x1b[1A\x1b[10G")
 }
 
 func TestThemedNumberHintBelowRejection(t *testing.T) {
@@ -470,9 +470,9 @@ func TestThemedNumberHintBelowRejection(t *testing.T) {
 	assert.Equal(t, 5, got)
 	// the Number feedback slot sits right below the value, the hint after it
 	assert.Contains(t, out.String(), ""+
-		"\n\r| 1\x1b[K\n\r| ! value must be between 2 and 10\x1b[K\n\r| up/down adjust\x1b[K\x1b[2A\x1b[4G")
+		"\n\r| 1\x1b[K\n\r| ! value must be between 2 and 10\x1b[K\n\r| ^v adjust\x1b[K\x1b[2A\x1b[4G")
 	// editing removes the rejection and erases the stale fourth row
-	assert.Contains(t, out.String(), "\n\r| \x1b[K\n\r| up/down adjust\x1b[K\n\r\x1b[K\x1b[2A\x1b[3G")
+	assert.Contains(t, out.String(), "\n\r| \x1b[K\n\r| ^v adjust\x1b[K\n\r\x1b[K\x1b[2A\x1b[3G")
 }
 
 func TestThemedNumberShortTerminalsDropHintFirst(t *testing.T) {
@@ -485,7 +485,7 @@ func TestThemedNumberShortTerminalsDropHintFirst(t *testing.T) {
 		{"hint before label", 2, "", "\r? Count\x1b[K\n\r| 3\x1b[K"},
 		{"hint before rejection", 3, "no", "\r? Count\x1b[K\n\r| 3\x1b[K\n\r| ! no\x1b[K\x1b[1A\x1b[4G"},
 		{"everything fits", 4, "no", "" +
-			"\r? Count\x1b[K\n\r| 3\x1b[K\n\r| ! no\x1b[K\n\r| up/down adjust\x1b[K\x1b[2A\x1b[4G"},
+			"\r? Count\x1b[K\n\r| 3\x1b[K\n\r| ! no\x1b[K\n\r| ^v adjust\x1b[K\x1b[2A\x1b[4G"},
 		{"one row keeps the value", 1, "", "\r| 3\x1b[K"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -513,8 +513,8 @@ func TestThemedNumberHintSlots(t *testing.T) {
 
 	// a shared hint reaches Number, which passes its actual key bindings
 	th := asciiTheme(false)
-	th.Templates.Prompt.Hint = `{{ range .Bindings }}[{{ .Key }}={{ .Action }}]{{ end }}`
-	assert.Contains(t, frame(th, number), "\n\r| [up/down=adjust]\x1b[K")
+	th.Templates.Prompt.Hint = `{{ range . }}[{{ .Left }}={{ .Right }}]{{ end }}`
+	assert.Contains(t, frame(th, number), "\n\r| [^v=adjust]\x1b[K")
 	// Input and Password handle no keys beyond editing, so they show no hint
 	assert.Equal(t, "\r? Count\x1b[K\n\r| 1\x1b[K", frame(th, func() *input { return newInput(t.Context(), "Count") }))
 	assert.Equal(t, "\r? Count\x1b[K\n\r| *\x1b[K", frame(th, func() *input {
