@@ -9,10 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"regexp"
 	"strings"
-	"text/template"
 	"unicode"
 	"unicode/utf8"
 )
@@ -144,16 +142,6 @@ type input struct {
 	Hide     bool
 	Password bool
 
-	LabelTemplate    string
-	labelTemplate    *template.Template
-	AnswerTemplate   string
-	answerTemplate   *template.Template
-	FeedbackTemplate string
-	feedbackTmpl     *template.Template
-	// labelSet and answerSet record per-call templates, which win over the
-	// theme whatever their source.
-	labelSet, answerSet bool
-
 	// theme is the snapshot captured at construction. The prompt renders
 	// through it, and run binds it to the destination: look holds the
 	// binding, label the label rendered once with it, answer and feedback the
@@ -194,18 +182,6 @@ func (i *input) setHide() {
 }
 
 // implement [withPrompt] interface.
-func (i *input) setLabelTemplate(tmpl string) {
-	i.LabelTemplate = tmpl
-	i.labelSet = true
-}
-
-// implement [withPrompt] interface.
-func (i *input) setAnswerTemplate(tmpl string) {
-	i.AnswerTemplate = tmpl
-	i.answerSet = true
-}
-
-// implement [withPrompt] interface.
 func (i *input) setDefault(d any) {
 	i.def = defaultValue{set: true, raw: d}
 	i.typed = fmt.Sprint(d)
@@ -237,10 +213,6 @@ func Password(ctx context.Context, label string, option ...opt) (string, error) 
 
 func (i *input) read(ctx context.Context, option ...opt) (string, error) {
 	err := opts(option).Apply(i)
-	if err != nil {
-		return "", err
-	}
-	err = i.parseTemplates()
 	if err != nil {
 		return "", err
 	}
@@ -286,16 +258,7 @@ func (i *input) showAnswer() error {
 		return nil
 	}
 	var buf bytes.Buffer
-	var err error
-	if !i.answerSet {
-		err = i.themedAnswer(&buf)
-	} else {
-		// TODO: unify reused structures
-		err = i.answerTemplate.Execute(&buf, dropdownAnswer{
-			Label:  i.Label,
-			Answer: i.safeText(i.typed),
-		})
-	}
+	err := i.themedAnswer(&buf)
 	if err != nil {
 		return fmt.Errorf("answer: %w", err)
 	}
@@ -688,56 +651,6 @@ func (p *input) pressAny(key rune) {
 	p.applyInputChanged(p.insertAtCursor(string(key)))
 }
 
-// parseTemplates checks the per-call label, answer, and feedback templates
-// before interaction, with placeholder helpers that run rebinds to the
-// destination; the theme slots are already compiled.
-func (p *input) parseTemplates() (err error) {
-	if p.theme == nil {
-		p.theme = defaultIO.currentTheme()
-	}
-	funcs := p.theme.funcs(profilePlain, roleStyles{})
-	tmpl := template.New("dropdown").Funcs(funcs)
-	if p.labelSet {
-		p.labelTemplate, err = tmpl.New("label").Parse(mustEndWith(p.LabelTemplate, ' '))
-		if err != nil {
-			return fmt.Errorf("label: %w", err)
-		}
-	}
-	if p.answerSet {
-		p.answerTemplate, err = tmpl.New("answer").Parse(mustEndWith(p.AnswerTemplate, '\n'))
-		if err != nil {
-			return fmt.Errorf("answer: %w", err)
-		}
-	}
-	return p.parseFeedback(funcs)
-}
-
-// WithFeedbackTemplate overrides the one-row message shown below an [Input] or
-// [Password] for a rejected answer. An empty template restores the default.
-// The template sees only .Message.
-func WithFeedbackTemplate(tmpl string) opt {
-	return opT(func(i *input) error {
-		i.FeedbackTemplate = tmpl
-		return nil
-	})
-}
-
-// parseFeedback prepares the per-call feedback template. Without one, the
-// prompt uses the feedback slot of its theme.
-func (p *input) parseFeedback(funcs template.FuncMap) error {
-	source := p.FeedbackTemplate
-	if source == "" {
-		p.feedbackTmpl = nil
-		return nil
-	}
-	parsed, err := template.New("feedback").Funcs(funcs).Parse(source)
-	if err != nil {
-		return fmt.Errorf("feedback: %w", err)
-	}
-	p.feedbackTmpl = parsed
-	return nil
-}
-
 // feedbackSafe drops line breaks and terminal controls, so that a message
 // cannot move the cursor or start an escape sequence.
 func (p *input) feedbackSafe(message string) string {
@@ -752,16 +665,6 @@ func (p *input) feedbackSafe(message string) string {
 	}, strings.ToValidUTF8(message, "�"))
 }
 
-// formatFeedback renders one row that fits into width columns.
-func (p *input) formatFeedback(message string, width int) (text, error) {
-	var buf text
-	err := p.feedbackTmpl.Execute(&buf, feedbackView{p.feedbackSafe(message)})
-	if err != nil {
-		return nil, fmt.Errorf("feedback: %w", err)
-	}
-	return buf.beforeNewline().truncateColumns(width), nil
-}
-
 // labelView is the payload of a label slot.
 type labelView struct{ Label string }
 
@@ -774,8 +677,7 @@ type answerView struct {
 	Count  int
 }
 
-// feedbackView is the payload of a feedback slot and of per-call feedback
-// templates: the sanitized rejection message.
+// feedbackView is the payload of a feedback slot: the sanitized rejection message.
 type feedbackView struct{ Message string }
 
 // keyHint names a key the widget handles and what it does.
@@ -802,20 +704,10 @@ func (p *input) slots() promptTemplates {
 }
 
 // bind captures the presentation of one run for its destination, before the
-// first frame: the helpers, per-call templates rebound to them, the bound
+// first frame: the helpers, the bound
 // slots, and the label and hint, which render once. tt is the terminal lease.
 func (p *input) bind(ctx context.Context, tt *termIO) error {
 	p.look = defaultIO.bindTheme(ctx, p.theme, p.out, tt)
-	for _, t := range []**template.Template{&p.labelTemplate, &p.answerTemplate, &p.feedbackTmpl} {
-		if *t == nil {
-			continue
-		}
-		clone, err := (*t).Clone()
-		if err != nil {
-			return fmt.Errorf("%s: %w", (*t).Name(), err)
-		}
-		*t = clone.Funcs(p.look.funcs)
-	}
 	slots := p.slots()
 	var err error
 	if p.answer, err = slots.Answer.bind(p.look.funcs); err != nil {
@@ -826,13 +718,6 @@ func (p *input) bind(ctx context.Context, tt *termIO) error {
 	}
 	if err = p.bindHint(slots.Hint); err != nil {
 		return err
-	}
-	if p.labelSet {
-		p.label = nil
-		if err = p.labelTemplate.Execute(&p.label, p.Label); err != nil {
-			return fmt.Errorf("label: %w", err)
-		}
-		return nil
 	}
 	slot, err := slots.Label.bind(p.look.funcs)
 	if err != nil {
@@ -943,14 +828,11 @@ func (i *input) writeFrame(io *termIO, frame *bytes.Buffer, fit fitted, caret, c
 	i.rows, i.caretRow = len(fit.lines), caret
 }
 
-// themedFeedback renders the rejection with the per-call template, cut at its
-// first line as before, or with the feedback slot. The geometry clips it.
+// themedFeedback renders the rejection with the feedback slot. The geometry
+// clips it.
 func (i *input) themedFeedback() (text, error) {
-	switch {
-	case i.rejection == "":
+	if i.rejection == "" {
 		return nil, nil
-	case i.feedbackTmpl != nil:
-		return i.formatFeedback(i.rejection, math.MaxInt)
 	}
 	return i.feedback.render(feedbackView{i.feedbackSafe(i.rejection)})
 }

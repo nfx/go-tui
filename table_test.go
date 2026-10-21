@@ -346,7 +346,7 @@ func TestTableRejectsOptionsOfOtherWidgets(t *testing.T) {
 		Name string
 	}
 	data := []item{{Name: "a"}}
-	err := TableAuto(&bytes.Buffer{}, data, WithLabelTemplate("{{.Name}} "))
+	err := TableAuto(&bytes.Buffer{}, data, WithHide())
 	assert.ErrorIs(t, err, ErrWrongWidget)
 	assert.Contains(t, err.Error(), "need tui.withPrompt, got *tui.table")
 

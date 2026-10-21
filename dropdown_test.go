@@ -59,7 +59,6 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 	next.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
 	}
-	assert.NoError(t, next.parseTemplates())
 	got, err := next.run(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
@@ -700,11 +699,6 @@ func TestDropdownOptionHelpers(t *testing.T) {
 		WithHide(),
 		WithTemplate(".Label"),
 		WithTemplate(".Label"),
-		WithLabelTemplate("{{.}} "),
-		WithActiveItemTemplate("{{.}}>"),
-		WithInactiveItemTemplate("{{.}}-"),
-		WithMoreItemsTemplate("more"),
-		WithAnswerTemplate("> {{.}}"),
 	} {
 		assert.NoError(t, opt(d))
 	}
@@ -731,7 +725,7 @@ func TestShowAnswerWritesWhenVisible(t *testing.T) {
 	out := &bytes.Buffer{}
 	d.out = out
 	bindDropdown(t, d)
-	assert.NoError(t, d.answer("Test", 0))
+	assert.NoError(t, d.themedAnswer("Test", 0))
 	assert.Equal(t, "✔ Test · value\n", out.String())
 }
 
@@ -790,7 +784,6 @@ func TestWithTemplateSetsTemplates(t *testing.T) {
 	// a projection, which leaves the presentation to the theme
 	assert.Equal(t, `{{ __content .Name }}`, d.mainSource)
 	assert.Equal(t, "", d.detailsSource)
-	assert.True(t, !d.activeSet && !d.inactiveSet && !d.answerSet)
 }
 
 func TestWithTemplateAddsActiveDetails(t *testing.T) {
@@ -879,7 +872,7 @@ func TestDropdownShowAnswerUsesResolvedLabel(t *testing.T) {
 	d.out = out
 	d.Items = []any{dropdownHeuristicLabelItem{ID: 9, Name: "delta"}}
 	bindDropdown(t, d)
-	assert.NoError(t, d.answer("Pick", 0))
+	assert.NoError(t, d.themedAnswer("Pick", 0))
 	assert.Contains(t, out.String(), "delta")
 	assert.NotContains(t, out.String(), "{")
 }
@@ -943,22 +936,7 @@ func (errWriterDropdown) Write(p []byte) (int, error) {
 
 func TestDropdownParseTemplatesError(t *testing.T) {
 	d := newDropdown(t.Context())
-	assert.NoError(t, WithLabelTemplate("{{")(d))
-	assert.Error(t, d.parseTemplates())
-}
-
-func TestDropdownParseTemplatesLabelExecuteError(t *testing.T) {
-	d := newDropdown(t.Context())
-	assert.NoError(t, WithLabelTemplate("{{ call . }}")(d))
-	assert.NoError(t, d.parseTemplates())
-	// a per-call label runs when the dropdown binds
-	assert.NoError(t, d.bind(defaultIO.bindTheme(t.Context(), d.theme, &bytes.Buffer{}, nil)))
-	assert.Error(t, d.renderChrome())
-}
-
-func TestDropdownParseTemplatesActiveError(t *testing.T) {
-	d := newDropdown(t.Context())
-	assert.NoError(t, WithActiveItemTemplate("{{")(d))
+	assert.NoError(t, WithTemplate("{{")(d))
 	assert.Error(t, d.parseTemplates())
 }
 
@@ -967,7 +945,7 @@ func TestDropdownShowAnswerWriteError(t *testing.T) {
 	d.Items = []any{"Value"}
 	bindDropdown(t, d)
 	d.out = errWriterDropdown{}
-	assert.Error(t, d.answer("Label", 0))
+	assert.Error(t, d.themedAnswer("Label", 0))
 }
 
 func TestDropdownPressKeyRuneArrows(t *testing.T) {
@@ -1411,8 +1389,7 @@ func TestDropdownHandleLazyItemDoneWithItems(t *testing.T) {
 
 func TestDropdownHandleLazyItemAddError(t *testing.T) {
 	d := newDropdown(t.Context())
-	d.activeItemTemplate = template.Must(template.New("active").Parse("{{ . }}"))
-	d.inactiveItemTemplate = template.Must(template.New("inactive").Parse("{{call .}}"))
+	d.mainTemplate = template.Must(template.New("content").Parse("{{call .}}"))
 	d.trie = newTrie()
 	tio := newTestTermIO(20, 6)
 	frame := &bytes.Buffer{}
@@ -1991,7 +1968,7 @@ func TestDropdownLazyStopsProducerOnEarlyError(t *testing.T) {
 	}
 	_, err := DropdownLazy(t.Context(), "pick", seq,
 		WithInput(bytes.NewBuffer(nil)), WithOutput(io.Discard),
-		fixedTermOpt(), WithActiveItemTemplate("{{"))
+		fixedTermOpt(), WithTemplate("{{"))
 	assert.Error(t, err)
 	time.Sleep(50 * time.Millisecond)
 	assert.Equal(t, int32(0), started.Load())
@@ -2292,7 +2269,7 @@ func TestDropdownOneReturn(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNoTTY)
 	_, err = Dropdown(ctx, "Pick", []string{}, io, WithOneReturn())
 	assert.ErrorIs(t, err, ErrNoItems)
-	_, err = Dropdown(ctx, "Pick", []string{"a"}, io, WithOneReturn(), WithActiveItemTemplate("{{"))
+	_, err = Dropdown(ctx, "Pick", []string{"a"}, io, WithOneReturn(), WithTemplate("{{"))
 	assert.Error(t, err)
 	cctx, cancel := context.WithCancel(ctx)
 	cancel()
@@ -2601,32 +2578,6 @@ func TestThemedDropdownMultiFieldProjects(t *testing.T) {
 		frame(t, d, tt))
 }
 
-func TestThemedDropdownExplicitTemplatesWinInEitherOrder(t *testing.T) {
-	active := WithActiveItemTemplate(`* {{ . }}`)
-	project := WithTemplate(`(printf "<%s>" .)`)
-	for name, o := range map[string][]opt{
-		"explicit first":   {active, project},
-		"projection first": {project, active},
-	} {
-		t.Run(name, func(t *testing.T) {
-			d, tt := boundDropdown(t, asciiTheme(false), 40, 10, []any{"apple", "banana"}, o...)
-			// the explicit row brings its own marker; the other row is projected
-			assert.Equal(t,
-				"\r? Fruit\n\r| * apple\n\r|   <banana>\n\r| up/down move · type filter\n\r",
-				frame(t, d, tt))
-		})
-	}
-}
-
-func TestThemedDropdownExplicitAnswerKeepsRawPayload(t *testing.T) {
-	items := []themedFruit{{"apple", "red"}, {"banana", "yellow"}}
-	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "\r")
-	_, err := Dropdown(t.Context(), "Fruit", items, o,
-		WithAnswerTemplate(`{{ .Label }}={{ .Answer.Name }}/{{ .Answer.Color }}`), WithTemplate(".Name"))
-	assert.NoError(t, err)
-	assert.True(t, strings.HasSuffix(out.String(), "\rFruit=apple/red\n"))
-}
-
 func TestThemedDropdownHiddenAnswerRetainsNothing(t *testing.T) {
 	th := asciiTheme(false)
 	th.Templates.Dropdown.Answer = Hidden
@@ -2651,12 +2602,6 @@ func TestThemedDropdownSlotPrecedence(t *testing.T) {
 	d, tt := boundDropdown(t, th, 40, 4, []any{"a", "b", "c", "d"})
 	// shared and family edits apply; hidden slots reserve no row
 	assert.Equal(t, "\rFruit:\n\r| > [a]\n\r|   -b\n\r", frame(t, d, tt))
-}
-
-func TestThemedDropdownPerCallMoreAndLabelKeepPayloads(t *testing.T) {
-	d, tt := boundDropdown(t, asciiTheme(false), 40, 5, []any{"a", "b", "c", "d"},
-		WithMoreItemsTemplate(`{{ .More }}/{{ .Total }}`), WithLabelTemplate(`<{{ . }}>`))
-	assert.Equal(t, "\r<Fruit> \n\r| > a\n\r|   b\n\r| 2/4\n\r", frame(t, d, tt))
 }
 
 func TestThemedDropdownKVShowsKeys(t *testing.T) {
@@ -2714,11 +2659,6 @@ func TestThemedDropdownAutomaticAnswerMatchesProjection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "cherry", got)
 
-	// a per-call inactive template without a projection is matched as before
-	got, err = Dropdown(t.Context(), "Fruit", fruits, WithOutput(&out),
-		WithInactiveItemTemplate(`x{{ . }}`), WithDefault("xa"))
-	assert.NoError(t, err)
-	assert.Equal(t, "apple", got)
 	assert.Equal(t, "", out.String())
 }
 
@@ -2823,19 +2763,12 @@ func TestThemedConfirmSlotPrecedence(t *testing.T) {
 	assert.True(t, strings.HasSuffix(out.String(), "Sure? No/1\n"))
 }
 
-func TestThemedConfirmHiddenAnswerAndPerCallOptions(t *testing.T) {
+func TestThemedConfirmHiddenAnswer(t *testing.T) {
 	th := asciiTheme(false)
 	th.Templates.Confirm.Answer = Hidden
 	o, out, _ := themedDropdownOpt(t, th, 40, "\r")
 	assert.True(t, Confirm(t.Context(), "Sure?", o))
 	assert.True(t, strings.HasSuffix(out.String(), "\x1b[3A\r"))
-
-	// per-call templates keep their raw payloads over the theme
-	o, out, _ = themedDropdownOpt(t, asciiTheme(false), 40, "\x1b[B", "\r")
-	assert.True(t, !Confirm(t.Context(), "Sure?", o,
-		WithActiveItemTemplate(`* {{ . }}`), WithAnswerTemplate(`{{ .Label }}={{ .Answer }}`)))
-	assert.True(t, strings.HasPrefix(out.String(), "\r? Sure?\n\r| * Yes\n\r|   No\n"))
-	assert.True(t, strings.HasSuffix(out.String(), "Sure?=No\n"))
 }
 
 func TestThemedConfirmDefaultsWithoutTerminal(t *testing.T) {

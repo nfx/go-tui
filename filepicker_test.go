@@ -279,21 +279,6 @@ func TestThemedFilePickerSlotPrecedence(t *testing.T) {
 	assert.True(t, strings.HasPrefix(got, "\rpick File\n\r| > [a.txt]\n\r\x1b[2A"))
 }
 
-func TestThemedFilePickerPerCallOptions(t *testing.T) {
-	root := pickerTree(t)
-	// type to filter in each directory; the projection and the answer
-	// template take the raw entry, and the answer retains every step
-	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "s", "\r", "i", "\r")
-	got, err := FilePicker(t.Context(), "File", WithStartDir(root), o,
-		WithTemplate(".Name"), WithAnswerTemplate(`picked {{ .Answer.Name }}`))
-	assert.NoError(t, err)
-	assert.Equal(t, filepath.Join(root, "sub", "inner.txt"), got)
-	assert.Contains(t, out.String(), "\r|   sub\n")
-	assert.Contains(t, out.String(), "picked sub\n")
-	assert.True(t, strings.HasSuffix(out.String(), "picked inner.txt\n"))
-	assert.True(t, !strings.Contains(out.String(), "+ File"))
-}
-
 func TestThemedFilePickerHiddenAnswer(t *testing.T) {
 	dir := t.TempDir()
 	assert.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), nil, 0o600))

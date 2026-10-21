@@ -1091,7 +1091,7 @@ func DefaultTheme() Theme { return defaultIO.currentTheme().editable() }
 // SetDefaultTheme validates and copies theme for operations started afterwards.
 // On error, the installed theme is unchanged; running operations keep their snapshot.
 // Funcs replaces existing helpers; start from [DefaultTheme] to retain them.
-// Helper closures must be safe for concurrent use. Per-call options take precedence.
+// Helper closures must be safe for concurrent use.
 func SetDefaultTheme(theme Theme) error { return defaultIO.installTheme(theme) }
 
 // compiledTheme is an immutable snapshot of an installed theme. Nothing in it
@@ -1224,7 +1224,7 @@ type binding struct {
 	profile colorProfile
 	palette resolvedPalette
 	roles   roleStyles
-	// funcs are the helpers of theme slots and per-call templates. Templates
+	// funcs are the helpers of theme slots and projections. Templates
 	// only read the map.
 	funcs template.FuncMap
 }
@@ -1451,7 +1451,7 @@ func (t *Templates) secret(in templated[SecretTemplates, promptTemplates]) (out 
 
 // ChoiceTemplates are the presentation slots shared by choice lists.
 type ChoiceTemplates struct {
-	Value    Template // projection of a raw item; replaced by per-call WithTemplate
+	Value    Template // projection of a raw item; replaced by WithTemplate
 	Details  Template // active-only details
 	Active   Template
 	Inactive Template

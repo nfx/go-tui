@@ -19,34 +19,33 @@ import (
 	"github.com/nfx/go-tui/internal/assert"
 )
 
-// bindInput prepares a literal input as run does: per-call templates parsed
-// and the installed theme bound to tt.
+// bindInput prepares a literal input as run does: the installed theme bound to tt.
 func bindInput(t *testing.T, i *input, tt *termIO) {
 	t.Helper()
-	assert.NoError(t, i.parseTemplates())
+	if i.theme == nil {
+		i.theme = defaultIO.currentTheme()
+	}
 	assert.NoError(t, i.bind(t.Context(), tt))
 }
 
-// literalInputs render per-call templates on an Inline theme into plain
-// writers, like the inputs before themes.
+// literalInputs render the bare label and answer on an Inline theme into
+// plain writers, like the inputs before themes.
 func literalInputs(t *testing.T) {
 	t.Helper()
 	withEnv(t)
 	th := NewTheme()
 	th.Inline = true
+	th.Templates.Input.Label = `{{ .Label }}`
+	th.Templates.Input.Answer = `{{ .Value }}`
 	useTheme(t, th)
 }
 
 func TestRenderNormal(t *testing.T) {
 	literalInputs(t)
 	i := &input{
-		Label:          "Enter text:",
-		typed:          "hello",
-		cursor:         5,
-		LabelTemplate:  "{{.}} ",
-		AnswerTemplate: "{{.Label}}: {{.Answer}}\n",
-		labelSet:       true,
-		answerSet:      true,
+		Label:  "Enter text:",
+		typed:  "hello",
+		cursor: 5,
 	}
 
 	var out bytes.Buffer
@@ -64,13 +63,9 @@ func TestRenderNormal(t *testing.T) {
 func TestRenderCursorAtStart(t *testing.T) {
 	literalInputs(t)
 	i := &input{
-		Label:          "Input:",
-		typed:          "abc",
-		cursor:         0,
-		LabelTemplate:  "{{.}} ",
-		AnswerTemplate: "{{.Label}}: {{.Answer}}\n",
-		labelSet:       true,
-		answerSet:      true,
+		Label:  "Input:",
+		typed:  "abc",
+		cursor: 0,
 	}
 
 	var out bytes.Buffer
@@ -88,13 +83,9 @@ func TestRenderCursorAtStart(t *testing.T) {
 func TestRenderWriteError(t *testing.T) {
 	literalInputs(t)
 	i := &input{
-		Label:          "Test:",
-		typed:          "test",
-		cursor:         0,
-		LabelTemplate:  "{{.}} ",
-		AnswerTemplate: "{{.Label}}: {{.Answer}}\n",
-		labelSet:       true,
-		answerSet:      true,
+		Label:  "Test:",
+		typed:  "test",
+		cursor: 0,
 	}
 
 	// Mock a failing writer
@@ -231,13 +222,6 @@ func TestInputPressKeyEOF(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestInputReadTemplateError(t *testing.T) {
-	i := newInput(t.Context(), "Label")
-	i.LabelTemplate = "{{"
-	_, err := i.read(t.Context())
-	assert.Error(t, err)
-}
-
 func TestInputPressKeyEnter(t *testing.T) {
 	i := &input{typed: "done"}
 	tio := &termIO{in: bytes.NewBuffer([]byte{keyEnter})}
@@ -331,7 +315,6 @@ func TestInputRunEmitsLifecycleEvents(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	assert.NoError(t, i.parseTemplates())
 	var events []inputOutgoing
 	i.eventSink = func(ev inputOutgoing) {
 		events = append(events, ev)
@@ -363,7 +346,6 @@ func TestInputRunConsumesInputChannelEvents(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	assert.NoError(t, i.parseTemplates())
 	var events []inputOutgoing
 	i.eventSink = func(ev inputOutgoing) {
 		events = append(events, ev)
@@ -400,7 +382,6 @@ func TestInputRunWithNonEmptyIgnoresEmptyConfirmation(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	assert.NoError(t, i.parseTemplates())
 	var events []inputOutgoing
 	i.eventSink = func(ev inputOutgoing) {
 		events = append(events, ev)
@@ -436,7 +417,6 @@ func TestInputRunPasteFollowedByEnter(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	assert.NoError(t, i.parseTemplates())
 	got, err := i.run(i.ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "hi", got)
@@ -464,7 +444,6 @@ func TestInputRunTypeAndPaste(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	assert.NoError(t, i.parseTemplates())
 	got, err := i.run(i.ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "hello", got)
@@ -651,7 +630,6 @@ func TestInputRunContextDone(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	assert.NoError(t, i.parseTemplates())
 	_, err := i.run(i.ctx)
 	assert.Error(t, err)
 }
@@ -668,7 +646,6 @@ func TestInputRunCancelledReadKeepsNextKey(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	i := newInput(t.Context(), "first")
 	i.ctx, i.in, i.out, i.makeTermIO = ctx, pr, &bytes.Buffer{}, mk
-	assert.NoError(t, i.parseTemplates())
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		cancel()
@@ -681,7 +658,6 @@ func TestInputRunCancelledReadKeepsNextKey(t *testing.T) {
 
 	j := newInput(t.Context(), "second")
 	j.in, j.out, j.makeTermIO = pr, &bytes.Buffer{}, mk
-	assert.NoError(t, j.parseTemplates())
 	got, err := j.run(j.ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
@@ -721,7 +697,6 @@ func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	first.ctx, first.in, first.out, first.makeTermIO = ctx, in, &bytes.Buffer{}, mk
-	assert.NoError(t, first.parseTemplates())
 	finished := make(chan error, 1)
 	go func() {
 		_, err := first.run(first.ctx)
@@ -746,7 +721,6 @@ func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	second.ctx, cancel = context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	second.in, second.out, second.makeTermIO = in, &bytes.Buffer{}, mk
-	assert.NoError(t, second.parseTemplates())
 	got, err := second.run(second.ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
@@ -766,7 +740,6 @@ func TestInputRunBufferedWrappedReader(t *testing.T) {
 	prompt.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
 	}
-	assert.NoError(t, prompt.parseTemplates())
 	got, err := prompt.run(prompt.ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
@@ -826,13 +799,9 @@ func TestInputRunKeepsKeysAfterEnter(t *testing.T) {
 func TestInputRendersPastedControlsSafely(t *testing.T) {
 	literalInputs(t)
 	i := &input{
-		Label:          "L",
-		typed:          "a\rb\x1b[2J\x7f\u009b",
-		cursor:         1,
-		LabelTemplate:  "{{.}} ",
-		AnswerTemplate: "{{.Answer}}",
-		labelSet:       true,
-		answerSet:      true,
+		Label:  "L",
+		typed:  "a\rb\x1b[2J\x7f\u009b",
+		cursor: 1,
 	}
 	var out bytes.Buffer
 	tt := &termIO{out: &out}
@@ -845,7 +814,7 @@ func TestInputRendersPastedControlsSafely(t *testing.T) {
 func TestInputShowAnswerRendersControlsSafely(t *testing.T) {
 	var out bytes.Buffer
 	literalInputs(t)
-	i := &input{Label: "L", typed: "a\rb", AnswerTemplate: "{{.Answer}}", answerSet: true}
+	i := &input{Label: "L", typed: "a\rb"}
 	i.out = &out
 	bindInput(t, i, &termIO{out: &out})
 	assert.NoError(t, i.showAnswer())
@@ -879,8 +848,6 @@ func TestInputChangedWithCursor(t *testing.T) {
 func renderInput(t *testing.T, i *input, termWidth int) string {
 	t.Helper()
 	literalInputs(t)
-	i.LabelTemplate, i.labelSet = "{{.}} ", true
-	i.AnswerTemplate, i.answerSet = "{{.Answer}}", true
 	var out bytes.Buffer
 	tt := &termIO{out: &out}
 	if termWidth > 0 { // zero is an unknown width
@@ -978,7 +945,6 @@ func TestInputRunResizeDoesNotReadAhead(t *testing.T) {
 		}
 		return nil
 	})
-	assert.NoError(t, i.parseTemplates())
 	finished := make(chan error, 1)
 	go func() {
 		_, err := i.run(i.ctx)
@@ -1092,9 +1058,6 @@ func runValidated(t *testing.T, password bool, keys string, o ...opt) (string, s
 		return &termIO{in: in, out: out, Width: 40, Height: 3, Restore: func() error { return nil }}, nil
 	}
 	if err := opts(o).Apply(i); err != nil {
-		return "", "", err
-	}
-	if err := i.parseTemplates(); err != nil {
 		return "", "", err
 	}
 	got, err := i.run(i.ctx)
@@ -1238,11 +1201,6 @@ func TestInputFeedbackTemplateIsPlain(t *testing.T) {
 	assert.True(t, !strings.Contains(out, "\x1b[31m"))
 }
 
-func TestInputFeedbackTemplateParseError(t *testing.T) {
-	_, _, err := runValidated(t, false, "", WithFeedbackTemplate(`{{`))
-	assert.Error(t, err)
-}
-
 func TestPasswordRejectionStaysMasked(t *testing.T) {
 	_, out, err := runValidated(
 		t,
@@ -1257,13 +1215,6 @@ func TestPasswordRejectionStaysMasked(t *testing.T) {
 	assert.True(t, !strings.Contains(out, "secret"))
 }
 
-func TestFeedbackTemplateRejectedByOtherWidgets(t *testing.T) {
-	for _, w := range []any{newDropdown(t.Context()), newMultichoice(t.Context())} {
-		err := WithFeedbackTemplate(`{{ .Message }}`)(w)
-		assert.ErrorIs(t, err, ErrWrongWidget)
-	}
-}
-
 func TestInputNeedsTwoRowsForFeedback(t *testing.T) {
 	i := newInput(t.Context(), "Label")
 	i.in = &chunkReader{chunks: [][]byte{{'a'}, {keyEnter}}}
@@ -1272,7 +1223,6 @@ func TestInputNeedsTwoRowsForFeedback(t *testing.T) {
 		return &termIO{in: in, out: out, Width: 20, Height: 1, Restore: func() error { return nil }}, nil
 	}
 	assert.NoError(t, WithValidation(func(context.Context, string) error { return errors.New("no") })(i))
-	assert.NoError(t, i.parseTemplates())
 	_, err := i.run(i.ctx)
 	assert.ErrorIs(t, err, ErrNoSpace)
 }
@@ -1461,7 +1411,6 @@ func TestThemedInputClearsRejectionRowsOnError(t *testing.T) {
 // renderThemedInput binds i to a terminal of the given size and draws one frame.
 func renderThemedInput(t *testing.T, i *input, width, height int) (string, error) {
 	t.Helper()
-	assert.NoError(t, i.parseTemplates())
 	var out bytes.Buffer
 	tt := &termIO{out: &out, Width: width, Height: height}
 	assert.NoError(t, i.bind(t.Context(), tt))
@@ -1535,7 +1484,7 @@ func TestThemedInputWideAndCombiningValue(t *testing.T) {
 	assert.Equal(t, "\r? Label\x1b[K\n\r| e\u0301\u754c\u754c\x1b[K\x1b[4D", got)
 }
 
-func TestThemedInputPerCallTemplatesKeepRawPayloads(t *testing.T) {
+func TestThemedInputFamilySlotsRender(t *testing.T) {
 	th := asciiTheme(false)
 	th.Templates.Input.Label = `theme {{ .Label }}`
 	th.Templates.Input.Answer = `theme {{ .Value }}`
@@ -1548,20 +1497,7 @@ func TestThemedInputPerCallTemplatesKeepRawPayloads(t *testing.T) {
 	})
 
 	i, out, _ := themedInput(t, th, 20, 5, "a", "\r", "b", "\r")
-	_, err := i.read(t.Context(), reject,
-		WithLabelTemplate(`{{ printf "%T" . }}`),
-		WithAnswerTemplate(`{{ .Label }}={{ .Answer }}`),
-		WithFeedbackTemplate(`call {{ .Message }}`))
-	assert.NoError(t, err)
-	assert.Contains(t, out.String(), "\rstring \x1b[K\n")
-	assert.Contains(t, out.String(), "\n\r| call no\x1b[K")
-	assert.True(t, strings.HasSuffix(out.String(), "Label=ab\n"))
-	assert.True(t, !strings.Contains(out.String(), "theme"))
-
-	// without per-call templates, and with an empty feedback template, the
-	// theme slots of the family render
-	i, out, _ = themedInput(t, th, 20, 5, "a", "\r", "b", "\r")
-	_, err = i.read(t.Context(), reject, WithFeedbackTemplate(""))
+	_, err := i.read(t.Context(), reject)
 	assert.NoError(t, err)
 	assert.Contains(t, out.String(), "\rtheme Label\x1b[K\n")
 	assert.Contains(t, out.String(), "\n\r| theme no\x1b[K")
@@ -1586,7 +1522,6 @@ func TestThemedInputFamilySlots(t *testing.T) {
 	useTheme(t, th)
 	label := func(i *input) string {
 		t.Helper()
-		assert.NoError(t, i.parseTemplates())
 		assert.NoError(t, i.bind(t.Context(), &termIO{out: &bytes.Buffer{}}))
 		return i.label.String()
 	}
@@ -1740,7 +1675,6 @@ func TestThemedPasswordRejectionIsSecretIndependent(t *testing.T) {
 		want string
 	}{
 		{"theme slot", nil, "\n\r| Invalid value\x1b[K"},
-		{"per-call template", []opt{WithFeedbackTemplate(`call {{ .Message }}`)}, "\n\r| call Invalid value\x1b[K"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			seen = nil
