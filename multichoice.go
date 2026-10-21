@@ -14,7 +14,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"text/template"
 	"unicode"
 )
 
@@ -145,16 +144,6 @@ type multichoice struct {
 	Label string
 	Items []any
 
-	LabelTemplate        string
-	ActiveItemTemplate   string
-	InactiveItemTemplate string
-	MoreItemsTemplate    string
-	AnswerTemplate       string
-	answerSet            bool // an explicit WithAnswerTemplate wins over generated ones
-	// labelSet, activeSet, inactiveSet and moreSet record per-call templates,
-	// which win over the theme in any option order.
-	labelSet, activeSet, inactiveSet, moreSet bool
-	labelTemplate                             *template.Template
 	projection
 
 	// theme is the snapshot captured at construction. The multichoice
@@ -166,20 +155,14 @@ type multichoice struct {
 	label, help text
 	// pending holds the items until binding projects them.
 	pending []any
-	// content is the projected main content of every item. Its details, and
-	// its per-call rows in contents and inactive, render when a frame first
-	// draws it, which drawn records.
+	// content is the projected main content of every item. Its details
+	// render when a frame first draws it, which drawn records.
 	content, details []text
 	drawn            []bool
 
-	activeItemTemplate   *template.Template
-	inactiveItemTemplate *template.Template
-	moreItemsTemplate    *template.Template
-	answerTemplate       *template.Template
-	trie                 *trie
-	inactive, contents   []text
-	hintRunes            []rune
-	scores               []int
+	trie      *trie
+	hintRunes []rune
+	scores    []int
 
 	// Source indexes stay private; visibility never owns checked state.
 	relevant    []int
@@ -229,29 +212,12 @@ func (m *multichoice) setWriter(w io.Writer) {
 // setHide suppresses the final answer while retaining the interactive prompt.
 func (m *multichoice) setHide() { m.Hide = true }
 
-// setLabelTemplate configures the heading independently of item content.
-func (m *multichoice) setLabelTemplate(t string) { m.LabelTemplate, m.labelSet = t, true }
-
-// setAnswerTemplate configures the confirmed collection summary.
-func (m *multichoice) setAnswerTemplate(t string) { m.AnswerTemplate, m.answerSet = t, true }
-
 // setDefault records the default; a string is also a selection hint that
 // does not pre-fill the filter.
 func (m *multichoice) setDefault(d any) {
 	m.def = defaultValue{set: true, raw: d}
 	m.hint, _ = d.(string) //nolint:errcheck // not a string is no hint
 }
-
-// setActiveItemTemplate configures focused content independently of the checkbox wrapper.
-func (m *multichoice) setActiveItemTemplate(t string) { m.ActiveItemTemplate, m.activeSet = t, true }
-
-// setInactiveItemTemplate configures unfocused content independently of the checkbox wrapper.
-func (m *multichoice) setInactiveItemTemplate(t string) {
-	m.InactiveItemTemplate, m.inactiveSet = t, true
-}
-
-// setMoreItemsTemplate configures the footer for choices outside the visible window.
-func (m *multichoice) setMoreItemsTemplate(t string) { m.MoreItemsTemplate, m.moreSet = t, true }
 
 // setContentTemplate shares item content with collection answers, keeping details active-only.
 func (m *multichoice) setContentTemplate(main string, details ...string) {
@@ -285,17 +251,9 @@ func (m *multichoice) prepare(o []opt) error {
 	return m.Ctx.Err()
 }
 
-// parseTemplates checks the syntax of per-call templates and projections.
+// parseTemplates checks the syntax of the projection.
 func (m *multichoice) parseTemplates() error {
-	return parseThemed(m.theme, "multichoice", []perCall{
-		{m.labelSet, "label", m.LabelTemplate, &m.labelTemplate},
-		{m.activeSet, "active", m.ActiveItemTemplate, &m.activeItemTemplate},
-		{m.inactiveSet, "inactive", m.InactiveItemTemplate, &m.inactiveItemTemplate},
-		{m.moreSet, "more", m.MoreItemsTemplate, &m.moreItemsTemplate},
-		{m.answerSet, "answer", mustEndWith(m.AnswerTemplate, '\n'), &m.answerTemplate},
-		{m.mainSource != "", "content", m.mainSource, &m.mainTemplate},
-		{m.detailsSource != "", "details", m.detailsSource, &m.detailsTemplate},
-	})
+	return m.parse(m.theme, "multichoice")
 }
 
 // addItem renders and indexes each arrival once; subsequent frames use caches.
@@ -582,22 +540,7 @@ func (m *multichoice) showAnswer() error {
 	if m.Hide {
 		return nil
 	}
-	if !m.answerSet {
-		return m.themedAnswer()
-	}
-	answer := make([]any, 0, m.count)
-	for _, i := range m.indices() {
-		answer = append(answer, m.Items[i])
-	}
-	var buf bytes.Buffer
-	if err := m.answerTemplate.Execute(&buf, struct {
-		Label  string
-		Answer []any
-		Count  int
-	}{m.Label, answer, len(answer)}); err != nil {
-		return fmt.Errorf("answer: %w", err)
-	}
-	return m.writeAnswer(buf.Bytes())
+	return m.themedAnswer()
 }
 
 // writeAnswer writes the answer and waits for managed output to acknowledge it.
@@ -641,8 +584,7 @@ type collectionView struct {
 // bind installs destination-bound templates and projects pending items.
 func (m *multichoice) bind(look binding) error {
 	m.look = look
-	err := rebind(look.funcs, &m.labelTemplate, &m.activeItemTemplate, &m.inactiveItemTemplate,
-		&m.moreItemsTemplate, &m.answerTemplate, &m.mainTemplate, &m.detailsTemplate)
+	err := m.rebind(look.funcs)
 	if err != nil {
 		return err
 	}
@@ -678,7 +620,7 @@ func (m *multichoice) bindRun(ctx context.Context, tio *termIO) error {
 	if err != nil {
 		return err
 	}
-	m.label, m.help, err = m.theme.templates.Multichoice.chrome(m.look.funcs, m.labelTemplate, m.Label, multichoiceKeys)
+	m.label, m.help, err = m.theme.templates.Multichoice.chrome(m.look.funcs, m.Label, multichoiceKeys)
 	if err != nil {
 		return err
 	}
@@ -695,59 +637,20 @@ func (m *multichoice) projectItem(item any) (text, error) {
 	if err != nil {
 		return nil, err
 	}
-	search := content
-	var inactive text
-	if m.legacySearch() {
-		inactive, err = m.perCallRow(m.inactiveItemTemplate, item)
-		if err != nil {
-			return nil, err
-		}
-		search = inactive
-	}
 	m.content = append(m.content, content)
 	m.details = append(m.details, nil)
-	m.contents = append(m.contents, nil)
-	m.inactive = append(m.inactive, inactive)
 	m.drawn = append(m.drawn, false)
-	return search, nil
+	return content, nil
 }
 
-// legacySearch preserves inactive-template matching when no per-call projection replaces it.
-func (m *multichoice) legacySearch() bool { return m.inactiveSet && m.mainTemplate == nil }
-
-// perCallRow renders the per-call template t of a raw item on one line.
-func (m *multichoice) perCallRow(t *template.Template, item any) (text, error) {
-	var out text
-	err := t.Execute(&out, item)
-	if err != nil {
-		return nil, fmt.Errorf("%s item: %w", t.Name(), err)
-	}
-	return out.beforeNewline(), nil
-}
-
-// drawItem caches details and per-call rows on first display.
+// drawItem caches details on first display.
 func (m *multichoice) drawItem(i int) (err error) {
 	if m.drawn[i] {
 		return nil
 	}
-	item := m.Items[i]
-	if m.activeItemTemplate == nil || m.inactiveItemTemplate == nil {
-		m.details[i], err = m.projectDetails(m.slot.details, item)
-		if err != nil {
-			return err
-		}
-	}
-	if m.activeItemTemplate != nil {
-		m.contents[i], err = m.perCallRow(m.activeItemTemplate, item)
-		if err != nil {
-			return err
-		}
-	}
-	if m.inactiveItemTemplate != nil && !m.legacySearch() {
-		m.inactive[i], err = m.perCallRow(m.inactiveItemTemplate, item)
-		if err != nil {
-			return err
-		}
+	m.details[i], err = m.projectDetails(m.slot.details, m.Items[i])
+	if err != nil {
+		return err
 	}
 	m.drawn[i] = true
 	return nil
@@ -759,21 +662,19 @@ func (m *multichoice) themedRow(i int, active bool) (text, error) {
 	if err != nil {
 		return nil, err
 	}
-	explicit, slot, value := m.inactiveItemTemplate, m.slot.inactive, m.inactive[i]
+	slot := m.slot.inactive
 	if active {
-		explicit, slot, value = m.activeItemTemplate, m.slot.active, m.contents[i]
+		slot = m.slot.active
 	}
-	if explicit == nil {
-		value, err = slot.render(choiceView{
-			Value:    m.content[i].String(),
-			Details:  m.details[i].String(),
-			Index:    i,
-			Active:   active,
-			Selected: m.selected[i],
-		})
-		if err != nil {
-			return nil, err
-		}
+	value, err := slot.render(choiceView{
+		Value:    m.content[i].String(),
+		Details:  m.details[i].String(),
+		Index:    i,
+		Active:   active,
+		Selected: m.selected[i],
+	})
+	if err != nil {
+		return nil, err
 	}
 	return m.slot.row.render(multichoiceRow{value.String(), m.selected[i], active, i})
 }
@@ -833,16 +734,7 @@ func (m *multichoice) themedMore() (text, error) {
 	if more <= 0 {
 		return nil, nil
 	}
-	view := dropdownMore{More: more, Total: len(m.relevant)}
-	if m.moreItemsTemplate == nil {
-		return m.slot.more.render(view)
-	}
-	var out text
-	err := m.moreItemsTemplate.Execute(&out, view)
-	if err != nil {
-		return nil, err
-	}
-	return out.beforeNewline(), nil
+	return m.slot.more.render(dropdownMore{More: more, Total: len(m.relevant)})
 }
 
 // themedAnswer formats checked projections in input order, retaining nothing for a hidden or empty answer.

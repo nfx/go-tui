@@ -310,7 +310,6 @@ func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	assert.NoError(t, next.parseTemplates())
 	got, err := next.run(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
@@ -408,7 +407,7 @@ func TestMultichoicePreparationAndCapabilities(t *testing.T) {
 	if m.count != 0 {
 		t.Fatal("default was reapplied")
 	}
-	for _, option := range []opt{WithTemplate(".Name"), WithActiveItemTemplate("{{.}}"), WithInactiveItemTemplate("{{.}}"), WithMoreItemsTemplate("{{.More}}")} {
+	for _, option := range []opt{WithTemplate(".Name")} {
 		if err := option(newMultichoice(t.Context())); err != nil {
 			t.Fatal(err)
 		}
@@ -426,7 +425,7 @@ func TestMultichoicePreparationAndCapabilities(t *testing.T) {
 	invalid.out = &out
 	acquired := false
 	invalid.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { acquired = true; return nil, ErrNoTTY }
-	for _, option := range []opt{WithAnswerTemplate("{{"), WithInactiveItemTemplate("{{.Missing}}"), WithLabelTemplate("{{.Missing}}")} {
+	for _, option := range []opt{WithTemplate("{{"), WithTemplate(".Missing")} {
 		// syntax fails preparation; templates run when the theme binds
 		err := invalid.prepare([]opt{option})
 		if err == nil {
@@ -1454,24 +1453,6 @@ func TestMultichoiceDefaultStreams(t *testing.T) {
 	}
 }
 
-func TestExplicitAnswerTemplateSurvivesContentTemplates(t *testing.T) {
-	for name, content := range map[string]opt{"template": WithTemplate(".Name"), "details": WithTemplate(".Name", ".Color")} {
-		for _, answerFirst := range []bool{true, false} {
-			m := newMultichoice(t.Context())
-			o := []opt{WithAnswerTemplate("custom"), content}
-			if !answerFirst {
-				o = []opt{content, WithAnswerTemplate("custom")}
-			}
-			if err := opts(o).Apply(m); err != nil {
-				t.Fatal(err)
-			}
-			if m.AnswerTemplate != "custom" {
-				t.Fatalf("%s answerFirst=%v: %q", name, answerFirst, m.AnswerTemplate)
-			}
-		}
-	}
-}
-
 func TestMultichoiceDefaults(t *testing.T) {
 	io := quiet(t)
 	ctx := t.Context()
@@ -1772,35 +1753,6 @@ func TestThemedMultichoiceMultiFieldProjects(t *testing.T) {
 		mframe(t, m, tt))
 }
 
-func TestThemedMultichoiceExplicitRowsKeepMarksInEitherOrder(t *testing.T) {
-	active := WithActiveItemTemplate(`* {{ . }}`)
-	project := WithTemplate(`(printf "<%s>" .)`)
-	for name, o := range map[string][]opt{
-		"explicit first":   {active, project},
-		"projection first": {project, active},
-	} {
-		t.Run(name, func(t *testing.T) {
-			m, tt := boundMultichoice(t, asciiTheme(false), 10, []any{"apple", "banana"}, o...)
-			m.handleKey(' ')
-			// the explicit content takes the raw item; the row marks it once
-			assert.Equal(t,
-				"\r? Fruit\n\r| > x * apple\n\r|   o <banana>\n\r"+multichoiceHelp,
-				mframe(t, m, tt))
-			// the answer is the projection, not the explicit row
-			assert.Equal(t, "<apple>", m.content[0].String())
-		})
-	}
-}
-
-func TestThemedMultichoiceExplicitAnswerKeepsRawPayload(t *testing.T) {
-	items := []themedFruit{{"apple", "red"}, {"banana", "yellow"}}
-	o, out, _ := themedMultichoiceOpt(t, asciiTheme(false), " ", "\r")
-	_, err := Multichoice(t.Context(), "Fruit", items, o, WithTemplate(".Name"),
-		WithAnswerTemplate(`{{ .Label }}={{ range .Answer }}{{ .Name }}/{{ .Color }}{{ end }} #{{ .Count }}`))
-	assert.NoError(t, err)
-	assert.True(t, strings.HasSuffix(out.String(), "\rFruit=apple/red #1\n"))
-}
-
 func TestThemedMultichoiceHiddenAnswerRetainsNothing(t *testing.T) {
 	erase := "\x1b[4A\r"
 	th := asciiTheme(false)
@@ -1850,12 +1802,6 @@ func TestThemedMultichoiceAnswerValueAndSharedAnswer(t *testing.T) {
 	_, err := Multichoice(t.Context(), "Fruit", fruits, o)
 	assert.NoError(t, err)
 	assert.True(t, strings.HasSuffix(out.String(), "\rFruit: [banana][cherry] (2)\n"))
-}
-
-func TestThemedMultichoicePerCallMoreAndLabelKeepPayloads(t *testing.T) {
-	m, tt := boundMultichoice(t, asciiTheme(false), 5, []any{"a", "b", "c", "d"},
-		WithMoreItemsTemplate(`{{ .More }}/{{ .Total }}`), WithLabelTemplate(`<{{ . }}>`))
-	assert.Equal(t, "\r<Fruit>\n\r| > o a\n\r|   o b\n\r| 2/4\n\r", mframe(t, m, tt))
 }
 
 func TestThemedMultichoiceKVShowsKeys(t *testing.T) {
@@ -1919,12 +1865,6 @@ func TestThemedMultichoiceAutomaticAnswerRunsOnlyProjection(t *testing.T) {
 		WithTemplate(`(printf "y%s" .)`), WithDefault("yc"))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"cherry"}, got)
-
-	// a per-call inactive template without a projection is matched as before
-	got, err = Multichoice(t.Context(), "Fruit", fruits, WithOutput(&out),
-		WithInactiveItemTemplate(`x{{ . }}`), WithDefault("xa"))
-	assert.NoError(t, err)
-	assert.Equal(t, []string{"apple"}, got)
 
 	got, err = MultichoiceLazy(t.Context(), "Fruit", lazySeq("apple", "banana"), WithOutput(&out), WithDefault("zb"))
 	assert.NoError(t, err)

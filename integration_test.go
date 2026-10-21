@@ -830,26 +830,15 @@ func TestMultichoiceErrors(t *testing.T) {
 	if got != nil || !errors.Is(err, tui.ErrWrongWidget) {
 		t.Fatal(got, err)
 	}
-	got, err = tui.Multichoice(t.Context(), "Bad", []string{"one"}, tui.WithInactiveItemTemplate("{{"))
+	got, err = tui.Multichoice(t.Context(), "Bad", []string{"one"}, tui.WithTemplate("{{"))
 	if got != nil || err == nil {
 		t.Fatal(got, err)
 	}
-	got, err = tui.Multichoice(t.Context(), "Bad", []string{"one"}, tui.WithInactiveItemTemplate("{{.Missing}}"))
+	got, err = tui.Multichoice(t.Context(), "Bad", []string{"one"}, tui.WithTemplate(".Missing"))
 	if got != nil || err == nil {
 		t.Fatal(got, err)
 	}
 	var out bytes.Buffer
-	got, err = tui.Multichoice(
-		t.Context(),
-		"Bad",
-		[]string{"one"},
-		tui.WithAnswerTemplate("{{.Missing}}"),
-		tui.WithInput(strings.NewReader(" \r")),
-		tui.WithOutput(&out),
-	)
-	if got != nil || err == nil {
-		t.Fatal(got, err)
-	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	got, err = tui.Multichoice(ctx, "Canceled", []string{"one"}, tui.WithOutput(&out))

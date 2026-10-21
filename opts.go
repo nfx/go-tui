@@ -123,8 +123,6 @@ type withDefault interface {
 // withPrompt is implemented by widgets that ask a question and print the answer.
 type withPrompt interface {
 	setHide()
-	setLabelTemplate(tmpl string)
-	setAnswerTemplate(tmpl string)
 	withDefault
 }
 
@@ -148,9 +146,6 @@ func (c *config) setWriter(w io.Writer) {
 type withChoiceContent interface {
 	setContentTemplate(main string, details ...string)
 }
-type withActiveItemTemplate interface{ setActiveItemTemplate(tmpl string) }
-type withInactiveItemTemplate interface{ setInactiveItemTemplate(tmpl string) }
-type withMoreItemsTemplate interface{ setMoreItemsTemplate(tmpl string) }
 
 // defaultValue is a [WithDefault] answer. Presence is tracked apart from the
 // content, as empty strings, zeros, false and nil are valid defaults.

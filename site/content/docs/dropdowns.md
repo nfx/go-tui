@@ -245,7 +245,7 @@ city, err := tui.Dropdown(ctx, "City", cities, opts)
 
 ## Default appearance
 
-Without per-call templates, a dropdown draws through the installed theme:
+A dropdown draws through the installed theme:
 the `Templates.Dropdown` slots, which inherit from `Templates.Prompt` and
 `Templates.Choice`. See [Themes](themes.md) to change it for every widget.
 

@@ -251,10 +251,9 @@ type fileView struct {
 }
 
 // answer retains the chosen path once, after every directory dropdown has
-// cleared. Without a terminal nothing is retained; a per-call answer
-// template already ran on each chosen entry.
+// cleared. Without a terminal nothing is retained.
 func (f *filePicker) answer(d *dropdown, title, path string) error {
-	if d.answerSet || !outputIsTerminal(d.out) {
+	if !outputIsTerminal(d.out) {
 		return nil
 	}
 	err := d.retain(title, path)
@@ -297,12 +296,9 @@ func (f *filePicker) choose(
 	if !outputIsTerminal(d.out) {
 		return f.answerFromDefault(ctx, d, title, entries, items)
 	}
-	if !d.answerSet {
-		// the path is retained once, by answer
-		d.Label, d.Items = title, items
-		return d.dropdownIndex(ctx)
-	}
-	return d.pick(ctx, title, items)
+	// the path is retained once, by answer
+	d.Label, d.Items = title, items
+	return d.dropdownIndex(ctx)
 }
 
 // soleEntry returns the only entry that is not the way up.

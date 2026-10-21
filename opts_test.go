@@ -84,19 +84,6 @@ func TestEntryPointsRejectOptionsOfOtherWidgets(t *testing.T) {
 	assert.ErrorIs(t, err, ErrWrongWidget)
 }
 
-func TestSharedTemplateOptionsConfigureInput(t *testing.T) {
-	i := newInput(t.Context(), "Name")
-	err := opts{
-		WithHide(),
-		WithLabelTemplate("label"),
-		WithAnswerTemplate("answer"),
-	}.Apply(i)
-	assert.NoError(t, err)
-	assert.True(t, i.Hide)
-	assert.Equal(t, "label", i.LabelTemplate)
-	assert.Equal(t, "answer", i.AnswerTemplate)
-}
-
 func TestFilePickerSplitsOptionsBetweenParts(t *testing.T) {
 	writer := &bytes.Buffer{}
 	f, d, err := newFilePicker(t.Context(),
