@@ -21,7 +21,7 @@ func main() {
 	// WithFormatRate customizes how the throughput is displayed.
 	bar, err := tui.NewMaxProgressBar(ctx, "ダウンロード cafe\u0301", 1000,
 		tui.WithFormatRate(func(perSecond float64) string {
-			return fmt.Sprintf("%.0f KB/s", perSecond)
+			return fmt.Sprintf("%.0f KB", perSecond) // the bar appends "/s"
 		}))
 	if err != nil {
 		panic(err)
