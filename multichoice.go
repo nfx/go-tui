@@ -258,15 +258,6 @@ func (m *multichoice) setContentTemplate(main string, details ...string) {
 	m.setProjection(main, details...)
 }
 
-// setFieldTemplate keeps named fields consistent across rows and collection answers.
-func (m *multichoice) setFieldTemplate(fields ...string) {
-	expr := make([]string, len(fields))
-	for i, f := range fields {
-		expr[i] = "." + f
-	}
-	m.setProjection(strings.Join(expr, ` ", " `))
-}
-
 // prepare validates options and defers item projection until destination binding.
 func (m *multichoice) prepare(o []opt) error {
 	err := m.Ctx.Err()

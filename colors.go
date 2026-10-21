@@ -781,7 +781,7 @@ type Theme struct {
 // clone copies theme configuration without isolating helper closures.
 func (t Theme) clone() Theme {
 	t.Funcs = maps.Clone(t.Funcs)
-	t.Spinner.Frames = slices.Clone(t.Spinner.Frames)
+	t.Symbols.Spinner = slices.Clone(t.Symbols.Spinner)
 	return t
 }
 
@@ -919,6 +919,10 @@ type Symbols struct {
 	BarFill  string
 	BarHead  string
 	BarEmpty string
+	// Spinner are the frames of a running spinner, in order. Each frame is
+	// a symbol, so it is a single display column like the others. Empty
+	// takes the preset.
+	Spinner []string
 }
 
 // unicodeSymbols is the preset every empty symbol falls back to.
@@ -937,6 +941,13 @@ var unicodeSymbols = Symbols{
 	BarFill:   "█",
 	BarHead:   "█",
 	BarEmpty:  "░",
+	Spinner:   []string{"▘", "▀", "▝", "▐", "▗", "▄", "▖", "▌"},
+}
+
+// clone copies the symbols, so that edits never reach the preset.
+func (s Symbols) clone() Symbols {
+	s.Spinner = slices.Clone(s.Spinner)
+	return s
 }
 
 // named returns the glyph of a field by name.
@@ -1004,6 +1015,16 @@ func (s Symbols) normalize() (Symbols, error) {
 			return s, fmt.Errorf("theme.Symbols.%s: %w", f.path, err)
 		}
 	}
+	if len(s.Spinner) == 0 {
+		s.Spinner = def.Spinner
+	}
+	s.Spinner = slices.Clone(s.Spinner)
+	for i, frame := range s.Spinner {
+		err := s.singleColumn(frame)
+		if err != nil {
+			return s, fmt.Errorf("theme.Symbols.Spinner[%d]: %w", i, err)
+		}
+	}
 	return s, nil
 }
 
@@ -1042,6 +1063,8 @@ func ASCIISymbols() Symbols {
 		BarFill:   "=",
 		BarHead:   ">",
 		BarEmpty:  "-",
+		// the line spinner of cli-spinners (MIT License)
+		Spinner: []string{"|", "/", "-", `\`},
 	}
 }
 
@@ -1050,12 +1073,9 @@ func ASCIISymbols() Symbols {
 // them adapting to the background instead of becoming exact overrides.
 func presetTheme() Theme {
 	return Theme{
-		Palette: Palette{},
-		Symbols: unicodeSymbols,
-		Spinner: SpinnerStyle{
-			Frames:   slices.Clone(spinnerFrames),
-			Interval: spinnerInterval,
-		},
+		Palette:  Palette{},
+		Symbols:  unicodeSymbols.clone(),
+		Spinner:  SpinnerStyle{Interval: spinnerInterval},
 		Progress: progressStyle,
 		Table:    tableStyle,
 		JSON:     jsonStyle,

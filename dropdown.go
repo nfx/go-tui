@@ -614,25 +614,6 @@ func WithHide() opt {
 	})
 }
 
-// WithFieldTemplate uses named fields for choice rows and answers.
-//
-// Deprecated: use [WithTemplate] for simpler and more flexible approach.
-func WithFieldTemplate(fieldName ...string) opt {
-	return opT(func(d withChoiceContent) error {
-		d.setFieldTemplate(fieldName...)
-		return nil
-	})
-}
-
-// setFieldTemplate keeps row fields and the single-item answer in sync.
-func (d *dropdown) setFieldTemplate(fieldName ...string) {
-	single := make([]string, 0, len(fieldName))
-	for _, f := range fieldName {
-		single = append(single, "."+f)
-	}
-	d.setProjection(strings.Join(single, ` ", " `))
-}
-
 // WithTemplate shares main content across choice rows and answers; details appear only on the active row.
 func WithTemplate(main string, activeDetails ...string) opt {
 	return opT(func(d withChoiceContent) error {
@@ -646,8 +627,8 @@ func (d *dropdown) setContentTemplate(main string, activeDetails ...string) {
 	d.setProjection(main, activeDetails...)
 }
 
-// projection is the content of a choice list set by [WithTemplate]
-// or [WithFieldTemplate]. It replaces the Value and Details slots of the
+// projection is the content of a choice list set by [WithTemplate]. It
+// replaces the Value and Details slots of the
 // theme and leaves the presentation alone. view adapts a raw item to the
 // payload of those slots; nil passes it unchanged. Per-call templates always
 // take the raw item.

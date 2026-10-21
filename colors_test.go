@@ -1286,18 +1286,31 @@ func TestSpinnerSlotsRejectHidden(t *testing.T) {
 func TestSpinnerStyleValidation(t *testing.T) {
 	c, err := Theme{}.compile()
 	assert.NoError(t, err)
-	assert.Equal(t, spinnerFrames, c.source.Spinner.Frames)
+	assert.Equal(t, []string{"▘", "▀", "▝", "▐", "▗", "▄", "▖", "▌"}, c.source.Symbols.Spinner)
 	assert.Equal(t, 100*time.Millisecond, c.source.Spinner.Interval)
+	c, err = Theme{Symbols: ASCIISymbols()}.compile()
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"|", "/", "-", `\`}, c.source.Symbols.Spinner)
+
+	th := NewTheme()
+	th.Spinner = SpinnerStyle{Interval: -time.Second}
+	_, err = th.compile()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "theme.Spinner.Interval: -1s: must not be negative")
+
 	for _, tc := range []struct {
-		style SpinnerStyle
+		frame string
 		want  string
 	}{
-		{SpinnerStyle{Interval: -time.Second}, "theme.Spinner.Interval: -1s: must not be negative"},
-		{SpinnerStyle{Frames: []string{"ab", "abc"}}, "theme.Spinner.frames[1]: \"abc\": width 3, want 2 as frames[0]"},
-		{SpinnerStyle{Frames: []string{"a\n"}}, "theme.Spinner.frames[0]"},
+		{"", "theme.Symbols.Spinner[1]: must not be empty"},
+		{"a\n", "theme.Symbols.Spinner[1]"},
+		{"\x1b[32ma", "theme.Symbols.Spinner[1]"},
+		{"ab", "theme.Symbols.Spinner[1]: \"ab\": want one display column"},
+		{"\u754c", "theme.Symbols.Spinner[1]: \"\u754c\": want one display column, got 2"},
+		{"\u0301", "theme.Symbols.Spinner[1]"},
 	} {
 		th := NewTheme()
-		th.Spinner = tc.style
+		th.Symbols.Spinner = []string{"a", tc.frame}
 		_, err := th.compile()
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), tc.want)
@@ -1307,18 +1320,17 @@ func TestSpinnerStyleValidation(t *testing.T) {
 func TestSpinnerFramesAreCopied(t *testing.T) {
 	keepTheme(t)
 	th := NewTheme()
-	th.Spinner.Frames = []string{"a", "b"}
+	th.Symbols.Spinner = []string{"a", "b"}
 	assert.NoError(t, defaultIO.installTheme(th))
 	installed := defaultIO.currentTheme()
-	th.Spinner.Frames[0] = "x"
+	th.Symbols.Spinner[0] = "x"
 	got := installed.editable()
-	got.Spinner.Frames[1] = "y"
-	assert.Equal(t, []string{"a", "b"}, installed.source.Spinner.Frames)
-	// the preset does not share the exported legacy style
-	SpinnerStyleDocs[0], NewTheme().Spinner.Frames[1] = "?", "?"
-	t.Cleanup(func() { SpinnerStyleDocs[0] = ".  " })
-	assert.Equal(t, ".  ", NewTheme().Spinner.Frames[0])
-	assert.Equal(t, ".. ", spinnerFrames[1])
+	got.Symbols.Spinner[1] = "y"
+	assert.Equal(t, []string{"a", "b"}, installed.source.Symbols.Spinner)
+	// the presets are not shared with editable themes
+	NewTheme().Symbols.Spinner[0] = "?"
+	assert.Equal(t, "▘", NewTheme().Symbols.Spinner[0])
+	assert.Equal(t, "▘", unicodeSymbols.Spinner[0])
 }
 
 func TestBuiltinProgressSlots(t *testing.T) {

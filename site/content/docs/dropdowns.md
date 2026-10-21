@@ -232,18 +232,6 @@ city, err := tui.Dropdown(ctx, "City", cities,
 )
 ```
 
-## WithFieldTemplate
-
-Deprecated helper for field-based templates.
-
-```go
-city, err := tui.Dropdown(ctx, "City", data,
-	tui.WithFieldTemplate("Name"),
-)
-```
-
-Prefer `WithTemplate` for new code.
-
 ## WithInput
 
 Overrides input source.

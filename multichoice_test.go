@@ -408,7 +408,7 @@ func TestMultichoicePreparationAndCapabilities(t *testing.T) {
 	if m.count != 0 {
 		t.Fatal("default was reapplied")
 	}
-	for _, option := range []opt{WithTemplate(".Name"), WithFieldTemplate("Name"), WithActiveItemTemplate("{{.}}"), WithInactiveItemTemplate("{{.}}"), WithMoreItemsTemplate("{{.More}}")} {
+	for _, option := range []opt{WithTemplate(".Name"), WithActiveItemTemplate("{{.}}"), WithInactiveItemTemplate("{{.}}"), WithMoreItemsTemplate("{{.More}}")} {
 		if err := option(newMultichoice(t.Context())); err != nil {
 			t.Fatal(err)
 		}
@@ -1453,7 +1453,7 @@ func TestMultichoiceDefaultStreams(t *testing.T) {
 }
 
 func TestExplicitAnswerTemplateSurvivesContentTemplates(t *testing.T) {
-	for name, content := range map[string]opt{"template": WithTemplate(".Name"), "field": WithFieldTemplate("Name")} {
+	for name, content := range map[string]opt{"template": WithTemplate(".Name"), "details": WithTemplate(".Name", ".Color")} {
 		for _, answerFirst := range []bool{true, false} {
 			m := newMultichoice(t.Context())
 			o := []opt{WithAnswerTemplate("custom"), content}
@@ -1762,9 +1762,9 @@ func TestThemedMultichoiceProjectionMatchesAndAnswers(t *testing.T) {
 	assert.True(t, strings.HasSuffix(s, "+ Fruit · banana\n"))
 }
 
-func TestThemedMultichoiceFieldTemplateProjects(t *testing.T) {
+func TestThemedMultichoiceMultiFieldProjects(t *testing.T) {
 	items := []themedFruit{{"apple", "red"}, {"banana", "yellow"}}
-	m, tt := boundMultichoice(t, asciiTheme(false), 10, []any{items[0], items[1]}, WithFieldTemplate("Name", "Color"))
+	m, tt := boundMultichoice(t, asciiTheme(false), 10, []any{items[0], items[1]}, WithTemplate(`.Name ", " .Color`))
 	assert.Equal(t,
 		"\r? Fruit\n\r| > o apple, red\n\r|   o banana, yellow\n\r"+multichoiceHelp,
 		mframe(t, m, tt))

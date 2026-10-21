@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"slices"
 	"sync"
 	"text/template"
 	"time"
@@ -17,44 +16,22 @@ import (
 	"log/slog"
 )
 
-// These two styles are taken from cli-spinners (MIT License)
-// See https://github.com/sindresorhus/cli-spinners/blob/main/spinners.json for more spinner styles.
-var DefaultSpinnerStyle = []string{"⠉⠉", "⠈⠙", "⠀⠹", "⠀⢸", "⠀⣰", "⢀⣠", "⣀⣀", "⣄⡀", "⣆⠀", "⡇⠀", "⠏⠀", "⠋⠁"}
-var SpinnerStyleDocs = []string{".  ", ".. ", "...", " ..", "  .", "   "}
-
-// spinnerFrames and spinnerInterval are the theme preset, immune to edits of
-// the exported styles above.
-var spinnerFrames = []string{".  ", ".. ", "...", " ..", "  .", "   "}
-
 const spinnerInterval = 100 * time.Millisecond
 
-// SpinnerStyle is the animation of spinners. [WithFrames] replaces the frames
-// of one spinner; the interval belongs to the whole [Spinners] group.
+// SpinnerStyle is the timing of spinners. The frames are [Symbols.Spinner];
+// the interval belongs to the whole [Spinners] group.
 type SpinnerStyle struct {
-	// Frames are nonempty, equally wide single-line strings. Empty takes the
-	// preset.
-	//
-	// TODO: move the frames to [Symbols], like the progress bar glyphs, so
-	// that [ASCIISymbols] selects ASCII frames and the Unicode preset can
-	// animate with glyphs such as [DefaultSpinnerStyle].
-	Frames []string
 	// Interval is the animation step. Zero takes 100ms.
 	Interval time.Duration
 }
 
-// normalize fills the preset and validates the frames and interval.
+// normalize fills the preset and validates the interval.
 func (s SpinnerStyle) normalize() (SpinnerStyle, error) {
 	switch {
 	case s.Interval < 0:
 		return s, fmt.Errorf("theme.Spinner.Interval: %v: must not be negative", s.Interval)
 	case s.Interval == 0:
 		s.Interval = spinnerInterval
-	}
-	if len(s.Frames) == 0 {
-		s.Frames = slices.Clone(spinnerFrames)
-	}
-	if err := new(Spinners).checkFrames(s.Frames); err != nil {
-		return s, fmt.Errorf("theme.Spinner.%w", err)
 	}
 	return s, nil
 }
@@ -232,15 +209,7 @@ func WithKeep() opt {
 	})
 }
 
-// WithFrames replaces the animation of a spinner added with [Spinners.Add].
-func WithFrames(frames []string) opt {
-	return opT(func(cs *createSpinner) error {
-		cs.frames = slices.Clone(frames)
-		return nil
-	})
-}
-
-// Add creates a spinner with nonempty, equally wide single-line frames.
+// Add creates a spinner that animates the frames of the theme of the group.
 func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 	// rewrap the context, so that we can cancel the spinner when
 	// we don't want to cancel the parent context.
@@ -248,16 +217,10 @@ func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 	replyOffset := make(chan int, 1)
 	req := createSpinner{
 		cancel:      cancel,
-		frames:      s.theme.source.Spinner.Frames,
+		frames:      s.theme.source.Symbols.Spinner,
 		replyOffset: replyOffset,
 	}
 	err := opts(opt).Apply(&req)
-	if err == nil {
-		err = s.checkFrames(req.frames)
-		if err != nil {
-			err = fmt.Errorf("spinner: %w", err)
-		}
-	}
 	if err != nil {
 		cancel()
 		return nil, err
@@ -707,26 +670,4 @@ func (s *Spinner) monitor(ctx context.Context) {
 	case <-ctx.Done():
 		return // what created spinner is done
 	}
-}
-
-// checkFrames requires nonempty, single-line text/SGR frames of equal positive display width.
-func (s *Spinners) checkFrames(frames []string) error {
-	if len(frames) == 0 {
-		return errors.New("frames must not be empty")
-	}
-	width := 0
-	for i, f := range frames {
-		if seg, ok := text(f).unstyled(); ok {
-			return fmt.Errorf("frames[%d]: %q: %q is not text or SGR", i, f, seg.text)
-		}
-		w := text(f).width()
-		switch {
-		case w == 0:
-			return fmt.Errorf("frames[%d]: %q: want a positive display width", i, f)
-		case i > 0 && w != width:
-			return fmt.Errorf("frames[%d]: %q: width %d, want %d as frames[0]", i, f, w, width)
-		}
-		width = w
-	}
-	return nil
 }

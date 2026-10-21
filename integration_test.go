@@ -240,13 +240,15 @@ func TestProgressbarUpdatesAfterCompletion(t *testing.T) {
 
 func TestSpinnerUpdatesAfterCompletion(t *testing.T) {
 	term := newTerminal(t, 6)
+	th := tui.NewTheme()
+	th.Symbols.Spinner = []string{"-"}
+	tui.UseTheme(t, th)
 	s, err := tui.NewSpinners(t.Context())
 	assert.NoError(t, err)
 	t.Cleanup(s.Close)
-	frames := tui.WithFrames([]string{"-"})
-	failed, err := s.Add(t.Context(), tui.WithPrefixf("fetch"), frames)
+	failed, err := s.Add(t.Context(), tui.WithPrefixf("fetch"))
 	assert.NoError(t, err)
-	kept, err := s.Add(t.Context(), tui.WithPrefixf("build"), frames, tui.WithKeep())
+	kept, err := s.Add(t.Context(), tui.WithPrefixf("build"), tui.WithKeep())
 	assert.NoError(t, err)
 	failed.Fail(errors.New("timeout"))
 	kept.Update("done")
@@ -255,7 +257,7 @@ func TestSpinnerUpdatesAfterCompletion(t *testing.T) {
 	failed.Update("retrying")
 	kept.Update("restarted")
 	// spinners apply changes in order, so a frame with this one has all of them
-	_, err = s.Add(context.Background(), tui.WithPrefixf("sentinel"), frames)
+	_, err = s.Add(context.Background(), tui.WithPrefixf("sentinel"))
 	assert.NoError(t, err)
 	term.waitRows(t, "✖ fetch: timeout", "■ build: done", "- sentinel:")
 }
@@ -683,7 +685,7 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 			t.Context(),
 			"Services",
 			items,
-			tui.WithFieldTemplate("Name", "Region"),
+			tui.WithTemplate(`.Name ", " .Region`),
 			tui.WithDefault("us"),
 			tui.WithInput(strings.NewReader("\r")),
 			tui.WithOutput(io.Discard),
@@ -1286,7 +1288,7 @@ func (l themedLayout) theme() tui.Theme {
 	if l.ascii {
 		th.Symbols = tui.ASCIISymbols()
 	}
-	th.Spinner.Frames = []string{"~"} // one frame, so every redraw looks alike
+	th.Symbols.Spinner = []string{"~"} // one frame, so every redraw looks alike
 	return th
 }
 
@@ -1701,7 +1703,7 @@ func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
 	term.waitRows(t, append([]string{"~ first:", "Download  25% =..."}, picking...)...)
 
 	next := themedLayouts[0].theme() // Guided Unicode
-	next.Spinner.Frames = []string{"*"}
+	next.Symbols.Spinner = []string{"*"}
 	assert.NoError(t, tui.SetDefaultTheme(next))
 
 	// redraws of running widgets, and a spinner added to a running group,
