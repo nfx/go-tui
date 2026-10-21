@@ -139,22 +139,22 @@ func TestWidgetsShareTerminal(t *testing.T) {
 	p, err := tui.NewMaxProgressBar(t.Context(), "Download", 4)
 	assert.NoError(t, err)
 	p.Add(1)
-	term.waitRows(t, "Download   25%...", "1 / 4 items...")
+	term.waitRows(t, "Download  25%  ...", "1 / 4 items...")
 
 	res := prompt(func() (string, error) {
 		return tui.Dropdown(t.Context(), "Pick", []string{"a", "b"})
 	})
 	// the background overlay stays above the prompt that started later
-	term.waitRows(t, "Download   25%...", "1 / 4 items...", "? Pick", "| > a", "|   b", "| ^v move...")
+	term.waitRows(t, "Download  25%  ...", "1 / 4 items...", "? Pick", "| > a", "|   b", "| ^v move...")
 
 	// log output goes above both overlays
 	_, err = fmt.Fprintln(tui.Stderr(), "log line")
 	assert.NoError(t, err)
-	term.waitRows(t, "log line", "Download   25%...", "1 / 4 items...", "? Pick", "| > a", "|   b", "| ^v move...")
+	term.waitRows(t, "log line", "Download  25%  ...", "1 / 4 items...", "? Pick", "| > a", "|   b", "| ^v move...")
 
 	term.press(t, keyEnter)
 	assert.Equal(t, "a", answer(t, res))
-	term.waitRows(t, "log line", "+ Pick · a", "Download   25%...", "1 / 4 items...")
+	term.waitRows(t, "log line", "+ Pick · a", "Download  25%  ...", "1 / 4 items...")
 
 	p.Add(3) // completes the bar, which then disappears
 	term.waitRows(t, "log line", "+ Pick · a")
@@ -215,7 +215,7 @@ func TestProgressbarUpdatesAfterCompletion(t *testing.T) {
 	p, err := tui.NewMaxProgressBar(t.Context(), "Copy", 4)
 	assert.NoError(t, err)
 	p.Add(2)
-	term.waitRows(t, "Copy   50%...", "2 / 4 items...")
+	term.waitRows(t, "Copy  50%  ...", "2 / 4 items...")
 	p.Add(5) // overshoots the maximum
 	// the bar completes on its next redraw and disappears
 	term.waitRows(t)
@@ -248,9 +248,9 @@ func TestProgressbarOnOutputKeepsBarOnShortTerminal(t *testing.T) {
 	p, err := tui.NewMaxProgressBar(t.Context(), "Copy", 4, tui.WithOutput(out))
 	assert.NoError(t, err)
 	p.Add(1)
-	term.waitRows(t, "Copy   25% ...")
+	term.waitRows(t, "Copy  25%  ...")
 	p.Add(1)
-	term.waitRows(t, "Copy   50% ...")
+	term.waitRows(t, "Copy  50%  ...")
 	assert.NoError(t, p.Close())
 	term.waitRows(t)
 }
@@ -263,9 +263,9 @@ func TestProgressbarStacksOnTwoRowTerminal(t *testing.T) {
 	p, err := tui.NewMaxProgressBar(t.Context(), "Copy", 4)
 	assert.NoError(t, err)
 	p.Add(1)
-	term.waitRows(t, "Copy   25% ...", "1 / 4 items...")
+	term.waitRows(t, "Copy  25%  ...", "1 / 4 items...")
 	p.Add(1)
-	term.waitRows(t, "Copy   50% ...", "2 / 4 items...")
+	term.waitRows(t, "Copy  50%  ...", "2 / 4 items...")
 	assert.NoError(t, p.Close())
 	term.waitRows(t)
 }
@@ -974,24 +974,24 @@ func TestMultichoiceSharesTerminalWithProgressAndLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 	progress.Add(1)
-	term.waitRows(t, "Download   25%...", "1 / 4 items...")
+	term.waitRows(t, "Download  25%  ...", "1 / 4 items...")
 	res := prompt(func() (string, error) {
 		values, err := tui.Multichoice(t.Context(), "Pick", []string{"a", "b"})
 		return fmt.Sprint(values), err
 	})
-	term.waitRows(t, "Download   25%...", "1 / 4 items...", "? Pick", "| > o a", "|   o b", "| ^v move...")
+	term.waitRows(t, "Download  25%  ...", "1 / 4 items...", "? Pick", "| > o a", "|   o b", "| ^v move...")
 	if _, err := fmt.Fprintln(tui.Stderr(), "log line"); err != nil {
 		t.Fatal(err)
 	}
-	term.waitRows(t, "log line", "Download   25%...", "1 / 4 items...", "? Pick", "| > o a", "|   o b", "| ^v move...")
+	term.waitRows(t, "log line", "Download  25%  ...", "1 / 4 items...", "? Pick", "| > o a", "|   o b", "| ^v move...")
 	term.press(t, " ")
 	term.press(t, keyDown)
-	term.waitRows(t, "log line", "Download   25%...", "1 / 4 items...", "? Pick", "|   x a", "| > o b", "| ^v move...")
+	term.waitRows(t, "log line", "Download  25%  ...", "1 / 4 items...", "? Pick", "|   x a", "| > o b", "| ^v move...")
 	term.press(t, keyEnter)
 	if got := answer(t, res); got != "[a]" {
 		t.Fatal(got)
 	}
-	term.waitRows(t, "log line", "+ Pick · a", "Download   25%...", "1 / 4 items...")
+	term.waitRows(t, "log line", "+ Pick · a", "Download  25%  ...", "1 / 4 items...")
 	progress.Add(3)
 	if err := progress.Close(); err != nil {
 		t.Fatal(err)
@@ -1291,7 +1291,7 @@ type themedLayout struct {
 
 var themedLayouts = []themedLayout{{
 	spinner:   "~ fetch: pages",
-	progress:  []string{"Download   25% ━...", "1 / 4 items · ..."},
+	progress:  []string{"Download  25%  ━...", "1 / 4 items · ..."},
 	input:     []string{"◆ Name", "│ x"},
 	dropdown:  []string{"◆ Pick", "│   a", "│ ❯ b", "│ ↑↓ move · type filter"},
 	checklist: []string{"◆ Tags", "│ ❯ ◉ x", "│   ○ y", "│ ↑↓ move · space toggle · type filter"},
@@ -1299,7 +1299,7 @@ var themedLayouts = []themedLayout{{
 }, {
 	ascii:     true,
 	spinner:   "~ fetch: pages",
-	progress:  []string{"Download   25% =...", "1 / 4 items | ..."},
+	progress:  []string{"Download  25%  =...", "1 / 4 items | ..."},
 	input:     []string{"? Name", "| x"},
 	dropdown:  []string{"? Pick", "|   a", "| > b", "| ^v move · type filter"},
 	checklist: []string{"? Tags", "| > x x", "|   o y", "| ^v move · space toggle · type filter"},
@@ -1307,7 +1307,7 @@ var themedLayouts = []themedLayout{{
 }, {
 	inline:    true,
 	spinner:   "~ fetch: pages",
-	progress:  []string{"Download   25% ━...", "1 / 4 items · ..."},
+	progress:  []string{"Download  25%  ━...", "1 / 4 items · ..."},
 	input:     []string{"◆ Name x"},
 	dropdown:  []string{"◆ Pick   a", "❯ b", "↑↓ move · type filter"},
 	checklist: []string{"◆ Tags", "❯ ◉ x", "○ y", "↑↓ move · space toggle · type filter"},
@@ -1316,7 +1316,7 @@ var themedLayouts = []themedLayout{{
 	inline:    true,
 	ascii:     true,
 	spinner:   "~ fetch: pages",
-	progress:  []string{"Download   25% =...", "1 / 4 items | ..."},
+	progress:  []string{"Download  25%  =...", "1 / 4 items | ..."},
 	input:     []string{"? Name x"},
 	dropdown:  []string{"? Pick   a", "> b", "^v move · type filter"},
 	checklist: []string{"? Tags", "> x x", "o y", "^v move · space toggle · type filter"},
@@ -1680,7 +1680,7 @@ func TestThemedFailuresStayWithTheirOwner(t *testing.T) {
 	bar, err := tui.NewMaxProgressBar(t.Context(), "Download", 4)
 	assert.NoError(t, err)
 	bar.Add(1)
-	live := []string{"~ work", "Download   25% ━...", "1 / 4 items..."}
+	live := []string{"~ work", "Download  25%  ━...", "1 / 4 items..."}
 	term.waitRows(t, live...)
 
 	// a prompt whose helper fails returns the error and leaves the screen
@@ -1709,7 +1709,7 @@ func TestThemedFailuresStayWithTheirOwner(t *testing.T) {
 	broken, err := other.Add(t.Context())
 	assert.NoError(t, err)
 	broken.Update("broken")
-	term.waitRows(t, "✔ Name · x", "~ work", "Download   25% ━...", "1 / 4 items...", "~ broken")
+	term.waitRows(t, "✔ Name · x", "~ work", "Download  25%  ━...", "1 / 4 items...", "~ broken")
 	broken.Update("fail")
 	term.waitRows(t, append([]string{"✔ Name · x"}, live...)...)
 	assert.ErrorIs(t, broken.Close(), errBoom)
@@ -1741,7 +1741,7 @@ func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
 	bar.Add(1)
 	res := prompt(func() (string, error) { return tui.Dropdown(t.Context(), "Pick", []string{"a", "b"}) })
 	picking := []string{"? Pick", "| > a", "|   b", "| ^v move · type filter"}
-	term.waitRows(t, append([]string{"~ first:", "Download   25% =...", "1 / 4 items..."}, picking...)...)
+	term.waitRows(t, append([]string{"~ first:", "Download  25%  =...", "1 / 4 items..."}, picking...)...)
 
 	next := themedLayouts[0].theme() // Guided Unicode
 	next.Symbols.Spinner = []string{"*"}
@@ -1753,7 +1753,7 @@ func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
 	assert.NoError(t, err)
 	bar.Add(1)
 	term.press(t, keyDown)
-	running := []string{"~ first:", "~ second:", "Download   50% =...", "2 / 4 items..."}
+	running := []string{"~ first:", "~ second:", "Download  50%  =...", "2 / 4 items..."}
 	term.waitRows(t, append(running, "? Pick", "|   a", "| > b", "| ^v move · type filter")...)
 	term.press(t, keyEnter)
 	assert.Equal(t, "b", answer(t, res))

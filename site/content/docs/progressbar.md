@@ -137,14 +137,14 @@ By default, a bar has two rows: the label, the percentage and the bar, and a
 hint row with the metrics below it.
 
 ```text
-Download   62% ━━━━━━━━━━━━━━━━━━━╸────────────
+Download  62%  ━━━━━━━━━━━━━━━━━━━╸────────────
 62.0 / 100.0 MiB · 6.2 MiB/s · 12s left
 ```
 
 With `tui.ASCIISymbols()`:
 
 ```text
-Download   62% ===================>------------
+Download  62%  ===================>------------
 62.0 / 100.0 MiB | 6.2 MiB/s | 12s left
 ```
 
@@ -175,7 +175,7 @@ Set it to `tui.Hidden` to keep only the bar row.
 as earlier versions did, and drops metrics from the end to keep the bar:
 
 ```text
-Download  62% ━━━━━━━╸──── 6.2 MiB/s · 12s remaining
+Download 62%  ━━━━━━━╸──── 6.2 MiB/s · 12s remaining
 ```
 
 In the stacked layout, `Templates.Progress.Frame` receives an empty

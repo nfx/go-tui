@@ -86,10 +86,10 @@ type ProgressStyle struct {
 // progressStyle is the theme preset.
 var progressStyle = ProgressStyle{MinBarWidth: 1}
 
-// progressPercent is the completion of a bar in four columns, or the
-// Unknown symbol without a total.
-const progressPercent = `{{ if gt .Total 0 }}{{ accent (printf "%3d%%" .Percent) }}` +
-	`{{ else }}{{ accent (printf "%4s" (symbol "Unknown")) }}{{ end }}`
+// progressPercent is the completion of a bar left-aligned in four columns,
+// or the Unknown symbol without a total.
+const progressPercent = `{{ if gt .Total 0 }}{{ accent (printf "%-4s" (printf "%d%%" .Percent)) }}` +
+	`{{ else }}{{ accent (printf "%-4s" (symbol "Unknown")) }}{{ end }}`
 
 // stackedProgressFrame is the built-in frame of bars that are not
 // [ProgressStyle.Compact], which sets the label apart from the percentage.

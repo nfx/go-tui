@@ -1381,10 +1381,10 @@ func TestBuiltinProgressSlots(t *testing.T) {
 	assert.Equal(t, "1.00/s · 3s remaining", render(tt.Metrics, view))
 	assert.Equal(t, "", render(tt.Metrics, progressView{}))
 	// the stacked frame sets the label apart from a four-column percentage
-	assert.Equal(t, "build    7% ##", render(tt.Frame, view))
+	assert.Equal(t, "build  7%   ##", render(tt.Frame, view))
 	assert.Equal(t, "100% ##", render(tt.Frame, progressView{Total: 1, Percent: 100, Bar: "##"}))
 	// without a total, the completion is unknown rather than zero
-	assert.Equal(t, "build     — ##", render(tt.Frame, progressView{Label: "build", Bar: "##"}))
+	assert.Equal(t, "build  —    ##", render(tt.Frame, progressView{Label: "build", Bar: "##"}))
 
 	hint := func(s *compiledSlot, data hintView) string {
 		t.Helper()
@@ -1412,8 +1412,8 @@ func TestBuiltinProgressSlots(t *testing.T) {
 	assert.Equal(t, "62 / 100 MiB | 900 KiB / 10 MiB | 12s left", hint(tt.Hint, pairs))
 	// the compact frame keeps one space after the label
 	view.Metrics = "m"
-	assert.Equal(t, "build   7% ## m", render(tt.Frame, view))
-	assert.Equal(t, "build    ? ## m", render(tt.Frame, progressView{Label: "build", Bar: "##", Metrics: "m"}))
+	assert.Equal(t, "build 7%   ## m", render(tt.Frame, view))
+	assert.Equal(t, "build ?    ## m", render(tt.Frame, progressView{Label: "build", Bar: "##", Metrics: "m"}))
 }
 
 func TestProgressFrameInsertsBarOnce(t *testing.T) {
