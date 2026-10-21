@@ -13,6 +13,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -888,13 +889,20 @@ func TestChanIOWriteAndWaitCompletesWithoutCancel(t *testing.T) {
 
 func TestChanIOSharedGeometryRefreshIsRaceFree(t *testing.T) {
 	prevSize := termGetSize
-	t.Cleanup(func() { termGetSize = prevSize })
+	ctx, cancel := context.WithCancel(t.Context())
+	var bg sync.WaitGroup
+	// stop background goroutines before restoring the global they read
+	t.Cleanup(func() {
+		cancel()
+		bg.Wait()
+		termGetSize = prevSize
+	})
 	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
-	ctx := t.Context()
 	// a real fd makes every refresh write the shared geometry
 	cio := newUnstartedIO(ctx, 80, 24, 2)
-	go cio.handleViewports(ctx)
-	go cio.forwardTo(ctx, io.Discard)
+	bg.Add(2)
+	go func() { defer bg.Done(); cio.handleViewports(ctx) }()
+	go func() { defer bg.Done(); cio.forwardTo(ctx, io.Discard) }()
 
 	done := make(chan struct{})
 	for range 2 {
