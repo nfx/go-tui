@@ -169,6 +169,7 @@ func (r *blockingByteReader) Close() {
 	close(r.ch)
 }
 
+// testIOforDropdown provides channel-driven prompt I/O at a fixed terminal size.
 func testIOforDropdown(t *testing.T, width, height int, o ...opt) (*chanIO, opt) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -219,35 +220,31 @@ func confirmForTest(t *testing.T) (in, out chan string, result chan bool) {
 
 func TestSimpleCase(t *testing.T) {
 	in, out, res := confirmForTest(t)
-	assert.Equal(t,
-		"\rAre you sure? + Yes\n\r              - No\n\r",
-		<-out)
+	assert.Equal(t, "\rAre you sure? \n\r│ + Yes\n\r│ - No\n\r│ up/down move · type filter\n\r", <-out)
 	in <- "\x0d" // enter
-	assert.Equal(t, "\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r", <-out)
+	assert.Equal(t, "\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r", <-out)
 	assert.Equal(t, "Are you sure?: Yes\n", waitForDropdownOutput(t, out, "Are you sure?: Yes\n"))
 	assert.Equal(t, true, <-res)
 }
 
 func TestDenyCase(t *testing.T) {
 	in, out, res := confirmForTest(t)
-	assert.Equal(t,
-		"\rAre you sure? + Yes\n\r              - No\n\r",
-		<-out)
+	assert.Equal(t, "\rAre you sure? \n\r│ + Yes\n\r│ - No\n\r│ up/down move · type filter\n\r", <-out)
 	in <- "\x1b\x5b\x42" // down
-	assert.Equal(t,
-		"\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r\rAre you sure? - Yes\n\r              + No\n\r",
-		<-out)
+	assert.Equal(
+		t,
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rAre you sure? \n\r│ - Yes\n\r│ + No\n\r│ up/down move · type filter\n\r",
+		<-out,
+	)
 	in <- "\x0d" // enter
-	assert.Equal(t, "\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r", <-out)
+	assert.Equal(t, "\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r", <-out)
 	assert.Equal(t, "Are you sure?: No\n", waitForDropdownOutput(t, out, "Are you sure?: No\n"))
 	assert.Equal(t, false, <-res)
 }
 
 func TestDownAndUpCase(t *testing.T) {
 	in, out, res := confirmForTest(t)
-	assert.Equal(t,
-		"\rAre you sure? + Yes\n\r              - No\n\r",
-		<-out)
+	assert.Equal(t, "\rAre you sure? \n\r│ + Yes\n\r│ - No\n\r│ up/down move · type filter\n\r", <-out)
 	in <- "\x1b\x5b\x42" // down
 	<-out                // frame render
 	in <- "\x1b\x5b\x41" // up
@@ -258,85 +255,112 @@ func TestDownAndUpCase(t *testing.T) {
 	assert.Equal(t, true, <-res)
 }
 
-func overflowForTest(t *testing.T) (in, out chan string, result chan string) {
+// picked is the outcome of a dropdown run in the background. The goroutine
+// only sends it, so that a test failing early cannot make it report after
+// the test has ended.
+type picked struct {
+	value string
+	err   error
+}
+
+// assertPicked checks that the dropdown behind res chose want.
+func assertPicked(t *testing.T, want string, res <-chan picked) {
 	t.Helper()
-	cio, opts := testIOforDropdown(t, 12, 4)
-	result = make(chan string)
+	r := <-res
+	assert.NoError(t, r.err)
+	assert.Equal(t, want, r.value)
+}
+
+// overflowForTest starts a dropdown with more choices than visible rows.
+func overflowForTest(t *testing.T) (in, out chan string, result chan picked) {
+	t.Helper()
+	// room for the label, two items and the count, with the row below the
+	// frame free; the key hint shows once there is no count
+	cio, opts := testIOforDropdown(t, 30, 5)
+	result = make(chan picked, 1)
 	go func() {
-		defer close(result)
 		v, err := Dropdown(cio.ctx, "Pick letter", []string{
 			"A", "B", "C", "D", "E",
 		}, opts)
-		assert.NoError(t, err)
-		result <- v
+		result <- picked{v, err}
 	}()
 	return cio.In, cio.Out, result
 }
 
 func TestMoreItems(t *testing.T) {
 	in, out, res := overflowForTest(t)
-	assert.Equal(t, "\rPick letter \n\r+ A\n\r- B\n\r~ 3 of 5 more\n\r", <-out)
+	assert.Equal(t, "\rPick letter \n\r│ + A\n\r│ - B\n\r│ ~ 3 of 5 more\n\r", <-out)
 	in <- "\x1b\x5b\x42" // down
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r+ B\n\r- C\n\r~ 2 of 5 more\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ + B\n\r│ - C\n\r│ ~ 2 of 5 more\n\r",
 		<-out,
 	)
 	in <- "\x1b\x5b\x42" // down
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r+ C\n\r- D\n\r~ 1 of 5 more\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ + C\n\r│ - D\n\r│ ~ 1 of 5 more\n\r",
 		<-out,
 	)
 	in <- "\x1b\x5b\x42" // down
-	assert.Equal(t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r+ D\n\r- E\n\r\n\r",
-		<-out)
+	// the key hint takes the row of the count
+	assert.Equal(
+		t,
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ + D\n\r│ - E\n\r│ up/down move · type filter\n\r",
+		<-out,
+	)
 	in <- "\x1b\x5b\x42" // down
-	assert.Equal(t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r- D\n\r+ E\n\r\n\r",
-		<-out)
+	assert.Equal(
+		t,
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ - D\n\r│ + E\n\r│ up/down move · type filter\n\r",
+		<-out,
+	)
 	in <- "\x1b\x5b\x42" // down, no more items, might bell
-	assert.Equal(t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r- D\n\r+ E\n\r\n\r",
-		<-out)
+	assert.Equal(
+		t,
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ - D\n\r│ + E\n\r│ up/down move · type filter\n\r",
+		<-out,
+	)
 	in <- "\x1b\x5b\x41" // up
-	assert.Equal(t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r+ D\n\r- E\n\r\n\r",
-		<-out)
+	assert.Equal(
+		t,
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ + D\n\r│ - E\n\r│ up/down move · type filter\n\r",
+		<-out,
+	)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r", <-out)
 	assert.Equal(t, "Pick letter: D\n", waitForDropdownOutput(t, out, "Pick letter: D\n"))
-	assert.Equal(t, "D", <-res)
+	assertPicked(t, "D", res)
 }
 
 func TestMoreItemsUp(t *testing.T) {
 	in, out, res := overflowForTest(t)
-	assert.Equal(t, "\rPick letter \n\r+ A\n\r- B\n\r~ 3 of 5 more\n\r", <-out)
+	assert.Equal(t, "\rPick letter \n\r│ + A\n\r│ - B\n\r│ ~ 3 of 5 more\n\r", <-out)
 	in <- "\x1b\x5b\x42" // down
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r+ B\n\r- C\n\r~ 2 of 5 more\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ + B\n\r│ - C\n\r│ ~ 2 of 5 more\n\r",
 		<-out,
 	)
 	in <- "\x1b\x5b\x41" // up
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rPick letter \n\r+ A\n\r- B\n\r~ 3 of 5 more\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rPick letter \n\r│ + A\n\r│ - B\n\r│ ~ 3 of 5 more\n\r",
 		<-out,
 	)
 	in <- "\x0d" // enter
 	assert.Equal(t, "\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r", <-out)
 	assert.Equal(t, "Pick letter: A\n", waitForDropdownOutput(t, out, "Pick letter: A\n"))
-	assert.Equal(t, "A", <-res)
+	assertPicked(t, "A", res)
 }
 
-func otherDropdownForTest(t *testing.T) (in, out chan string, result chan string) {
+// otherDropdownForTest starts a dropdown for filtering and clipping checks.
+func otherDropdownForTest(t *testing.T) (in, out chan string, result chan picked) {
 	t.Helper()
-	cio, opts := testIOforDropdown(t, 12, 4)
-	result = make(chan string)
+	// room for the label, two items and the count, as in overflowForTest
+	cio, opts := testIOforDropdown(t, 30, 5)
+	result = make(chan picked, 1)
 	go func() {
-		defer close(result)
 		v, err := Dropdown(cio.ctx, "Neque porro", []string{
 			"Lorem ipsum",
 			"dolor sit amet",
@@ -344,41 +368,46 @@ func otherDropdownForTest(t *testing.T) (in, out chan string, result chan string
 			"Quisque porttitor",
 			"condimentum libero",
 		}, opts)
-		assert.NoError(t, err)
-		result <- v
+		result <- picked{v, err}
 	}()
 	return cio.In, cio.Out, result
 }
 
 func TestDropdownFiltering(t *testing.T) {
 	in, out, res := otherDropdownForTest(t)
-	assert.Equal(t, "\rNeque porro \n\r+ Lorem i…\n\r- dolor s…\n\r~ 3 of 5 more\n\r", <-out)
+	assert.Equal(t, "\rNeque porro \n\r│ + Lorem ipsum\n\r│ - dolor sit amet\n\r│ ~ 3 of 5 more\n\r", <-out)
 	in <- "c"
-	assert.Equal(t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rNeque porro \n\r+ condime…\n\r",
-		<-out)
+	assert.Equal(
+		t,
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rNeque porro \n\r│ + condimentum libero\n\r│ up/down move · type filter\n\r",
+		<-out,
+	)
 	in <- "\x7f" // backspace
-	assert.Equal(t,
-		"\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r\rNeque porro \n\r+ Lorem i…\n\r- dolor s…\n\r~ 3 of 5 more\n\r",
-		<-out)
+	assert.Equal(
+		t,
+		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"+"\rNeque porro \n\r│ + Lorem ipsum\n\r│ - dolor sit amet\n\r│ ~ 3 of 5 more\n\r",
+		<-out,
+	)
 	in <- "l"
 	assert.Equal(
 		t,
-		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rNeque porro \n\r+ Lorem i…\n\r- condime…\n\r",
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rNeque porro \n\r│ + Lorem ipsum\n\r│ - condimentum libero\n\r│ up/down move · type filter\n\r",
 		<-out,
 	)
 	in <- "\x1b\x5b\x42" // down
-	assert.Equal(t,
-		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r\rNeque porro \n\r- Lorem i…\n\r+ condime…\n\r",
-		<-out)
+	assert.Equal(
+		t,
+		"\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r"+"\rNeque porro \n\r│ - Lorem ipsum\n\r│ + condimentum libero\n\r│ up/down move · type filter\n\r",
+		<-out,
+	)
 	in <- "\x0d" // enter
-	assert.Equal(t, "\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r", <-out)
+	assert.Equal(t, "\x1b[4A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r", <-out)
 	assert.Equal(
 		t,
 		"Neque porro: condimentum libero\n",
 		waitForDropdownOutput(t, out, "Neque porro: condimentum libero\n"),
 	)
-	assert.Equal(t, "condimentum libero", <-res)
+	assertPicked(t, "condimentum libero", res)
 }
 
 func dropdownKVForTest(t *testing.T, items map[string]int) (in, out chan string, result chan struct {
@@ -415,7 +444,7 @@ func TestDropdownKVEmpty(t *testing.T) {
 
 func TestDropdownKVSingleItem(t *testing.T) {
 	in, out, res := dropdownKVForTest(t, map[string]int{"apple": 42})
-	assert.Equal(t, "\rSelect item + {apple 42}\n\r", <-out)
+	assert.Equal(t, "\rSelect item \n\r│ + {apple 42}\n\r│ up/down move · type filter\n\r", <-out)
 	in <- "\x0d" // enter
 	<-out
 	assert.Equal(t, "Select item: {apple 42}\n", waitForDropdownOutput(t, out, "Select item: {apple 42}\n"))
@@ -427,15 +456,18 @@ func TestDropdownKVSingleItem(t *testing.T) {
 
 func TestDropdownKVMultipleItems(t *testing.T) {
 	in, out, res := dropdownKVForTest(t, map[string]int{"zebra": 1, "apple": 2, "banana": 3})
-	assert.Equal(t, "\rSelect item + {apple 2}\n\r            - {banana 3}\n\r            - {zebra 1}\n\r", <-out)
-	in <- "\x1b\x5b\x42" // down
 	assert.Equal(
 		t,
-		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r\rSelect item - {apple 2}\n\r            + {banana 3}\n\r            - {zebra 1}\n\r",
+		"\rSelect item \n\r│ + {apple 2}\n\r│ - {banana 3}\n\r│ - {zebra 1}\n\r│ up/down move · type filter\n\r",
 		<-out,
 	)
+	in <- "\x1b\x5b\x42" // down
+	clear5 := "\x1b[5A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[4A\r"
+	assert.Equal(t,
+		clear5+"\rSelect item \n\r│ - {apple 2}\n\r│ + {banana 3}\n\r│ - {zebra 1}\n\r│ up/down move · type filter\n\r",
+		<-out)
 	in <- "\x0d" // enter
-	assert.Equal(t, "\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r", <-out)
+	assert.Equal(t, clear5, <-out)
 	assert.Equal(t, "Select item: {banana 3}\n", waitForDropdownOutput(t, out, "Select item: {banana 3}\n"))
 	result := <-res
 	assert.Equal(t, "banana", result.key)
@@ -594,15 +626,6 @@ func TestDropdownPressKeyRuneAndRenderMore(t *testing.T) {
 
 	var frame bytes.Buffer
 	assert.NoError(t, d.clearFrame(tio, &frame, 0))
-
-	d.relevant = []int{0, 1, 2, 3}
-	d.displayed = d.relevant[:2]
-	d.Items = append(d.Items, 3, 4)
-	assert.NoError(t, d.parseTemplates())
-	buf, longest, err := d.renderMore(4, 2, 0)
-	assert.NoError(t, err)
-	assert.True(t, longest > 0)
-	assert.True(t, len(buf) > 0)
 }
 
 func TestDropdownRenderInitAndItems(t *testing.T) {
@@ -619,27 +642,7 @@ func TestDropdownRenderInitAndItems(t *testing.T) {
 	assert.True(t, longest > 0)
 	assert.True(t, len(d.displayed) > 0)
 
-	item := d.renderItem(io, 0, d.displayed[0])
-	assert.True(t, len(item) > 0)
-}
-
-func TestDropdownRenderInit_activeItemOverflowTriggersLabelNewLine(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.Items = []any{"ab", "cd"}
-	// active template is much wider than inactive
-	d.ActiveItemTemplate = `{{ cyan "→ selected: " (label .) " (details)" }}`
-	d.InactiveItemTemplate = `{{ dim (label .) }}`
-	// terminal is wide enough for label + inactive, but not for label + active
-	tio := newTestTermIO(20, 6)
-	assert.NoError(t, d.parseTemplates())
-	longest, err := d.renderInit(tio)
-	assert.NoError(t, err)
-	// active rendering of "→ selected: ab (details)" is ~25 chars, wider than inactive "ab" (~2 chars)
-	assert.True(t, longest > 10)
-	var buf bytes.Buffer
-	prefix := d.renderLabel(&buf, tio, longest)
-	assert.Equal(t, 0, prefix)
-	assert.True(t, d.LabelNewLine)
+	assert.True(t, len(d.active[d.displayed[0]]) > 0)
 }
 
 func TestDropdownRenderInitEmitsEvents(t *testing.T) {
@@ -661,24 +664,6 @@ func TestDropdownRenderInitEmitsEvents(t *testing.T) {
 	assert.True(t, ok)
 	_, ok = events[2].(dropdownAppendItem)
 	assert.True(t, ok)
-}
-
-func TestDropdownRenderMoreAndHeight(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.Items = make([]any, 10)
-	for i := range d.Items {
-		d.Items[i] = i
-	}
-	d.displayed = []int{0, 1, 2}
-	d.relevant = []int{0, 1, 2}
-
-	assert.NoError(t, d.parseTemplates())
-
-	buf, longest, err := d.renderMore(10, 3, 0)
-	assert.NoError(t, err)
-	assert.True(t, len(buf) > 0)
-	assert.True(t, longest > 0)
-	assert.True(t, d.height() >= 3)
 }
 
 func TestDropdownPressKeys(t *testing.T) {
@@ -731,12 +716,27 @@ func TestDropdownOptionHelpers(t *testing.T) {
 	assert.True(t, d.Hide)
 }
 
+// bindDropdown binds templates and prompt chrome for tests that bypass run.
+func bindDropdown(t *testing.T, d *dropdown) {
+	t.Helper()
+	withEnv(t)
+	if d.out == nil {
+		d.out = &bytes.Buffer{}
+	}
+	tt := &termIO{out: d.out, Width: 40, Height: 10}
+	assert.NoError(t, d.parseTemplates())
+	assert.NoError(t, d.bind(defaultIO.bindTheme(t.Context(), d.theme, d.out, tt)))
+	assert.NoError(t, d.renderChrome())
+}
+
 func TestShowAnswerWritesWhenVisible(t *testing.T) {
 	d := newDropdown(t.Context())
-	d.Label = "Test"
-	d.out = &bytes.Buffer{}
-	assert.NoError(t, d.parseTemplates())
-	assert.NoError(t, d.showAnswer("Test", "value"))
+	d.Label, d.Items = "Test", []any{"value"}
+	out := &bytes.Buffer{}
+	d.out = out
+	bindDropdown(t, d)
+	assert.NoError(t, d.answer("Test", 0))
+	assert.Equal(t, "✔ Test · value\n", out.String())
 }
 
 func TestDropdownPressAnyOneReturn(t *testing.T) {
@@ -791,16 +791,16 @@ func TestDefaultConfirmRunnerReturnsFalseOnError(t *testing.T) {
 func TestWithTemplateSetsTemplates(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, WithTemplate(".Name")(d))
-	assert.Equal(t, `{{ cyan "→ " .Name }}`, d.ActiveItemTemplate)
-	assert.Equal(t, `{{ dim "→ " .Name }}`, d.InactiveItemTemplate)
-	assert.Equal(t, `{{ dim "✔ " .Label " …" }} {{ bold .Answer.Name }}`, d.AnswerTemplate)
+	// a projection, which leaves the presentation to the theme
+	assert.Equal(t, `{{ __content .Name }}`, d.mainSource)
+	assert.Equal(t, "", d.detailsSource)
+	assert.True(t, !d.activeSet && !d.inactiveSet && !d.answerSet)
 }
 
 func TestWithTemplateAddsActiveDetails(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, WithTemplate(".Name", ".Type", ".Owner")(d))
-	expected := `{{ cyan "→ " .Name }} {{ dim "(" (.Type) ", " (.Owner) ")" }}`
-	assert.Equal(t, expected, d.ActiveItemTemplate)
+	assert.Equal(t, `{{ __content (.Type) ", " (.Owner) }}`, d.detailsSource)
 }
 
 func TestDropdownItemLabelUsesHeuristicField(t *testing.T) {
@@ -867,9 +867,11 @@ func TestDropdownSetItemUsesResolvedLabelForTrie(t *testing.T) {
 	d.activeWidths = make([]int, 1)
 	d.inactive = make([]text, 1)
 	d.widths = make([]int, 1)
+	d.content = make([]text, 1)
+	d.search = make([]string, 1)
 	d.relevant = make([]int, 1)
 	d.trie = newTrie()
-	assert.NoError(t, d.parseTemplates())
+	bindDropdown(t, d)
 	assert.NoError(t, d.setItem(0, item))
 	assert.Equal(t, []int{0}, d.trie.Prefix("ome"))
 	assert.NotContains(t, d.inactive[0].String(), "{")
@@ -879,8 +881,9 @@ func TestDropdownShowAnswerUsesResolvedLabel(t *testing.T) {
 	d := newDropdown(t.Context())
 	out := &bytes.Buffer{}
 	d.out = out
-	assert.NoError(t, d.parseTemplates())
-	assert.NoError(t, d.showAnswer("Pick", dropdownHeuristicLabelItem{ID: 9, Name: "delta"}))
+	d.Items = []any{dropdownHeuristicLabelItem{ID: 9, Name: "delta"}}
+	bindDropdown(t, d)
+	assert.NoError(t, d.answer("Pick", 0))
 	assert.Contains(t, out.String(), "delta")
 	assert.NotContains(t, out.String(), "{")
 }
@@ -944,28 +947,31 @@ func (errWriterDropdown) Write(p []byte) (int, error) {
 
 func TestDropdownParseTemplatesError(t *testing.T) {
 	d := newDropdown(t.Context())
-	d.LabelTemplate = "{{"
+	assert.NoError(t, WithLabelTemplate("{{")(d))
 	assert.Error(t, d.parseTemplates())
 }
 
 func TestDropdownParseTemplatesLabelExecuteError(t *testing.T) {
 	d := newDropdown(t.Context())
-	d.LabelTemplate = "{{ call . }}"
-	assert.Error(t, d.parseTemplates())
+	assert.NoError(t, WithLabelTemplate("{{ call . }}")(d))
+	assert.NoError(t, d.parseTemplates())
+	// a per-call label runs when the dropdown binds
+	assert.NoError(t, d.bind(defaultIO.bindTheme(t.Context(), d.theme, &bytes.Buffer{}, nil)))
+	assert.Error(t, d.renderChrome())
 }
 
 func TestDropdownParseTemplatesActiveError(t *testing.T) {
 	d := newDropdown(t.Context())
-	d.LabelTemplate = "{{.}} "
-	d.ActiveItemTemplate = "{{"
+	assert.NoError(t, WithActiveItemTemplate("{{")(d))
 	assert.Error(t, d.parseTemplates())
 }
 
 func TestDropdownShowAnswerWriteError(t *testing.T) {
 	d := newDropdown(t.Context())
+	d.Items = []any{"Value"}
+	bindDropdown(t, d)
 	d.out = errWriterDropdown{}
-	assert.NoError(t, d.parseTemplates())
-	assert.Error(t, d.showAnswer("Label", "Value"))
+	assert.Error(t, d.answer("Label", 0))
 }
 
 func TestDropdownPressKeyRuneArrows(t *testing.T) {
@@ -1124,7 +1130,7 @@ func TestDropdownHandleLazyItemOneReturnWhenDone(t *testing.T) {
 func TestDropdownAddItemPreservesFilter(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.trie = newTrie()
-	assert.NoError(t, d.parseTemplates())
+	bindDropdown(t, d)
 	assert.NoError(t, d.addItem(6, "alpha"))
 	assert.True(t, !d.filterWith("a", len(d.displayed), 6, 3))
 	assert.Equal(t, []int{0}, d.relevant)
@@ -1164,7 +1170,7 @@ func TestDropdownHandleLazyKeyEnter(t *testing.T) {
 func TestDropdownRunRenderLoadsItem(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"seed"}
-	assert.NoError(t, d.parseTemplates())
+	bindDropdown(t, d)
 	tio := newTestTermIO(20, 6)
 	frame := bytes.NewBuffer(nil)
 	ch := make(chan itPair, 1)
@@ -1189,7 +1195,7 @@ func TestDropdownLoadItemDone(t *testing.T) {
 func TestDropdownAddItemEmitsAppendEvent(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"seed"}
-	assert.NoError(t, d.parseTemplates())
+	bindDropdown(t, d)
 	tio := newTestTermIO(20, 2)
 	_, err := d.renderInit(tio)
 	assert.NoError(t, err)
@@ -1237,7 +1243,7 @@ func TestDropdownLoadItemWriteError(t *testing.T) {
 func TestDropdownRenderLazyFrameClears(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"item"}
-	assert.NoError(t, d.parseTemplates())
+	bindDropdown(t, d)
 	tio := newTestTermIO(20, 6)
 	frame := bytes.NewBuffer(nil)
 	space := 1
@@ -1251,7 +1257,7 @@ func TestDropdownRenderLazyFrameClears(t *testing.T) {
 func TestDropdownRenderLazyFrameWriteError(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"item"}
-	assert.NoError(t, d.parseTemplates())
+	bindDropdown(t, d)
 	tio := &termIO{
 		in:      bytes.NewBuffer(nil),
 		out:     errWriterDropdown{},
@@ -1269,7 +1275,7 @@ func TestDropdownRenderLazyFrameWriteError(t *testing.T) {
 func TestDropdownRunRenderWriteError(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"item"}
-	assert.NoError(t, d.parseTemplates())
+	bindDropdown(t, d)
 	tio := &termIO{
 		in:      bytes.NewBuffer([]byte{keyEnter}),
 		out:     errWriterDropdown{},
@@ -1293,7 +1299,7 @@ func TestDropdownHandleLazyKeyReadError(t *testing.T) {
 func TestDropdownRunRenderUsesMain(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"item"}
-	assert.NoError(t, d.parseTemplates())
+	bindDropdown(t, d)
 	tio := &termIO{
 		in:      bytes.NewBuffer([]byte{keyEnter}),
 		out:     &bytes.Buffer{},
@@ -1338,7 +1344,7 @@ func TestDropdownRunMainReadError(t *testing.T) {
 func TestDropdownRunRenderContextDone(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"item"}
-	assert.NoError(t, d.parseTemplates())
+	bindDropdown(t, d)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	d.Ctx = ctx
@@ -1763,7 +1769,7 @@ func TestWithOneMatch_singlePrefixMatchReturnsIndex(t *testing.T) {
 	}
 	err := WithDefault("beta")(d)
 	assert.NoError(t, err)
-	assert.NoError(t, d.parseTemplates())
+	bindDropdown(t, d)
 	_, err = d.renderInit(newTestTermIO(20, 6))
 	var oneMatch oneHatch
 	ok := errors.As(err, &oneMatch)
@@ -1798,7 +1804,7 @@ func TestWithOneMatch_sortsByLevensteinDistance(t *testing.T) {
 	}
 	err := WithDefault("alpa")(d)
 	assert.NoError(t, err)
-	assert.NoError(t, d.parseTemplates())
+	bindDropdown(t, d)
 	_, err = d.renderInit(newTestTermIO(20, 6))
 	assert.NoError(t, err)
 	assert.Equal(t, []int{1, 0, 2}, d.relevant)
@@ -1905,7 +1911,7 @@ func TestDropdownLazyAppendAfterFilter(t *testing.T) {
 		{"a", []int{0, 1, 2}},
 	} {
 		d := newDropdown(t.Context())
-		assert.NoError(t, d.parseTemplates())
+		bindDropdown(t, d)
 		for _, item := range []string{"alpha", "beta"} {
 			_, _, err := d.handleLazyItem(tio, frame, 0, itPair{item: item}, true)
 			assert.NoError(t, err)
@@ -1928,7 +1934,7 @@ func TestDropdownLazyAppendAfterFilter(t *testing.T) {
 func TestDropdownLazyKeepsDefaultRanking(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, WithDefault("cat")(d))
-	assert.NoError(t, d.parseTemplates())
+	bindDropdown(t, d)
 	tio := newTestTermIO(20, 6)
 	frame := &bytes.Buffer{}
 	// empty lazy dropdown renders before any item arrives
@@ -1945,7 +1951,7 @@ func TestDropdownLazyKeepsDefaultRanking(t *testing.T) {
 func TestDropdownLazyRankingKeepsSelectedItem(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, WithDefault("cat")(d))
-	assert.NoError(t, d.parseTemplates())
+	bindDropdown(t, d)
 	tio := newTestTermIO(20, 10)
 	frame := &bytes.Buffer{}
 	for _, item := range []string{"xxxx", "yyyy"} {
@@ -1962,7 +1968,7 @@ func TestDropdownLazyRankingKeepsSelectedItem(t *testing.T) {
 func TestDropdownRenderRemembersLongestWidth(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"short", "a considerably longer item"}
-	assert.NoError(t, d.parseTemplates())
+	bindDropdown(t, d)
 	tio := newTestTermIO(40, 6)
 	first, err := d.renderInit(tio)
 	assert.NoError(t, err)
@@ -1976,7 +1982,6 @@ func TestDropdownRenderRemembersLongestWidth(t *testing.T) {
 	tio.Width = 30
 	var buf bytes.Buffer
 	assert.NoError(t, d.render(tio, &buf))
-	assert.True(t, d.LabelNewLine)
 	_ = d.addItem(6, "x") //nolint:errcheck // test cleanup
 	assert.Equal(t, first, d.longest)
 }
@@ -2046,7 +2051,7 @@ func TestDropdownLazyStopsProducerAfterSelection(t *testing.T) {
 func TestDropdownFilterEventsIgnoreRankingOrder(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, WithDefault("ap")(d))
-	assert.NoError(t, d.parseTemplates())
+	bindDropdown(t, d)
 	tio := newTestTermIO(20, 6)
 	frame := &bytes.Buffer{}
 	for _, item := range []string{"banana", "apricot", "apple"} {
@@ -2475,7 +2480,6 @@ func boundDropdown(t *testing.T, th Theme, width, height int, items []any, o ...
 	t.Helper()
 	useTheme(t, th)
 	d := newDropdown(t.Context())
-	d.themed = true
 	d.Label, d.Items = "Fruit", items
 	assert.NoError(t, opts(o).Apply(d))
 	assert.NoError(t, d.parseTemplates())
@@ -2527,8 +2531,8 @@ func TestDropdownConfirmClearsFrameOnce(t *testing.T) {
 		}))
 	assert.NoError(t, err)
 	assert.Equal(t, ""+
-		"\rFruit + apple\n\r      - banana\n\r      - cherry\n\r"+
-		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"+
+		"\rFruit \n\r│ + apple\n\r│ - banana\n\r│ - cherry\n\r│ up/down move · type filter\n\r"+
+		"\x1b[5A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[4A\r"+
 		"apple\n", out.String())
 }
 
@@ -2897,13 +2901,6 @@ func TestThemedConfirmRolesMarkYesAndNoAsCompleted(t *testing.T) {
 		assert.True(t, strings.HasPrefix(answer, string(roles.success)+"+"))
 		assert.True(t, !strings.Contains(answer, string(roles.failure)))
 	}
-}
-
-func TestConfirmStaysLegacyWhenOff(t *testing.T) {
-	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "\r")
-	themeRendering.Store(false)
-	assert.True(t, Confirm(t.Context(), "Sure?", o))
-	assert.Contains(t, out.String(), "→ Yes")
 }
 
 func TestThemedDropdownRolesStyleFocusAndRows(t *testing.T) {

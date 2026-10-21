@@ -82,7 +82,7 @@ func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
-	p, err := newStartedProgressBar(t.Context(), "downloading files", 20, false,
+	p, err := newStartedProgressBar(t.Context(), "downloading files", 20,
 		WithInput(cio),
 		WithOutput(cio),
 		opT(func(pb *Progressbar) error {
@@ -137,7 +137,7 @@ func TestProgressbarTickOnResizeExitsWhenDone(t *testing.T) {
 		Out: make(chan string, 4),
 	}
 	resizeCh := make(chan struct{})
-	p, err := newStartedProgressBar(t.Context(), "downloading files", 10, false,
+	p, err := newStartedProgressBar(t.Context(), "downloading files", 10,
 		WithInput(cio),
 		WithOutput(cio),
 		opT(func(pb *Progressbar) error {
@@ -207,7 +207,7 @@ func TestProgressbarTickTinyWidth(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Progressbar{
+			p := withLook(t, &Progressbar{
 				progressState: progressState{
 					maxNum:     10,
 					currentNum: 5,
@@ -222,7 +222,7 @@ func TestProgressbarTickTinyWidth(t *testing.T) {
 					Restore: func() error { return nil },
 				},
 				now: func() time.Time { return time.Now() },
-			}
+			})
 			frame := &bytes.Buffer{}
 			// must not panic
 			p.tick(frame)
@@ -231,7 +231,7 @@ func TestProgressbarTickTinyWidth(t *testing.T) {
 }
 
 func TestProgressbarLabelTruncation(t *testing.T) {
-	p := &Progressbar{
+	p := withLook(t, &Progressbar{
 		progressState: progressState{
 			maxNum:     10,
 			currentNum: 5,
@@ -246,7 +246,7 @@ func TestProgressbarLabelTruncation(t *testing.T) {
 			Restore: func() error { return nil },
 		},
 		now: func() time.Time { return time.Now() },
-	}
+	})
 	frame := &bytes.Buffer{}
 	p.tick(frame)
 	// output must not exceed width - 1 = 14

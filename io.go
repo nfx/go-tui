@@ -340,9 +340,9 @@ func (t *tio) background(ctx context.Context, tt *termIO, hint background) backg
 
 // bindTheme binds c to out, the destination of one operation. Only a prompt
 // holding the terminal lease passes tt, and may then probe the background
-// before it starts reading keys; other operations estimate it from the
-// environment. A forced light variant and a destination without color
-// detect nothing.
+// before it starts reading keys; other operations reuse a completed
+// detection of the route they draw on, or estimate it from the environment.
+// A forced light variant and a destination without color detect nothing.
 func (t *tio) bindTheme(ctx context.Context, c *compiledTheme, out io.Writer, tt *termIO) binding {
 	p := t.profileFor(out)
 	var bg background
@@ -351,9 +351,30 @@ func (t *tio) bindTheme(ctx context.Context, c *compiledTheme, out io.Writer, tt
 	case tt != nil:
 		bg = t.background(ctx, tt, t.env.bgHint)
 	default:
-		bg = t.env.bgHint
+		bg = t.routeBackground(out)
 	}
 	return c.bind(p, bg)
+}
+
+// routeBackground is the cached detection of the current route when out
+// draws on it, else the environment estimate. It never waits for a probe
+// in progress, so output-only work cannot block on a prompt.
+func (t *tio) routeBackground(out io.Writer) background {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.bg == nil || !t.drawsOnRouteLocked(out) {
+		return t.env.bgHint
+	}
+	return *t.bg
+}
+
+// drawsOnRouteLocked reports, with mu held, whether out writes to the
+// terminal of the current route: its writer, the arbiter on it, or [Stderr].
+func (t *tio) drawsOnRouteLocked(out io.Writer) bool {
+	if w, ok := out.(*terminalStderr); ok {
+		return w.parent == t
+	}
+	return t.sameStream(out, t.writer) || t.sameStream(out, t.arbiter)
 }
 
 // routesLocked checks route ownership with mu held.

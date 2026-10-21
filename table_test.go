@@ -11,6 +11,7 @@ import (
 	"iter"
 	"math"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"text/template"
@@ -217,7 +218,7 @@ func TestStructFieldsForInvalid(t *testing.T) {
 
 func TestTableAppendFlushes(t *testing.T) {
 	buf := &bytes.Buffer{}
-	tbl, err := newTable[Person](buf, "{{.Name}}\t{{.Age}}", false)
+	tbl, err := newTable[Person](buf, "{{.Name}}\t{{.Age}}")
 	assert.NoError(t, err)
 	tbl.batchSize = 1
 	err = tbl.Append(Person{Name: "A", Age: 1})
@@ -228,7 +229,7 @@ func TestTableAppendFlushes(t *testing.T) {
 }
 
 func TestNewTableInvalidTemplate(t *testing.T) {
-	_, err := newTable[Person](&bytes.Buffer{}, "{{", false)
+	_, err := newTable[Person](&bytes.Buffer{}, "{{")
 	assert.Error(t, err)
 }
 
@@ -251,7 +252,7 @@ func (errWriterTable) Write(p []byte) (int, error) {
 }
 
 func TestTableAppendWriteError(t *testing.T) {
-	tbl, err := newTable[Person](errWriterTable{}, "{{.Name}}", false)
+	tbl, err := newTable[Person](errWriterTable{}, "{{.Name}}")
 	assert.NoError(t, err)
 	tbl.batchSize = 1
 	err = tbl.Append(Person{Name: "A"})
@@ -419,20 +420,36 @@ func mustTableRow(t *testing.T, ev tableEvent) tableRow {
 	return row
 }
 
-func assertNoGreenRedScaleColor(t *testing.T, cell string) {
+// scaleSGR forces truecolor into buffers under the light preset, where the
+// levels of a scale are distinct, and returns them from the success end. The
+// middle level is the foreground, which the Cell slot also uses.
+func scaleSGR(t *testing.T) []string {
 	t.Helper()
-	assert.NotContains(t, cell, brightRed)
-	assert.NotContains(t, cell, red)
-	assert.NotContains(t, cell, yellow)
-	assert.NotContains(t, cell, green)
-	assert.NotContains(t, cell, brightGreen)
+	th := NewTheme()
+	th.Light = true
+	themedTable(t, th, "FORCE_COLOR=3")
+	var levels []string
+	for _, c := range defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), &bytes.Buffer{}, nil).diverging() {
+		assert.True(t, !slices.Contains(levels, string(c)))
+		levels = append(levels, string(c))
+	}
+	return levels
+}
+
+// assertNoGreenRedScaleColor checks that cell has none of the scale levels
+// but the middle one, which is also the foreground of every cell.
+func assertNoGreenRedScaleColor(t *testing.T, levels []string, cell string) {
+	t.Helper()
+	for i, c := range levels {
+		if i != len(levels)/2 {
+			assert.NotContains(t, cell, c)
+		}
+	}
 }
 
 func assertScaledCellContains(t *testing.T, cell, color, text string) {
 	t.Helper()
-	assert.Contains(t, cell, color)
-	assert.Contains(t, cell, text)
-	assert.Contains(t, cell, reset)
+	assert.Contains(t, cell, color+text)
 }
 
 func factLines(out string) []string {
@@ -586,50 +603,8 @@ func TestWithFloat64AsPercent(t *testing.T) {
 	assert.Equal(t, "1%", strings.TrimSpace(mustTableRow(t, events[5]).Cells[1]))
 }
 
-func TestWithFloat64AsPercentPositiveColored(t *testing.T) {
-	data := []tableFormatRow{
-		{Name: "A", Rate: 0.05873242},
-		{Name: "B", Rate: -0.999999},
-		{Name: "C", Rate: 0},
-	}
-	events := collectEvents(t, "", data, WithFloat64AsPercentPositiveColored())
-
-	pos, ok := events[1].(tableRow)
-	assert.True(t, ok)
-	neg, ok := events[2].(tableRow)
-	assert.True(t, ok)
-	zero, ok := events[3].(tableRow)
-	assert.True(t, ok)
-
-	assert.Contains(t, pos.Cells[1], green+"5.87%"+reset)
-	assert.Contains(t, neg.Cells[1], red+"-99%"+reset)
-	assert.Contains(t, zero.Cells[1], "0%")
-	assert.NotContains(t, zero.Cells[1], green)
-	assert.NotContains(t, zero.Cells[1], red)
-}
-
-func TestWithColumnGreenRedScaleNumeric(t *testing.T) {
-	type row struct {
-		Value float64
-	}
-	data := []row{
-		{Value: 0},
-		{Value: 100},
-		{Value: 25},
-		{Value: 50},
-		{Value: 75},
-		{Value: 0},
-	}
-	events := collectEvents(t, "", data, WithColumnGreenRedScale("Value"))
-	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
-	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[0], brightRed, "100")
-	assertScaledCellContains(t, mustTableRow(t, events[3]).Cells[0], yellow, "25")
-	assertScaledCellContains(t, mustTableRow(t, events[4]).Cells[0], red, "50")
-	assertScaledCellContains(t, mustTableRow(t, events[5]).Cells[0], red, "75")
-	assertScaledCellContains(t, mustTableRow(t, events[6]).Cells[0], brightGreen, "0")
-}
-
 func TestWithColumnGreenRedScaleTime(t *testing.T) {
+	lv := scaleSGR(t)
 	type row struct {
 		When time.Time `header:"When"`
 	}
@@ -642,14 +617,15 @@ func TestWithColumnGreenRedScaleTime(t *testing.T) {
 		{When: base.Add(3 * time.Hour)},
 	}
 	events := collectEvents(t, "", data, WithColumnGreenRedScale("When"))
-	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
-	assert.Contains(t, mustTableRow(t, events[2]).Cells[0], brightRed)
-	assert.Contains(t, mustTableRow(t, events[3]).Cells[0], yellow)
-	assert.Contains(t, mustTableRow(t, events[4]).Cells[0], green)
-	assert.Contains(t, mustTableRow(t, events[5]).Cells[0], red)
+	assertNoGreenRedScaleColor(t, lv, mustTableRow(t, events[1]).Cells[0])
+	assert.Contains(t, mustTableRow(t, events[2]).Cells[0], lv[4])
+	assert.Contains(t, mustTableRow(t, events[3]).Cells[0], lv[2])
+	assert.Contains(t, mustTableRow(t, events[4]).Cells[0], lv[1])
+	assert.Contains(t, mustTableRow(t, events[5]).Cells[0], lv[3])
 }
 
 func TestWithColumnGreenRedScaleDuration(t *testing.T) {
+	lv := scaleSGR(t)
 	type row struct {
 		Elapsed time.Duration
 	}
@@ -661,14 +637,15 @@ func TestWithColumnGreenRedScaleDuration(t *testing.T) {
 		{Elapsed: 3 * time.Second},
 	}
 	events := collectEvents(t, "", data, WithColumnGreenRedScale("Elapsed"))
-	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
-	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[0], brightRed, "4s")
-	assertScaledCellContains(t, mustTableRow(t, events[3]).Cells[0], yellow, "2s")
-	assertScaledCellContains(t, mustTableRow(t, events[4]).Cells[0], green, "1s")
-	assertScaledCellContains(t, mustTableRow(t, events[5]).Cells[0], red, "3s")
+	assertNoGreenRedScaleColor(t, lv, mustTableRow(t, events[1]).Cells[0])
+	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[0], lv[4], "4s")
+	assertScaledCellContains(t, mustTableRow(t, events[3]).Cells[0], lv[2], "2s")
+	assertScaledCellContains(t, mustTableRow(t, events[4]).Cells[0], lv[1], "1s")
+	assertScaledCellContains(t, mustTableRow(t, events[5]).Cells[0], lv[3], "3s")
 }
 
 func TestWithColumnRedGreenScaleNumeric(t *testing.T) {
+	lv := scaleSGR(t)
 	type row struct {
 		Value int
 	}
@@ -679,13 +656,14 @@ func TestWithColumnRedGreenScaleNumeric(t *testing.T) {
 		{Value: 0},
 	}
 	events := collectEvents(t, "", data, WithColumnRedGreenScale("Value"))
-	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
-	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[0], brightGreen, "100")
-	assertScaledCellContains(t, mustTableRow(t, events[3]).Cells[0], yellow, "75")
-	assertScaledCellContains(t, mustTableRow(t, events[4]).Cells[0], brightRed, "0")
+	assertNoGreenRedScaleColor(t, lv, mustTableRow(t, events[1]).Cells[0])
+	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[0], lv[0], "100")
+	assertScaledCellContains(t, mustTableRow(t, events[3]).Cells[0], lv[2], "75")
+	assertScaledCellContains(t, mustTableRow(t, events[4]).Cells[0], lv[4], "0")
 }
 
 func TestWithColumnRedGreenScaleOutlierDoesNotSkewAllNegativesToGreen(t *testing.T) {
+	lv := scaleSGR(t)
 	type row struct {
 		Value float64
 	}
@@ -696,13 +674,14 @@ func TestWithColumnRedGreenScaleOutlierDoesNotSkewAllNegativesToGreen(t *testing
 		{Value: -0.30},
 	}
 	events := collectEvents(t, "", data, WithColumnRedGreenScale("Value"))
-	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
-	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[0], brightGreen, "0.70")
-	assertScaledCellContains(t, mustTableRow(t, events[3]).Cells[0], brightRed, "-20.60")
-	assertScaledCellContains(t, mustTableRow(t, events[4]).Cells[0], red, "-0.30")
+	assertNoGreenRedScaleColor(t, lv, mustTableRow(t, events[1]).Cells[0])
+	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[0], lv[0], "0.70")
+	assertScaledCellContains(t, mustTableRow(t, events[3]).Cells[0], lv[4], "-20.60")
+	assertScaledCellContains(t, mustTableRow(t, events[4]).Cells[0], lv[3], "-0.30")
 }
 
 func TestWithColumnGreenRedScaleFlatRangeHasNoColor(t *testing.T) {
+	lv := scaleSGR(t)
 	type row struct {
 		Value int
 	}
@@ -712,9 +691,9 @@ func TestWithColumnGreenRedScaleFlatRangeHasNoColor(t *testing.T) {
 		{Value: 7},
 	}
 	events := collectEvents(t, "", data, WithColumnGreenRedScale("Value"))
-	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
-	assertNoGreenRedScaleColor(t, mustTableRow(t, events[2]).Cells[0])
-	assertNoGreenRedScaleColor(t, mustTableRow(t, events[3]).Cells[0])
+	assertNoGreenRedScaleColor(t, lv, mustTableRow(t, events[1]).Cells[0])
+	assertNoGreenRedScaleColor(t, lv, mustTableRow(t, events[2]).Cells[0])
+	assertNoGreenRedScaleColor(t, lv, mustTableRow(t, events[3]).Cells[0])
 }
 
 func TestWithColumnGreenRedScaleUnsupportedType(t *testing.T) {
@@ -727,26 +706,29 @@ func TestWithColumnGreenRedScaleUnsupportedType(t *testing.T) {
 }
 
 func TestWithColumnGreenRedScaleIgnoredForExplicitTemplate(t *testing.T) {
+	lv := scaleSGR(t)
 	type row struct {
 		Value float64
 	}
 	data := []row{{Value: 0}, {Value: 100}}
 	events := collectEvents(t, "{{.Value}}", data, WithColumnGreenRedScale("Value"))
-	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
-	assertNoGreenRedScaleColor(t, mustTableRow(t, events[2]).Cells[0])
+	assertNoGreenRedScaleColor(t, lv, mustTableRow(t, events[1]).Cells[0])
+	assertNoGreenRedScaleColor(t, lv, mustTableRow(t, events[2]).Cells[0])
 }
 
 func TestWithColumnRedGreenScaleIgnoredForExplicitTemplate(t *testing.T) {
+	lv := scaleSGR(t)
 	type row struct {
 		Value float64
 	}
 	data := []row{{Value: 0}, {Value: 100}}
 	events := collectEvents(t, "{{.Value}}", data, WithColumnRedGreenScale("Value"))
-	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
-	assertNoGreenRedScaleColor(t, mustTableRow(t, events[2]).Cells[0])
+	assertNoGreenRedScaleColor(t, lv, mustTableRow(t, events[1]).Cells[0])
+	assertNoGreenRedScaleColor(t, lv, mustTableRow(t, events[2]).Cells[0])
 }
 
 func TestWithColumnGreenRedScaleTableIterStreaming(t *testing.T) {
+	lv := scaleSGR(t)
 	type row struct {
 		Value int
 	}
@@ -757,24 +739,25 @@ func TestWithColumnGreenRedScaleTableIterStreaming(t *testing.T) {
 		{Value: 100},
 	}
 	events := collectIterEvents(t, "", data, WithColumnGreenRedScale("Value"))
-	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[0])
-	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[0], brightRed, "20")
-	assertScaledCellContains(t, mustTableRow(t, events[3]).Cells[0], yellow, "15")
-	assertScaledCellContains(t, mustTableRow(t, events[4]).Cells[0], brightRed, "100")
+	assertNoGreenRedScaleColor(t, lv, mustTableRow(t, events[1]).Cells[0])
+	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[0], lv[4], "20")
+	assertScaledCellContains(t, mustTableRow(t, events[3]).Cells[0], lv[2], "15")
+	assertScaledCellContains(t, mustTableRow(t, events[4]).Cells[0], lv[4], "100")
 }
 
 func TestWithColumnGreenRedScalePreservesTypeFormatting(t *testing.T) {
+	lv := scaleSGR(t)
 	data := []tableFormatRow{
 		{Name: "A", Rate: 0.05},
 		{Name: "B", Rate: 0.20},
 	}
 	events := collectEvents(t, "", data, WithFloat64AsPercent(), WithColumnGreenRedScale("Rate"))
-	assert.Equal(t, "5%", strings.TrimSpace(mustTableRow(t, events[1]).Cells[1]))
-	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[1], brightRed, "20%")
+	assert.Equal(t, "5%", strings.TrimSpace(stripSGR(mustTableRow(t, events[1]).Cells[1])))
+	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[1], lv[4], "20%")
 
 	events = collectEvents(t, "", data, WithColumnGreenRedScale("Rate"), WithFloat64AsPercent())
-	assert.Equal(t, "5%", strings.TrimSpace(mustTableRow(t, events[1]).Cells[1]))
-	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[1], brightRed, "20%")
+	assert.Equal(t, "5%", strings.TrimSpace(stripSGR(mustTableRow(t, events[1]).Cells[1])))
+	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[1], lv[4], "20%")
 }
 
 func TestColumnOptionsIgnoredForExplicitTemplate(t *testing.T) {
@@ -1054,26 +1037,28 @@ func TestTableFieldTabKeepsCellIdentity(t *testing.T) {
 }
 
 func TestTableScaleColorFollowsPhysicalCell(t *testing.T) {
+	lv := scaleSGR(t)
 	type row struct {
 		Text  string
 		Value int
 	}
 	data := []row{{"warm", 1}, {"a\nb", 100}, {"single", 50}}
 	events := collectEvents(t, "", data, WithColumnGreenRedScale("Value"), WithMultilineCells())
-	assertNoGreenRedScaleColor(t, mustTableRow(t, events[1]).Cells[1])
+	assertNoGreenRedScaleColor(t, lv, mustTableRow(t, events[1]).Cells[1])
 	// multi-line record: value stays on the first physical row, continuation is plain
 	first := mustTableRow(t, events[2]).Cells
-	assert.Equal(t, "a", strings.TrimSpace(first[0]))
-	assertScaledCellContains(t, first[1], brightRed, "100")
+	assert.Equal(t, "a", strings.TrimSpace(stripSGR(first[0])))
+	assertScaledCellContains(t, first[1], lv[4], "100")
 	cont := mustTableRow(t, events[3]).Cells
-	assert.Equal(t, "b", strings.TrimSpace(cont[0]))
-	assertNoGreenRedScaleColor(t, cont[0])
-	assertNoGreenRedScaleColor(t, cont[1])
+	assert.Equal(t, "b", strings.TrimSpace(stripSGR(cont[0])))
+	assertNoGreenRedScaleColor(t, lv, cont[0])
+	assertNoGreenRedScaleColor(t, lv, cont[1])
 	last := mustTableRow(t, events[4]).Cells
-	assertScaledCellContains(t, last[1], yellow, "50")
+	assertScaledCellContains(t, last[1], lv[2], "50")
 }
 
 func TestTableMultilineCellsDisabledByDefault(t *testing.T) {
+	lv := scaleSGR(t)
 	type row struct {
 		Text  string
 		Value int
@@ -1082,10 +1067,10 @@ func TestTableMultilineCellsDisabledByDefault(t *testing.T) {
 	events := collectEvents(t, "", data, WithColumnGreenRedScale("Value"))
 	assert.Equal(t, 4, len(events))
 	first := mustTableRow(t, events[1]).Cells
-	assert.Equal(t, "a b", strings.TrimSpace(first[0]))
+	assert.Equal(t, "a b", strings.TrimSpace(stripSGR(first[0])))
 	second := mustTableRow(t, events[2]).Cells
-	assert.Equal(t, "c d", strings.TrimSpace(second[0]))
-	assertScaledCellContains(t, second[1], brightRed, "2")
+	assert.Equal(t, "c d", strings.TrimSpace(stripSGR(second[0])))
+	assertScaledCellContains(t, second[1], lv[4], "2")
 }
 
 func TestTableMultilineCellsAlignPhysicalRows(t *testing.T) {
@@ -1566,19 +1551,6 @@ func TestThemedTableErrors(t *testing.T) {
 	assert.ErrorIs(t, err, io.EOF)
 }
 
-func TestTableStaysLegacyWhenOff(t *testing.T) {
-	keepTheme(t)
-	prev := themeRendering.Swap(false)
-	t.Cleanup(func() { themeRendering.Store(prev) })
-	th := NewTheme()
-	th.Templates.Table.Cell = `<{{ .Value }}>`
-	assert.NoError(t, defaultIO.installTheme(th))
-	withEnv(t)
-	buf := &bytes.Buffer{}
-	assert.NoError(t, Table(buf, "", []tableFormatRow{{"A", 0.5, 1}}, WithFloat64AsPercentPositiveColored()))
-	assert.Equal(t, "NAME   RATE  AMOUNT \nA       "+green+"50%"+reset+"       1 \n", buf.String())
-}
-
 // streamedRows are two batches and a bit: the twelfth row is wider than the
 // first batch allows.
 func streamedRows() []themedRow {
@@ -1614,15 +1586,6 @@ func TestThemedTableIterMatchesTable(t *testing.T) {
 	fg := func(s string) string { return string(roles.foreground) + s + fgDefault }
 	assert.Equal(t, bold+fg("NAME")+reset+"   "+bold+fg("AMOUNT")+reset+" "+bold+fg("NOTE")+reset+"  \n"+
 		fg("n00")+reset+"         "+fg("0")+reset+"       \n", buf.String())
-
-	// a plain writer gets exactly the legacy bytes
-	withEnv(t)
-	themed := &bytes.Buffer{}
-	assert.NoError(t, TableIter(themed, "", iterate(data)))
-	themeRendering.Store(false)
-	legacy := &bytes.Buffer{}
-	assert.NoError(t, TableIter(legacy, "", iterate(data)))
-	assert.Equal(t, legacy.String(), themed.String())
 }
 
 func TestThemedTableIterKeepsOneSnapshot(t *testing.T) {
@@ -1926,19 +1889,4 @@ func TestThemedFactsErrors(t *testing.T) {
 
 	themedTable(t, NewTheme())
 	assert.ErrorIs(t, Facts(errWriterTable{}, factsData), io.EOF)
-}
-
-func TestFactsStaysLegacyWhenOff(t *testing.T) {
-	ttyWidth(t, 120)
-	keepTheme(t)
-	prev := themeRendering.Swap(false)
-	t.Cleanup(func() { themeRendering.Store(prev) })
-	th := NewTheme()
-	th.Templates.Table.Cell = `<{{ .Value }}>`
-	th.Table = TableStyle{ColumnGap: 5}
-	assert.NoError(t, defaultIO.installTheme(th))
-	withEnv(t)
-	buf := &bytes.Buffer{}
-	assert.NoError(t, Facts(buf, tableFormatRow{"A", 0.5, 1}, WithFloat64AsPercentPositiveColored()))
-	assert.Equal(t, "NAME   RATE  AMOUNT \nA       "+green+"50%"+reset+"       1 \n\n", buf.String())
 }

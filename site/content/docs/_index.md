@@ -7,6 +7,7 @@ Core guides:
 
 - [Getting Started](getting-started.md)
 - [Shared Options and Helpers](options-and-helpers.md)
+- [Themes](themes.md)
 - [Template Functions](template-functions.md)
 - [Dropdowns](dropdowns.md)
 - [Multichoice](multichoice.md)

@@ -56,7 +56,7 @@ type tableEnd struct {
 // far, and written rows are never repainted. The theme and the writer's
 // capabilities are captured before the first row, and hold for every batch.
 func TableIter[T any](w io.Writer, rowTmpl string, iterator iter.Seq2[T, error], o ...opt) error {
-	t, err := newTable[T](w, rowTmpl, themeRendering.Load(), o...)
+	t, err := newTable[T](w, rowTmpl, o...)
 	if err != nil {
 		return fmt.Errorf("table: %w", err)
 	}
@@ -74,7 +74,7 @@ func TableIter[T any](w io.Writer, rowTmpl string, iterator iter.Seq2[T, error],
 }
 
 func Table[T any](w io.Writer, rowTmpl string, iterator []T, o ...opt) error {
-	t, err := newTable[T](w, rowTmpl, themeRendering.Load(), o...)
+	t, err := newTable[T](w, rowTmpl, o...)
 	if err != nil {
 		return fmt.Errorf("table: %w", err)
 	}
@@ -89,7 +89,7 @@ func Table[T any](w io.Writer, rowTmpl string, iterator []T, o ...opt) error {
 }
 
 func TableAuto[T any](w io.Writer, iterator []T, o ...opt) error {
-	t, err := newTable[T](w, "", themeRendering.Load(), o...)
+	t, err := newTable[T](w, "", o...)
 	if err != nil {
 		return fmt.Errorf("table: %w", err)
 	}
@@ -119,7 +119,7 @@ func Facts[T any](w io.Writer, data T, o ...opt) error {
 		}
 		rt = reflect.TypeOf(data)
 	}
-	t, err := newTableFor(rt, w, "", themeRendering.Load(), options...)
+	t, err := newTableFor(rt, w, "", options...)
 	if err != nil {
 		return fmt.Errorf("facts: %w", err)
 	}
@@ -286,15 +286,11 @@ func WithColumnRedGreenScale(name string) opt {
 
 // signedPercent formats v as a percentage, positive in the success role and
 // negative in the error role: a sign is data, not an outcome, so only this
-// option colors it. Legacy tables use green and red.
+// option colors it.
 func (t *table) signedPercent(v float64) string {
 	out := percentString(v)
 	var role text
 	switch {
-	case v > 0 && t.theme == nil:
-		return green + out + reset
-	case v < 0 && t.theme == nil:
-		return red + out + reset
 	case v > 0:
 		role = t.look.roles.success
 	case v < 0:
@@ -323,8 +319,6 @@ var (
 	timeDurationType = reflect.TypeFor[time.Duration]()
 	fmtStringerType  = reflect.TypeFor[fmt.Stringer]()
 )
-
-var greenRedScalePalette = [...]string{brightGreen, green, yellow, red, brightRed}
 
 type greenRedScalarFn func(v any) (float64, bool)
 
@@ -424,8 +418,7 @@ type table struct {
 	suppressHeaders  bool
 	multilineCells   bool
 
-	// theme is captured at construction, and bound to w before options
-	// run; nil keeps the legacy presentation.
+	// theme is captured at construction, and bound to w before options run.
 	theme        *compiledTheme
 	look         binding
 	header, cell boundSlot
@@ -445,8 +438,7 @@ type table struct {
 // so field data cannot be confused with layout.
 type cell struct {
 	text  text
-	width int    // visible width of text, tailer included
-	color string // optional ANSI prefix, closed by reset when rendered
+	width int // visible width of text, tailer included
 }
 
 type tableColumn struct {
@@ -455,11 +447,11 @@ type tableColumn struct {
 	meta       *fieldMetadata
 }
 
-func newTable[T any](w io.Writer, rowTmpl string, themed bool, o ...opt) (*table, error) {
-	return newTableFor(reflect.TypeFor[T](), w, rowTmpl, themed, o...)
+func newTable[T any](w io.Writer, rowTmpl string, o ...opt) (*table, error) {
+	return newTableFor(reflect.TypeFor[T](), w, rowTmpl, o...)
 }
 
-func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, themed bool, o ...opt) (*table, error) {
+func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, o ...opt) (*table, error) {
 	metadata, err := structFieldsForType(rt)
 	if err != nil {
 		return nil, fmt.Errorf("metadata: %w", err)
@@ -474,11 +466,9 @@ func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, themed bool, o ..
 		autoTemplate:    rowTmpl == "",
 		templateFuncSeq: 0,
 	}
-	if themed {
-		err = t.bind()
-		if err != nil {
-			return nil, err
-		}
+	err = t.bind()
+	if err != nil {
+		return nil, err
 	}
 	err = opts(o).Apply(t)
 	if err != nil {
@@ -576,18 +566,14 @@ func (*table) column(meta *fieldMetadata) columnView {
 	return columnView{Header: text(meta.header).oneLine(), Name: meta.name, Kind: meta.kind.String()}
 }
 
-// heading renders the header of a column: bold in the legacy presentation,
-// otherwise through the Header slot.
+// heading renders the header of a column through the Header slot.
 func (t *table) heading(meta *fieldMetadata) (text, error) {
-	if t.theme == nil {
-		return t.mkBold(meta.header), nil
-	}
 	return t.header.render(t.column(meta))
 }
 
 // headerRow reports whether the table shows a header row.
 func (t *table) headerRow() bool {
-	return !t.suppressHeaders && (t.theme == nil || t.header.tmpl != nil)
+	return !t.suppressHeaders && t.header.tmpl != nil
 }
 
 type factCell struct {
@@ -705,15 +691,11 @@ func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 	return cells, nil
 }
 
-// fact presents a key and its formatted value: a bold key and the value as
-// rendered in the legacy presentation, otherwise the Header and Cell slots,
-// the latter over the line of the value the legacy presentation shows. An
-// empty value stays empty, as in tables.
+// fact presents a key and its formatted value through the Header and Cell
+// slots, the latter over the first line of the value. An empty value stays
+// empty, as in tables.
 func (f *facts) fact(meta *fieldMetadata, out text) (key, value text, err error) {
 	value = text(bytes.ReplaceAll(bytes.TrimRight(out, "\r\n"), []byte{'\t'}, []byte{' '}))
-	if f.theme == nil {
-		return f.mkBold(strings.ReplaceAll(meta.header, "\t", " ")), value, nil
-	}
 	view := cellView{columnView: f.column(meta), Value: f.cellText(value.beforeNewline()).String()}
 	key, err = f.header.render(view.columnView)
 	if err != nil || view.Value == "" {
@@ -775,7 +757,7 @@ func (f *facts) renderFactRow(row []factCell, colWidths []int) error {
 			meta:  &fieldMetadata{alignRight: cell.alignRight},
 		}
 	}
-	if keys || f.theme == nil {
+	if keys {
 		f.rows = append(f.rows, headers)
 	}
 	f.rows = append(f.rows, values)
@@ -886,9 +868,8 @@ func (t *table) renderCells(v any) ([]string, error) {
 	return append(cells, string(out[start:])), nil
 }
 
-// addRecord keeps each cell line and its color on the same physical row.
-// A themed table carries styles across the lines of a cell, and decorates
-// each line.
+// addRecord keeps each cell line and its color on the same physical row. It
+// carries styles across the lines of a cell, and decorates each line.
 func (t *table) addRecord(cells, colors []string) error {
 	lines := make([][]string, len(cells))
 	count := 1
@@ -904,9 +885,7 @@ func (t *table) addRecord(cells, colors []string) error {
 			text = strings.ReplaceAll(text, "\n", " ")
 		}
 		lines[i] = strings.Split(text, "\n")
-		if t.theme != nil {
-			t.carryStyles(lines[i])
-		}
+		t.carryStyles(lines[i])
 		count = max(count, len(lines[i]))
 	}
 	for k := range count {
@@ -924,14 +903,11 @@ func (t *table) addRecord(cells, colors []string) error {
 				rowColors[i] = colors[i]
 			}
 		}
-		if t.theme != nil {
-			err := t.decorate(row, rowColors)
-			if err != nil {
-				return err
-			}
-			rowColors = nil
+		err := t.decorate(row, rowColors)
+		if err != nil {
+			return err
 		}
-		t.addRow(row, rowColors)
+		t.addRow(row)
 	}
 	return nil
 }
@@ -1021,7 +997,7 @@ func (t *table) cellOutput(slot boundSlot, out text) error {
 }
 
 // addRow queues one physical row, keeping exactly one cell per column.
-func (t *table) addRow(texts []text, colors []string) {
+func (t *table) addRow(texts []text) {
 	row := make([]cell, len(t.columns))
 	for i := range row {
 		if i >= len(texts) || len(texts[i]) == 0 {
@@ -1031,25 +1007,18 @@ func (t *table) addRow(texts []text, colors []string) {
 			text:  texts[i],
 			width: texts[i].truncateVisible(math.MaxInt32, ' ').width(),
 		}
-		if i < len(colors) {
-			row[i].color = colors[i]
-		}
 	}
 	t.pending = append(t.pending, row)
 }
 
 // scalePalette is the color of each rank bucket: green to red, or red to
-// green when reversed. A themed table derives it from the success, foreground
-// and error roles, keeping the five buckets even where colors coincide, so a
-// rank means the same on every palette.
+// green when reversed, derived from the success, foreground and error roles.
+// It keeps the five buckets even where colors coincide, so a rank means the
+// same on every palette.
 func (t *table) scalePalette(reversed bool) []string {
 	var palette []string
-	if t.theme == nil {
-		palette = slices.Clone(greenRedScalePalette[:])
-	} else {
-		for _, c := range t.look.diverging() {
-			palette = append(palette, c.String())
-		}
+	for _, c := range t.look.diverging() {
+		palette = append(palette, c.String())
 	}
 	if reversed {
 		slices.Reverse(palette)
@@ -1241,7 +1210,7 @@ func (t *table) headers() error {
 	if t.eventSink != nil {
 		t.emit(tableBegin{Columns: columns})
 	} else {
-		t.addRow(bold, nil)
+		t.addRow(bold)
 	}
 
 	return nil
@@ -1274,7 +1243,7 @@ func (t *table) autoHeaders() error {
 		t.emit(tableBegin{Columns: columns})
 		return nil
 	}
-	t.addRow(headers, nil)
+	t.addRow(headers)
 	return nil
 }
 
@@ -1339,12 +1308,9 @@ func (t *table) formatterTemplate(fnName string, meta *fieldMetadata) string {
 }
 
 // templateFuncs merges shared color functions with per-table formatter
-// functions. A themed table takes the helpers bound to its writer.
+// functions, bound to the writer of the table.
 func (t *table) templateFuncs() template.FuncMap {
-	shared := legacyTemplateFuncs()
-	if t.theme != nil {
-		shared = t.look.funcs
-	}
+	shared := t.look.funcs
 	funcs := make(template.FuncMap, len(shared)+len(t.customTemplateFuncs)+2)
 	maps.Copy(funcs, shared)
 	funcs["tableString"] = tableString
@@ -1560,9 +1526,6 @@ func (t *table) fitPending() {
 				continue
 			}
 			row[i] = c.text.truncateVisible(t.columns[i].maxVisible, ' ')
-			if c.color != "" {
-				row[i] = append(append(text(c.color), row[i]...), reset...)
-			}
 		}
 		t.rows = append(t.rows, row)
 	}
@@ -1701,11 +1664,6 @@ func (t *table) extractFromList(n *parse.ListNode) ([]string, error) {
 	}
 
 	return headers, nil
-}
-
-// mkBold emphasizes a heading when the destination accepts text attributes.
-func (t *table) mkBold(s string) text {
-	return defaultIO.profileFor(t.w).bold(s)
 }
 
 // theoretically we could make this public with additional options.

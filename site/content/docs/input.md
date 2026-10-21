@@ -100,9 +100,10 @@ context to network requests or other blocking work so cancellation can finish
 promptly. Validation errors keep the prompt open; prompt cancellation returns
 the context error. A nil validator returns `ErrInvalidOption`.
 
-Password validators receive the unmasked value. Keep their error messages
-independent of the secret: feedback is displayed even though the password is
-masked and its answer line is hidden.
+Password validators receive the unmasked value, but the user never sees their
+error messages: a rejected password shows `Invalid value` instead, so a message
+cannot repeat the secret. See [WithFeedbackTemplate](#withfeedbacktemplate).
+Messages of `WithNonEmpty` and `WithRegex` still show.
 
 ## WithFeedbackTemplate
 
@@ -122,9 +123,12 @@ line breaks and tabs replaced with spaces and terminal control characters
 removed. The rendered feedback is limited to its first line and clipped to
 the available terminal width. Keep custom templates to one row.
 
-`DefaultFeedbackTemplate` is `{{ red (bold "Error: ") .Message }}`. An empty
-`WithFeedbackTemplate("")` uses that default. Templates support the same color
-and style helpers listed in [Template Functions](template-functions.md).
+Without `WithFeedbackTemplate`, or with an empty one, feedback uses the
+`Feedback` slot of the theme, `✖ message` by default; see [Themes](themes.md).
+Templates support the same color and style helpers listed in
+[Template Functions](template-functions.md). A password always shows
+`Invalid value` instead of a custom validator message, which could repeat
+the secret; messages of `WithNonEmpty` and `WithRegex` still show.
 Showing rejection feedback requires two terminal rows; a shorter terminal
 returns `ErrNoSpace`.
 

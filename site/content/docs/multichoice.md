@@ -116,9 +116,9 @@ selected, err := tui.Multichoice(ctx, "Services", services,
 
 Item-content templates receive the raw item. The inactive main content supplies
 search and default ranking text; active details do not affect matching. Focus
-and checkbox decoration remain outside those templates. The default row uses
-`DefaultMultichoiceItemTemplate` with `.Value`, `.Selected`, `.Active`, and the
-original `.Index`. Rows and multiline details are clipped at whole ANSI/Unicode
+and checkbox decoration remain outside those templates. The theme slot
+`Templates.Multichoice.Row` adds them, with `.Value`, `.Selected`, `.Active`,
+and the original `.Index`; see [Themes](themes.md). Rows and multiline details are clipped at whole ANSI/Unicode
 text boundaries and indicate omitted content with an ellipsis.
 
 Both map APIs give content templates an entry with `.Key` and `.Value`. Both

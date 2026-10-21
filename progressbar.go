@@ -119,9 +119,8 @@ func newProgressbar(ctx context.Context) *Progressbar {
 	}
 }
 
-// newStartedProgressBar starts a bar, rendering through the captured theme
-// when themed.
-func newStartedProgressBar(ctx context.Context, label string, size int64, themed bool, o ...opt) (*Progressbar, error) {
+// newStartedProgressBar starts a bar, rendering through the captured theme.
+func newStartedProgressBar(ctx context.Context, label string, size int64, o ...opt) (*Progressbar, error) {
 	var err error
 	p := newProgressbar(ctx)
 	err = opts(o).Apply(p)
@@ -129,13 +128,11 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, themed
 		p.cancel(err)
 		return nil, fmt.Errorf("apply option: %w", err)
 	}
-	if themed {
-		err = p.bindLook(ctx)
-		if err != nil {
-			p.cancel(err)
-			p.ticker.Stop()
-			return nil, err
-		}
+	err = p.bindLook(ctx)
+	if err != nil {
+		p.cancel(err)
+		p.ticker.Stop()
+		return nil, err
 	}
 	p.showRate = true
 	p.showEstimate = true
@@ -181,22 +178,21 @@ type Progressbar struct {
 	eventSink      func(progressEvent)
 	workers        int
 
-	// theme is captured with the bar; look binds it to the destination of a
-	// themed bar, and is nil for the legacy presentation.
+	// theme is captured with the bar; look binds it to the destination.
 	theme *compiledTheme
 	look  *progressLook
 }
 
 // NewMaxProgressBar returns progress bar towards the max number.
 func NewMaxProgressBar(ctx context.Context, label string, size int64, opts ...opt) (*Progressbar, error) {
-	return newStartedProgressBar(ctx, label, size, themeRendering.Load(), opts...)
+	return newStartedProgressBar(ctx, label, size, opts...)
 }
 
 // NewSliceProgressBar returns progress bar that updates as long as iterator consumed.
 func NewSliceProgressBar[T any](ctx context.Context, label string, slice []T, opts ...opt) iter.Seq2[T, error] {
 	return func(yield func(T, error) bool) {
 		var zero T
-		p, err := newStartedProgressBar(ctx, label, int64(len(slice)), themeRendering.Load(), opts...)
+		p, err := newStartedProgressBar(ctx, label, int64(len(slice)), opts...)
 		if err != nil {
 			yield(zero, err)
 			return
@@ -227,7 +223,7 @@ func NewParallelProgressBar[T any](
 	opts ...opt,
 ) error {
 	// one bar, theme and binding for all workers; they only add to it
-	p, err := newStartedProgressBar(ctx, label, int64(len(slice)), themeRendering.Load(), opts...)
+	p, err := newStartedProgressBar(ctx, label, int64(len(slice)), opts...)
 	if err != nil {
 		return err
 	}
@@ -489,29 +485,12 @@ func (p *Progressbar) tick(frame *bytes.Buffer) bool {
 	// reserve one column to avoid the terminal's autowrap column
 	usable := p.io.Width - 1
 	contentWidth := 0
-	labelW := p.label.width() + 1 // label + trailing space
-	switch {
-	case p.look != nil:
-		row, err := p.themedRow(usable, now)
-		if err != nil {
-			p.err = fmt.Errorf("redraw: %w", err)
-			return true
-		}
-		line = append(line, row...)
-	case usable <= 0:
-	case labelW > usable:
-		// truncate label to fit, no room for bar/details
-		line = append(line, p.label.truncateVisible(usable, ' ')...)
-	default:
-		line = append(line, p.label...)
-		line = append(line, ' ')
-		if availWidth := usable - labelW; availWidth > 0 {
-			if err := p.render(&line, availWidth, now); err != nil {
-				p.err = fmt.Errorf("redraw: %w", err)
-				return true
-			}
-		}
+	row, err := p.row(usable, now)
+	if err != nil {
+		p.err = fmt.Errorf("redraw: %w", err)
+		return true
 	}
+	line = append(line, row...)
 	if usable > 0 {
 		contentWidth = line[1:].width()
 	}
@@ -568,7 +547,7 @@ type progressState struct {
 	showEstimate   bool
 	showRate       bool
 	showElapsed    bool
-	// bytes counts the bytes of a file, shown in binary units when themed
+	// bytes counts the bytes of a file, shown in binary units
 	bytes bool
 }
 
@@ -585,80 +564,6 @@ func (p *progressState) completion() float64 {
 		return 0
 	}
 	return float64(p.currentNum) / float64(p.maxNum)
-}
-
-func (p *progressState) render(w io.Writer, availWidth int, now time.Time) error {
-	p.increment(now)
-	rollingRate := p.rollingRate()
-	completion := p.completion()
-	prefix := fmt.Sprintf("%d%% ", int(completion*100))
-	_, err := io.WriteString(w, p.layout(rollingRate, availWidth, prefix, completion))
-	return err
-}
-
-// layout fits progress details and a bar into availWidth columns.
-func (p *progressState) layout(rollingRate float64, availWidth int, prefix string, completion float64) string {
-	if availWidth <= 0 {
-		return ""
-	}
-	if text(prefix).width() >= availWidth {
-		return string(text(prefix).truncateVisible(availWidth, ' '))
-	}
-	details := p.renderDetails(rollingRate)
-	for n := len(details); n >= 0; n-- {
-		suffix := p.renderSuffix(details[:n], true)
-		barWidth := p.barWidth(availWidth, prefix, suffix)
-		if barWidth > 0 || n == 0 {
-			if barWidth >= 0 {
-				return prefix + p.filledBarLine(barWidth, completion) + suffix
-			}
-		}
-		if n == 0 {
-			continue
-		}
-		compact := p.renderSuffix(details[:n], false)
-		barWidth = p.barWidth(availWidth, prefix, compact)
-		if barWidth >= 0 {
-			return prefix + p.filledBarLine(barWidth, completion) + compact
-		}
-	}
-	return string(text(prefix).truncateVisible(availWidth, ' '))
-}
-
-func (p *progressState) renderSuffix(details []string, leadingSpace bool) string {
-	if len(details) == 0 {
-		return ""
-	}
-	if leadingSpace {
-		return fmt.Sprintf(" (%s)", strings.Join(details, ", "))
-	}
-	return fmt.Sprintf("(%s)", strings.Join(details, ", "))
-}
-
-// barWidth reserves prefix, suffix, and bar delimiters from availWidth.
-func (p *progressState) barWidth(availWidth int, prefix, suffix string) int {
-	return availWidth - text(prefix).width() - text(suffix).width() - 2
-}
-
-func (p *progressState) renderDetails(rollingRate float64) []string {
-	var right []string
-	if p.showRate {
-		right = append(right, p.renderRate(rollingRate))
-	}
-	if p.showEstimate {
-		part := p.remainingTime(rollingRate)
-		if part != "" {
-			right = append(right, part)
-		}
-	}
-	if p.showElapsed {
-		right = append(right, fmt.Sprintf("%s elapsed", p.elapsed.Truncate(time.Second)))
-	}
-	return right
-}
-
-func (p *progressState) renderRate(rollingRate float64) string {
-	return p.formatRate(rollingRate) + "/s"
 }
 
 // formatRate formats a rate with [WithFormatRate], without its unit.
@@ -686,13 +591,6 @@ func (p *progressState) increment(now time.Time) {
 	p.redrawAt = now
 }
 
-func (p *progressState) remainingTime(rollingRate float64) string {
-	if rollingRate <= 0 {
-		return ""
-	}
-	return fmt.Sprintf("%s remaining", p.remainingSeconds(rollingRate))
-}
-
 func (p *progressState) remainingSeconds(rollingRate float64) time.Duration {
 	remainingNum := p.maxNum - p.currentNum
 	if remainingNum <= 0 {
@@ -700,27 +598,6 @@ func (p *progressState) remainingSeconds(rollingRate float64) time.Duration {
 	}
 	remainingTime := time.Duration(float64(remainingNum)/rollingRate*1) * time.Second
 	return remainingTime
-}
-
-func (p *progressState) filledBarLine(width int, completion float64) string {
-	filledWidth := int(float64(width) * completion)
-	if filledWidth > width {
-		filledWidth = width
-	}
-	var bar strings.Builder
-	bar.WriteString("[")
-	for i := range width {
-		switch {
-		case i < filledWidth:
-			bar.WriteString("=")
-		case i == filledWidth:
-			bar.WriteString(">")
-		default:
-			bar.WriteString(" ")
-		}
-	}
-	bar.WriteString("]")
-	return bar.String()
 }
 
 func (p *progressState) rollingRate() float64 {
@@ -811,11 +688,11 @@ func (p *Progressbar) view(rate float64, rateText string, n int) progressView {
 	return v
 }
 
-// themedRow renders the row of a themed bar in width columns. It drops
+// row renders the row of the bar in width columns. It drops
 // metrics, the last first, until the bar keeps MinBarWidth; the bar then
 // takes the columns the rest of the frame leaves, up to MaxBarWidth. A row
 // that does not fit even without metrics is clipped.
-func (p *Progressbar) themedRow(width int, now time.Time) (text, error) {
+func (p *Progressbar) row(width int, now time.Time) (text, error) {
 	p.increment(now)
 	if width <= 0 {
 		return nil, nil
@@ -880,7 +757,7 @@ type progressLook struct {
 	label, metrics, frame boundSlot
 }
 
-// bindLook binds the captured theme to the output of a themed bar. Output
+// bindLook binds the captured theme to the output of the bar. Output
 // only: without a lease, it never probes the terminal.
 func (p *Progressbar) bindLook(ctx context.Context) (err error) {
 	p.look, err = p.bind(defaultIO.bindTheme(ctx, p.theme, p.out, nil))
@@ -982,11 +859,9 @@ func NewFileProgressReader(ctx context.Context, r io.Reader, label string, o ...
 	if err != nil {
 		return nil, fmt.Errorf("size: %w", err)
 	}
-	if themeRendering.Load() {
-		err = p.bindLook(ctx)
-		if err != nil {
-			return nil, err
-		}
+	err = p.bindLook(ctx)
+	if err != nil {
+		return nil, err
 	}
 	p.bytes = true
 	p.showRate = true

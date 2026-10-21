@@ -10,6 +10,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
@@ -124,8 +125,17 @@ func FuzzPrettyJsonRecolor(f *testing.F) {
 	})
 }
 
+// presetJSONTheme is the compiled preset theme.
+var presetJSONTheme = sync.OnceValue(func() *compiledTheme {
+	c, err := presetTheme().compile()
+	if err != nil {
+		panic(err) // the preset is valid
+	}
+	return c
+})
+
 func testJSONLook() *jsonLook {
-	st := newJSONLook(legacyJSONTheme().bind(profileTrueColor, background{}))
+	st := newJSONLook(presetJSONTheme().bind(profileTrueColor, background{}))
 	return &st
 }
 
@@ -137,9 +147,9 @@ func jsonBound(t *testing.T, th Theme, p colorProfile, bg background) binding {
 	return c.bind(p, bg)
 }
 
-// legacyJSONPalette is the palette of the presentation before themes.
+// legacyJSONPalette is the palette of the preset on an unknown background.
 func legacyJSONPalette() resolvedPalette {
-	return legacyJSONTheme().bind(profileTrueColor, background{}).palette
+	return presetJSONTheme().bind(profileTrueColor, background{}).palette
 }
 
 // measuredBG is a measured background, so neutral roles are emitted.
@@ -241,7 +251,7 @@ func displayed(t *testing.T, p colorProfile, sgr text) sRGB {
 func TestJSONKeyShadesDimMonotonicallyOnEveryProfile(t *testing.T) {
 	pal := legacyJSONPalette()
 	for _, p := range []colorProfile{profileANSI16, profileANSI256, profileTrueColor} {
-		keys := newJSONLook(legacyJSONTheme().bind(p, background{})).keys
+		keys := newJSONLook(presetJSONTheme().bind(p, background{})).keys
 		assert.True(t, len(keys) > 0)
 		prev := 22.0
 		for _, k := range keys {
@@ -318,7 +328,7 @@ func TestPrettyJSONMalformedWritesNothing(t *testing.T) {
 }
 
 func TestJSONStyleWithoutColor(t *testing.T) {
-	st := newJSONLook(legacyJSONTheme().bind(profileAttrs, background{}))
+	st := newJSONLook(presetJSONTheme().bind(profileAttrs, background{}))
 	assert.Equal(t, text(bold), st.punct)
 	assert.Equal(t, 0, len(st.keys))
 	assert.Equal(t, 0, len(st.value))
@@ -514,19 +524,4 @@ func TestThemedPrettyJSONDestinations(t *testing.T) {
 	assert.Error(t, PrettyJSON(&buf, `{"a":`))
 	assert.Error(t, PrettyJSON(&buf, map[string]any{"f": func() {}}))
 	assert.Equal(t, 0, buf.Len())
-}
-
-func TestPrettyJSONStaysLegacyWhenOff(t *testing.T) {
-	keepTheme(t)
-	prev := themeRendering.Swap(false)
-	t.Cleanup(func() { themeRendering.Store(prev) })
-	want := renderJSON(t, "FORCE_COLOR=3", jsonSample)
-	th := NewTheme()
-	th.JSON = JSONStyle{Indent: "\t"}
-	th.Palette.Accent = "#D05AE0"
-	th.Light = true
-	assert.NoError(t, defaultIO.installTheme(th))
-	assert.Equal(t, want, renderJSON(t, "FORCE_COLOR=3", jsonSample))
-	assert.Equal(t, want, renderJSON(t, "FORCE_COLOR=3 COLORFGBG=0;15", jsonSample))
-	assert.Contains(t, renderJSON(t, "X=1", jsonSample), "\n  \"a\"")
 }

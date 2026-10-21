@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"text/template"
 	"text/template/parse"
 	"unicode"
@@ -459,14 +458,6 @@ const (
 // attrs reports whether text attributes are accepted.
 func (p colorProfile) attrs() bool { return p >= profileAttrs }
 
-// bold wraps s in bold SGR when the profile allows attributes.
-func (p colorProfile) bold(s string) text {
-	if !p.attrs() {
-		return text(s)
-	}
-	return text(bold + s + reset)
-}
-
 // encode returns the foreground or background SGR sequence for c, or nil for
 // profiles without color.
 func (p colorProfile) encode(c sRGB, background bool) text {
@@ -844,7 +835,6 @@ func (in Theme) compile() (*compiledTheme, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.legacy = t.withCustom(destination{profile: legacyProfile}.legacy())
 	c.source = t
 	return c, nil
 }
@@ -1072,8 +1062,17 @@ func presetTheme() Theme {
 	}
 }
 
-// NewTheme returns an independent, editable copy of the built-in theme.
+// NewTheme returns an editable copy of the built-in theme with adaptive colors.
 func NewTheme() Theme { return presetTheme() }
+
+// DefaultTheme returns an editable copy of the installed theme, preserving helpers and unset colors.
+func DefaultTheme() Theme { return defaultIO.currentTheme().editable() }
+
+// SetDefaultTheme validates and copies theme for operations started afterwards.
+// On error, the installed theme is unchanged; running operations keep their snapshot.
+// Funcs replaces existing helpers; start from [DefaultTheme] to retain them.
+// Helper closures must be safe for concurrent use. Per-call options take precedence.
+func SetDefaultTheme(theme Theme) error { return defaultIO.installTheme(theme) }
 
 // compiledTheme is an immutable snapshot of an installed theme. Nothing in it
 // is derived from a terminal: backgrounds and profiles are bound per operation.
@@ -1084,9 +1083,6 @@ type compiledTheme struct {
 	// Derived state, computed from source.
 	palette   parsedPalette
 	templates templates
-	// legacy are the helpers of per-call templates. It is shared: callers
-	// copy it before adding their own helpers.
-	legacy template.FuncMap
 }
 
 // editable returns the source configuration as an independent copy.
@@ -1231,14 +1227,6 @@ func (binding) style(role, content text) text {
 
 // diverging is the diverging scale of [compiledTheme.diverging] for the destination.
 func (b binding) diverging() []text { return b.theme.diverging(b.profile, b.palette, b.roles) }
-
-// themeRendering routes migrated widgets through the theme they capture. It
-// stays off, keeping the legacy presentation, until every widget family has
-// migrated; tests turn it on.
-var themeRendering atomic.Bool
-
-// legacyTemplateFuncs returns installed per-call helpers; callers must not modify the map.
-func legacyTemplateFuncs() template.FuncMap { return defaultIO.currentTheme().legacy }
 
 // Template is an optional template source. The zero value inherits from the
 // parent slot; [Hidden] is an explicit empty source that hides the slot
@@ -1788,9 +1776,10 @@ func (b boundSlot) styled(out text) error {
 	return nil
 }
 
-// WithFn registers or replaces a custom helper for future operations.
-// Helpers must be safe for concurrent use and return one value or a value and error.
+// WithFn registers or replaces a helper for operations started afterwards.
+// Helpers must be safe for concurrent use and return a value or a value and an error.
 // Invalid or reserved names and invalid signatures panic without changing the theme.
+// Use [Theme.Funcs] with [SetDefaultTheme] to receive validation errors instead.
 func WithFn(name string, fn any) {
 	err := defaultIO.updateTheme(func(t *Theme) {
 		if t.Funcs == nil {
@@ -1802,10 +1791,6 @@ func WithFn(name string, fn any) {
 		panic(fmt.Errorf("tui.WithFn: %w", err))
 	}
 }
-
-// legacyProfile is the profile of the per-call templates, which still emit
-// SGR whatever the destination until each widget binds its destination.
-const legacyProfile = profileTrueColor
 
 // formatArgs joins helper arguments without separators.
 func (span) formatArgs(args []any) text {
@@ -1968,7 +1953,7 @@ func (d destination) funcs() template.FuncMap {
 	funcs["fg"] = d.color(false)
 	funcs["bg"] = d.color(true)
 	funcs["symbol"] = d.symbols.named
-	funcs["label"] = choiceLabels{}.itemLabel
+	funcs["label"] = choiceLabels{}.rowLabel
 	return funcs
 }
 

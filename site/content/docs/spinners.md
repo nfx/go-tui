@@ -98,10 +98,11 @@ sp, err := group.Add(context.Background(),
 Detailed behavior:
 
 - Frames are cycled in order on each spinner tick.
-- Ticks are driven by the spinner group ticker (100ms interval).
+- Ticks are driven by the spinner group ticker, every `Theme.Spinner.Interval`
+  (100ms by default).
 - After the last frame, animation loops back to the first frame.
-- Default frame set for new spinners is `SpinnerStyleDocs`.
-- You can switch to `DefaultSpinnerStyle` or any custom frame slice.
+- New spinners use `Theme.Spinner.Frames`; see [Themes](themes.md).
+- You can switch one spinner to `DefaultSpinnerStyle` or any custom frame slice.
 - `Add` returns an error unless the frames are non-empty single lines of
   text, optionally styled with color sequences, that all have the same
   positive display width. Equal widths keep the animation from jittering.
@@ -136,8 +137,10 @@ group, err := tui.NewSpinners(common)
 
 ## Styles
 
-- `SpinnerStyleDocs` is the default frame set for new spinners.
+- `SpinnerStyleDocs` has the same frames as the default theme.
 - `DefaultSpinnerStyle` is a denser unicode animation set.
+- Changing these variables does not change the default; set
+  `Theme.Spinner.Frames` instead.
 
 ## Failure handling
 

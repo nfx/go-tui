@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"sync"
 )
 
 type jsonState int
@@ -122,17 +121,6 @@ func (s JSONStyle) normalize() (JSONStyle, error) {
 	return s, nil
 }
 
-// legacyJSONTheme is the preset PrettyJSON renders with while themes are
-// off, bound to the dark reference background: the presentation before
-// themes, which an installed theme does not change.
-var legacyJSONTheme = sync.OnceValue(func() *compiledTheme {
-	c, err := presetTheme().compile()
-	if err != nil {
-		panic(err) // the preset is valid
-	}
-	return c
-})
-
 // PrettyJSON pretty-prints JSON data, with two-space indentation unless the
 // theme sets another [JSONStyle]. When the destination writer accepts color,
 // keys use the accent color, dimmed with nesting depth, values the
@@ -141,23 +129,13 @@ var legacyJSONTheme = sync.OnceValue(func() *compiledTheme {
 // the terminal is never queried. Without color the output is plain JSON.
 // Malformed input returns an error before anything is written.
 func PrettyJSON(w io.Writer, src any) error {
-	themed := themeRendering.Load()
-	theme := legacyJSONTheme()
-	if themed {
-		theme = defaultIO.currentTheme()
-	}
+	theme := defaultIO.currentTheme()
 	out, err := jsonIndent(src, theme.source.JSON)
 	if err != nil {
 		return err
 	}
 	if p := defaultIO.profileFor(w); p.attrs() {
-		var look binding
-		if themed {
-			look = defaultIO.bindTheme(context.Background(), theme, w, nil)
-		} else {
-			look = theme.bind(p, background{})
-		}
-		style := newJSONLook(look)
+		style := newJSONLook(defaultIO.bindTheme(context.Background(), theme, w, nil))
 		colored := bytes.NewBuffer(make([]byte, 0, 2*out.Len()))
 		style.recolor(out, colored)
 		out = colored

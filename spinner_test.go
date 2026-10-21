@@ -146,7 +146,7 @@ func TestNewSpinners(t *testing.T) {
 
 	tick()
 	firstOut := <-cio.Out
-	assert.Contains(t, firstOut, "... first: A")
+	assert.Contains(t, firstOut, "... first:…") // the last column stays free
 
 	second := s.MustAddBackground()
 	second.Update("second: A")
@@ -154,7 +154,7 @@ func TestNewSpinners(t *testing.T) {
 	tick()
 	secondOut := <-cio.Out
 	assert.Contains(t, secondOut, "\x1b[1A\r\x1b[K")
-	assert.Contains(t, secondOut, ".. first: A")
+	assert.Contains(t, secondOut, ".. first:…")
 	assert.Contains(t, secondOut, ".. secon")
 
 	cancel()
@@ -265,7 +265,7 @@ func TestSpinnerWithCustomFrames(t *testing.T) {
 
 	spinner.Update("custom")
 	tick()
-	assert.Equal(t, "\r[.. ] custom\n\r", <-cio.Out)
+	assert.Equal(t, "\r[.. ] cust…\n\r", <-cio.Out)
 }
 
 func TestSpinnerStateNext(t *testing.T) {
@@ -313,7 +313,7 @@ func TestSpinnersOpt(t *testing.T) {
 		return nil
 	})
 
-	s := &Spinners{}
+	s := &Spinners{theme: defaultIO.currentTheme()}
 	err := opt(s)
 	assert.NoError(t, err)
 	assert.Equal(t, true, called)
@@ -371,7 +371,7 @@ func TestSpinnerFailedState(t *testing.T) {
 	testErr := errors.New("failure")
 	spinner.Fail(testErr)
 	tick()
-	assert.Equal(t, "\r... failure\n\r", <-cio.Out)
+	assert.Equal(t, "\r✖ failure\n\r", <-cio.Out)
 
 	// Failed spinner should remain visible even after close
 	err = spinner.Close()
@@ -518,14 +518,14 @@ func TestSpinnersEmitStructuredEvents(t *testing.T) {
 }
 
 func TestSpinnersAddRejectsEmptyFrames(t *testing.T) {
-	s := &Spinners{}
+	s := &Spinners{theme: defaultIO.currentTheme()}
 	if _, err := s.Add(context.Background(), WithFrames(nil)); err == nil {
 		t.Fatal("expected error for empty frames")
 	}
 }
 
 func TestSpinnersAddRejectsUnequalFrames(t *testing.T) {
-	s := &Spinners{}
+	s := &Spinners{theme: defaultIO.currentTheme()}
 	_, err := s.Add(context.Background(), WithFrames([]string{"..", "..."}))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "spinner: frames[1]")
@@ -923,18 +923,4 @@ func TestThemedSpinnerLogsWithoutTerminal(t *testing.T) {
 func TestSpinnerOneLine(t *testing.T) {
 	got := text("a\r\nb\tc\x1b[2Kd\x1b[31mred\x1b[0m\xff\x07").oneLine()
 	assert.Equal(t, "a  b cd\x1b[31mred\x1b[0m�", got)
-}
-
-func TestSpinnersStayLegacyWhenOff(t *testing.T) {
-	th := asciiTheme(false)
-	th.Spinner.Frames = []string{"[a]"}
-	useTheme(t, th)
-	themeRendering.Store(false)
-	s, cio, tick := spinnersForTest(t)
-	defer s.Close()
-	sp, err := s.Add(t.Context())
-	assert.NoError(t, err)
-	sp.Update("x")
-	tick()
-	assert.Equal(t, "\r... x\n\r", <-cio.Out)
 }
