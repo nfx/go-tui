@@ -33,7 +33,7 @@ func TestDropdownDefaultSelectsClosestMatch(t *testing.T) {
 			tui.WithDefault("apple"))
 	})
 	// two items share the prefix, so the closest one is ranked first and selected
-	term.waitRows(t, "? Pick", "| > apple", "|   apple pie", "|   banana", "| up/down move...")
+	term.waitRows(t, "? Pick", "| > apple", "|   apple pie", "|   banana", "| ^v move...")
 	term.press(t, keyEnter)
 	assert.Equal(t, "apple", answer(t, res))
 	term.waitRows(t, "+ Pick · apple")
@@ -47,13 +47,13 @@ func TestDropdownLazyDefaultSelectsBestRankedArrival(t *testing.T) {
 	})
 	read := term.blockedRead(t)
 	items <- "xxxx"
-	term.waitRows(t, "? Pick", "| > xxxx", "| up/down move...")
+	term.waitRows(t, "? Pick", "| > xxxx", "| ^v move...")
 	items <- "yyyy"
-	term.waitRows(t, "? Pick", "| > xxxx", "|   yyyy", "| up/down move...")
+	term.waitRows(t, "? Pick", "| > xxxx", "|   yyyy", "| ^v move...")
 	// the closest match arrives last: it is ranked first, and without any
 	// navigation the selection follows the ranking
 	items <- "bat"
-	term.waitRows(t, "? Pick", "| > bat", "|   xxxx", "|   yyyy", "| up/down move...")
+	term.waitRows(t, "? Pick", "| > bat", "|   xxxx", "|   yyyy", "| ^v move...")
 	close(items)
 	read <- keyEnter
 	assert.Equal(t, "bat", answer(t, res))
@@ -67,13 +67,13 @@ func TestDropdownLazyDefaultKeepsNavigatedSelection(t *testing.T) {
 	})
 	items <- "xxxx"
 	items <- "yyyy"
-	term.waitRows(t, "? Pick", "| > xxxx", "|   yyyy", "| up/down move...")
+	term.waitRows(t, "? Pick", "| > xxxx", "|   yyyy", "| ^v move...")
 	term.press(t, keyDown)
-	term.waitRows(t, "? Pick", "|   xxxx", "| > yyyy", "| up/down move...")
+	term.waitRows(t, "? Pick", "|   xxxx", "| > yyyy", "| ^v move...")
 	read := term.blockedRead(t)
 	// once the user has moved, a better-ranked arrival does not take the selection
 	items <- "bat"
-	term.waitRows(t, "? Pick", "|   bat", "|   xxxx", "| > yyyy", "| up/down move...")
+	term.waitRows(t, "? Pick", "|   bat", "|   xxxx", "| > yyyy", "| ^v move...")
 	close(items)
 	read <- keyEnter
 	assert.Equal(t, "yyyy", answer(t, res))
@@ -87,18 +87,18 @@ func TestDropdownLazyFilterAppliesToLaterItems(t *testing.T) {
 	})
 	items <- "alpha"
 	items <- "beta"
-	term.waitRows(t, "? Pick", "| > alpha", "|   beta", "| up/down move...")
+	term.waitRows(t, "? Pick", "| > alpha", "|   beta", "| ^v move...")
 	term.press(t, "a")
-	term.waitRows(t, "? Pick", "| > alpha", "| up/down move...")
+	term.waitRows(t, "? Pick", "| > alpha", "| ^v move...")
 	items <- "banana"
 	items <- "apricot"
-	term.waitRows(t, "? Pick", "| > alpha", "|   apricot", "| up/down move...")
+	term.waitRows(t, "? Pick", "| > alpha", "|   apricot", "| ^v move...")
 	term.press(t, keyBackspace)
-	term.waitRows(t, "? Pick", "| > alpha", "|   beta", "|   banana", "|   apricot", "| up/down move...")
+	term.waitRows(t, "? Pick", "| > alpha", "|   beta", "|   banana", "|   apricot", "| ^v move...")
 	term.press(t, "a")
-	term.waitRows(t, "? Pick", "| > alpha", "|   apricot", "| up/down move...")
+	term.waitRows(t, "? Pick", "| > alpha", "|   apricot", "| ^v move...")
 	term.press(t, keyDown)
-	term.waitRows(t, "? Pick", "|   alpha", "| > apricot", "| up/down move...")
+	term.waitRows(t, "? Pick", "|   alpha", "| > apricot", "| ^v move...")
 	close(items)
 	term.press(t, keyEnter)
 	assert.Equal(t, "apricot", answer(t, res))
@@ -109,11 +109,11 @@ func testResizeWhileReading(t *testing.T, run func() (string, error)) {
 	t.Helper()
 	term := newASCIITerminal(t)
 	res := prompt(run)
-	term.waitRows(t, "? Pick", "| > a", "|   b", "|   c", "|   d", "|   e", "| up/down move...")
+	term.waitRows(t, "? Pick", "| > a", "|   b", "|   c", "|   d", "|   e", "| ^v move...")
 	term.press(t, keyDown)
-	term.waitRows(t, "? Pick", "|   a", "| > b", "|   c", "|   d", "|   e", "| up/down move...")
+	term.waitRows(t, "? Pick", "|   a", "| > b", "|   c", "|   d", "|   e", "| ^v move...")
 	term.press(t, keyDown)
-	term.waitRows(t, "? Pick", "|   a", "|   b", "| > c", "|   d", "|   e", "| up/down move...")
+	term.waitRows(t, "? Pick", "|   a", "|   b", "| > c", "|   d", "|   e", "| ^v move...")
 	read := term.blockedRead(t)
 	term.resize(t, 40, 5) // room for two items and the count
 	term.waitRows(t, "? Pick", "|   b", "| > c", "| . 2 more")
@@ -145,12 +145,12 @@ func TestWidgetsShareTerminal(t *testing.T) {
 		return tui.Dropdown(t.Context(), "Pick", []string{"a", "b"})
 	})
 	// the background overlay stays above the prompt that started later
-	term.waitRows(t, "Download  25%...", "? Pick", "| > a", "|   b", "| up/down move...")
+	term.waitRows(t, "Download  25%...", "? Pick", "| > a", "|   b", "| ^v move...")
 
 	// log output goes above both overlays
 	_, err = fmt.Fprintln(tui.Stderr(), "log line")
 	assert.NoError(t, err)
-	term.waitRows(t, "log line", "Download  25%...", "? Pick", "| > a", "|   b", "| up/down move...")
+	term.waitRows(t, "log line", "Download  25%...", "? Pick", "| > a", "|   b", "| ^v move...")
 
 	term.press(t, keyEnter)
 	assert.Equal(t, "a", answer(t, res))
@@ -928,14 +928,14 @@ func TestMultichoiceSharesTerminalWithProgressAndLogs(t *testing.T) {
 		values, err := tui.Multichoice(t.Context(), "Pick", []string{"a", "b"})
 		return fmt.Sprint(values), err
 	})
-	term.waitRows(t, "Download  25%...", "? Pick", "| > o a", "|   o b", "| up/down move...")
+	term.waitRows(t, "Download  25%...", "? Pick", "| > o a", "|   o b", "| ^v move...")
 	if _, err := fmt.Fprintln(tui.Stderr(), "log line"); err != nil {
 		t.Fatal(err)
 	}
-	term.waitRows(t, "log line", "Download  25%...", "? Pick", "| > o a", "|   o b", "| up/down move...")
+	term.waitRows(t, "log line", "Download  25%...", "? Pick", "| > o a", "|   o b", "| ^v move...")
 	term.press(t, " ")
 	term.press(t, keyDown)
-	term.waitRows(t, "log line", "Download  25%...", "? Pick", "|   x a", "| > o b", "| up/down move...")
+	term.waitRows(t, "log line", "Download  25%...", "? Pick", "|   x a", "| > o b", "| ^v move...")
 	term.press(t, keyEnter)
 	if got := answer(t, res); got != "[a]" {
 		t.Fatal(got)
@@ -961,20 +961,20 @@ func TestMultichoiceLazyManagedFilterAndConfirmation(t *testing.T) {
 		values, err := tui.MultichoiceLazy(t.Context(), "Pick", feed(items), tui.WithDefault("api"))
 		return fmt.Sprint(values), err
 	})
-	term.waitRows(t, "? Pick", "| up/down move...")
+	term.waitRows(t, "? Pick", "| ^v move...")
 	items <- "api"
-	term.waitRows(t, "? Pick", "| > o api", "| up/down move...")
+	term.waitRows(t, "? Pick", "| > o api", "| ^v move...")
 	term.press(t, "z")
-	term.waitRows(t, "? Pick", "| No matches", "| up/down move...")
+	term.waitRows(t, "? Pick", "| No matches", "| ^v move...")
 	items <- "zzz"
-	term.waitRows(t, "? Pick", "| > o zzz", "| up/down move...")
+	term.waitRows(t, "? Pick", "| > o zzz", "| ^v move...")
 	term.press(t, " ")
 	term.press(t, keyEnter)
-	term.waitRows(t, "? Pick", "| > x zzz", "| up/down move...")
+	term.waitRows(t, "? Pick", "| > x zzz", "| ^v move...")
 	read := term.blockedRead(t)
 	close(items)
 	read <- keyBackspace
-	term.waitRows(t, "? Pick", "|   x api", "| > x zzz", "| up/down move...")
+	term.waitRows(t, "? Pick", "|   x api", "| > x zzz", "| ^v move...")
 	term.press(t, keyEnter)
 	if got := answer(t, res); got != "[api zzz]" {
 		t.Fatal(got)
@@ -988,7 +988,7 @@ func TestMultichoiceManagedResizePreservesIdentity(t *testing.T) {
 		values, err := tui.Multichoice(t.Context(), "Pick", []string{"a", "b", "c", "d", "e"})
 		return fmt.Sprint(values), err
 	})
-	term.waitRows(t, "? Pick", "| > o a", "|   o b", "|   o c", "|   o d", "|   o e", "| up/down move...")
+	term.waitRows(t, "? Pick", "| > o a", "|   o b", "|   o c", "|   o d", "|   o e", "| ^v move...")
 	term.press(t, keyDown)
 	term.press(t, keyDown)
 	term.press(t, " ")
@@ -997,7 +997,7 @@ func TestMultichoiceManagedResizePreservesIdentity(t *testing.T) {
 	term.resize(t, 40, 5)
 	term.waitRows(t, "? Pick", "|   o b", "| > x c", "| . 2 more")
 	term.resize(t, 40, 12)
-	term.waitRows(t, "? Pick", "|   o a", "|   o b", "| > x c", "|   o d", "|   o e", "| up/down move...")
+	term.waitRows(t, "? Pick", "|   o a", "|   o b", "| > x c", "|   o d", "|   o e", "| ^v move...")
 	read <- keyEnter
 	if got := answer(t, res); got != "[c]" {
 		t.Fatal(got)
@@ -1018,7 +1018,7 @@ func TestMultichoiceManagedCancelAndDeadline(t *testing.T) {
 				values, err := tui.Multichoice(ctx, "Pick", []string{"a"})
 				return fmt.Sprint(values), err
 			})
-			term.waitRows(t, "? Pick", "| > o a", "| up/down move...")
+			term.waitRows(t, "? Pick", "| > o a", "| ^v move...")
 			read := term.blockedRead(t)
 			if !deadline {
 				cancel()
@@ -1116,11 +1116,11 @@ func TestMultichoicePTYKeyboardResizeAndRestore(t *testing.T) {
 				selected <- got
 				result <- err
 			}()
-			screen.waitRows(t, "? Pick", "| > o a", "|   o b", "|   o c", "|   o d", "|   o e", "| up/down move...")
+			screen.waitRows(t, "? Pick", "| > o a", "|   o b", "|   o c", "|   o d", "|   o e", "| ^v move...")
 			if _, err := master.WriteString("\x1b[B\x1b[B "); err != nil {
 				t.Fatal(err)
 			}
-			screen.waitRows(t, "? Pick", "|   o a", "|   o b", "| > x c", "|   o d", "|   o e", "| up/down move...")
+			screen.waitRows(t, "? Pick", "|   o a", "|   o b", "| > x c", "|   o d", "|   o e", "| ^v move...")
 			// room for two items and the count, with the row below the frame free
 			resizeTTY(t, tty, 40, 5)
 			screen.waitRows(t, "? Pick", "|   o b", "| > x c", "| . 2 more")
@@ -1242,24 +1242,24 @@ var themedLayouts = []themedLayout{{
 	spinner:   "~ fetch: pages",
 	progress:  "Download  25% █...",
 	input:     []string{"◆ Name", "│ x"},
-	dropdown:  []string{"◆ Pick", "│   a", "│ ❯ b", "│ up/down move · type filter"},
-	checklist: []string{"◆ Tags", "│ ❯ ◉ x", "│   ○ y", "│ up/down move · space toggle · type f…"},
+	dropdown:  []string{"◆ Pick", "│   a", "│ ❯ b", "│ ↑↓ move · type filter"},
+	checklist: []string{"◆ Tags", "│ ❯ ◉ x", "│   ○ y", "│ ↑↓ move · space toggle · type filter"},
 	answers:   []string{"✔ Name · x", "✔ Pick · b", "✔ Tags · x", "✔ Go · Yes", "✔ Count · 3"},
 }, {
 	ascii:     true,
 	spinner:   "~ fetch: pages",
 	progress:  "Download  25% =...",
 	input:     []string{"? Name", "| x"},
-	dropdown:  []string{"? Pick", "|   a", "| > b", "| up/down move · type filter"},
-	checklist: []string{"? Tags", "| > x x", "|   o y", "| up/down move · space toggle · type f…"},
+	dropdown:  []string{"? Pick", "|   a", "| > b", "| ^v move · type filter"},
+	checklist: []string{"? Tags", "| > x x", "|   o y", "| ^v move · space toggle · type filter"},
 	answers:   []string{"+ Name · x", "+ Pick · b", "+ Tags · x", "+ Go · Yes", "+ Count · 3"},
 }, {
 	inline:    true,
 	spinner:   "~ fetch: pages",
 	progress:  "Download  25% █...",
 	input:     []string{"◆ Name x"},
-	dropdown:  []string{"◆ Pick   a", "❯ b", "up/down move · type filter"},
-	checklist: []string{"◆ Tags", "❯ ◉ x", "○ y", "up/down move · space toggle · type fil…"},
+	dropdown:  []string{"◆ Pick   a", "❯ b", "↑↓ move · type filter"},
+	checklist: []string{"◆ Tags", "❯ ◉ x", "○ y", "↑↓ move · space toggle · type filter"},
 	answers:   []string{"✔ Name · x", "✔ Pick · b", "✔ Tags · x", "✔ Go · Yes", "✔ Count · 3"},
 }, {
 	inline:    true,
@@ -1267,8 +1267,8 @@ var themedLayouts = []themedLayout{{
 	spinner:   "~ fetch: pages",
 	progress:  "Download  25% =...",
 	input:     []string{"? Name x"},
-	dropdown:  []string{"? Pick   a", "> b", "up/down move · type filter"},
-	checklist: []string{"? Tags", "> x x", "o y", "up/down move · space toggle · type fil…"},
+	dropdown:  []string{"? Pick   a", "> b", "^v move · type filter"},
+	checklist: []string{"? Tags", "> x x", "o y", "^v move · space toggle · type filter"},
 	answers:   []string{"+ Name · x", "+ Pick · b", "+ Tags · x", "+ Go · Yes", "+ Count · 3"},
 }}
 
@@ -1689,7 +1689,7 @@ func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
 	assert.NoError(t, err)
 	bar.Add(1)
 	res := prompt(func() (string, error) { return tui.Dropdown(t.Context(), "Pick", []string{"a", "b"}) })
-	picking := []string{"? Pick", "| > a", "|   b", "| up/down move · type filter"}
+	picking := []string{"? Pick", "| > a", "|   b", "| ^v move · type filter"}
 	term.waitRows(t, append([]string{"~ first:", "Download  25% =..."}, picking...)...)
 
 	next := themedLayouts[0].theme() // Guided Unicode
@@ -1703,7 +1703,7 @@ func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
 	bar.Add(1)
 	term.press(t, keyDown)
 	running := []string{"~ first:", "~ second:", "Download  50% =..."}
-	term.waitRows(t, append(running, "? Pick", "|   a", "| > b", "| up/down move · type filter")...)
+	term.waitRows(t, append(running, "? Pick", "|   a", "| > b", "| ^v move · type filter")...)
 	term.press(t, keyEnter)
 	assert.Equal(t, "b", answer(t, res))
 

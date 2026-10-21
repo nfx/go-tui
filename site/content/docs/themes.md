@@ -33,7 +33,7 @@ value, the list and the feedback below it start with a guide glyph.
 ◆ Color
 │ ❯ blue
 │   green
-│ up/down move · type filter
+│ ↑↓ move · type filter
 ```
 
 Set `theme.Inline = true` to keep the label on the row of the value or the
@@ -68,6 +68,27 @@ The background is detected when a prompt starts: the terminal is asked for
 its color, and `COLORFGBG` is the fallback. Output-only widgets never ask;
 they reuse an earlier answer for the same terminal. `theme.Light = true`
 skips detection and uses the light palette.
+
+### Brand colors
+
+The unset palette follows the Go Brand Book v1.0, section 2.1 "color". The
+presets are applied when a theme is compiled; `DefaultTheme()` still returns
+the fields empty, so a theme you edit keeps adapting.
+
+| Brand color | Role | Notes |
+| --- | --- | --- |
+| Gopher Blue `#00ADD8` | `Accent` | moved to a readable shade on light backgrounds |
+| Dark blue `#00758D` | `Accent` on light backgrounds | a seed, not an override: it still moves on mid-gray backgrounds, and your own `Accent` replaces it |
+| Fuchsia `#CE3262` | `Error` | |
+| Black `#000000` | `Foreground` on light backgrounds | adapts on measured backgrounds |
+| Cool Gray `#DBD9D6` | `Foreground` on dark backgrounds | adapts on measured backgrounds |
+| (not from the brand) `#2D9B55` | `Success` | Aqua `#00A29C` is too close to the accent: focus and done marks would read alike |
+
+`WithColumnGreenRedScale` and `WithColumnRedGreenScale` name a direction, good to
+bad, not a hue. To keep the colors of v0.3.x, set `Accent: "#00ADD8"`,
+`Error: "#C83741"`, `Light.Foreground: "#232830"` and
+`Dark.Foreground: "#E1E6EE"` explicitly. Setting `Accent` also turns off the
+dark-blue seed on light backgrounds.
 
 ## Color support
 

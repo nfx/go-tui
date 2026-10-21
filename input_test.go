@@ -1712,3 +1712,20 @@ func TestThemedPasswordFailingFeedbackKeepsSecretOut(t *testing.T) {
 	assert.True(t, !strings.Contains(err.Error(), "hunter2"))
 	assert.True(t, !strings.Contains(out.String(), "hunter2"))
 }
+
+// TestGuidedPromptBrandLookOnTruecolor documents the shipped default look: the
+// brand's dark blue accent on light backgrounds, black text, the stock green mark.
+func TestGuidedPromptBrandLookOnTruecolor(t *testing.T) {
+	withEnv(t, "FORCE_COLOR=3")
+	th := NewTheme()
+	th.Light = true
+	i, out, _ := themedInput(t, th, 30, 5, "a", "\r")
+	_, err := i.read(t.Context())
+	assert.NoError(t, err)
+	assert.Contains(t, out.String(),
+		"\r\x1b[38;2;0;117;141m◆\x1b[39m \x1b[1m\x1b[38;2;0;0;0mLabel\x1b[39m\x1b[0m\x1b[K\n"+
+			"\r\x1b[38;2;184;183;183m│\x1b[39m \x1b[38;2;0;0;0ma\x1b[39m\x1b[K\n")
+	assert.True(t, strings.HasSuffix(out.String(),
+		"\r\x1b[38;2;13;136;68m✔\x1b[39m \x1b[38;2;0;0;0mLabel\x1b[39m "+
+			"\x1b[38;2;119;118;118m·\x1b[39m \x1b[38;2;0;0;0ma\x1b[39m\n"))
+}

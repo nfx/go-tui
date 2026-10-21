@@ -5,56 +5,40 @@ weight: 25
 
 This page lists predefined helper functions available in widget templates.
 
-## Foreground colors
+## Colors
 
-- `black`
-- `red`
-- `green`
-- `yellow`
-- `blue`
-- `purple`
-- `cyan`
-- `white`
+Colors come from the theme's palette, so they follow the terminal background
+and the color support of the output.
 
-Example:
+Roles:
 
-```go
-theme.Templates.Dropdown.Label = `{{ green "Select:" }} {{ .Label | bold }}`
-```
+- `text`
+- `muted`
+- `accent`
+- `success`
+- `error`
 
-## Bright foreground colors
+Exact colors:
 
-- `brightBlack`
-- `brightRed`
-- `brightGreen`
-- `brightYellow`
-- `brightBlue`
-- `brightPurple`
-- `brightCyan`
-- `brightWhite`
+- `fg "#RRGGBB" ...` sets the foreground.
+- `bg "#RRGGBB" ...` sets the background.
+
+Both accept the `#RGB` shorthand. A malformed color is reported when the
+template runs; a literal one fails `SetDefaultTheme`. Exact colors are fitted
+to the terminal's profile but not adjusted to its background; prefer a role
+when the text must stay readable.
 
 Example:
 
 ```go
-theme.Templates.Dropdown.Active = `{{ brightCyan "> " .Value }}`
+theme.Templates.Dropdown.Label = `{{ accent "Select:" }} {{ .Label | bold }}`
+theme.Templates.Dropdown.Active = `{{ bg "#003B4D" " " }} {{ .Value }}`
 ```
 
-## Background colors
-
-- `bgBlack`
-- `bgRed`
-- `bgGreen`
-- `bgYellow`
-- `bgBlue`
-- `bgPurple`
-- `bgCyan`
-- `bgWhite`
-
-Example:
-
-```go
-theme.Templates.Dropdown.Active = `{{ bgBlue " " }} {{ .Value }}`
-```
+The 24 fixed-color names of earlier versions (`red`, `green`, `brightCyan`,
+`bgBlue` and so on) are removed. A template that uses one fails with
+`function "red" not defined` and the path of the template. See the
+[v0.4.0 migration notes](migration-v0.4.md).
 
 ## Text styles
 
@@ -93,7 +77,7 @@ Dropdown and multichoice templates also expose:
 Example:
 
 ```go
-theme.Templates.Dropdown.Active = `{{ green "> " .Value }}`
+theme.Templates.Dropdown.Active = `{{ success "> " .Value }}`
 ```
 
 ## Input feedback templates
@@ -103,7 +87,7 @@ The `Feedback` slot of `Input` and `Password` contains only
 Color and style helpers work here too:
 
 ```go
-theme.Templates.Input.Feedback = `{{ yellow (bold "Check: ") .Message }}`
+theme.Templates.Input.Feedback = `{{ error (bold "Check: ") .Message }}`
 ```
 
 Feedback occupies one row. See [Input and Password](input.md#feedback-row)
@@ -123,14 +107,14 @@ The helper applies to prompts, tables, and other operations started after the
 call; an operation already running keeps its helpers. Registering the same name
 again replaces the helper. `fn` must return one value, or a value and an error.
 `WithFn` panics immediately on an invalid name or signature, or on the name of
-a built-in helper such as `red`, `bold`, or `label`, and leaves the installed
+a built-in helper such as `accent`, `bold`, or `label`, and leaves the installed
 theme unchanged. Earlier versions only failed later, when a template was
 parsed. A later `SetDefaultTheme` replaces helpers registered with `WithFn`
 unless its theme started from `DefaultTheme()`. Helpers must be safe for concurrent
 use.
 
-Color helpers nest: `{{ red (bold "Error:") " details" }}` keeps the text after
-the inner span red. Raw SGR sequences returned by your own helpers are not
+Color helpers nest: `{{ error (bold "Error:") " details" }}` keeps the text after
+the inner span in the error color. Raw SGR sequences returned by your own helpers are not
 adjusted to the terminal's color support.
 
 Multichoice item templates receive raw items (map entries have `.Key` and

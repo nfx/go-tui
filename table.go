@@ -171,6 +171,20 @@ func WithColumnFormat[T any](name string, fn func(v T) string) opt {
 	})
 }
 
+// rowTemplateError names the source of a row template that failed to parse: the
+// first WithColumnTemplate whose template is invalid by itself, else the row.
+func (t *table) rowTemplateError(err error) error {
+	if t.autoTemplate {
+		for _, name := range slices.Sorted(maps.Keys(t.columnTemplates)) {
+			_, perr := template.New("column").Funcs(t.templateFuncs()).Parse(t.columnTemplates[name])
+			if perr != nil {
+				return fmt.Errorf("column %q template: %w", name, perr)
+			}
+		}
+	}
+	return fmt.Errorf("row template: %w", err)
+}
+
 func WithColumnTemplate(name, columnTmpl string) opt {
 	return opT(func(t *table) error {
 		if !t.autoTemplate {
@@ -482,7 +496,7 @@ func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, o ...opt) (*table
 	}
 	t.tmpl, err = template.New("row").Funcs(t.templateFuncs()).Parse(rowTmpl)
 	if err != nil {
-		return nil, fmt.Errorf("template: %w", err)
+		return nil, t.rowTemplateError(err)
 	}
 	err = t.headers()
 	if err != nil {
@@ -507,7 +521,7 @@ type TableStyle struct {
 	MinColumnWidth int
 }
 
-// tableStyle is the theme preset: the legacy layout.
+// tableStyle is the theme preset: the default layout.
 var tableStyle = TableStyle{ColumnGap: 2, MinColumnWidth: 1}
 
 // normalize fills the preset and rejects negative sizes.

@@ -167,6 +167,8 @@ city, err := tui.Dropdown(ctx, "City", cities,
 
 ## WithTemplate
 
+Per-call template options (`WithLabelTemplate`, `WithAnswerTemplate` and the others) were removed in v0.4; set the theme slot instead, see [Migrating to v0.4](migration-v0.4.md).
+
 Sets main and active-details templates in one call.
 
 ```go

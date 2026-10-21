@@ -19,3 +19,4 @@ Core guides:
 - [Pretty JSON](json.md)
 - [File Picker](filepicker.md)
 - [Text handling](text.md)
+- [Migrating to v0.4](migration-v0.4.md)

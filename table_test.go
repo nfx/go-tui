@@ -74,7 +74,7 @@ func TestTableRender(t *testing.T) {
 	buf := &bytes.Buffer{}
 	err := TableIter(
 		buf,
-		"{{ bold .Name | green }}\t{{ .Age }}\t{{ .Type }}\t{{ .Owner.Name }}\t{{ .Owner.Age }}",
+		"{{ bold .Name | accent }}\t{{ .Age }}\t{{ .Type }}\t{{ .Owner.Name }}\t{{ .Owner.Age }}",
 		iterate(dummyPets),
 	)
 	assert.NoError(t, err)
@@ -1257,7 +1257,7 @@ type themedRow struct {
 
 var themedRows = []themedRow{{"alpha", 1, "first"}, {"beta", 22, ""}, {"gamma", 333, "third"}}
 
-func TestThemedTableMatchesLegacyOnPlainWriter(t *testing.T) {
+func TestThemedTableMatchesPlainWriterRender(t *testing.T) {
 	render := func() []string {
 		var outs []string
 		for _, run := range []func(w io.Writer) error{
@@ -1275,10 +1275,10 @@ func TestThemedTableMatchesLegacyOnPlainWriter(t *testing.T) {
 		return outs
 	}
 	withEnv(t)
-	legacy := render()
+	plain := render()
 	themedTable(t, NewTheme())
 	themed := render()
-	assert.Equal(t, legacy, themed)
+	assert.Equal(t, plain, themed)
 	for _, out := range themed {
 		assert.NotContains(t, out, "\x1b")
 	}
@@ -1360,9 +1360,9 @@ func TestThemedTableSignedPercent(t *testing.T) {
 	assert.Contains(t, lines[2], string(roles.failure)+"-99%"+fgDefault)
 	assert.NotContains(t, lines[3], string(roles.success))
 	assert.NotContains(t, lines[3], string(roles.failure))
-	// the legacy codes are gone
-	assert.NotContains(t, buf.String(), green)
-	assert.NotContains(t, buf.String(), red)
+	// the fixed ANSI colors are gone
+	assert.NotContains(t, buf.String(), "\x1b[32m")
+	assert.NotContains(t, buf.String(), "\x1b[31m")
 
 	withEnv(t)
 	buf.Reset()
@@ -1417,9 +1417,9 @@ func TestThemedTableExtraCellsAreDropped(t *testing.T) {
 		return buf.String()
 	}
 	withEnv(t)
-	legacy := render()
+	plain := render()
 	themedTable(t, NewTheme())
-	assert.Equal(t, legacy, render())
+	assert.Equal(t, plain, render())
 }
 
 func TestThemedTableScaleWithoutColor(t *testing.T) {
@@ -1439,15 +1439,15 @@ func TestThemedTableMultilineCarriesStyles(t *testing.T) {
 	}
 	themedTable(t, NewTheme(), "FORCE_COLOR=3")
 	buf := &bytes.Buffer{}
-	assert.NoError(t, Table(buf, "{{ green .Note }}\t{{ .Name }}", []row{{"one\ntwo\n\nfour", "x"}},
+	assert.NoError(t, Table(buf, "{{ italic .Note }}\t{{ .Name }}", []row{{"one\ntwo\n\nfour", "x"}},
 		WithMultilineCells()))
 	// every line closes its style before the next column; continuation
 	// lines reopen it, except the empty one
 	assert.Equal(t, bold+"NOTE"+reset+"  "+bold+"NAME"+reset+"  \n"+
-		green+"one"+reset+"   x     \n"+
-		green+"two"+reset+"         \n"+
+		italic+"one"+reset+"   x     \n"+
+		italic+"two"+reset+"         \n"+
 		"            \n"+
-		green+"four"+reset+"        \n", buf.String())
+		italic+"four"+reset+"        \n", buf.String())
 }
 
 func TestThemedTableStyle(t *testing.T) {
@@ -1501,7 +1501,7 @@ func TestThemedTableCellKeepsHyperlinksDropsControls(t *testing.T) {
 }
 
 func TestThemedTableRowTemplateHelpersBindToWriter(t *testing.T) {
-	tmpl := "{{ green .Name }}\t{{ success .Name }}\t{{ fg \"#FF0000\" .Name }}"
+	tmpl := "{{ bold .Name }}\t{{ success .Name }}\t{{ fg \"#FF0000\" .Name }}"
 	themedTable(t, NewTheme())
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Table(buf, tmpl, themedRows[:1]))
@@ -1511,7 +1511,7 @@ func TestThemedTableRowTemplateHelpersBindToWriter(t *testing.T) {
 	buf.Reset()
 	assert.NoError(t, Table(buf, tmpl, themedRows[:1]))
 	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
-	assert.Contains(t, buf.String(), green+"alpha")
+	assert.Contains(t, buf.String(), bold+"alpha")
 	assert.Contains(t, buf.String(), string(roles.success)+"alpha")
 	assert.Contains(t, buf.String(), "\x1b[38;2;255;0;0malpha")
 }
@@ -1727,7 +1727,7 @@ type factsRow struct {
 
 var factsData = factsRow{Left: "left", Count: 7, Right: "x", Owner: Person{"Alice", 30}}
 
-func TestThemedFactsMatchesLegacyOnPlainWriter(t *testing.T) {
+func TestThemedFactsMatchesPlainWriterRender(t *testing.T) {
 	type four struct{ Alpha, Beta, Gamma, Delta string }
 	render := func() []string {
 		var outs []string
@@ -1753,10 +1753,10 @@ func TestThemedFactsMatchesLegacyOnPlainWriter(t *testing.T) {
 		return outs
 	}
 	withEnv(t)
-	legacy := render()
+	plain := render()
 	themedTable(t, NewTheme())
 	themed := render()
-	assert.Equal(t, legacy, themed)
+	assert.Equal(t, plain, themed)
 	for _, out := range themed {
 		assert.NotContains(t, out, "\x1b")
 	}
@@ -1831,7 +1831,7 @@ func TestThemedFactsSignedPercent(t *testing.T) {
 	assert.NoError(t, Facts(buf, tableFormatRow{"A", -0.5, 1}, WithFloat64AsPercentPositiveColored()))
 	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
 	assert.Contains(t, buf.String(), string(roles.failure)+"-50%"+fgDefault)
-	assert.NotContains(t, buf.String(), red)
+	assert.NotContains(t, buf.String(), "\x1b[31m")
 }
 
 func TestThemedFactsValueLine(t *testing.T) {
@@ -1845,7 +1845,7 @@ func TestThemedFactsValueLine(t *testing.T) {
 	themedTable(t, th)
 	link := "\x1b]8;;https://example.com\x1b\\site\x1b]8;;\x1b\\"
 	buf := &bytes.Buffer{}
-	// the line the legacy presentation shows, without controls
+	// the line the default presentation shows, without controls
 	assert.NoError(t, Facts(buf, row{Note: "a\x07b\x1b[2Jc\nhidden", Link: link}))
 	assert.Equal(t, "NOTE   LINK    \n<abc>  <"+link+">  \n\n", buf.String())
 }
@@ -1889,4 +1889,36 @@ func TestThemedFactsErrors(t *testing.T) {
 
 	themedTable(t, NewTheme())
 	assert.ErrorIs(t, Facts(errWriterTable{}, factsData), io.EOF)
+}
+
+func TestTableRemovedColorNamesNameTheirTemplate(t *testing.T) {
+	themedTable(t, NewTheme())
+	err := Table(&bytes.Buffer{}, `{{ red .Name }}`, themedRows)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "row template")
+	assert.Contains(t, err.Error(), `function "red" not defined`)
+
+	err = TableAuto(&bytes.Buffer{}, themedRows, WithColumnTemplate("Name", `{{ red .Name }}`))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), `column "Name" template`)
+	assert.Contains(t, err.Error(), `function "red" not defined`)
+}
+
+// TestTableScaleBrandLookOnTruecolor documents the shipped default look of a scale:
+// the error end is the brand's fuchsia.
+func TestTableScaleBrandLookOnTruecolor(t *testing.T) {
+	type row struct {
+		Name string
+		N    int
+	}
+	th := NewTheme()
+	th.Light = true
+	themedTable(t, th, "FORCE_COLOR=3")
+	buf := &bytes.Buffer{}
+	assert.NoError(t, Table(buf, "", []row{{"a", 1}, {"b", 5}, {"c", 9}}, WithColumnGreenRedScale("N")))
+	ink := "\x1b[38;2;0;0;0m"
+	assert.Equal(t, "\x1b[1m"+ink+"NAME\x1b[39m\x1b[0m   \x1b[1m"+ink+"N\x1b[39m\x1b[0m \n"+
+		ink+"a\x1b[39m\x1b[0m      "+ink+"1\x1b[39m\x1b[0m \n"+
+		ink+"b\x1b[39m\x1b[0m      "+ink+"\x1b[38;2;206;50;98m5\x1b[39m\x1b[39m\x1b[0m \n"+
+		ink+"c\x1b[39m\x1b[0m      "+ink+"\x1b[38;2;206;50;98m9\x1b[39m\x1b[39m\x1b[0m \n", buf.String())
 }

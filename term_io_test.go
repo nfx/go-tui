@@ -1149,7 +1149,7 @@ func TestDetectBackground_InputBeforeReplyIsKept(t *testing.T) {
 			assert.NoError(t, ev.err)
 			assert.Equal(t, "hi", string(ev.paste))
 		}},
-		"legacy bracketed paste": {typed: "\x1b[200~hi\x1b[201~", check: func(t *testing.T, ev keyEvent) {
+		"buffered bracketed paste": {typed: "\x1b[200~hi\x1b[201~", check: func(t *testing.T, ev keyEvent) {
 			t.Helper()
 			var more *pasteTextError
 			assert.True(t, errors.As(ev.err, &more))

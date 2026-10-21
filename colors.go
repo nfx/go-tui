@@ -22,42 +22,27 @@ import (
 const (
 	reset = "\x1b[0m"
 
-	// Colors.
-	black  = "\x1b[30m"
-	red    = "\x1b[31m"
-	green  = "\x1b[32m"
-	yellow = "\x1b[33m"
-	blue   = "\x1b[34m"
-	purple = "\x1b[35m"
-	cyan   = "\x1b[36m"
-	white  = "\x1b[37m"
-
-	// Bright colors.
-	brightBlack  = "\x1b[90m"
-	brightRed    = "\x1b[91m"
-	brightGreen  = "\x1b[92m"
-	brightYellow = "\x1b[93m"
-	brightBlue   = "\x1b[94m"
-	brightPurple = "\x1b[95m"
-	brightCyan   = "\x1b[96m"
-	brightWhite  = "\x1b[97m"
-
-	// Background colors.
-	bgBlack  = "\x1b[40m"
-	bgRed    = "\x1b[41m"
-	bgGreen  = "\x1b[42m"
-	bgYellow = "\x1b[43m"
-	bgBlue   = "\x1b[44m"
-	bgPurple = "\x1b[45m"
-	bgCyan   = "\x1b[46m"
-	bgWhite  = "\x1b[47m"
-
-	// Text combineting.
+	// Text attributes.
 	bold          = "\x1b[1m"
 	dim           = "\x1b[2m"
 	italic        = "\x1b[3m"
 	underline     = "\x1b[4m"
 	strikethrough = "\x1b[9m"
+)
+
+// Go brand colors, from the Go Brand Book v1.0, section 2.1 "color", page 16.
+// They seed the palette presets and stay unexported: docs and examples write
+// hex. Each preset documents the role it plays in themes.md.
+const (
+	// presetSuccess is not a brand color: Aqua failed the distinctness gate.
+	presetSuccess = "#2D9B55"
+
+	brandGopherBlue = "#00ADD8" // primary: Accent
+	brandDarkBlue   = "#00758D" // "more" colors: Accent on light backgrounds
+	brandAqua       = "#00A29C" // primary: rejected as Success, see TestAquaSuccessGate
+	brandFuchsia    = "#CE3262" // secondary: Error
+	brandBlack      = "#000000" // Foreground on light backgrounds
+	brandCoolGray   = "#DBD9D6" // Foreground on dark backgrounds
 )
 
 // RGB is a 24-bit sRGB color in CSS hex notation, "#RRGGBB" or the
@@ -621,6 +606,9 @@ type resolvedPalette struct {
 type slot struct {
 	rgb sRGB
 	set bool
+	// preset marks an unset optional field that supplies its variant's seed.
+	// It is moved to a readable shade like the shared seed, never literal.
+	preset bool
 }
 
 // parsedVariant is a [PaletteVariant] after parsing and preset filling.
@@ -652,15 +640,15 @@ func (p Palette) parse() (out parsedPalette, err error) {
 		preset RGB // empty for optional fields
 		dst    *slot
 	}{
-		{"Accent", p.Accent, "#00ADD8", &out.accent},
-		{"Success", p.Success, "#2D9B55", &out.success},
-		{"Error", p.Error, "#C83741", &out.err},
-		{"Light.Foreground", p.Light.Foreground, "#232830", &out.light.foreground},
+		{"Accent", p.Accent, brandGopherBlue, &out.accent},
+		{"Success", p.Success, presetSuccess, &out.success},
+		{"Error", p.Error, brandFuchsia, &out.err},
+		{"Light.Foreground", p.Light.Foreground, brandBlack, &out.light.foreground},
 		{"Light.ReferenceBackground", p.Light.ReferenceBackground, "#FFFFFF", &out.light.reference},
 		{"Light.Accent", p.Light.Accent, "", &out.light.accent}, {"Light.Success", p.Light.Success, "", &out.light.success},
 		{"Light.Error", p.Light.Error, "", &out.light.err}, {"Light.Muted", p.Light.Muted, "", &out.light.muted},
 		{"Light.Guide", p.Light.Guide, "", &out.light.guide},
-		{"Dark.Foreground", p.Dark.Foreground, "#E1E6EE", &out.dark.foreground},
+		{"Dark.Foreground", p.Dark.Foreground, brandCoolGray, &out.dark.foreground},
 		{"Dark.ReferenceBackground", p.Dark.ReferenceBackground, "#121212", &out.dark.reference},
 		{"Dark.Accent", p.Dark.Accent, "", &out.dark.accent}, {"Dark.Success", p.Dark.Success, "", &out.dark.success},
 		{"Dark.Error", p.Dark.Error, "", &out.dark.err}, {"Dark.Muted", p.Dark.Muted, "", &out.dark.muted},
@@ -675,6 +663,12 @@ func (p Palette) parse() (out parsedPalette, err error) {
 			return out, fmt.Errorf("theme.Palette.%s: %w", f.path, err)
 		}
 		*f.dst = slot{rgb: rgb, set: f.c != ""}
+	}
+	// The brand's dark blue reads better on light backgrounds than a computed
+	// shade of the seed. It replaces the seed only while the caller left both
+	// the seed and the variant's accent empty, and it is never an override.
+	if p.Accent == "" && p.Light.Accent == "" {
+		out.light.accent = slot{rgb: RGB(brandDarkBlue).must(), preset: true}
 	}
 	return out, nil
 }
@@ -717,6 +711,9 @@ func (pp parsedPalette) resolve(light bool, measured sRGB, known bool) resolvedP
 	seed := func(override, shared slot, target float64) sRGB {
 		if override.set {
 			return override.rgb
+		}
+		if override.preset {
+			return override.rgb.atLeast(bg, target)
 		}
 		return shared.rgb.atLeast(bg, target)
 	}
@@ -913,7 +910,10 @@ type Symbols struct {
 	Error     string
 	Cancel    string
 	Ellipsis  string
-	Mask      string
+	// Up and Down label the arrow keys in the key hints.
+	Up   string
+	Down string
+	Mask string
 	// BarFill draws the done cells of a progress bar, BarHead the partly
 	// done cell after them, and BarEmpty the rest of its track.
 	BarFill  string
@@ -937,6 +937,8 @@ var unicodeSymbols = Symbols{
 	Error:     "✖",
 	Cancel:    "■",
 	Ellipsis:  "…",
+	Up:        "↑",
+	Down:      "↓",
 	Mask:      "*",
 	BarFill:   "█",
 	BarHead:   "█",
@@ -973,6 +975,10 @@ func (s Symbols) named(name string) (string, error) {
 		return s.Cancel, nil
 	case "Ellipsis":
 		return s.Ellipsis, nil
+	case "Up":
+		return s.Up, nil
+	case "Down":
+		return s.Down, nil
 	case "Mask":
 		return s.Mask, nil
 	case "BarFill":
@@ -1002,6 +1008,8 @@ func (s Symbols) normalize() (Symbols, error) {
 		{"Error", &s.Error, &def.Error},
 		{"Cancel", &s.Cancel, &def.Cancel},
 		{"Ellipsis", &s.Ellipsis, &def.Ellipsis},
+		{"Up", &s.Up, &def.Up},
+		{"Down", &s.Down, &def.Down},
 		{"Mask", &s.Mask, &def.Mask},
 		{"BarFill", &s.BarFill, &def.BarFill},
 		{"BarHead", &s.BarHead, &def.BarHead},
@@ -1059,6 +1067,8 @@ func ASCIISymbols() Symbols {
 		Error:     "!",
 		Cancel:    "-",
 		Ellipsis:  ".",
+		Up:        "^",
+		Down:      "v",
 		Mask:      "*",
 		BarFill:   "=",
 		BarHead:   ">",
@@ -1332,7 +1342,7 @@ var builtinTemplates = Templates{
 		Label:  `{{ accent (symbol "Prompt") }} {{ bold (text .Label) }}`,
 		Answer: `{{ success (symbol "Success") }} {{ text .Label }} {{ muted "·" }} {{ text .Value }}`,
 		Hint: `{{ range $i, $b := .Bindings }}{{ if $i }}{{ muted " · " }}{{ end }}` +
-			`{{ text $b.Key }} {{ muted $b.Action }}{{ end }}`,
+			`{{ accent (keycap $b.Key) }} {{ muted $b.Action }}{{ end }}`,
 		Feedback: `{{ error (symbol "Error") }} {{ error .Message }}`,
 	},
 	Choice: ChoiceTemplates{
@@ -1848,7 +1858,7 @@ type sgrCode struct {
 	channels sgrChannel
 }
 
-// helper adapts s to a template helper with the legacy argument conversions.
+// helper adapts s to a template helper with the argument conversions of the attribute helpers.
 func (s span) helper() func(...any) string {
 	return func(args ...any) string { return s.wrap(s.formatArgs(args)).String() }
 }
@@ -1917,38 +1927,14 @@ func (d destination) newSpan(closer string, seqs ...text) span {
 	return s
 }
 
-// legacy returns the helpers of per-call templates: named styles and ago.
-func (d destination) legacy() template.FuncMap {
+// named returns the attribute helpers and ago.
+func (d destination) named() template.FuncMap {
 	var namedStyles = map[string]string{
-		"black":        black,
-		"red":          red,
-		"green":        green,
-		"yellow":       yellow,
-		"blue":         blue,
-		"purple":       purple,
-		"cyan":         cyan,
-		"white":        white,
-		"brightBlack":  brightBlack,
-		"brightRed":    brightRed,
-		"brightGreen":  brightGreen,
-		"brightYellow": brightYellow,
-		"brightBlue":   brightBlue,
-		"brightPurple": brightPurple,
-		"brightCyan":   brightCyan,
-		"brightWhite":  brightWhite,
-		"bgBlack":      bgBlack,
-		"bgRed":        bgRed,
-		"bgGreen":      bgGreen,
-		"bgYellow":     bgYellow,
-		"bgBlue":       bgBlue,
-		"bgPurple":     bgPurple,
-		"bgCyan":       bgCyan,
-		"bgWhite":      bgWhite,
-		"bold":         bold,
-		"dim":          dim,
-		"italic":       italic,
-		"underline":    underline,
-		"strike":       strikethrough,
+		"bold":      bold,
+		"dim":       dim,
+		"italic":    italic,
+		"underline": underline,
+		"strike":    strikethrough,
 	}
 	funcs := make(template.FuncMap, len(namedStyles)+1)
 	for name, seq := range namedStyles {
@@ -1960,7 +1946,7 @@ func (d destination) legacy() template.FuncMap {
 
 // funcs returns all built-in helpers bound to the destination.
 func (d destination) funcs() template.FuncMap {
-	funcs := d.legacy()
+	funcs := d.named()
 	for name, seq := range map[string]text{
 		"text":    d.roles.foreground,
 		"muted":   d.roles.muted,
@@ -1974,6 +1960,13 @@ func (d destination) funcs() template.FuncMap {
 	funcs["bg"] = d.color(true)
 	funcs["symbol"] = d.symbols.named
 	funcs["label"] = choiceLabels{}.rowLabel
+	// keycap names a key of a hint: the arrow pair takes the theme glyphs
+	funcs["keycap"] = func(key string) string {
+		if key == "up/down" {
+			return d.symbols.Up + d.symbols.Down
+		}
+		return key
+	}
 	return funcs
 }
 

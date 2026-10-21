@@ -810,7 +810,7 @@ func (p *projection) parse(c *compiledTheme, name string) error {
 		}
 		parsed, err := tmpl.New(part.name).Parse(part.source)
 		if err != nil {
-			return fmt.Errorf("%s: %w", part.name, err)
+			return fmt.Errorf("WithTemplate %s: %w", part.name, err)
 		}
 		*part.dest = parsed
 	}

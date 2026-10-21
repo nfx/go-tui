@@ -107,6 +107,8 @@ Messages of `WithNonEmpty` and `WithRegex` still show.
 
 ## Feedback row
 
+Per-call template options (`WithLabelTemplate`, `WithAnswerTemplate` and the others) were removed in v0.4; set the theme slot instead, see [Migrating to v0.4](migration-v0.4.md).
+
 The single feedback row for either `Input` or `Password` is drawn by the
 `Feedback` slot of the theme when [WithNonEmpty](#withnonempty),
 [WithRegex](#withregex), or [WithValidation](#withvalidation) rejects an answer.

@@ -147,8 +147,8 @@ func jsonBound(t *testing.T, th Theme, p colorProfile, bg background) binding {
 	return c.bind(p, bg)
 }
 
-// legacyJSONPalette is the palette of the preset on an unknown background.
-func legacyJSONPalette() resolvedPalette {
+// presetJSONPalette is the palette of the preset on an unknown background.
+func presetJSONPalette() resolvedPalette {
 	return presetJSONTheme().bind(profileTrueColor, background{}).palette
 }
 
@@ -191,7 +191,7 @@ func shadeBefore(t *testing.T, out, token string) string {
 
 func TestPrettyJSONRolesFollowPalette(t *testing.T) {
 	out := renderJSON(t, "FORCE_COLOR=3", `{"key":"value","n":-1.5,"t":true,"z":null}`)
-	pal := legacyJSONPalette()
+	pal := presetJSONPalette()
 	assert.True(t, !pal.Known)
 	assert.Equal(t, string(profileTrueColor.fg(pal.Accent))+bold, shadeBefore(t, out, `"key"`))
 	// the background is unknown, so values keep the terminal default
@@ -249,7 +249,7 @@ func displayed(t *testing.T, p colorProfile, sgr text) sRGB {
 }
 
 func TestJSONKeyShadesDimMonotonicallyOnEveryProfile(t *testing.T) {
-	pal := legacyJSONPalette()
+	pal := presetJSONPalette()
 	for _, p := range []colorProfile{profileANSI16, profileANSI256, profileTrueColor} {
 		keys := newJSONLook(presetJSONTheme().bind(p, background{})).keys
 		assert.True(t, len(keys) > 0)
@@ -281,7 +281,7 @@ func TestJSONKeysAcrossLightAndDarkBackgrounds(t *testing.T) {
 
 func TestPrettyJSONDeeperKeysAreDimmer(t *testing.T) {
 	out := renderJSON(t, "FORCE_COLOR=3", `{"a":{"b":{"c":{"d":{"e":{"f":"s","g":-7}}}}}}`)
-	bg := legacyJSONPalette().Background
+	bg := presetJSONPalette().Background
 	prev := 22.0
 	for _, k := range []string{`"a"`, `"b"`, `"c"`, `"d"`, `"e"`} {
 		sgr := strings.TrimSuffix(shadeBefore(t, out, k), bold)
@@ -422,10 +422,10 @@ func TestThemedPrettyJSONIndentation(t *testing.T) {
 	assert.True(t, strings.HasSuffix(themedJSON(t, th, "FORCE_COLOR=3", ` 42 `), "42"+reset+"\n"))
 }
 
-func TestThemedPrettyJSONPresetMatchesLegacy(t *testing.T) {
+func TestThemedPrettyJSONPresetMatchesDefaultRender(t *testing.T) {
 	for _, env := range []string{"X=1", "FORCE_COLOR=1", "FORCE_COLOR=2", "FORCE_COLOR=3"} {
-		legacy := renderJSON(t, env, jsonSample)
-		assert.Equal(t, legacy, themedJSON(t, NewTheme(), env, jsonSample))
+		plain := renderJSON(t, env, jsonSample)
+		assert.Equal(t, plain, themedJSON(t, NewTheme(), env, jsonSample))
 	}
 }
 
@@ -524,4 +524,20 @@ func TestThemedPrettyJSONDestinations(t *testing.T) {
 	assert.Error(t, PrettyJSON(&buf, `{"a":`))
 	assert.Error(t, PrettyJSON(&buf, map[string]any{"f": func() {}}))
 	assert.Equal(t, 0, buf.Len())
+}
+
+// TestPrettyJSONBrandLookOnTruecolor documents the shipped default look: keys in the
+// brand's dark blue accent on light backgrounds, values in black.
+func TestPrettyJSONBrandLookOnTruecolor(t *testing.T) {
+	th := NewTheme()
+	th.Light = true
+	grey, ink := "\x1b[38;2;119;118;118m", "\x1b[38;2;0;0;0m"
+	assert.Equal(t, grey+"{\x1b[0m\n"+
+		"  \x1b[38;2;0;117;141m\x1b[1m\"a\"\x1b[0m: "+grey+"[\x1b[0m\n"+
+		"    "+ink+"1\x1b[0m,\n"+
+		"    "+ink+"\"x\"\x1b[0m,\n"+
+		"    "+ink+"null\x1b[0m,\n"+
+		"    "+ink+"true\x1b[0m\n"+
+		"  "+grey+"]\x1b[0m\n"+
+		grey+"}\x1b[0m\n", themedJSON(t, th, "FORCE_COLOR=3", `{"a":[1,"x",null,true]}`))
 }

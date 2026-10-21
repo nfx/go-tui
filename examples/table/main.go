@@ -28,7 +28,7 @@ func main() {
 	// Table renders a slice using an explicit row template, with columns split by tabs.
 	// WithMaxWidth truncates the output to the given amount of characters.
 	err := tui.Table(os.Stdout,
-		`{{ green .Name | bold }}	{{ .Age }}	{{ yellow .Type }}`,
+		`{{ accent .Name | bold }}	{{ .Age }}	{{ muted .Type }}`,
 		pets, tui.WithMaxWidth(40))
 	if err != nil {
 		panic(err)

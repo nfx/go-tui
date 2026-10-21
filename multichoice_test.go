@@ -537,7 +537,7 @@ func TestMultichoiceBracketedPasteSplitsAndHandoff(t *testing.T) {
 			}
 		})
 	}
-	// A legacy event produced by a cancelled old decoder must replay ordinary
+	// A buffered event produced by a cancelled old decoder must replay ordinary
 	// keys, including the bytes after confirmation, through the shared decoder.
 	in := strings.NewReader(" \r \r")
 	old := &termIO{in: in, input: sharedInputState(in)}
@@ -1250,7 +1250,7 @@ type promptChoiceResult struct {
 	err   error
 }
 
-func TestMultichoiceLegacyHandoffPreservesPasteFraming(t *testing.T) {
+func TestMultichoiceBufferedHandoffPreservesPasteFraming(t *testing.T) {
 	for _, payload := range []string{" ", " \r", " \x03", " \x04", "\r\x03\x04 "} {
 		t.Run(strconv.Quote(payload), func(t *testing.T) {
 			pipe, typing := io.Pipe()
@@ -1326,7 +1326,7 @@ func TestMultichoiceBufferedEnterRetainsArrival(t *testing.T) {
 		split    bool
 		buffered int
 	}{
-		{"legacy replay", false, 2},
+		{"buffered replay", false, 2},
 		{"pending bytes", true, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1620,7 +1620,7 @@ func mframe(t *testing.T, m *multichoice, tt *termIO) string {
 	return buf.String()
 }
 
-const multichoiceHelp = "| up/down move · space toggle · type filter\n\r"
+const multichoiceHelp = "| ^v move · space toggle · type filter\n\r"
 
 func TestThemedMultichoiceGuidedFrameStatesAndAnswer(t *testing.T) {
 	o, out, restored := themedMultichoiceOpt(t, asciiTheme(false), " ", "\x1b[B", " ", "\r")
@@ -1653,7 +1653,7 @@ func TestThemedMultichoiceInlineHasNoGuide(t *testing.T) {
 	m, tt := boundMultichoice(t, asciiTheme(true), 10, []any{"apple", "banana"})
 	m.handleKey(' ')
 	assert.Equal(t,
-		"\r? Fruit\n\r> x apple\n\r  o banana\n\rup/down move · space toggle · type filter\n\r",
+		"\r? Fruit\n\r> x apple\n\r  o banana\n\r^v move · space toggle · type filter\n\r",
 		mframe(t, m, tt))
 }
 

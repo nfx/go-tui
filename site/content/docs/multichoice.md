@@ -100,6 +100,8 @@ cancellation. Bracketed-paste terminal mode is enabled only during this prompt.
 
 ## Templates
 
+Per-call template options (`WithLabelTemplate`, `WithAnswerTemplate` and the others) were removed in v0.4; set the theme slot instead, see [Migrating to v0.4](migration-v0.4.md).
+
 Multichoice accepts the same `WithTemplate` as dropdown. Its label, rows, count
 and answer line come from the `Templates.Multichoice` theme slots.
 `WithOneReturn` is unsupported; direct use returns `ErrWrongWidget`. `WithOptions`

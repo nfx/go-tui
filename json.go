@@ -104,7 +104,7 @@ type JSONStyle struct {
 	Compact bool
 }
 
-// jsonStyle is the theme preset: the legacy two-space indentation.
+// jsonStyle is the theme preset: two-space indentation.
 var jsonStyle = JSONStyle{Indent: "  "}
 
 // maxJSONIndent bounds the bytes of one indentation level.

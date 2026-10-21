@@ -840,7 +840,7 @@ func TestThemedSpinnerInterval(t *testing.T) {
 	select {
 	case out := <-frames:
 		t.Fatalf("frame before the theme interval: %q", out)
-	case <-time.After(300 * time.Millisecond): // three legacy intervals
+	case <-time.After(300 * time.Millisecond): // three spinner intervals
 	}
 }
 

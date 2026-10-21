@@ -368,7 +368,7 @@ func TestResolveMeasuredBackgroundPicksVariant(t *testing.T) {
 	assert.True(t, r.Light)
 	assert.True(t, r.Known)
 	assert.Equal(t, sRGB{250, 250, 250}, r.Background)
-	assert.Equal(t, RGB("#232830").must(), r.Foreground)
+	assert.Equal(t, RGB(brandBlack).must(), r.Foreground)
 	// A seed in the preset moves on a light terminal but not on a dark one.
 	dark, err := Palette{}.resolve(true, sRGB{0, 0, 0}, true)
 	assert.NoError(t, err)
@@ -763,7 +763,7 @@ func TestWithFnReachesWidgetTemplates(t *testing.T) {
 func TestWithFnPanicsAndKeepsInstalled(t *testing.T) {
 	keepTheme(t)
 	for name, fn := range map[string]any{
-		"red":                    strings.ToUpper,
+		"bold":                   strings.ToUpper,
 		"fg":                     strings.ToUpper,
 		"accent":                 strings.ToUpper,
 		"symbol":                 strings.ToUpper,
@@ -877,19 +877,18 @@ func truecolor() template.FuncMap {
 	}.funcs()
 }
 
-func TestStandaloneLegacyHelpersAreByteIdentical(t *testing.T) {
+func TestStandaloneAttributeHelpersAreByteIdentical(t *testing.T) {
 	funcs := truecolor()
 	for src, want := range map[string]string{
-		`{{ red "x" }}`:                 "\x1b[31mx\x1b[0m",
-		`{{ bold "x" 1 }}`:              "\x1b[1mx1\x1b[0m",
-		`{{ bgBlue "x" }}`:              "\x1b[44mx\x1b[0m",
-		`{{ red (bold "x") }}`:          "\x1b[31m\x1b[1mx\x1b[0m\x1b[0m",
-		`{{ red "" }}`:                  "\x1b[31m\x1b[0m",
-		`{{ strike .S }}`:               "\x1b[9ma, b\x1b[0m",
-		`{{ red (printf "%d" 5) }}`:     "\x1b[31m5\x1b[0m",
-		`{{ dim "a\x1b[2Kb" }}`:         "\x1b[2ma\x1b[2Kb\x1b[0m", // cursor control is not a style
-		`{{ red "\x1b[38;5;0mx" }}`:     "\x1b[31m\x1b[38;5;0mx\x1b[0m",
-		`{{ red "\x1b[48;2;0;0;0mx" }}`: "\x1b[31m\x1b[48;2;0;0;0mx\x1b[0m",
+		`{{ bold "x" 1 }}`:                    "\x1b[1mx1\x1b[0m",
+		`{{ italic "x" }}`:                    "\x1b[3mx\x1b[0m",
+		`{{ underline (bold "x") }}`:          "\x1b[4m\x1b[1mx\x1b[0m\x1b[0m",
+		`{{ bold "" }}`:                       "\x1b[1m\x1b[0m",
+		`{{ strike .S }}`:                     "\x1b[9ma, b\x1b[0m",
+		`{{ bold (printf "%d" 5) }}`:          "\x1b[1m5\x1b[0m",
+		`{{ dim "a\x1b[2Kb" }}`:               "\x1b[2ma\x1b[2Kb\x1b[0m", // cursor control is not a style
+		`{{ bold "\x1b[38;5;0mx" }}`:          "\x1b[1m\x1b[38;5;0mx\x1b[0m",
+		`{{ underline "\x1b[48;2;0;0;0mx" }}`: "\x1b[4m\x1b[48;2;0;0;0mx\x1b[0m",
 	} {
 		assert.Equal(t, want, execute(t, funcs, src, struct{ S []string }{[]string{"a", "b"}}))
 	}
@@ -899,19 +898,19 @@ func TestNestedHelpersRestoreOuterStyle(t *testing.T) {
 	funcs := truecolor()
 	const accent = "\x1b[38;2;0;173;216m"
 	for _, tc := range []struct{ name, src, want string }{
-		{"legacy in legacy", `{{ red (bold "x") " y" }}`, "\x1b[31m\x1b[1mx\x1b[0m\x1b[31m y\x1b[0m"},
+		{"attribute in attribute", `{{ underline (bold "x") " y" }}`, "\x1b[4m\x1b[1mx\x1b[0m\x1b[4m y\x1b[0m"},
 		{"fg in bg", `{{ bg "#000" (fg "#FFF" "a") "b" }}`,
 			"\x1b[48;2;0;0;0m\x1b[38;2;255;255;255ma\x1b[39mb\x1b[49m"},
-		{"legacy in fg", `{{ fg "#F00" (bgBlue "a") "b" }}`,
-			"\x1b[38;2;255;0;0m\x1b[44ma\x1b[0m\x1b[38;2;255;0;0mb\x1b[39m"},
+		{"attribute in fg", `{{ fg "#F00" (bold "a") "b" }}`,
+			"\x1b[38;2;255;0;0m\x1b[1ma\x1b[0m\x1b[38;2;255;0;0mb\x1b[39m"},
 		{"fg in fg", `{{ fg "#F00" "a" (fg "#0F0" "b") "c" }}`,
 			"\x1b[38;2;255;0;0ma\x1b[38;2;0;255;0mb\x1b[39m\x1b[38;2;255;0;0mc\x1b[39m"},
-		{"legacy in semantic", `{{ accent (bold "a") "b" }}`, accent + "\x1b[1ma\x1b[0m" + accent + "b\x1b[39m"},
-		{"semantic in legacy", `{{ bold (accent "a") "b" }}`, "\x1b[1m" + accent + "a\x1b[39mb\x1b[0m"},
+		{"attribute in semantic", `{{ accent (bold "a") "b" }}`, accent + "\x1b[1ma\x1b[0m" + accent + "b\x1b[39m"},
+		{"semantic in attribute", `{{ bold (accent "a") "b" }}`, "\x1b[1m" + accent + "a\x1b[39mb\x1b[0m"},
 		{"bold and dim share 22", `{{ dim "\x1b[1mx\x1b[22my" }}`, "\x1b[2m\x1b[1mx\x1b[22m\x1b[2my\x1b[0m"},
 		{"selective reset of another channel", `{{ bold "\x1b[39mx" }}`, "\x1b[1m\x1b[39mx\x1b[0m"},
-		{"three levels", `{{ red (bold (underline "a") "b") "c" }}`,
-			"\x1b[31m\x1b[1m\x1b[4ma\x1b[0m\x1b[31m\x1b[1mb\x1b[0m\x1b[31mc\x1b[0m"},
+		{"three levels", `{{ italic (bold (underline "a") "b") "c" }}`,
+			"\x1b[3m\x1b[1m\x1b[4ma\x1b[0m\x1b[3m\x1b[1mb\x1b[0m\x1b[3mc\x1b[0m"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, execute(t, funcs, tc.src, nil))
@@ -926,12 +925,11 @@ func TestHelpersFollowProfile(t *testing.T) {
 		funcs     template.FuncMap
 		src, want string
 	}{
-		{attrs, `{{ red "x" }}`, "x"},
 		{attrs, `{{ bold "x" }}`, "\x1b[1mx\x1b[0m"},
-		{attrs, `{{ red (bold "x") "y" }}`, "\x1b[1mx\x1b[0my"},
+		{attrs, `{{ fg "#F00" (bold "x") "y" }}`, "\x1b[1mx\x1b[0my"},
 		{attrs, `{{ fg "#F00" "x" }}`, "x"},
 		{attrs, `{{ accent "x" }}`, "x"},
-		{plain, `{{ bold (red "x") }}`, "x"},
+		{plain, `{{ bold (accent "x") }}`, "x"},
 		{plain, `{{ bg "#000" "x" }}`, "x"},
 	} {
 		assert.Equal(t, tc.want, execute(t, tc.funcs, tc.src, nil))
@@ -978,13 +976,13 @@ func TestSymbolHelper(t *testing.T) {
 }
 
 func TestClippingNestedHelpersKeepsStyleBalanced(t *testing.T) {
-	out := text(execute(t, truecolor(), `{{ red (bold "ab") "cd" }}`, nil)).truncateColumns(3)
+	out := text(execute(t, truecolor(), `{{ underline (bold "ab") "cd" }}`, nil)).truncateColumns(3)
 	assert.Equal(t, 3, out.width())
-	assert.Equal(t, "\x1b[31m\x1b[1mab\x1b[0m\x1b[31m…\x1b[0m", out.String())
+	assert.Equal(t, "\x1b[4m\x1b[1mab\x1b[0m\x1b[4m…\x1b[0m", out.String())
 }
 
 func TestConcurrentHelperExecutions(t *testing.T) {
-	tmpl, err := template.New("t").Funcs(truecolor()).Parse(`{{ red (bold .) " y" }}`)
+	tmpl, err := template.New("t").Funcs(truecolor()).Parse(`{{ underline (bold .) " y" }}`)
 	assert.NoError(t, err)
 	var wg sync.WaitGroup
 	for i := range 16 {
@@ -994,7 +992,7 @@ func TestConcurrentHelperExecutions(t *testing.T) {
 				t.Error(err)
 				return
 			}
-			want := fmt.Sprintf("\x1b[31m\x1b[1m%d\x1b[0m\x1b[31m y\x1b[0m", i)
+			want := fmt.Sprintf("\x1b[4m\x1b[1m%d\x1b[0m\x1b[4m y\x1b[0m", i)
 			if b.String() != want {
 				t.Errorf("got %q, want %q", b.String(), want)
 			}
@@ -1038,7 +1036,7 @@ func TestBoundSlotRendersOrFailsWhole(t *testing.T) {
 	c, err := compileTemplates(t, func(th *Theme) {
 		th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
 		th.Templates.Prompt.Label = `{{ bold .Label }}`
-		th.Templates.Prompt.Hint = `{{ red "partial" }}{{ fails .Label }}`
+		th.Templates.Prompt.Hint = `{{ bold "partial" }}{{ fails .Label }}`
 		th.Templates.Prompt.Feedback = "{{ .Label }}\n"
 		th.Templates.Prompt.Answer = "{{ .Label }}\x1b[2K"
 		th.Templates.Choice.More = Hidden
@@ -1105,7 +1103,7 @@ func TestBuiltinPromptSlots(t *testing.T) {
 	assert.Equal(t, "+ Name · v", render(tt.Input.Answer, answerView{Label: "Name", Value: "v"}))
 	assert.Equal(t, "! bad", render(tt.Number.Feedback, feedbackView{"bad"}))
 	keys := hintView{[]keyHint{{"up/down", "adjust"}, {"enter", "submit"}}}
-	assert.Equal(t, "up/down adjust · enter submit", render(tt.Number.Hint, keys))
+	assert.Equal(t, "^v adjust · enter submit", render(tt.Number.Hint, keys))
 	assert.Equal(t, "", render(tt.Number.Hint, hintView{}))
 	// built-ins stay out of the editable configuration
 	assert.Equal(t, Template(""), c.editable().Templates.Prompt.Label)
@@ -1448,6 +1446,7 @@ func TestBarSymbolsValidation(t *testing.T) {
 }
 
 func TestBuiltinTableSlots(t *testing.T) {
+	const cyan = "\x1b[36m" // an arbitrary foreground role sequence
 	c, err := compileTemplates(t, func(*Theme) {})
 	assert.NoError(t, err)
 	render := func(p colorProfile, s *compiledSlot, data any) string {
@@ -1577,4 +1576,116 @@ func TestSetDefaultThemePublishesAndKeepsPreviousOnError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Error")
 	assert.Equal(t, RGB("#00AADD"), DefaultTheme().Palette.Accent)
+}
+
+func TestRemovedColorNamesFailWithTemplatePath(t *testing.T) {
+	_, err := compileTemplates(t, func(th *Theme) { th.Templates.Prompt.Label = `{{ red "x" }}` })
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "theme.Templates.Prompt.Label")
+	assert.Contains(t, err.Error(), `function "red" not defined`)
+}
+
+// gateBackgrounds are the backgrounds the Aqua gate is measured on: the
+// variants' reference backgrounds and five measured ones.
+func gateBackgrounds() []struct {
+	name  string
+	bg    sRGB
+	known bool
+	light bool
+} {
+	out := []struct {
+		name  string
+		bg    sRGB
+		known bool
+		light bool
+	}{{"light reference", sRGB{}, false, true}, {"dark reference", sRGB{}, false, false}}
+	for _, h := range []RGB{"#000000", "#1E1E1E", "#777777", "#EEEEEE", "#FFFFFF"} {
+		out = append(out, struct {
+			name  string
+			bg    sRGB
+			known bool
+			light bool
+		}{string(h), h.must(), true, false})
+	}
+	return out
+}
+
+// successGap is the smallest OKLab distance between the rendered Accent and
+// Success over the gate backgrounds on profile p, and whether they ever render
+// as the same color.
+func successGap(t *testing.T, success RGB, p colorProfile) (gap float64, same bool) {
+	t.Helper()
+	gap = math.Inf(1)
+	for _, b := range gateBackgrounds() {
+		r, err := Palette{Success: success}.resolve(b.light, b.bg, b.known)
+		assert.NoError(t, err)
+		accent, shown := p.shown(r.Accent), p.shown(r.Success)
+		gap = min(gap, accent.oklab().distance(shown.oklab()))
+		same = same || accent == shown
+	}
+	return gap, same
+}
+
+// TestAquaSuccessGate is the Decision 4 gate for the brand's Aqua as Success.
+// Aqua is too close to the Gopher Blue accent: focus and done marks would read
+// alike, so the preset keeps its green. The test stays as the regression that
+// documents why.
+func TestAquaSuccessGate(t *testing.T) {
+	for _, p := range []colorProfile{profileANSI256, profileTrueColor} {
+		kept, same := successGap(t, presetSuccess, p)
+		assert.True(t, !same)
+		aqua, aquaSame := successGap(t, brandAqua, p)
+		if aqua >= kept && !aquaSame {
+			t.Errorf("profile %d: Aqua passes the gate (gap %.3f, kept %.3f); revisit Decision 4", p, aqua, kept)
+		}
+	}
+	// on ansi16 Aqua collapses into the accent on light backgrounds
+	_, same := successGap(t, brandAqua, profileANSI16)
+	assert.True(t, same)
+}
+
+func TestBrandPresetsStayDistinctAndUnset(t *testing.T) {
+	th := NewTheme()
+	assert.Equal(t, Palette{}, th.Palette) // the presets live in parse, not in the theme
+	c, err := th.compile()
+	assert.NoError(t, err)
+	assert.Equal(t, Palette{}, c.editable().Palette)
+	assert.True(t, !c.palette.light.accent.set && !c.palette.light.foreground.set && !c.palette.dark.foreground.set)
+
+	for _, p := range []colorProfile{profileANSI256, profileTrueColor} {
+		for _, b := range gateBackgrounds() {
+			if b.name == "#777777" { // mid-gray has no readable role colors on indexed profiles
+				continue
+			}
+			r, err := Palette{}.resolve(b.light, b.bg, b.known)
+			assert.NoError(t, err)
+			a, s, e := p.shown(r.Accent), p.shown(r.Success), p.shown(r.Error)
+			if a == s || s == e || a == e {
+				t.Errorf("%s on profile %d: accent %v, success %v, error %v", b.name, p, a, s, e)
+			}
+		}
+	}
+}
+
+func TestBrandLightAccentIsASeedNotAnOverride(t *testing.T) {
+	white := sRGB{255, 255, 255}
+	r, err := Palette{}.resolve(true, white, true)
+	assert.NoError(t, err)
+	assert.Equal(t, RGB(brandDarkBlue).must(), r.Accent)
+	assert.True(t, r.Accent.contrast(white) >= contrastText)
+
+	// on a mid-gray the brand blue moves to a readable shade like any seed
+	gray := sRGB{0xB0, 0xB0, 0xB0}
+	r, err = Palette{}.resolve(true, gray, true)
+	assert.NoError(t, err)
+	assert.True(t, r.Accent != RGB(brandDarkBlue).must())
+	assert.True(t, r.Accent.contrast(gray) >= contrastText)
+
+	// a caller's own Accent wins on light backgrounds
+	r, err = Palette{Accent: "#8844CC"}.resolve(true, white, true)
+	assert.NoError(t, err)
+	assert.Equal(t, RGB("#8844CC").must(), r.Accent)
+	r, err = Palette{Light: PaletteVariant{Accent: "#8844CC"}}.resolve(true, white, true)
+	assert.NoError(t, err)
+	assert.Equal(t, RGB("#8844CC").must(), r.Accent)
 }

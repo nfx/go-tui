@@ -23,6 +23,9 @@ Tables take their writer as an argument, so they accept none of the shared
 options below. Column options only shape auto-generated templates and have no
 effect when you pass an explicit row template.
 
+The per-call template options, `WithFieldTemplate` and `WithFrames` were removed
+in v0.4; see [Migrating to v0.4](migration-v0.4.md).
+
 ## Defaults without a terminal
 
 `WithDefault(d any)` is also the batch answer. Every prompt follows one rule:
