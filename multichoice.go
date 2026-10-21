@@ -148,11 +148,13 @@ type multichoice struct {
 
 	// theme is the snapshot captured at construction. The multichoice
 	// renders through it: look is its binding to the destination,
-	// slot the bound slots, label and help the rows rendered once per run.
-	theme       *compiledTheme
-	look        binding
-	slot        multichoiceSlots
-	label, help text
+	// slot the bound slots, label the row rendered once per run and help
+	// the bound hint rendered every frame with the count of hidden items.
+	theme *compiledTheme
+	look  binding
+	slot  multichoiceSlots
+	label text
+	help  boundSlot
 	// pending holds the items until binding projects them.
 	pending []any
 	// content is the projected main content of every item. Its details
@@ -567,8 +569,8 @@ type multichoiceSlots struct {
 }
 
 // multichoiceKeys are the bindings beyond confirming that the hint row describes.
-var multichoiceKeys = []keyHint{
-	{Key: "up/down", Action: "move"}, {Key: "space", Action: "toggle"}, {Key: "type", Action: "filter"},
+func (m *multichoice) multichoiceKeys(s Symbols) []hint {
+	return []hint{{s.arrows(), text("move")}, {text("space"), text("toggle")}, {text("type"), text("filter")}}
 }
 
 // emptyView is the payload of the Empty slot: the filter that matches nothing.
@@ -620,7 +622,7 @@ func (m *multichoice) bindRun(ctx context.Context, tio *termIO) error {
 	if err != nil {
 		return err
 	}
-	m.label, m.help, err = m.theme.templates.Multichoice.chrome(m.look.funcs, m.Label, multichoiceKeys)
+	m.label, m.help, err = m.theme.templates.Multichoice.chrome(m.look.funcs, m.Label)
 	if err != nil {
 		return err
 	}
@@ -704,15 +706,12 @@ func (m *multichoice) renderThemed(tio *termIO, buf *bytes.Buffer) error {
 		}
 		rows = append(rows, frameRow{content: line, guided: true})
 	}
-	more, err := m.themedMore()
+	help, err := themedHint(m.help, m.multichoiceKeys(m.theme.source.Symbols), len(m.relevant)-m.offset-len(m.displayed))
 	if err != nil {
-		return fmt.Errorf("more: %w", err)
+		return err
 	}
-	if more.width() > 0 {
-		rows = append(rows, frameRow{content: more, guided: true, drop: 2})
-	}
-	// on a short terminal, the hint goes first, then the count, then the label
-	rows = append(rows, frameRow{content: m.help, guided: true, drop: 2})
+	// on a short terminal, the hint with the count goes first, then the label
+	rows = append(rows, frameRow{content: help, guided: true, drop: 2})
 	// the newline after the last row moves the cursor to a row of its own,
 	// which must stay on the screen, or the terminal scrolls the label away
 	fit, err := m.look.geometry(tio.Width, tio.Height-1).fit(rows)
@@ -726,15 +725,6 @@ func (m *multichoice) renderThemed(tio *termIO, buf *bytes.Buffer) error {
 	}
 	buf.WriteByte('\r')
 	return nil
-}
-
-// themedMore renders the count of matching items below the visible window.
-func (m *multichoice) themedMore() (text, error) {
-	more := len(m.relevant) - m.offset - len(m.displayed)
-	if more <= 0 {
-		return nil, nil
-	}
-	return m.slot.more.render(dropdownMore{More: more, Total: len(m.relevant)})
 }
 
 // themedAnswer formats checked projections in input order, retaining nothing for a hidden or empty answer.

@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 	"unicode/utf8"
@@ -95,15 +96,17 @@ type dropdown struct {
 	// theme is the snapshot captured at construction. The dropdown renders
 	// through it: family are the slots of the widget that
 	// runs it, look is its binding to the destination, slot the bound
-	// slots, label and hint the rows rendered once per run. A wrapper that
+	// slots, label the row rendered once per run and hint the bound slot
+	// rendered every frame with the count of hidden rows. A wrapper that
 	// runs several dropdowns hands the binding of an earlier one on as
 	// inherit, so that one invocation keeps one appearance.
-	theme       *compiledTheme
-	family      choiceFamily
-	look        binding
-	inherit     binding
-	slot        choiceSlots
-	label, hint text
+	theme   *compiledTheme
+	family  choiceFamily
+	look    binding
+	inherit binding
+	slot    choiceSlots
+	label   text
+	hint    boundSlot
 	// content is the projected main content of every item, and search the
 	// plain text of it that filtering and ranking see.
 	content []text
@@ -834,45 +837,39 @@ func (p *projection) rebind(funcs template.FuncMap) error {
 
 // choiceSlots are the theme slots of a choice family bound to one destination.
 type choiceSlots struct {
-	value, details, active, inactive, more, answer boundSlot
+	value, details, active, inactive, answer boundSlot
 }
 
 // bind binds the item and answer slots of the family to funcs.
 func (f choiceFamily) bind(funcs template.FuncMap) (s choiceSlots, _ error) {
-	var errs [6]error
+	var errs [5]error
 	s.value, errs[0] = f.Value.bind(funcs)
 	s.details, errs[1] = f.Details.bind(funcs)
 	s.active, errs[2] = f.Active.bind(funcs)
 	s.inactive, errs[3] = f.Inactive.bind(funcs)
-	s.more, errs[4] = f.More.bind(funcs)
-	s.answer, errs[5] = f.Answer.bind(funcs)
+	s.answer, errs[4] = f.Answer.bind(funcs)
 	return s, errors.Join(errs[:]...)
 }
 
-// chrome renders label and key hints.
-func (f choiceFamily) chrome(
-	funcs template.FuncMap,
-	label string,
-	keys []keyHint,
-) (head, hint text, _ error) {
+// chrome renders the label and binds the hint, which every frame renders
+// with the count of the items below the window.
+func (f choiceFamily) chrome(funcs template.FuncMap, label string) (head text, hint boundSlot, _ error) {
 	slot, err := f.Label.bind(funcs)
 	if err != nil {
-		return nil, nil, err
+		return nil, boundSlot{}, err
 	}
 	head, err = slot.render(labelView{label})
 	if err != nil {
-		return nil, nil, err
+		return nil, boundSlot{}, err
 	}
-	slot, err = f.Hint.bind(funcs)
-	if err != nil {
-		return nil, nil, err
-	}
-	hint, err = slot.render(hintView{keys})
+	hint, err = f.Hint.bind(funcs)
 	return head, hint, err
 }
 
 // dropdownKeys are the bindings beyond confirming that the hint row describes.
-var dropdownKeys = []keyHint{{Key: "up/down", Action: "move"}, {Key: "type", Action: "filter"}}
+func (d *dropdown) dropdownKeys(s Symbols) []hint {
+	return []hint{{s.arrows(), text("move")}, {text("type"), text("filter")}}
+}
 
 // bind installs destination-bound helpers and choice slots.
 func (d *dropdown) bind(look binding) error {
@@ -903,9 +900,9 @@ func (d *dropdown) destination(ctx context.Context, tio *termIO) binding {
 	return defaultIO.bindTheme(ctx, d.theme, d.out, tio)
 }
 
-// renderChrome renders the label and hint rows once per run.
+// renderChrome renders the label row and binds the hint once per run.
 func (d *dropdown) renderChrome() (err error) {
-	d.label, d.hint, err = d.family.chrome(d.look.funcs, d.Label, dropdownKeys)
+	d.label, d.hint, err = d.family.chrome(d.look.funcs, d.Label)
 	return err
 }
 
@@ -1212,13 +1209,8 @@ func (d *dropdown) renderStates(i int, item any) (text, error) {
 	return d.themedItem(i, item)
 }
 
-type dropdownMore struct {
-	More  int
-	Total int
-}
-
-// render draws the label, the visible rows, the count of rows below them
-// and the hint in the geometry of the theme. Every row ends with a newline,
+// render draws the label, the visible rows and the hint, led by the count of
+// rows below them, in the geometry of the theme. Every row ends with a newline,
 // so that [termIO.clear] erases the frame.
 func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
 	io.refreshSize()
@@ -1227,9 +1219,9 @@ func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
 		return fmt.Errorf("init: %w", err)
 	}
 	d.clampDisplay(io.Height)
-	more, err := d.themedMore()
+	hint, err := d.themedHint()
 	if err != nil {
-		return fmt.Errorf("more: %w", err)
+		return err
 	}
 	// the newline after the last row moves the cursor to a row of its own,
 	// which must stay on the screen, or the terminal scrolls the label away
@@ -1258,11 +1250,8 @@ func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
 		}
 		rows = append(rows, frameRow{content: append(append(text{}, prefix...), row...), guided: true})
 	}
-	if more.width() > 0 {
-		rows = append(rows, frameRow{content: append(append(text{}, indent...), more...), guided: true, drop: 2})
-	}
-	// on a short terminal, the hint goes first, then the count, then the label
-	rows = append(rows, frameRow{content: d.hint, guided: true, drop: 2})
+	// on a short terminal, the hint with the count goes first, then the label
+	rows = append(rows, frameRow{content: hint, guided: true, drop: 2})
 	fit, err := g.fit(rows)
 	if err != nil {
 		return err
@@ -1277,13 +1266,19 @@ func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
 	return nil
 }
 
-// themedMore renders the count of the rows below the visible ones, if any.
-func (d *dropdown) themedMore() (text, error) {
-	more := len(d.relevant) - d.offset - len(d.displayed)
-	if more <= 0 {
-		return nil, nil
+// themedHint renders the key hints, led by the count of the rows below the
+// visible ones, if any.
+func (d *dropdown) themedHint() (text, error) {
+	return themedHint(d.hint, d.dropdownKeys(d.theme.source.Symbols), len(d.relevant)-d.offset-len(d.displayed))
+}
+
+// themedHint renders slot for keys, led by the count of hidden items.
+func themedHint(slot boundSlot, keys []hint, hidden int) (text, error) {
+	if hidden <= 0 {
+		return slot.render(hintView(keys))
 	}
-	return d.slot.more.render(dropdownMore{More: more, Total: len(d.relevant)})
+	view := append(hintView{{text(strconv.Itoa(hidden)), text("more")}}, keys...)
+	return slot.render(view)
 }
 
 func (d *dropdown) height() int {

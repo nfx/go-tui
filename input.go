@@ -153,7 +153,7 @@ type input struct {
 	// numeric selects the Number slots of the theme.
 	numeric bool
 	// keys are the bindings beyond editing that the hint row describes.
-	keys []keyHint
+	keys []hint
 
 	def defaultValue
 	// rules validate the confirmed text in order; the first error rejects it.
@@ -680,11 +680,13 @@ type answerView struct {
 // feedbackView is the payload of a feedback slot: the sanitized rejection message.
 type feedbackView struct{ Message string }
 
-// keyHint names a key the widget handles and what it does.
-type keyHint struct{ Key, Action string }
+// hint is one entry of a hint row: a key and what it does, or a count and
+// what it counts.
+type hint struct{ Left, Right text }
 
-// hintView is the payload of a hint slot: the widget's actual key bindings.
-type hintView struct{ Bindings []keyHint }
+// hintView is the payload of a hint slot: the keys the widget actually
+// handles, led by the count of hidden items in a choice list.
+type hintView []hint
 
 // slots selects the theme slots of the prompt family. A password retains no answer.
 func (p *input) slots() promptTemplates {
@@ -744,7 +746,7 @@ func (p *input) bindHint(hint *compiledSlot) error {
 	if err != nil {
 		return err
 	}
-	p.hint, err = slot.render(hintView{p.keys})
+	p.hint, err = slot.render(hintView(p.keys))
 	return err
 }
 

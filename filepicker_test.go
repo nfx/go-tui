@@ -169,7 +169,7 @@ func TestThemedFilePickerNavigatesAndRetainsPathOnce(t *testing.T) {
 	want := filepath.Join(root, "sub", "inner.txt")
 	assert.Equal(t, want, got)
 	assert.True(t, *restored)
-	hint := "\r| up/down move · type filter\n"
+	hint := "\r| ^v move · type filter\n"
 	// each directory erases its frame once and retains nothing; the chosen
 	// path is retained once, as the answer of the whole invocation
 	assert.Equal(t, ""+
@@ -288,7 +288,7 @@ func TestThemedFilePickerHiddenAnswer(t *testing.T) {
 	_, err := FilePicker(t.Context(), "File", WithStartDir(dir), o)
 	assert.NoError(t, err)
 	// the frame is erased and nothing is retained
-	assert.True(t, strings.HasSuffix(out.String(), "| up/down move · type filter\n\r"+
+	assert.True(t, strings.HasSuffix(out.String(), "| ^v move · type filter\n\r"+
 		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"))
 
 	o, out, _ = themedDropdownOpt(t, asciiTheme(false), 40, "\r")

@@ -703,14 +703,14 @@ func TestTemplateDefineIsIsolatedPerSlot(t *testing.T) {
 }
 
 func TestThemeRoundTripKeepsTemplateSources(t *testing.T) {
-	c, err := compileTemplates(t, func(th *Theme) { th.Templates.Choice.More = Hidden })
+	c, err := compileTemplates(t, func(th *Theme) { th.Templates.Choice.Empty = Hidden })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := c.editable().Templates.Choice.More; got != Hidden {
+	if got := c.editable().Templates.Choice.Empty; got != Hidden {
 		t.Fatalf("explicit empty lost in round trip: %+v", got)
 	}
-	if c.editable().Templates.Choice.Empty != "" {
+	if c.editable().Templates.Choice.Inactive != "" {
 		t.Fatal("inherited slot became explicit")
 	}
 }
@@ -1041,7 +1041,7 @@ func TestBoundSlotRendersOrFailsWhole(t *testing.T) {
 		th.Templates.Prompt.Hint = `{{ red "partial" }}{{ fails .Label }}`
 		th.Templates.Prompt.Feedback = "{{ .Label }}\n"
 		th.Templates.Prompt.Answer = "{{ .Label }}\x1b[2K"
-		th.Templates.Choice.More = Hidden
+		th.Templates.Choice.Empty = Hidden
 	})
 	assert.NoError(t, err)
 	data := struct{ Label string }{"x"}
@@ -1070,7 +1070,7 @@ func TestBoundSlotRendersOrFailsWhole(t *testing.T) {
 		assert.True(t, out == nil)
 	}
 
-	out, err = render(c.templates.Choice.More, profileTrueColor)
+	out, err = render(c.templates.Choice.Empty, profileTrueColor)
 	assert.NoError(t, err)
 	assert.True(t, out == nil)
 }
@@ -1104,11 +1104,40 @@ func TestBuiltinPromptSlots(t *testing.T) {
 	assert.Equal(t, "? Name", render(tt.Password.Label, labelView{"Name"}))
 	assert.Equal(t, "+ Name · v", render(tt.Input.Answer, answerView{Label: "Name", Value: "v"}))
 	assert.Equal(t, "! bad", render(tt.Number.Feedback, feedbackView{"bad"}))
-	keys := hintView{[]keyHint{{"up/down", "adjust"}, {"enter", "submit"}}}
+	keys := hintView{{text("up/down"), text("adjust")}, {text("enter"), text("submit")}}
 	assert.Equal(t, "up/down adjust · enter submit", render(tt.Number.Hint, keys))
 	assert.Equal(t, "", render(tt.Number.Hint, hintView{}))
 	// built-ins stay out of the editable configuration
 	assert.Equal(t, Template(""), c.editable().Templates.Prompt.Label)
+}
+
+func TestBuiltinHintAccentsKeys(t *testing.T) {
+	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = ASCIISymbols() })
+	assert.NoError(t, err)
+	funcs := c.funcs(profileTrueColor, roleStyles{
+		foreground: text("\x1b[38;5;1m"),
+		accent:     text("\x1b[38;5;2m"),
+		guide:      text("\x1b[38;5;3m"),
+	})
+	b, err := c.templates.Dropdown.Hint.bind(funcs)
+	assert.NoError(t, err)
+	out, err := b.render(hintView{{text("3"), text("more")}, {text("type"), text("filter")}})
+	assert.NoError(t, err)
+	// the left side is accented, the rest is the faintest
+	assert.Equal(t, "\x1b[38;5;2m3\x1b[39m \x1b[38;5;3mmore\x1b[39m\x1b[38;5;3m · \x1b[39m"+
+		"\x1b[38;5;2mtype\x1b[39m \x1b[38;5;3mfilter\x1b[39m", out.String())
+}
+
+func TestBuiltinHintSidesDifferOnAssumedBackground(t *testing.T) {
+	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = ASCIISymbols() })
+	assert.NoError(t, err)
+	look := c.bind(profileTrueColor, background{})
+	b, err := c.templates.Dropdown.Hint.bind(look.funcs)
+	assert.NoError(t, err)
+	out, err := b.render(hintView{{text("^v"), text("move")}})
+	assert.NoError(t, err)
+	// the neutrals keep the default color, so the right side is faint
+	assert.Equal(t, "\x1b[38;2;0;173;216m^v\x1b[39m \x1b[2mmove\x1b[22m", out.String())
 }
 
 func TestBuiltinMultichoiceSlots(t *testing.T) {
@@ -1193,7 +1222,9 @@ func TestThemeRolesKeepNeutralsDefaultOnAssumedBackground(t *testing.T) {
 	c, err := NewTheme().compile()
 	assert.NoError(t, err)
 	assumed := c.bind(profileTrueColor, background{})
-	assert.True(t, assumed.roles.foreground == nil && assumed.roles.muted == nil && assumed.roles.guide == nil)
+	assert.True(t, assumed.roles.foreground == nil && assumed.roles.muted == nil)
+	// the guide turns faint, so that it stays quieter than the muted role
+	assert.Equal(t, text(dim), assumed.roles.guide)
 	assert.True(t, assumed.roles.accent != nil && assumed.roles.success != nil && assumed.roles.failure != nil)
 
 	measured := c.bind(profileTrueColor, background{rgb: sRGB{0x12, 0x12, 0x12}, measured: true})

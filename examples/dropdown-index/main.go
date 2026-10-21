@@ -11,10 +11,9 @@ func main() {
 	ctx := context.Background()
 	items := []any{"red", "green", "blue", "cyan", "magenta", "yellow", "black", "white"}
 
-	// the theme owns the label, the count row and the answer line
+	// the theme owns the label and the answer line
 	theme := tui.DefaultTheme()
 	theme.Templates.Dropdown.Label = `{{ "🎨" }} {{ .Label | bold | underline }}`
-	theme.Templates.Dropdown.More = ` {{ dim "… and " .More " other colors" | italic }}`
 	theme.Templates.Dropdown.Answer = `{{ success "✔ " }}{{ .Label }} is {{ .Value | bold }}`
 	if err := tui.SetDefaultTheme(theme); err != nil {
 		panic(err)
