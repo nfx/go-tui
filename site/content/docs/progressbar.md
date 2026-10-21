@@ -141,7 +141,7 @@ Download  62%  ━━━━━━━━━━━━━━━━━━━╸─�
 62.0 / 100.0 MiB · 6.2 MiB/s · 12s left
 ```
 
-With `tui.ASCIISymbols()`:
+On a terminal without the Unicode glyphs:
 
 ```text
 Download  62%  ===================>------------

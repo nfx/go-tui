@@ -164,10 +164,42 @@ func (c sRGB) nearestIndex(n int) int {
 	return best
 }
 
-// ansi16Escape encodes the nearest of the 16 basic colors. Bright colors use
-// the 90/100 series, never bold, so weight and brightness stay independent.
+// neutralChroma is the OKLab chroma below which a color counts as a gray.
+// Every hue of the 16 basic colors has at least 0.09.
+const neutralChroma = 0.04
+
+// basicIndex is the nearest of the 16 basic colors among the grays for a
+// gray and among the hues otherwise. Those few grays sit between many
+// mid-tone hues in lightness, so the plain nearest one would turn an accent
+// gray and tint a gray red or teal.
+func (c sRGB) basicIndex() int {
+	i, _ := c.nearestBasic(func(sRGB) bool { return true })
+	return i
+}
+
+// nearestBasic is [sRGB.basicIndex] among the entries that accept takes, or
+// false when it takes none of them.
+func (c sRGB) nearestBasic(accept func(sRGB) bool) (int, bool) {
+	target := c.oklab()
+	gray := target.lch().C < neutralChroma
+	pal, lab := ansiPalette(), ansiPaletteLab()
+	best, bestDist := 0, math.Inf(1)
+	for i := range 16 {
+		if (i == 0 || i == 7 || i == 8 || i == 15) != gray || !accept(pal[i]) {
+			continue
+		}
+		if d := target.distance(lab[i]); d < bestDist {
+			best, bestDist = i, d
+		}
+	}
+	return best, !math.IsInf(bestDist, 1)
+}
+
+// ansi16Escape encodes the basic color of c, see [sRGB.basicIndex]. Bright
+// colors use the 90/100 series, never bold, so weight and brightness stay
+// independent.
 func (c sRGB) ansi16Escape(background bool) string {
-	i := c.nearestIndex(16)
+	i := c.basicIndex()
 	var code int
 	switch {
 	case i < 8 && background:
@@ -499,7 +531,7 @@ func (p colorProfile) bg(c sRGB) text { return p.encode(c, true) }
 func (p colorProfile) shown(c sRGB) sRGB {
 	switch p {
 	case profileANSI16:
-		return ansiPalette()[c.nearestIndex(16)]
+		return ansiPalette()[c.basicIndex()]
 	case profileANSI256:
 		return ansiPalette()[c.nearestIndex(256)]
 	default:
@@ -511,8 +543,17 @@ func (p colorProfile) shown(c sRGB) sRGB {
 // color still meets the target against bg. The adjustment is bounded; ok is
 // false when no colored result is readable and the caller should keep a
 // neutral color plus a shape or label. The encoder stays pure: only the
-// resolved RGB is adjusted, never the encoding.
+// resolved RGB is adjusted, never the encoding. With 16 colors, a shade
+// rarely moves to another basic color, so the nearest readable one of the
+// same kind is taken instead.
 func (p colorProfile) readable(c, bg sRGB, target float64) (rgb sRGB, ok bool) {
+	if p == profileANSI16 {
+		i, ok := c.nearestBasic(func(e sRGB) bool { return e.contrast(bg) >= target })
+		if !ok {
+			return c, false
+		}
+		return ansiPalette()[i], true
+	}
 	for step := range 9 {
 		cand := c.atLeast(bg, target+0.5*float64(step))
 		if p.shown(cand).contrast(bg) >= target {
@@ -959,10 +1000,65 @@ var unicodeSymbols = Symbols{
 	Spinner:   []string{"▘", "▀", "▝", "▐", "▗", "▄", "▖", "▌"},
 }
 
+// asciiSymbols replace the presets on terminals whose fonts likely lack the
+// Unicode glyphs, see [outputEnv.hasUnicode].
+var asciiSymbols = Symbols{
+	Prompt:    "?",
+	Focus:     ">",
+	Guide:     "|",
+	End:       "`",
+	Checked:   "x",
+	Unchecked: "o",
+	Success:   "+",
+	Error:     "!",
+	Cancel:    "-",
+	Ellipsis:  ".",
+	Mask:      "*",
+	Up:        "^",
+	Down:      "v",
+	BarFill:   "=",
+	BarHead:   ">",
+	BarEmpty:  "-",
+	Unknown:   "?",
+	Separator: "|",
+	// the line spinner of cli-spinners (MIT License)
+	Spinner: []string{"|", "/", "-", `\`},
+}
+
 // clone copies the symbols, so that edits never reach the preset.
 func (s Symbols) clone() Symbols {
 	s.Spinner = slices.Clone(s.Spinner)
 	return s
+}
+
+// symbolField is one single-glyph field of [Symbols].
+type symbolField struct {
+	name  string
+	glyph *string
+}
+
+// symbolFields lists the single-glyph fields of s in declaration order.
+func symbolFields(s *Symbols) []symbolField {
+	return []symbolField{
+		{"Prompt", &s.Prompt},
+		{"Focus", &s.Focus},
+		{"Guide", &s.Guide},
+		{"End", &s.End},
+		{"Checked", &s.Checked},
+		{"Unchecked", &s.Unchecked},
+		{"Success", &s.Success},
+		{"Error", &s.Error},
+		{"Cancel", &s.Cancel},
+		{"Ellipsis", &s.Ellipsis},
+		{"Mask", &s.Mask},
+		{"Up", &s.Up},
+		{"Down", &s.Down},
+		{"BarFill", &s.BarFill},
+		{"BarHead", &s.BarHead},
+		{"BarEmpty", &s.BarEmpty},
+		{"Unknown", &s.Unknown},
+		{"Separator", &s.Separator},
+	}
 }
 
 // named returns the glyph of a field by name.
@@ -1010,36 +1106,14 @@ func (s Symbols) named(name string) (string, error) {
 
 func (s Symbols) normalize() (Symbols, error) {
 	def := unicodeSymbols
-	for _, f := range []struct {
-		path string
-		dst  *string
-		def  *string
-	}{
-		{"Prompt", &s.Prompt, &def.Prompt},
-		{"Focus", &s.Focus, &def.Focus},
-		{"Guide", &s.Guide, &def.Guide},
-		{"End", &s.End, &def.End},
-		{"Checked", &s.Checked, &def.Checked},
-		{"Unchecked", &s.Unchecked, &def.Unchecked},
-		{"Success", &s.Success, &def.Success},
-		{"Error", &s.Error, &def.Error},
-		{"Cancel", &s.Cancel, &def.Cancel},
-		{"Ellipsis", &s.Ellipsis, &def.Ellipsis},
-		{"Mask", &s.Mask, &def.Mask},
-		{"Up", &s.Up, &def.Up},
-		{"Down", &s.Down, &def.Down},
-		{"BarFill", &s.BarFill, &def.BarFill},
-		{"BarHead", &s.BarHead, &def.BarHead},
-		{"BarEmpty", &s.BarEmpty, &def.BarEmpty},
-		{"Unknown", &s.Unknown, &def.Unknown},
-		{"Separator", &s.Separator, &def.Separator},
-	} {
-		if *f.dst == "" {
-			*f.dst = *f.def
+	defs := symbolFields(&def)
+	for i, f := range symbolFields(&s) {
+		if *f.glyph == "" {
+			*f.glyph = *defs[i].glyph
 		}
-		err := s.singleColumn(*f.dst)
+		err := s.singleColumn(*f.glyph)
 		if err != nil {
-			return s, fmt.Errorf("theme.Symbols.%s: %w", f.path, err)
+			return s, fmt.Errorf("theme.Symbols.%s: %w", f.name, err)
 		}
 	}
 	if len(s.Spinner) == 0 {
@@ -1053,6 +1127,23 @@ func (s Symbols) normalize() (Symbols, error) {
 		}
 	}
 	return s, nil
+}
+
+// ascii replaces every Unicode preset symbol of s with its counterpart in
+// [asciiSymbols], and keeps the symbols the theme chose itself.
+func (s Symbols) ascii() Symbols {
+	s = s.clone()
+	def, alt := unicodeSymbols, asciiSymbols.clone()
+	defs, alts := symbolFields(&def), symbolFields(&alt)
+	for i, f := range symbolFields(&s) {
+		if *f.glyph == *defs[i].glyph {
+			*f.glyph = *alts[i].glyph
+		}
+	}
+	if slices.Equal(s.Spinner, def.Spinner) {
+		s.Spinner = alt.Spinner
+	}
+	return s
 }
 
 // singleColumn checks a glyph that must occupy exactly one display column.
@@ -1074,33 +1165,6 @@ func (Symbols) singleColumn(s string) error {
 
 // arrows names the up and down arrow keys in key hints.
 func (s Symbols) arrows() text { return text(s.Up + s.Down) }
-
-// ASCIISymbols is the symbol set for terminals whose fonts lack the Unicode
-// glyphs.
-func ASCIISymbols() Symbols {
-	return Symbols{
-		Prompt:    "?",
-		Focus:     ">",
-		Guide:     "|",
-		End:       "`",
-		Checked:   "x",
-		Unchecked: "o",
-		Success:   "+",
-		Error:     "!",
-		Cancel:    "-",
-		Ellipsis:  ".",
-		Mask:      "*",
-		Up:        "^",
-		Down:      "v",
-		BarFill:   "=",
-		BarHead:   ">",
-		BarEmpty:  "-",
-		Unknown:   "?",
-		Separator: "|",
-		// the line spinner of cli-spinners (MIT License)
-		Spinner: []string{"|", "/", "-", `\`},
-	}
-}
 
 // presetTheme builds the default theme. The palette stays empty: [Palette.parse]
 // fills every required color, and leaving the adaptive neutrals unset keeps

@@ -22,8 +22,9 @@ func strictOutput(t *testing.T) {
 
 // Most tests drive interactive widgets through in-memory writers, so the test
 // binary treats them as a terminal. Tests of the production routing call
-// [strictOutput].
+// [strictOutput]. Environment fixtures read the same on every platform.
 func TestMain(m *testing.M) {
+	legacyConsoles = false
 	outputIsTerminal = func(w io.Writer) bool {
 		if hostsTerminal(w) {
 			return true
@@ -42,6 +43,9 @@ func UseTheme(t *testing.T, th Theme) {
 	t.Helper()
 	useTheme(t, th)
 }
+
+// ASCIISymbols replace the presets on terminals without the Unicode glyphs.
+var ASCIISymbols = asciiSymbols
 
 // WithEnv installs an output environment fixture built from KEY=VALUE pairs.
 func WithEnv(t *testing.T, pairs ...string) {
