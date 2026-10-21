@@ -612,7 +612,7 @@ func newASCIITerminal(t *testing.T) *terminal {
 func asciiTheme(t *testing.T) {
 	t.Helper()
 	th := tui.NewTheme()
-	th.Symbols = tui.ASCIISymbols()
+	th.Symbols = tui.ASCIISymbols
 	tui.UseTheme(t, th)
 }
 
@@ -1327,7 +1327,7 @@ func (l themedLayout) theme() tui.Theme {
 	th := tui.NewTheme()
 	th.Inline = l.inline
 	if l.ascii {
-		th.Symbols = tui.ASCIISymbols()
+		th.Symbols = tui.ASCIISymbols
 	}
 	th.Symbols.Spinner = []string{"~"} // one frame, so every redraw looks alike
 	return th

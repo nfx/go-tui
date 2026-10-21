@@ -1303,7 +1303,7 @@ func useTheme(t *testing.T, th Theme) {
 // asciiTheme is the preset theme with ASCII symbols, Guided or Inline.
 func asciiTheme(inline bool) Theme {
 	th := NewTheme()
-	th.Symbols = ASCIISymbols()
+	th.Symbols = asciiSymbols
 	th.Inline = inline
 	return th
 }
@@ -1600,6 +1600,20 @@ func TestThemedInputColorsFollowDestination(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, !strings.Contains(out.String(), "\x1b[3"))
 	assert.True(t, !strings.Contains(out.String(), "\x1b[1m"))
+}
+
+func TestThemedInputSymbolsFollowEnvironment(t *testing.T) {
+	withEnv(t, "TERM=linux")
+	i, out, _ := themedInput(t, NewTheme(), 20, 5, "a", "\r")
+	_, err := i.read(t.Context())
+	assert.NoError(t, err)
+	assert.Contains(t, out.String(), "\r? Label\x1b[K\n\r| a\x1b[K")
+
+	withEnv(t)
+	i, out, _ = themedInput(t, NewTheme(), 20, 5, "a", "\r")
+	_, err = i.read(t.Context())
+	assert.NoError(t, err)
+	assert.Contains(t, out.String(), "\r◆ Label\x1b[K\n\r│ a\x1b[K")
 }
 
 func TestThemedInputCapturesThemeAtConstruction(t *testing.T) {

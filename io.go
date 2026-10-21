@@ -5,12 +5,15 @@ package tui
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
 	"math"
 	"os"
 	"reflect"
+	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,8 +22,9 @@ import (
 	"golang.org/x/term"
 )
 
-// outputEnv is the part of the process environment that decides about color.
-// [defaultIO] reads it once at startup; tests replace it with a fixture.
+// outputEnv is the part of the process environment that decides about color
+// and symbols. [defaultIO] reads it once at startup; tests replace it with a
+// fixture.
 type outputEnv struct {
 	forceColor      *string
 	noColor         bool
@@ -30,6 +34,14 @@ type outputEnv struct {
 	// bgHint is the background estimated from COLORFGBG, the fallback of
 	// detection, read with the same lifetime as the color policy.
 	bgHint background
+	// ci is set in CI logs, which are rarely color-capable but are viewed in
+	// browsers with the Unicode glyphs.
+	ci bool
+	// locale is the first set of LC_ALL, LC_CTYPE and LANG.
+	locale string
+	// unicodeHost is set by the terminals that announce themselves and show
+	// the Unicode symbols on the legacy Windows console host.
+	unicodeHost bool
 }
 
 func readOutputEnv(lookup func(string) (string, bool)) outputEnv {
@@ -39,20 +51,52 @@ func readOutputEnv(lookup func(string) (string, bool)) outputEnv {
 		return v != "" && v != "0" && v != "false"
 	}
 	cliColorForce := truthy("CLICOLOR_FORCE")
+	ci := truthy("CI")
+	term := get("TERM")
 	e := outputEnv{
 		// CI logs are rarely color-capable, unless the pipeline opts in.
-		noColor:         get("NO_COLOR") != "" || truthy("CI") && !cliColorForce,
+		noColor:         get("NO_COLOR") != "" || ci && !cliColorForce,
 		cliColorForce:   cliColorForce,
-		term:            get("TERM"),
+		term:            term,
 		colorTerm:       strings.ToLower(get("COLORTERM")),
 		windowsTerminal: get("WT_SESSION") != "",
 		bgHint:          new(termIO).backgroundFromEnv(lookup),
+		ci:              ci,
+		locale:          cmp.Or(get("LC_ALL"), get("LC_CTYPE"), get("LANG")),
+		unicodeHost: get("TERM_PROGRAM") == "vscode" ||
+			get("TERMINAL_EMULATOR") == "JetBrains-JediTerm" ||
+			get("ConEmuTask") == "{cmd::Cmder}" ||
+			slices.Contains([]string{"xterm-256color", "alacritty", "rxvt-unicode", "rxvt-unicode-256color"}, term),
 	}
 	// FORCE_COLOR= (empty) is meant to force 16-color output.
 	if v, ok := lookup("FORCE_COLOR"); ok {
 		e.forceColor = &v
 	}
 	return e
+}
+
+// legacyConsoles reports whether the default terminal of the platform may be
+// the legacy Windows console host, whose fonts lack the Unicode symbols.
+var legacyConsoles = runtime.GOOS == "windows"
+
+// hasUnicode guesses whether the terminal font has the glyphs of the Unicode
+// symbols, which no terminal can be asked about. Where the legacy Windows
+// console host may be running, only CI logs and the hosts that announce
+// themselves show them. Elsewhere, every terminal does but the Linux virtual
+// console and one with a locale other than UTF-8.
+func (e outputEnv) hasUnicode() bool {
+	if !legacyConsoles {
+		return e.term != "linux" && e.utf8Locale()
+	}
+	return e.ci || e.windowsTerminal || e.unicodeHost
+}
+
+// utf8Locale reports whether the locale, language_TERRITORY.charset@modifier,
+// names UTF-8 or no character set, as C and POSIX do.
+func (e outputEnv) utf8Locale() bool {
+	_, charset, ok := strings.Cut(e.locale, ".")
+	charset, _, _ = strings.Cut(charset, "@")
+	return !ok || strings.EqualFold(strings.ReplaceAll(charset, "-", ""), "utf8")
 }
 
 // consoleVT enables VT output processing on a console writer and reports
@@ -114,12 +158,23 @@ func (t *tio) updateTheme(edit func(*Theme)) error {
 
 // storeThemeLocked publishes a validated theme while the caller holds themeMu.
 func (t *tio) storeThemeLocked(th Theme) error {
-	c, err := th.compile()
+	c, err := t.compileTheme(th)
 	if err != nil {
 		return err
 	}
 	t.theme.Store(c)
 	return nil
+}
+
+// compileTheme compiles th for the terminal of the process: without the
+// Unicode symbols in the environment, the presets become ASCII.
+func (t *tio) compileTheme(th Theme) (*compiledTheme, error) {
+	c, err := th.compile()
+	if err != nil || t.env.hasUnicode() {
+		return c, err
+	}
+	c.source.Symbols = c.source.Symbols.ascii()
+	return c, nil
 }
 
 type terminalStderr struct {
@@ -173,7 +228,7 @@ func newDefaultIO() *tio {
 		writer: os.Stderr,
 		env:    readOutputEnv(os.LookupEnv),
 	}
-	c, err := NewTheme().compile()
+	c, err := t.compileTheme(NewTheme())
 	if err != nil {
 		panic(err) // the preset is valid
 	}

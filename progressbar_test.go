@@ -1264,7 +1264,7 @@ func TestThemedProgressBarWidthBounds(t *testing.T) {
 }
 
 func TestThemedProgressHeadMarksPartialCell(t *testing.T) {
-	l := &progressLook{style: progressStyle, symbols: ASCIISymbols()}
+	l := &progressLook{style: progressStyle, symbols: asciiSymbols}
 	l.symbols.BarEmpty = "."
 	for _, tc := range []struct {
 		completion float64

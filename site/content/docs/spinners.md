@@ -117,8 +117,8 @@ group, err := tui.NewSpinners(common)
 
 The frames are `Theme.Symbols.Spinner`. Each frame is a symbol: a single
 display column, like every other symbol. The Unicode preset animates a block
-around the four quadrants of the cell (`▘▀▝▐▗▄▖▌`) and `ASCIISymbols()` uses
-`|/-\`.
+around the four quadrants of the cell (`▘▀▝▐▗▄▖▌`) and terminals without the
+Unicode glyphs show `|/-\`.
 
 ```go
 theme := tui.DefaultTheme()

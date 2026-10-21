@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -167,6 +168,39 @@ func TestNearestIndexGrayscaleAndCubeEdges(t *testing.T) {
 		{sRGB{10, 10, 10}, 256, 232},
 	} {
 		assert.Equal(t, tc.want, tc.in.nearestIndex(tc.n))
+	}
+}
+
+func TestBasicIndexKeepsGraysAndHuesApart(t *testing.T) {
+	for _, tc := range []struct {
+		in   RGB
+		want int
+	}{
+		{"#00ADD8", 6},  // the accent: teal, though gray is nearer
+		{"#3E4042", 8},  // the dark guide: gray, though maroon is nearer
+		{"#4D4E50", 8},  // gray, though teal is nearer
+		{"#708090", 8},  // slate gray
+		{"#8B4513", 1},  // saddle brown
+		{"#FAFAFA", 15}, // near white
+	} {
+		c, err := tc.in.parse()
+		assert.NoError(t, err)
+		assert.Equal(t, tc.want, c.basicIndex())
+	}
+}
+
+func TestSixteenColorRolesKeepTheirMeaning(t *testing.T) {
+	c, err := NewTheme().compile()
+	assert.NoError(t, err)
+	for _, bg := range []sRGB{{0, 0, 0}, {30, 30, 30}, {255, 255, 255}} {
+		r := c.bind(profileANSI16, background{rgb: bg, light: bg.isLight(), measured: true}).roles
+		for _, gray := range []text{r.foreground, r.muted, r.guide} {
+			assert.True(
+				t,
+				slices.Contains([]string{"\x1b[30m", "\x1b[37m", "\x1b[90m", "\x1b[97m", "\x1b[2m"}, string(gray)),
+			)
+		}
+		assert.True(t, slices.Contains([]string{"\x1b[36m", "\x1b[96m"}, string(r.accent)))
 	}
 }
 
@@ -487,7 +521,7 @@ func TestPresetsCompile(t *testing.T) {
 func TestSymbolPresetsAreOneColumn(t *testing.T) {
 	_, err := Symbols{}.normalize()
 	assert.NoError(t, err)
-	_, err = ASCIISymbols().normalize()
+	_, err = asciiSymbols.normalize()
 	assert.NoError(t, err)
 }
 
@@ -970,7 +1004,7 @@ func TestColorHelperRejectsMalformedAtExecution(t *testing.T) {
 }
 
 func TestSymbolHelper(t *testing.T) {
-	funcs := destination{symbols: ASCIISymbols()}.funcs()
+	funcs := destination{symbols: asciiSymbols}.funcs()
 	assert.Equal(t, ">", execute(t, funcs, `{{ symbol "Focus" }}`, nil))
 	tmpl, err := template.New("t").Funcs(funcs).Parse(`{{ symbol "Nope" }}`)
 	assert.NoError(t, err)
@@ -1077,7 +1111,7 @@ func TestBoundSlotRendersOrFailsWhole(t *testing.T) {
 
 func TestThemeGeometryUsesInlineAndGuide(t *testing.T) {
 	th := NewTheme()
-	th.Symbols = ASCIISymbols()
+	th.Symbols = asciiSymbols
 	c, err := th.compile()
 	assert.NoError(t, err)
 	assert.Equal(t, "| ", c.geometry(10, 5).lead(true).String())
@@ -1089,7 +1123,7 @@ func TestThemeGeometryUsesInlineAndGuide(t *testing.T) {
 }
 
 func TestBuiltinPromptSlots(t *testing.T) {
-	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = ASCIISymbols() })
+	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = asciiSymbols })
 	assert.NoError(t, err)
 	render := func(s *compiledSlot, data any) string {
 		t.Helper()
@@ -1112,7 +1146,7 @@ func TestBuiltinPromptSlots(t *testing.T) {
 }
 
 func TestBuiltinHintAccentsKeys(t *testing.T) {
-	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = ASCIISymbols() })
+	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = asciiSymbols })
 	assert.NoError(t, err)
 	funcs := c.funcs(profileTrueColor, roleStyles{
 		foreground: text("\x1b[38;5;1m"),
@@ -1129,7 +1163,7 @@ func TestBuiltinHintAccentsKeys(t *testing.T) {
 }
 
 func TestBuiltinHintSidesDifferOnAssumedBackground(t *testing.T) {
-	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = ASCIISymbols() })
+	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = asciiSymbols })
 	assert.NoError(t, err)
 	look := c.bind(profileTrueColor, background{})
 	b, err := c.templates.Dropdown.Hint.bind(look.funcs)
@@ -1141,7 +1175,7 @@ func TestBuiltinHintSidesDifferOnAssumedBackground(t *testing.T) {
 }
 
 func TestBuiltinMultichoiceSlots(t *testing.T) {
-	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = ASCIISymbols() })
+	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = asciiSymbols })
 	assert.NoError(t, err)
 	render := func(s *compiledSlot, data any) string {
 		t.Helper()
@@ -1280,7 +1314,7 @@ func TestThemeRolesHoldWordsToTextContrast(t *testing.T) {
 
 func TestBindingStylesGuideAndValue(t *testing.T) {
 	th := NewTheme()
-	th.Symbols = ASCIISymbols()
+	th.Symbols = asciiSymbols
 	c, err := th.compile()
 	assert.NoError(t, err)
 	b := c.bind(profileTrueColor, background{rgb: sRGB{0x12, 0x12, 0x12}, measured: true})
@@ -1292,7 +1326,7 @@ func TestBindingStylesGuideAndValue(t *testing.T) {
 }
 
 func TestBuiltinSpinnerSlots(t *testing.T) {
-	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = ASCIISymbols() })
+	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = asciiSymbols })
 	assert.NoError(t, err)
 	render := func(s *compiledSlot, data spinnerView) string {
 		t.Helper()
@@ -1319,7 +1353,7 @@ func TestSpinnerStyleValidation(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"▘", "▀", "▝", "▐", "▗", "▄", "▖", "▌"}, c.source.Symbols.Spinner)
 	assert.Equal(t, 100*time.Millisecond, c.source.Spinner.Interval)
-	c, err = Theme{Symbols: ASCIISymbols()}.compile()
+	c, err = Theme{Symbols: asciiSymbols}.compile()
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"|", "/", "-", `\`}, c.source.Symbols.Spinner)
 
@@ -1404,7 +1438,7 @@ func TestBuiltinProgressSlots(t *testing.T) {
 	// a prompt hint edit does not reach progress, and ASCII separates with a bar
 	c, err = compileTemplates(t, func(th *Theme) {
 		th.Templates.Prompt.Hint = Hidden
-		th.Symbols = ASCIISymbols()
+		th.Symbols = asciiSymbols
 		th.Progress.Compact = true
 	})
 	assert.NoError(t, err)
@@ -1511,7 +1545,7 @@ func TestBarSymbolsValidation(t *testing.T) {
 	for name, want := range map[string]string{
 		"BarFill": "=", "BarHead": ">", "BarEmpty": "-", "Unknown": "?", "Separator": "|",
 	} {
-		got, err := ASCIISymbols().named(name)
+		got, err := asciiSymbols.named(name)
 		assert.NoError(t, err)
 		assert.Equal(t, want, got)
 	}

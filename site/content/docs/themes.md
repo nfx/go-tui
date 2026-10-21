@@ -12,7 +12,6 @@ API:
 - `NewTheme() Theme` returns the built-in theme to edit.
 - `DefaultTheme() Theme` returns a copy of the installed theme.
 - `SetDefaultTheme(theme Theme) error` validates and installs a theme.
-- `ASCIISymbols() Symbols` returns symbols for fonts without Unicode glyphs.
 
 ```go
 theme := tui.NewTheme()
@@ -84,13 +83,45 @@ These variables are read once, when the program starts.
 `theme.Symbols` holds every glyph: the prompt, focus and guide marks,
 checkboxes, outcome marks, the ellipsis, the password mask, the arrow keys of hints (`Up`, `Down`), the progress
 bar cells (`BarFill`, `BarHead`, `BarEmpty`), the mark of an unknown value (`Unknown`), the separator of progress
-hints (`Separator`) and the spinner frames (`Spinner`). Each must be one column wide. Use `tui.ASCIISymbols()` for fonts
-without the Unicode glyphs:
+hints (`Separator`) and the spinner frames (`Spinner`). Each must be one column wide.
 
-```go
-theme := tui.NewTheme()
-theme.Symbols = tui.ASCIISymbols()
+Where the environment suggests the terminal font lacks the Unicode glyphs, every symbol left at its preset becomes its
+ASCII counterpart, such as `?` for the prompt, `|` for the guide and `|/-\` for the spinner, and symbols the theme sets
+itself are kept. These terminals count as lacking them:
+
+- the Linux virtual console (`TERM=linux`);
+- a locale whose character set is not UTF-8, from the first of `LC_ALL`, `LC_CTYPE` and `LANG` that is set, such as
+  `en_US.ISO-8859-1`; `C`, `POSIX` and a locale without a character set do not count;
+- on Windows, the legacy console host: every terminal except Windows Terminal (`WT_SESSION`), VS Code, JetBrains IDEs, Cmder, Alacritty, rxvt-unicode and a `TERM` of `xterm-256color`, unless `CI` is set.
+
+## Previewing other terminals
+
+Color depth and symbols come from the environment, so a program can be previewed as it looks elsewhere without
+leaving your terminal:
+
+```sh
+TERM=linux COLORTERM= go run ./examples/theme
 ```
+
+| Looks like | Variables |
+| --- | --- |
+| iTerm2, Ghostty, kitty, WezTerm, Windows Terminal: 24-bit color | `COLORTERM=truecolor` |
+| macOS Terminal: 256 colors | `TERM=xterm-256color COLORTERM=` |
+| A basic xterm: 16 colors | `TERM=xterm COLORTERM=` |
+| The Linux virtual console: 16 colors, ASCII symbols | `TERM=linux COLORTERM=` |
+| The legacy Windows console: 16 colors, ASCII symbols | `TERM=xterm COLORTERM= LC_ALL=en_US.CP437` |
+| A CI log: Unicode symbols, no color | `CI=true` |
+| A CI log that opts into color | `CI=true FORCE_COLOR=3` |
+| A user who turned color off: bold and other attributes only | `NO_COLOR=1` |
+
+`FORCE_COLOR` picks the depth directly and wins over the others: `1` for 16 colors, `2` for 256, `3` for 24-bit
+and `0` for none. It also colors output to pipes and files. Clear `COLORTERM` when you aim for fewer colors, since
+your own terminal likely sets it. With 16 colors, your terminal draws them from its own palette, not the
+palette of the terminal you preview.
+
+`COLORFGBG=0;15` previews a light background for spinners, progress bars and tables, and `COLORFGBG=15;0` a dark
+one. A prompt asks the terminal for its background, so your own terminal decides how a prompt looks. Set
+`theme.Light = true` to preview prompts on a light background.
 
 ## Templates
 
