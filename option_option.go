@@ -4,10 +4,8 @@
 package tui
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"io"
 	"reflect"
 )
 
@@ -31,33 +29,6 @@ func (o opts) Apply(target any) error {
 		}
 	}
 	return nil
-}
-
-// WithOptions bundles options for reuse across widgets. Each member is applied
-// when the widget supports it and skipped otherwise. The bundle fails with
-// [ErrWrongWidget] only when the widget supports none of its members. Any
-// other error from a member, such as an invalid value, is returned as is.
-func WithOptions(o ...opt) opt {
-	return func(target any) error {
-		if len(o) == 0 {
-			return nil
-		}
-		applied := false
-		for _, o := range o {
-			err := o(target)
-			if errors.Is(err, ErrWrongWidget) {
-				continue
-			}
-			if err != nil {
-				return err
-			}
-			applied = true
-		}
-		if !applied {
-			return fmt.Errorf("%w: no option in the bundle supports %T", ErrWrongWidget, target)
-		}
-		return nil
-	}
 }
 
 // opT turns a setter for one target type into an option. T is either a widget
@@ -92,74 +63,4 @@ func applyToAny(o opt, targets ...any) error {
 		return wrong
 	}
 	return nil
-}
-
-type withIO interface {
-	setWriter(w io.Writer)
-	setReader(r io.Reader)
-}
-
-// WithInput overrides the input source of an interactive widget.
-func WithInput(r io.Reader) opt {
-	return opT(func(x withIO) error {
-		x.setReader(r)
-		return nil
-	})
-}
-
-// WithOutput overrides the output destination of an interactive widget.
-func WithOutput(w io.Writer) opt {
-	return opT(func(x withIO) error {
-		x.setWriter(w)
-		return nil
-	})
-}
-
-// withDefault is implemented by widgets that accept a default answer or hint.
-type withDefault interface {
-	setDefault(d any)
-}
-
-// withPrompt is implemented by widgets that ask a question and print the answer.
-type withPrompt interface {
-	setHide()
-	withDefault
-}
-
-type config struct {
-	ctx context.Context
-	in  io.Reader
-	out io.Writer
-}
-
-// implement [withIO] interface.
-func (c *config) setReader(r io.Reader) {
-	c.in = r
-}
-
-// implement [withIO] interface.
-func (c *config) setWriter(w io.Writer) {
-	c.out = w
-}
-
-// Private capabilities keep existing option constructors shared by choice widgets.
-type withChoiceContent interface {
-	setContentTemplate(main string, details ...string)
-}
-
-// defaultValue is a [WithDefault] answer. Presence is tracked apart from the
-// content, as empty strings, zeros, false and nil are valid defaults.
-type defaultValue struct {
-	set bool
-	raw any
-}
-
-// errNoDefault explains that a prompt without terminal has no automatic answer.
-func errNoDefault(label string) error {
-	return fmt.Errorf("%w: %q needs WithDefault when output is not a terminal", ErrNoTTY, label)
-}
-
-// errBadDefault wraps the reason a default cannot answer a prompt.
-func errBadDefault(format string, a ...any) error {
-	return fmt.Errorf("%w: default "+format, append([]any{ErrInvalidOption}, a...)...)
 }
