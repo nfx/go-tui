@@ -1,13 +1,11 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package spinner
 
 import (
 	"bytes"
 	"errors"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"log/slog"
 	"strings"
@@ -15,6 +13,9 @@ import (
 	"testing"
 	"text/template"
 	"time"
+
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -220,7 +221,7 @@ func TestThemedSpinnerLogsWithoutTerminal(t *testing.T) {
 	})))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	var out bytes.Buffer
-	s, err := NewSpinners(t.Context(), WithOutput(&out))
+	s, err := NewSpinners(t.Context(), option.WithOutput(&out))
 	assert.NoError(t, err)
 	sp, err := s.Add(t.Context(), WithPrefixf("job"))
 	assert.NoError(t, err)

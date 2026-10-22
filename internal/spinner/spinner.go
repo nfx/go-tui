@@ -1,15 +1,16 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package spinner
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"text/template"
+
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/render"
-	"text/template"
 )
 
 type spinnerState struct {

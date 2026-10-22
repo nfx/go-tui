@@ -1,16 +1,13 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package spinner
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"log/slog"
 	"os"
@@ -19,7 +16,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
+
 	"fmt"
+
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
 )
@@ -46,9 +49,9 @@ func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*term.
 				case ticks <- time.Now():
 				}
 			}()
-		}, WithOptions(append(option.Opts{
-			WithInput(cio),
-			WithOutput(cio),
+		}, option.WithOptions(append(option.Opts{
+			option.WithInput(cio),
+			option.WithOutput(cio),
 			option.OpT(func(s *Spinners) error {
 				s.ticks = ticks
 				s.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
@@ -171,7 +174,7 @@ func TestSpinnersOpt(t *testing.T) {
 
 	// Test with non-Spinners type
 	err = opt("not a spinner")
-	assert.ErrorIs(t, err, ErrWrongWidget)
+	assert.ErrorIs(t, err, errs.ErrWrongWidget)
 }
 
 func TestNewSpinnersError(t *testing.T) {
@@ -328,7 +331,7 @@ func TestSpinnersLogFallback(t *testing.T) {
 	assert.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, out.Close()) })
 
-	s, err := NewSpinners(t.Context(), WithOutput(out))
+	s, err := NewSpinners(t.Context(), option.WithOutput(out))
 	assert.NoError(t, err)
 	defer s.Close()
 
@@ -496,7 +499,7 @@ func TestChanIO_Forward(t *testing.T) {
 	}
 
 	s, err := NewSpinners(cio.Ctx,
-		WithOutput(cio),
+		option.WithOutput(cio),
 		option.OpT(func(s *Spinners) error { //nolint:unparam // ..
 			s.ticks = ticks
 			return nil

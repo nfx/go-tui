@@ -1,13 +1,14 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package spinner
 
 import (
 	"bytes"
+	"testing"
+
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/term"
-	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
 )

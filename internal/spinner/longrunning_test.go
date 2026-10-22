@@ -1,13 +1,14 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package spinner
 
 import (
 	"context"
 	"errors"
-	"github.com/nfx/go-tui/internal/option"
 	"testing"
+
+	"github.com/nfx/go-tui/internal/option"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
