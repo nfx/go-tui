@@ -6,11 +6,12 @@ package tui
 import (
 	"context"
 	"fmt"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
 	"iter"
 	"reflect"
 	"sort"
+
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 )
 
 type mapKV[K comparable, V any] struct {
@@ -150,9 +151,4 @@ func pickIndex(ctx context.Context, label string, items []any, target choiceTarg
 }
 
 // WithHide skips printing the answer of a dropdown or an input.
-func WithHide() option.Opt {
-	return option.OpT(func(x option.Prompt) error {
-		x.SetHide()
-		return nil
-	})
-}
+func WithHide() option.Opt { return option.WithHide() }

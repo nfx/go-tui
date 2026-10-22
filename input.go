@@ -6,9 +6,10 @@ package tui
 import (
 	"context"
 	"fmt"
-	"github.com/nfx/go-tui/internal/option"
 	"regexp"
 	"strings"
+
+	"github.com/nfx/go-tui/internal/option"
 )
 
 // WithDefault supplies the answer of a prompt. Without a terminal the prompt
@@ -28,12 +29,7 @@ import (
 // only when exactly one item matches d as a prefix. Multichoice checks a unique
 // word-prefix match once and still requires Enter. Lazy choices resolve the
 // default after successful exhaustion. [Confirm] takes a bool or "Yes"/"No".
-func WithDefault(d any) option.Opt {
-	return option.OpT(func(x option.Default) error {
-		x.SetDefault(d)
-		return nil
-	})
-}
+func WithDefault(d any) option.Opt { return option.WithDefault(d) }
 
 // WithNonEmpty rejects confirmed input containing only whitespace or no characters.
 func WithNonEmpty() option.Opt {
