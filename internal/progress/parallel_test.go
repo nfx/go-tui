@@ -1,15 +1,12 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package progress
 
 import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
 	"sync"
@@ -18,6 +15,11 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
+
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
 )
@@ -25,7 +27,7 @@ import (
 func TestWithWorkersRejectsNonPositive(t *testing.T) {
 	p := newProgressbar(t.Context())
 	err := WithWorkers(0)(p)
-	assert.ErrorIs(t, err, ErrInvalidState)
+	assert.ErrorIs(t, err, errs.ErrInvalidState)
 }
 
 func TestWithWorkersSetsConfiguredValue(t *testing.T) {
@@ -71,7 +73,7 @@ func TestNewParallelProgressBarRunsConcurrently(t *testing.T) {
 				return nil
 			}, WithWorkers(tt.workers), option.OpT(func(pb *Progressbar) error {
 				pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-					return nil, ErrNoTTY
+					return nil, errs.ErrNoTTY
 				}
 				return nil
 			}))
@@ -101,7 +103,7 @@ func TestNewParallelProgressBarStopsOnParentCancel(t *testing.T) {
 		return nil
 	}, WithWorkers(2), option.OpT(func(p *Progressbar) error {
 		p.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-			return nil, ErrNoTTY
+			return nil, errs.ErrNoTTY
 		}
 		return nil
 	}))
@@ -144,7 +146,7 @@ func TestNewParallelProgressBarUsesDefaultNumCPU(t *testing.T) {
 		return nil
 	}, option.OpT(func(pb *Progressbar) error {
 		pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-			return nil, ErrNoTTY
+			return nil, errs.ErrNoTTY
 		}
 		return nil
 	}))
@@ -168,7 +170,7 @@ func TestNewParallelProgressBarFailFastOnFirstError(t *testing.T) {
 		return nil
 	}, WithWorkers(4), option.OpT(func(pb *Progressbar) error {
 		pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-			return nil, ErrNoTTY
+			return nil, errs.ErrNoTTY
 		}
 		return nil
 	}))
@@ -184,12 +186,12 @@ func TestNewParallelProgressBarRecoversPanicsAsBug(t *testing.T) {
 		return nil
 	}, WithWorkers(2), option.OpT(func(pb *Progressbar) error {
 		pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-			return nil, ErrNoTTY
+			return nil, errs.ErrNoTTY
 		}
 		return nil
 	}))
 
-	assert.ErrorIs(t, err, ErrBug)
+	assert.ErrorIs(t, err, errs.ErrBug)
 	assert.Contains(t, err.Error(), "panic: boom")
 	var pe *panicError
 	assert.True(t, errors.As(err, &pe))

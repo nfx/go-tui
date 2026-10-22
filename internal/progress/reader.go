@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package progress
 
 import (
 	"errors"
@@ -20,12 +20,12 @@ type sized interface {
 
 var errNoSize = errors.New("unable to determine size of reader")
 
-type wrapReader struct {
+type WrapReader struct {
 	r io.Reader
 	p *Progressbar
 }
 
-func (w *wrapReader) Size() (int64, error) {
+func (w *WrapReader) Size() (int64, error) {
 	f, ok := w.r.(fileStat)
 	if ok {
 		fi, err := f.Stat()
@@ -41,7 +41,7 @@ func (w *wrapReader) Size() (int64, error) {
 	return 0, errNoSize
 }
 
-func (w *wrapReader) Read(p []byte) (n int, err error) {
+func (w *WrapReader) Read(p []byte) (n int, err error) {
 	n, err = w.r.Read(p)
 	if n > 0 {
 		w.p.Add(int64(n))
@@ -55,7 +55,7 @@ func (w *wrapReader) Read(p []byte) (n int, err error) {
 	return n, err
 }
 
-func (w *wrapReader) Close() error {
+func (w *WrapReader) Close() error {
 	var errs []error
 	if err := w.p.Close(); err != nil {
 		errs = append(errs, fmt.Errorf("progress: %w", err))

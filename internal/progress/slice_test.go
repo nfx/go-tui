@@ -1,20 +1,22 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package progress
 
 import (
 	"context"
 	"errors"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"text/template"
 	"time"
+
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -34,8 +36,8 @@ func TestNewSliceProgressBar(t *testing.T) {
 
 	items := []int{1, 2, 3}
 	seq := NewSliceProgressBar(t.Context(), "items", items,
-		WithInput(cio),
-		WithOutput(cio),
+		option.WithInput(cio),
+		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			seen = pb
 			pb.ticks = ticks
@@ -80,7 +82,7 @@ drainedSlice:
 func TestNewSliceProgressBarStopsOnYieldFalse(t *testing.T) {
 	seq := NewSliceProgressBar(t.Context(), "label", []int{1, 2, 3}, option.OpT(func(p *Progressbar) error {
 		p.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-			return nil, ErrNoTTY
+			return nil, errs.ErrNoTTY
 		}
 		return nil
 	}))

@@ -1,17 +1,18 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package progress
 
 import (
 	"bytes"
 	"context"
-	"github.com/nfx/go-tui/internal/ansi"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"testing"
 	"time"
+
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
@@ -28,8 +29,8 @@ func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
 	p, err := newStartedProgressBar(t.Context(), "downloading files", 20,
-		WithInput(cio),
-		WithOutput(cio),
+		option.WithInput(cio),
+		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			pb.now = func() time.Time { return now }
 			pb.redrawAt = start
@@ -83,8 +84,8 @@ func TestProgressbarTickOnResizeExitsWhenDone(t *testing.T) {
 	}
 	resizeCh := make(chan struct{})
 	p, err := newStartedProgressBar(t.Context(), "downloading files", 10,
-		WithInput(cio),
-		WithOutput(cio),
+		option.WithInput(cio),
+		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			pb.ticks = make(chan time.Time)
 			pb.ticker = time.NewTicker(time.Hour)

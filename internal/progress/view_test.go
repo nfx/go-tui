@@ -1,23 +1,25 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package progress
 
 import (
 	"errors"
 	"fmt"
-	"github.com/nfx/go-tui/internal/ansi"
-	"github.com/nfx/go-tui/internal/color"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/render"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"text/template"
 	"time"
+
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -439,7 +441,7 @@ func TestThemedProgressWithoutTerminal(t *testing.T) {
 	th.Templates.Progress.Frame = `{{ boom }}{{ .Bar }}`
 	terst.UseTheme(t, th)
 	noTTY := option.OpT(func(pb *Progressbar) error {
-		pb.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) { return nil, ErrNoTTY }
+		pb.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) { return nil, errs.ErrNoTTY }
 		return nil
 	})
 	p, err := NewMaxProgressBar(t.Context(), "build", 3, noTTY)

@@ -1,19 +1,13 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package progress
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/nfx/go-tui/internal/ansi"
-	"github.com/nfx/go-tui/internal/color"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/render"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"log/slog"
 	"os"
@@ -21,6 +15,14 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -73,8 +75,8 @@ func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
 	now := start
 
 	p, err := newStartedProgressBar(t.Context(), "download", 20,
-		WithInput(cio),
-		WithOutput(cio),
+		option.WithInput(cio),
+		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			pb.now = func() time.Time { return now }
 			pb.redrawAt = start
@@ -142,8 +144,8 @@ func TestProgressbarTickRenders(t *testing.T) {
 	now := start
 
 	p, err := newStartedProgressBar(t.Context(), "download", 20,
-		WithInput(cio),
-		WithOutput(cio),
+		option.WithInput(cio),
+		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			pb.now = func() time.Time { return now }
 			pb.redrawAt = start
@@ -222,8 +224,8 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 	events := make(chan progressEvent, 16)
 
 	p, err := newStartedProgressBar(t.Context(), "download", 20,
-		WithInput(cio),
-		WithOutput(cio),
+		option.WithInput(cio),
+		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			pb.eventSink = func(ev progressEvent) {
 				events <- ev
@@ -290,8 +292,8 @@ func TestProgressbarDoneEmitsClosed(t *testing.T) {
 	events := make(chan progressEvent, 16)
 
 	p, err := newStartedProgressBar(t.Context(), "sync", 2,
-		WithInput(cio),
-		WithOutput(cio),
+		option.WithInput(cio),
+		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			pb.eventSink = func(ev progressEvent) {
 				events <- ev
@@ -401,8 +403,8 @@ func TestNewFileProgressReader(t *testing.T) {
 	applied := false
 
 	r, err := NewFileProgressReader(t.Context(), &statReader{data: []byte("hello world")}, "file",
-		WithInput(cio),
-		WithOutput(cio),
+		option.WithInput(cio),
+		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			applied = true
 			pb.ticks = ticks
@@ -482,7 +484,7 @@ func TestFileProgressReaderLogsWithoutTTY(t *testing.T) {
 			t.Cleanup(func() { slog.SetDefault(previous) })
 			r, err := NewFileProgressReader(t.Context(), &progressSizedReader{
 				Reader: strings.NewReader(tc.data), size: tc.size,
-			}, "Download", WithOutput(&out))
+			}, "Download", option.WithOutput(&out))
 			assert.NoError(t, err)
 			defer func() { assert.NoError(t, r.Close()) }()
 			var data bytes.Buffer
@@ -522,7 +524,7 @@ func TestFileProgressReaderLogsWithoutTTY(t *testing.T) {
 
 func TestProgressBarLogsWithoutTTY(t *testing.T) {
 	noTTY := option.OpT(func(p *Progressbar) error {
-		p.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) { return nil, ErrNoTTY }
+		p.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) { return nil, errs.ErrNoTTY }
 		return nil
 	})
 	for _, tc := range []struct {
@@ -954,7 +956,7 @@ func newFakeTerminal(t *testing.T, width int) fakeTerminal {
 
 // options make a bar write to the terminal.
 func (ft fakeTerminal) options() []option.Opt {
-	return []option.Opt{WithOutput(ft.frames), ft.terminal}
+	return []option.Opt{option.WithOutput(ft.frames), ft.terminal}
 }
 
 // closeOnCleanup closes p after the test, receiving the final clear of a bar
@@ -1141,7 +1143,7 @@ func (r *scriptedFile) Size() int64 { return r.size }
 
 // themedFile is a file reader over src rendering through th on a terminal
 // 60 columns wide.
-func themedFile(t *testing.T, th theme.Theme, src io.Reader) (*wrapReader, fakeTerminal) {
+func themedFile(t *testing.T, th theme.Theme, src io.Reader) (*WrapReader, fakeTerminal) {
 	t.Helper()
 	terst.UseTheme(t, th)
 	ft := newFakeTerminal(t, 60)
@@ -1152,9 +1154,9 @@ func themedFile(t *testing.T, th theme.Theme, src io.Reader) (*wrapReader, fakeT
 }
 
 func TestWithOptionsPropagatesInvalidValues(t *testing.T) {
-	err := WithOptions(WithWorkers(0))(newProgressbar(t.Context()))
-	assert.ErrorIs(t, err, ErrInvalidState)
-	assert.True(t, !errors.Is(err, ErrWrongWidget))
+	err := option.WithOptions(WithWorkers(0))(newProgressbar(t.Context()))
+	assert.ErrorIs(t, err, errs.ErrInvalidState)
+	assert.True(t, !errors.Is(err, errs.ErrWrongWidget))
 }
 
 func TestNewProgressbarUsesDefaultIO(t *testing.T) {

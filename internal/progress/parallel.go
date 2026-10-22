@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package progress
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+
+	"github.com/nfx/go-tui/internal/errs"
 )
 
 var runtimeNumCPU = runtime.NumCPU
@@ -93,7 +95,7 @@ func (r *parallelProgressRunner[T]) runYield(v T) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = &panicError{
-				err:   fmt.Errorf("%w: panic: %v", ErrBug, recovered),
+				err:   fmt.Errorf("%w: panic: %v", errs.ErrBug, recovered),
 				stack: r.stackTrace(panicSkipFrames),
 			}
 		}

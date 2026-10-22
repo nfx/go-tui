@@ -1,21 +1,22 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package progress
 
 import (
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nfx/go-tui/internal/ansi"
-	"github.com/nfx/go-tui/internal/render"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/theme"
 	"math"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
 )
 
 // progressView is the data of every progress slot but Hint, from one

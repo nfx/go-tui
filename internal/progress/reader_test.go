@@ -1,15 +1,13 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package progress
 
 import (
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"log/slog"
 	"strings"
@@ -18,12 +16,16 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
+
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestWrapReaderSizeFallback(t *testing.T) {
-	r := &wrapReader{r: &sizedReader{size: 42}}
+	r := &WrapReader{r: &sizedReader{size: 42}}
 
 	size, err := r.Size()
 	assert.NoError(t, err)
@@ -37,7 +39,7 @@ func TestWrapReaderSizeUnknown(t *testing.T) {
 
 func TestWrapReaderCloseCallsUnderlying(t *testing.T) {
 	cr := &closeReader{}
-	w := &wrapReader{r: cr, p: &Progressbar{}}
+	w := &WrapReader{r: cr, p: &Progressbar{}}
 	err := w.Close()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -50,7 +52,7 @@ func TestWrapReaderCloseCallsUnderlying(t *testing.T) {
 func TestWrapReaderCloseProgressError(t *testing.T) {
 	cr := &closeReader{}
 	p := &Progressbar{io: &term.IO{}, cancel: func(error) {}, err: io.EOF}
-	w := &wrapReader{r: cr, p: p}
+	w := &WrapReader{r: cr, p: p}
 	err := w.Close()
 	if !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF, got %v", err)
@@ -256,7 +258,7 @@ func TestThemedFileProgressLogsWithoutTerminal(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	r, err := NewFileProgressReader(t.Context(), &progressSizedReader{
 		Reader: strings.NewReader(strings.Repeat("x", 100)), size: 100,
-	}, "Download", WithOutput(&out))
+	}, "Download", option.WithOutput(&out))
 	assert.NoError(t, err)
 	data, err := io.ReadAll(iotest.OneByteReader(r))
 	assert.NoError(t, err)

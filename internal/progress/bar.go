@@ -1,21 +1,23 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package progress
 
 import (
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nfx/go-tui/internal/ansi"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/render"
-	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
 )
 
 // newProgressbar initializes progress updates without taking ownership of terminal mode.
@@ -59,7 +61,7 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, o ...o
 	p.maxNum = size
 	p.label = ansi.Text(label)
 	p.io, err = p.makeTermIO(p.In, p.Out)
-	if errors.Is(err, ErrNoTTY) {
+	if errors.Is(err, errs.ErrNoTTY) {
 		return p, nil // logs milestones instead, see [Progressbar.logProgress]
 	} else if err != nil {
 		p.cancel(err)
