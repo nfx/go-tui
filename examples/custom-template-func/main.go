@@ -19,7 +19,7 @@ func main() {
 	tui.WithFn("shout", func(s string) string { return strings.ToUpper(s) + "!" })
 
 	pets := []Pet{{"Fluffy", "Cat"}, {"Buddy", "Dog"}}
-	err := tui.Table(os.Stdout, `{{ shout .Name | red }}	{{ .Type }}`, pets)
+	err := tui.Table(os.Stdout, `{{ shout .Name | error }}	{{ .Type }}`, pets)
 	if err != nil {
 		panic(err)
 	}

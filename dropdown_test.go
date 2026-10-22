@@ -2864,3 +2864,9 @@ func TestThemedDropdownFullHeightFrameKeepsLabelOnScreen(t *testing.T) {
 	assert.Equal(t, "c", got)
 	frameStaysOnScreen(t, out.String())
 }
+
+func TestDropdownRemovedColorNamesNameTheOption(t *testing.T) {
+	_, err := Dropdown(t.Context(), "x", []string{"a"}, WithTemplate(`red .`))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), `WithTemplate content:1: function "red" not defined`)
+}

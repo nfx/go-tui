@@ -22,36 +22,6 @@ import (
 const (
 	reset = "\x1b[0m"
 
-	// Colors.
-	black  = "\x1b[30m"
-	red    = "\x1b[31m"
-	green  = "\x1b[32m"
-	yellow = "\x1b[33m"
-	blue   = "\x1b[34m"
-	purple = "\x1b[35m"
-	cyan   = "\x1b[36m"
-	white  = "\x1b[37m"
-
-	// Bright colors.
-	brightBlack  = "\x1b[90m"
-	brightRed    = "\x1b[91m"
-	brightGreen  = "\x1b[92m"
-	brightYellow = "\x1b[93m"
-	brightBlue   = "\x1b[94m"
-	brightPurple = "\x1b[95m"
-	brightCyan   = "\x1b[96m"
-	brightWhite  = "\x1b[97m"
-
-	// Background colors.
-	bgBlack  = "\x1b[40m"
-	bgRed    = "\x1b[41m"
-	bgGreen  = "\x1b[42m"
-	bgYellow = "\x1b[43m"
-	bgBlue   = "\x1b[44m"
-	bgPurple = "\x1b[45m"
-	bgCyan   = "\x1b[46m"
-	bgWhite  = "\x1b[47m"
-
 	// Text combineting.
 	bold          = "\x1b[1m"
 	dim           = "\x1b[2m"
@@ -1958,7 +1928,7 @@ type sgrCode struct {
 	channels sgrChannel
 }
 
-// helper adapts s to a template helper with the legacy argument conversions.
+// helper adapts s to a template helper with the argument conversions.
 func (s span) helper() func(...any) string {
 	return func(args ...any) string { return s.wrap(s.formatArgs(args)).String() }
 }
@@ -2037,38 +2007,14 @@ func (d destination) roleSpan(role text) span {
 	return s
 }
 
-// legacy returns the helpers of per-call templates: named styles and ago.
-func (d destination) legacy() template.FuncMap {
+// named returns the attribute helpers and ago.
+func (d destination) named() template.FuncMap {
 	var namedStyles = map[string]string{
-		"black":        black,
-		"red":          red,
-		"green":        green,
-		"yellow":       yellow,
-		"blue":         blue,
-		"purple":       purple,
-		"cyan":         cyan,
-		"white":        white,
-		"brightBlack":  brightBlack,
-		"brightRed":    brightRed,
-		"brightGreen":  brightGreen,
-		"brightYellow": brightYellow,
-		"brightBlue":   brightBlue,
-		"brightPurple": brightPurple,
-		"brightCyan":   brightCyan,
-		"brightWhite":  brightWhite,
-		"bgBlack":      bgBlack,
-		"bgRed":        bgRed,
-		"bgGreen":      bgGreen,
-		"bgYellow":     bgYellow,
-		"bgBlue":       bgBlue,
-		"bgPurple":     bgPurple,
-		"bgCyan":       bgCyan,
-		"bgWhite":      bgWhite,
-		"bold":         bold,
-		"dim":          dim,
-		"italic":       italic,
-		"underline":    underline,
-		"strike":       strikethrough,
+		"bold":      bold,
+		"dim":       dim,
+		"italic":    italic,
+		"underline": underline,
+		"strike":    strikethrough,
 	}
 	funcs := make(template.FuncMap, len(namedStyles)+1)
 	for name, seq := range namedStyles {
@@ -2080,7 +2026,7 @@ func (d destination) legacy() template.FuncMap {
 
 // funcs returns all built-in helpers bound to the destination.
 func (d destination) funcs() template.FuncMap {
-	funcs := d.legacy()
+	funcs := d.named()
 	for name, seq := range map[string]text{
 		"text":    d.roles.foreground,
 		"muted":   d.roles.muted,

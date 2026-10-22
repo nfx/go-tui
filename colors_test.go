@@ -797,7 +797,7 @@ func TestWithFnReachesWidgetTemplates(t *testing.T) {
 func TestWithFnPanicsAndKeepsInstalled(t *testing.T) {
 	keepTheme(t)
 	for name, fn := range map[string]any{
-		"red":                    strings.ToUpper,
+		"bold":                   strings.ToUpper,
 		"fg":                     strings.ToUpper,
 		"accent":                 strings.ToUpper,
 		"symbol":                 strings.ToUpper,
@@ -911,19 +911,18 @@ func truecolor() template.FuncMap {
 	}.funcs()
 }
 
-func TestStandaloneLegacyHelpersAreByteIdentical(t *testing.T) {
+func TestStandaloneAttributeHelpersAreByteIdentical(t *testing.T) {
 	funcs := truecolor()
 	for src, want := range map[string]string{
-		`{{ red "x" }}`:                 "\x1b[31mx\x1b[0m",
-		`{{ bold "x" 1 }}`:              "\x1b[1mx1\x1b[0m",
-		`{{ bgBlue "x" }}`:              "\x1b[44mx\x1b[0m",
-		`{{ red (bold "x") }}`:          "\x1b[31m\x1b[1mx\x1b[0m\x1b[0m",
-		`{{ red "" }}`:                  "\x1b[31m\x1b[0m",
-		`{{ strike .S }}`:               "\x1b[9ma, b\x1b[0m",
-		`{{ red (printf "%d" 5) }}`:     "\x1b[31m5\x1b[0m",
-		`{{ dim "a\x1b[2Kb" }}`:         "\x1b[2ma\x1b[2Kb\x1b[0m", // cursor control is not a style
-		`{{ red "\x1b[38;5;0mx" }}`:     "\x1b[31m\x1b[38;5;0mx\x1b[0m",
-		`{{ red "\x1b[48;2;0;0;0mx" }}`: "\x1b[31m\x1b[48;2;0;0;0mx\x1b[0m",
+		`{{ underline "x" }}`:                 "\x1b[4mx\x1b[0m",
+		`{{ bold "x" 1 }}`:                    "\x1b[1mx1\x1b[0m",
+		`{{ underline (bold "x") }}`:          "\x1b[4m\x1b[1mx\x1b[0m\x1b[0m",
+		`{{ underline "" }}`:                  "\x1b[4m\x1b[0m",
+		`{{ strike .S }}`:                     "\x1b[9ma, b\x1b[0m",
+		`{{ underline (printf "%d" 5) }}`:     "\x1b[4m5\x1b[0m",
+		`{{ dim "a\x1b[2Kb" }}`:               "\x1b[2ma\x1b[2Kb\x1b[0m", // cursor control is not a style
+		`{{ underline "\x1b[38;5;0mx" }}`:     "\x1b[4m\x1b[38;5;0mx\x1b[0m",
+		`{{ underline "\x1b[48;2;0;0;0mx" }}`: "\x1b[4m\x1b[48;2;0;0;0mx\x1b[0m",
 	} {
 		assert.Equal(t, want, execute(t, funcs, src, struct{ S []string }{[]string{"a", "b"}}))
 	}
@@ -933,19 +932,19 @@ func TestNestedHelpersRestoreOuterStyle(t *testing.T) {
 	funcs := truecolor()
 	const accent = "\x1b[38;2;0;173;216m"
 	for _, tc := range []struct{ name, src, want string }{
-		{"legacy in legacy", `{{ red (bold "x") " y" }}`, "\x1b[31m\x1b[1mx\x1b[0m\x1b[31m y\x1b[0m"},
+		{"attribute in attribute", `{{ underline (bold "x") " y" }}`, "\x1b[4m\x1b[1mx\x1b[0m\x1b[4m y\x1b[0m"},
 		{"fg in bg", `{{ bg "#000" (fg "#FFF" "a") "b" }}`,
 			"\x1b[48;2;0;0;0m\x1b[38;2;255;255;255ma\x1b[39mb\x1b[49m"},
-		{"legacy in fg", `{{ fg "#F00" (bgBlue "a") "b" }}`,
-			"\x1b[38;2;255;0;0m\x1b[44ma\x1b[0m\x1b[38;2;255;0;0mb\x1b[39m"},
+		{"attribute in fg", `{{ fg "#F00" (underline "a") "b" }}`,
+			"\x1b[38;2;255;0;0m\x1b[4ma\x1b[0m\x1b[38;2;255;0;0mb\x1b[39m"},
 		{"fg in fg", `{{ fg "#F00" "a" (fg "#0F0" "b") "c" }}`,
 			"\x1b[38;2;255;0;0ma\x1b[38;2;0;255;0mb\x1b[39m\x1b[38;2;255;0;0mc\x1b[39m"},
-		{"legacy in semantic", `{{ accent (bold "a") "b" }}`, accent + "\x1b[1ma\x1b[0m" + accent + "b\x1b[39m"},
-		{"semantic in legacy", `{{ bold (accent "a") "b" }}`, "\x1b[1m" + accent + "a\x1b[39mb\x1b[0m"},
+		{"attribute in semantic", `{{ accent (bold "a") "b" }}`, accent + "\x1b[1ma\x1b[0m" + accent + "b\x1b[39m"},
+		{"semantic in attribute", `{{ bold (accent "a") "b" }}`, "\x1b[1m" + accent + "a\x1b[39mb\x1b[0m"},
 		{"bold and dim share 22", `{{ dim "\x1b[1mx\x1b[22my" }}`, "\x1b[2m\x1b[1mx\x1b[22m\x1b[2my\x1b[0m"},
 		{"selective reset of another channel", `{{ bold "\x1b[39mx" }}`, "\x1b[1m\x1b[39mx\x1b[0m"},
-		{"three levels", `{{ red (bold (underline "a") "b") "c" }}`,
-			"\x1b[31m\x1b[1m\x1b[4ma\x1b[0m\x1b[31m\x1b[1mb\x1b[0m\x1b[31mc\x1b[0m"},
+		{"three levels", `{{ italic (bold (underline "a") "b") "c" }}`,
+			"\x1b[3m\x1b[1m\x1b[4ma\x1b[0m\x1b[3m\x1b[1mb\x1b[0m\x1b[3mc\x1b[0m"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, execute(t, funcs, tc.src, nil))
@@ -960,12 +959,10 @@ func TestHelpersFollowProfile(t *testing.T) {
 		funcs     template.FuncMap
 		src, want string
 	}{
-		{attrs, `{{ red "x" }}`, "x"},
 		{attrs, `{{ bold "x" }}`, "\x1b[1mx\x1b[0m"},
-		{attrs, `{{ red (bold "x") "y" }}`, "\x1b[1mx\x1b[0my"},
 		{attrs, `{{ fg "#F00" "x" }}`, "x"},
 		{attrs, `{{ accent "x" }}`, "x"},
-		{plain, `{{ bold (red "x") }}`, "x"},
+		{plain, `{{ bold (accent "x") }}`, "x"},
 		{plain, `{{ bg "#000" "x" }}`, "x"},
 	} {
 		assert.Equal(t, tc.want, execute(t, tc.funcs, tc.src, nil))
@@ -1012,13 +1009,13 @@ func TestSymbolHelper(t *testing.T) {
 }
 
 func TestClippingNestedHelpersKeepsStyleBalanced(t *testing.T) {
-	out := text(execute(t, truecolor(), `{{ red (bold "ab") "cd" }}`, nil)).truncateColumns(3)
+	out := text(execute(t, truecolor(), `{{ italic (bold "ab") "cd" }}`, nil)).truncateColumns(3)
 	assert.Equal(t, 3, out.width())
-	assert.Equal(t, "\x1b[31m\x1b[1mab\x1b[0m\x1b[31m…\x1b[0m", out.String())
+	assert.Equal(t, "\x1b[3m\x1b[1mab\x1b[0m\x1b[3m…\x1b[0m", out.String())
 }
 
 func TestConcurrentHelperExecutions(t *testing.T) {
-	tmpl, err := template.New("t").Funcs(truecolor()).Parse(`{{ red (bold .) " y" }}`)
+	tmpl, err := template.New("t").Funcs(truecolor()).Parse(`{{ italic (bold .) " y" }}`)
 	assert.NoError(t, err)
 	var wg sync.WaitGroup
 	for i := range 16 {
@@ -1028,7 +1025,7 @@ func TestConcurrentHelperExecutions(t *testing.T) {
 				t.Error(err)
 				return
 			}
-			want := fmt.Sprintf("\x1b[31m\x1b[1m%d\x1b[0m\x1b[31m y\x1b[0m", i)
+			want := fmt.Sprintf("\x1b[3m\x1b[1m%d\x1b[0m\x1b[3m y\x1b[0m", i)
 			if b.String() != want {
 				t.Errorf("got %q, want %q", b.String(), want)
 			}
@@ -1072,7 +1069,7 @@ func TestBoundSlotRendersOrFailsWhole(t *testing.T) {
 	c, err := compileTemplates(t, func(th *Theme) {
 		th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
 		th.Templates.Prompt.Label = `{{ bold .Label }}`
-		th.Templates.Prompt.Hint = `{{ red "partial" }}{{ fails .Label }}`
+		th.Templates.Prompt.Hint = `{{ bold "partial" }}{{ fails .Label }}`
 		th.Templates.Prompt.Feedback = "{{ .Label }}\n"
 		th.Templates.Prompt.Answer = "{{ .Label }}\x1b[2K"
 		th.Templates.Choice.Empty = Hidden
@@ -1551,6 +1548,9 @@ func TestBarSymbolsValidation(t *testing.T) {
 	}
 }
 
+// cyan is a foreground the table slot tests use as the text role.
+const cyan = "\x1b[36m"
+
 func TestBuiltinTableSlots(t *testing.T) {
 	c, err := compileTemplates(t, func(*Theme) {})
 	assert.NoError(t, err)
@@ -1681,4 +1681,13 @@ func TestSetDefaultThemePublishesAndKeepsPreviousOnError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Error")
 	assert.Equal(t, RGB("#00AADD"), DefaultTheme().Palette.Accent)
+}
+
+func TestRemovedColorNamesFailWithTemplatePath(t *testing.T) {
+	th := NewTheme()
+	th.Templates.Prompt.Label = `{{ red .Label }}`
+	err := SetDefaultTheme(th)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "theme.Templates.Prompt.Label")
+	assert.Contains(t, err.Error(), `function "red" not defined`)
 }

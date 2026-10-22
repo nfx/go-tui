@@ -74,7 +74,7 @@ func TestTableRender(t *testing.T) {
 	buf := &bytes.Buffer{}
 	err := TableIter(
 		buf,
-		"{{ bold .Name | green }}\t{{ .Age }}\t{{ .Type }}\t{{ .Owner.Name }}\t{{ .Owner.Age }}",
+		"{{ bold .Name | accent }}\t{{ .Age }}\t{{ .Type }}\t{{ .Owner.Name }}\t{{ .Owner.Age }}",
 		iterate(dummyPets),
 	)
 	assert.NoError(t, err)
@@ -1360,9 +1360,9 @@ func TestThemedTableSignedPercent(t *testing.T) {
 	assert.Contains(t, lines[2], string(roles.failure)+"-99%"+fgDefault)
 	assert.NotContains(t, lines[3], string(roles.success))
 	assert.NotContains(t, lines[3], string(roles.failure))
-	// the legacy codes are gone
-	assert.NotContains(t, buf.String(), green)
-	assert.NotContains(t, buf.String(), red)
+	// the fixed ANSI colors are gone
+	assert.NotContains(t, buf.String(), "\x1b[32m")
+	assert.NotContains(t, buf.String(), "\x1b[31m")
 
 	withEnv(t)
 	buf.Reset()
@@ -1439,15 +1439,15 @@ func TestThemedTableMultilineCarriesStyles(t *testing.T) {
 	}
 	themedTable(t, NewTheme(), "FORCE_COLOR=3")
 	buf := &bytes.Buffer{}
-	assert.NoError(t, Table(buf, "{{ green .Note }}\t{{ .Name }}", []row{{"one\ntwo\n\nfour", "x"}},
+	assert.NoError(t, Table(buf, "{{ underline .Note }}\t{{ .Name }}", []row{{"one\ntwo\n\nfour", "x"}},
 		WithMultilineCells()))
 	// every line closes its style before the next column; continuation
 	// lines reopen it, except the empty one
 	assert.Equal(t, bold+"NOTE"+reset+"  "+bold+"NAME"+reset+"  \n"+
-		green+"one"+reset+"   x     \n"+
-		green+"two"+reset+"         \n"+
+		underline+"one"+reset+"   x     \n"+
+		underline+"two"+reset+"         \n"+
 		"            \n"+
-		green+"four"+reset+"        \n", buf.String())
+		underline+"four"+reset+"        \n", buf.String())
 }
 
 func TestThemedTableStyle(t *testing.T) {
@@ -1501,7 +1501,7 @@ func TestThemedTableCellKeepsHyperlinksDropsControls(t *testing.T) {
 }
 
 func TestThemedTableRowTemplateHelpersBindToWriter(t *testing.T) {
-	tmpl := "{{ green .Name }}\t{{ success .Name }}\t{{ fg \"#FF0000\" .Name }}"
+	tmpl := "{{ underline .Name }}\t{{ success .Name }}\t{{ fg \"#FF0000\" .Name }}"
 	themedTable(t, NewTheme())
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Table(buf, tmpl, themedRows[:1]))
@@ -1511,7 +1511,7 @@ func TestThemedTableRowTemplateHelpersBindToWriter(t *testing.T) {
 	buf.Reset()
 	assert.NoError(t, Table(buf, tmpl, themedRows[:1]))
 	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
-	assert.Contains(t, buf.String(), green+"alpha")
+	assert.Contains(t, buf.String(), underline+"alpha")
 	assert.Contains(t, buf.String(), string(roles.success)+"alpha")
 	assert.Contains(t, buf.String(), "\x1b[38;2;255;0;0malpha")
 }
@@ -1831,7 +1831,7 @@ func TestThemedFactsSignedPercent(t *testing.T) {
 	assert.NoError(t, Facts(buf, tableFormatRow{"A", -0.5, 1}, WithFloat64AsPercentPositiveColored()))
 	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
 	assert.Contains(t, buf.String(), string(roles.failure)+"-50%"+fgDefault)
-	assert.NotContains(t, buf.String(), red)
+	assert.NotContains(t, buf.String(), "\x1b[31m")
 }
 
 func TestThemedFactsValueLine(t *testing.T) {
@@ -1889,4 +1889,16 @@ func TestThemedFactsErrors(t *testing.T) {
 
 	themedTable(t, NewTheme())
 	assert.ErrorIs(t, Facts(errWriterTable{}, factsData), io.EOF)
+}
+
+func TestTableRemovedColorNamesNameTheirTemplate(t *testing.T) {
+	type row struct{ Name string }
+	themedTable(t, NewTheme())
+	err := Table(&bytes.Buffer{}, `{{ red .Name }}`, []row{{"a"}})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), `row template:1: function "red" not defined`)
+
+	err = TableAuto(&bytes.Buffer{}, []row{{"a"}}, WithColumnTemplate("Name", `{{ red .Name }}`))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), `column "Name" template:1: function "red" not defined`)
 }
