@@ -18,19 +18,6 @@ import (
 	"github.com/nfx/go-tui/internal/assert"
 )
 
-// probeTermIO creates a simulated terminal with automatic cleanup.
-func probeTermIO(t *testing.T, reply string) (*termIO, *replyingTerminal) {
-	t.Helper()
-	prev, prevSupported := terminalInputChecker, backgroundProbeSupported
-	terminalInputChecker = func(int) bool { return true }
-	backgroundProbeSupported = true // the simulated terminal accepts VT input on every platform
-	t.Cleanup(func() { terminalInputChecker, backgroundProbeSupported = prev, prevSupported })
-	pr, pw := io.Pipe()
-	t.Cleanup(func() { assert.NoError(t, pw.Close()) })
-	term := &replyingTerminal{reply: reply, in: pw}
-	return &termIO{in: &mockDescriptor{Reader: pr, fd: 7}, out: term, fd: 2}, term
-}
-
 // routedTio makes tt the current route for cache tests.
 func routedTio(tt *termIO) *tio {
 	d := &tio{}

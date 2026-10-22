@@ -8,7 +8,6 @@ import (
 	"context"
 	"io"
 	"strings"
-	"sync"
 	"testing"
 	"testing/iotest"
 
@@ -41,9 +40,6 @@ func TestScanControlFrame(t *testing.T) {
 		})
 	}
 }
-
-// oscReply is what a terminal sends for an OSC 11 query.
-const oscReply = "\x1b]11;rgb:1e1e/1e1e/2e2e\x07"
 
 // scriptedKeys reads keys from in.
 func scriptedKeys(in io.Reader) *termIO {
@@ -201,33 +197,4 @@ func TestTermIO_WriteControl(t *testing.T) {
 	scripted := &termIO{out: out}
 	assert.ErrorIs(t, scripted.writeControl(t.Context(), []byte("q")), ErrNoTTY)
 	assert.Equal(t, "q", out.String())
-}
-
-// replyingTerminal answers OSC 11 queries through the input pipe.
-type replyingTerminal struct {
-	mu      sync.Mutex
-	queries int
-	reply   string
-	in      *io.PipeWriter
-}
-
-// Write counts queries and injects the configured reply.
-func (r *replyingTerminal) Write(p []byte) (int, error) {
-	if string(p) != "\x1b]11;?\x07" {
-		return len(p), nil
-	}
-	r.mu.Lock()
-	r.queries++
-	r.mu.Unlock()
-	if r.reply != "" {
-		go r.in.Write([]byte(r.reply)) //nolint:errcheck
-	}
-	return len(p), nil
-}
-
-// count returns the synchronized query count.
-func (r *replyingTerminal) count() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.queries
 }

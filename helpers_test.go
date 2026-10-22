@@ -12,11 +12,13 @@ import (
 	"io"
 	"iter"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"text/template"
+	"time"
 	"unicode/utf8"
 
 	"github.com/nfx/go-tui/internal/assert"
@@ -232,4 +234,142 @@ func execute(t *testing.T, funcs template.FuncMap, src string) string {
 	var b strings.Builder
 	assert.NoError(t, tmpl.Execute(&b, nil))
 	return b.String()
+}
+
+// withEnv installs an output environment fixture built from KEY=VALUE pairs.
+func withEnv(t *testing.T, pairs ...string) {
+	t.Helper()
+	vars := map[string]string{}
+	for _, p := range pairs {
+		k, v, _ := strings.Cut(p, "=")
+		vars[k] = v
+	}
+	prev := defaultIO.env
+	defaultIO.env = readOutputEnv(func(k string) (string, bool) { v, ok := vars[k]; return v, ok })
+	t.Cleanup(func() { defaultIO.env = prev })
+}
+
+func ttyWriter(t *testing.T) *mockDescriptor {
+	t.Helper()
+	prev := terminalWriterChecker
+	terminalWriterChecker = func(int) bool { return true }
+	prevVT := consoleVT
+	consoleVT = func(io.Writer) bool { return true }
+	t.Cleanup(func() {
+		terminalWriterChecker = prev
+		consoleVT = prevVT
+	})
+	return &mockDescriptor{Reader: &bytes.Buffer{}, Writer: &bytes.Buffer{}, fd: 7}
+}
+
+func waitOutputContains(t *testing.T, out <-chan string, parts ...string) string {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case got := <-out:
+			matched := true
+			for _, part := range parts {
+				if !strings.Contains(got, part) {
+					matched = false
+					break
+				}
+			}
+			if matched {
+				return got
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for output containing %q", parts)
+		}
+	}
+}
+
+var regexpSGR = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func chainIOforTest(t *testing.T, width, height int) (*chanIO, *writeC) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	realOut := newWriteC(ctx)
+	cio := newUnstartedIO(ctx, width, height, 0)
+	go cio.handleViewports(ctx)
+	go cio.forwardTo(ctx, realOut)
+	t.Cleanup(func() {
+		cancel()
+		close(cio.In)
+		close(cio.Out)
+	})
+	return cio, realOut
+}
+
+type failingWriter struct{ err error }
+
+func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
+
+func TestChanIOFlushAndCloseReportWriteFailure(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cio := newUnstartedIO(ctx, 80, 24, 0)
+	go cio.handleViewports(ctx)
+	go cio.forwardTo(ctx, failingWriter{io.ErrShortWrite})
+	tio := &tio{arbiter: cio, cancel: cancel}
+
+	_, err := cio.Write([]byte("lost\n"))
+	assert.NoError(t, err) // queueing is asynchronous
+	assert.ErrorIs(t, cio.Flush(), io.ErrShortWrite)
+	assert.ErrorIs(t, tio.Flush(), io.ErrShortWrite)
+	assert.ErrorIs(t, tio.Close(), io.ErrShortWrite)
+}
+
+type mockDescriptor struct {
+	io.Reader
+	io.Writer
+	fd uintptr
+}
+
+func (m *mockDescriptor) Fd() uintptr {
+	return m.fd
+}
+
+// oscReply is what a terminal sends for an OSC 11 query.
+const oscReply = "\x1b]11;rgb:1e1e/1e1e/2e2e\x07"
+
+// replyingTerminal answers OSC 11 queries through the input pipe.
+type replyingTerminal struct {
+	mu      sync.Mutex
+	queries int
+	reply   string
+	in      *io.PipeWriter
+}
+
+// Write counts queries and injects the configured reply.
+func (r *replyingTerminal) Write(p []byte) (int, error) {
+	if string(p) != "\x1b]11;?\x07" {
+		return len(p), nil
+	}
+	r.mu.Lock()
+	r.queries++
+	r.mu.Unlock()
+	if r.reply != "" {
+		go r.in.Write([]byte(r.reply)) //nolint:errcheck
+	}
+	return len(p), nil
+}
+
+// count returns the synchronized query count.
+func (r *replyingTerminal) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.queries
+}
+
+// probeTermIO creates a simulated terminal with automatic cleanup.
+func probeTermIO(t *testing.T, reply string) (*termIO, *replyingTerminal) {
+	t.Helper()
+	prev, prevSupported := terminalInputChecker, backgroundProbeSupported
+	terminalInputChecker = func(int) bool { return true }
+	backgroundProbeSupported = true // the simulated terminal accepts VT input on every platform
+	t.Cleanup(func() { terminalInputChecker, backgroundProbeSupported = prev, prevSupported })
+	pr, pw := io.Pipe()
+	t.Cleanup(func() { assert.NoError(t, pw.Close()) })
+	term := &replyingTerminal{reply: reply, in: pw}
+	return &termIO{in: &mockDescriptor{Reader: pr, fd: 7}, out: term, fd: 2}, term
 }

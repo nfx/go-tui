@@ -19,16 +19,6 @@ import (
 	"golang.org/x/term"
 )
 
-type mockDescriptor struct {
-	io.Reader
-	io.Writer
-	fd uintptr
-}
-
-func (m *mockDescriptor) Fd() uintptr {
-	return m.fd
-}
-
 type mockReader struct {
 	io.Reader
 }

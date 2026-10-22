@@ -7,10 +7,8 @@ import (
 	"bytes"
 	"github.com/nfx/go-tui/internal/color"
 	"io"
-	"regexp"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
@@ -36,56 +34,6 @@ func TestTioCloseFlushesOutput(t *testing.T) {
 
 	assert.NoError(t, tioInst.Close())
 	assert.True(t, strings.Contains(out.String(), "pending output"))
-}
-
-func waitOutputContains(t *testing.T, out <-chan string, parts ...string) string {
-	t.Helper()
-	deadline := time.After(2 * time.Second)
-	for {
-		select {
-		case got := <-out:
-			matched := true
-			for _, part := range parts {
-				if !strings.Contains(got, part) {
-					matched = false
-					break
-				}
-			}
-			if matched {
-				return got
-			}
-		case <-deadline:
-			t.Fatalf("timed out waiting for output containing %q", parts)
-		}
-	}
-}
-
-var regexpSGR = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
-// withEnv installs an output environment fixture built from KEY=VALUE pairs.
-func withEnv(t *testing.T, pairs ...string) {
-	t.Helper()
-	vars := map[string]string{}
-	for _, p := range pairs {
-		k, v, _ := strings.Cut(p, "=")
-		vars[k] = v
-	}
-	prev := defaultIO.env
-	defaultIO.env = readOutputEnv(func(k string) (string, bool) { v, ok := vars[k]; return v, ok })
-	t.Cleanup(func() { defaultIO.env = prev })
-}
-
-func ttyWriter(t *testing.T) *mockDescriptor {
-	t.Helper()
-	prev := terminalWriterChecker
-	terminalWriterChecker = func(int) bool { return true }
-	prevVT := consoleVT
-	consoleVT = func(io.Writer) bool { return true }
-	t.Cleanup(func() {
-		terminalWriterChecker = prev
-		consoleVT = prevVT
-	})
-	return &mockDescriptor{Reader: &bytes.Buffer{}, Writer: &bytes.Buffer{}, fd: 7}
 }
 
 func TestProfileFor(t *testing.T) {

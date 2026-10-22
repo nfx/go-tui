@@ -15,21 +15,6 @@ import (
 	"github.com/nfx/go-tui/internal/assert"
 )
 
-func chainIOforTest(t *testing.T, width, height int) (*chanIO, *writeC) {
-	t.Helper()
-	ctx, cancel := context.WithCancel(t.Context())
-	realOut := newWriteC(ctx)
-	cio := newUnstartedIO(ctx, width, height, 0)
-	go cio.handleViewports(ctx)
-	go cio.forwardTo(ctx, realOut)
-	t.Cleanup(func() {
-		cancel()
-		close(cio.In)
-		close(cio.Out)
-	})
-	return cio, realOut
-}
-
 func TestChanIOReadWrite(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -366,22 +351,4 @@ func TestChanIOReleasedViewportKeepsLastFrameInScrollback(t *testing.T) {
 	out = waitOutputContains(t, stdout.C, "\rlive\n")
 	assert.True(t, strings.HasSuffix(out, "\n"))
 	assert.Equal(t, 0, managedViewports(cio))
-}
-
-type failingWriter struct{ err error }
-
-func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
-
-func TestChanIOFlushAndCloseReportWriteFailure(t *testing.T) {
-	ctx, cancel := context.WithCancelCause(t.Context())
-	cio := newUnstartedIO(ctx, 80, 24, 0)
-	go cio.handleViewports(ctx)
-	go cio.forwardTo(ctx, failingWriter{io.ErrShortWrite})
-	tio := &tio{arbiter: cio, cancel: cancel}
-
-	_, err := cio.Write([]byte("lost\n"))
-	assert.NoError(t, err) // queueing is asynchronous
-	assert.ErrorIs(t, cio.Flush(), io.ErrShortWrite)
-	assert.ErrorIs(t, tio.Flush(), io.ErrShortWrite)
-	assert.ErrorIs(t, tio.Close(), io.ErrShortWrite)
 }
