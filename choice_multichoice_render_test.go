@@ -116,7 +116,7 @@ func mframe(t *testing.T, m *multichoice, tt *term.IO) string {
 const multichoiceHelp = "| ^v move · space toggle · type filter\n\r"
 
 func TestThemedMultichoiceGuidedFrameStatesAndAnswer(t *testing.T) {
-	o, out, restored := themedMultichoiceOpt(t, asciiTheme(false), " ", "\x1b[B", " ", "\r")
+	o, out, restored := themedMultichoiceOpt(t, terst.ASCIITheme(false), " ", "\x1b[B", " ", "\r")
 	got, err := Multichoice(t.Context(), "Fruit", fruits, o)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"apple", "banana"}, got)
@@ -135,7 +135,7 @@ func TestThemedMultichoiceGuidedFrameStatesAndAnswer(t *testing.T) {
 }
 
 func TestThemedMultichoiceEmptySelectionAnswersNone(t *testing.T) {
-	o, out, _ := themedMultichoiceOpt(t, asciiTheme(false), "\r")
+	o, out, _ := themedMultichoiceOpt(t, terst.ASCIITheme(false), "\r")
 	got, err := Multichoice(t.Context(), "Fruit", fruits, o)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{}, got)
@@ -143,7 +143,7 @@ func TestThemedMultichoiceEmptySelectionAnswersNone(t *testing.T) {
 }
 
 func TestThemedMultichoiceInlineHasNoGuide(t *testing.T) {
-	m, tt := boundMultichoice(t, asciiTheme(true), 10, []any{"apple", "banana"})
+	m, tt := boundMultichoice(t, terst.ASCIITheme(true), 10, []any{"apple", "banana"})
 	m.handleKey(' ')
 	assert.Equal(t,
 		"\r? Fruit\n\r> x apple\n\r  o banana\n\r^v move · space toggle · type filter\n\r",
@@ -152,7 +152,7 @@ func TestThemedMultichoiceInlineHasNoGuide(t *testing.T) {
 
 func TestThemedMultichoiceCheckedHiddenItemsStayInSourceOrder(t *testing.T) {
 	// check cherry, then apple after filtering cherry out of view
-	o, out, _ := themedMultichoiceOpt(t, asciiTheme(false),
+	o, out, _ := themedMultichoiceOpt(t, terst.ASCIITheme(false),
 		"\x1b[B", "\x1b[B", " ", "a", " ", "\x7f", "\r")
 	got, err := Multichoice(t.Context(), "Fruit", fruits, o)
 	assert.NoError(t, err)
@@ -163,12 +163,12 @@ func TestThemedMultichoiceCheckedHiddenItemsStayInSourceOrder(t *testing.T) {
 }
 
 func TestThemedMultichoiceEmptyState(t *testing.T) {
-	m, tt := boundMultichoice(t, asciiTheme(false), 10, []any{"apple", "banana"})
+	m, tt := boundMultichoice(t, terst.ASCIITheme(false), 10, []any{"apple", "banana"})
 	m.handleKey(' ')
 	m.filter("zz")
 	assert.Equal(t, "\r? Fruit\n\r| No matches\n\r"+multichoiceHelp, mframe(t, m, tt))
 
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Templates.Choice.Empty = `{{ printf "nothing for %q" .Query }}`
 	m, tt = boundMultichoice(t, th, 10, []any{"apple"})
 	m.filter("zz")
@@ -184,7 +184,7 @@ func TestThemedMultichoiceEmptyState(t *testing.T) {
 }
 
 func TestThemedMultichoiceLoadingShowsNoEmptyState(t *testing.T) {
-	terst.UseTheme(t, asciiTheme(false))
+	terst.UseTheme(t, terst.ASCIITheme(false))
 	m := newMultichoice(t.Context())
 	m.loading, m.Label = true, "Fruit"
 	assert.NoError(t, m.prepare(nil))
@@ -212,11 +212,11 @@ func TestThemedMultichoiceMoreRowAndShortTerminals(t *testing.T) {
 		{3, "\r? Fruit\n\r| > o a\n\r"},
 	} {
 		t.Run(strconv.Itoa(tc.height), func(t *testing.T) {
-			m, tt := boundMultichoice(t, asciiTheme(false), tc.height, items)
+			m, tt := boundMultichoice(t, terst.ASCIITheme(false), tc.height, items)
 			assert.Equal(t, tc.want, mframe(t, m, tt))
 		})
 	}
-	m, tt := boundMultichoice(t, asciiTheme(false), 6, items)
+	m, tt := boundMultichoice(t, terst.ASCIITheme(false), 6, items)
 	for range 4 {
 		m.handleKey('↓')
 	}
@@ -227,7 +227,7 @@ func TestThemedMultichoiceMoreRowAndShortTerminals(t *testing.T) {
 func TestThemedMultichoiceProjectionMatchesAndAnswers(t *testing.T) {
 	items := []themedFruit{{"apple", "red"}, {"banana", "yellow"}, {"cherry", "blue"}}
 	// "b" is the start of a detail too, but only the projected name matches
-	o, out, _ := themedMultichoiceOpt(t, asciiTheme(false), "b", " ", "\r")
+	o, out, _ := themedMultichoiceOpt(t, terst.ASCIITheme(false), "b", " ", "\r")
 	got, err := Multichoice(t.Context(), "Fruit", items, o, WithTemplate(".Name", ".Color"))
 	assert.NoError(t, err)
 	assert.Equal(t, []themedFruit{items[1]}, got)
@@ -240,7 +240,13 @@ func TestThemedMultichoiceProjectionMatchesAndAnswers(t *testing.T) {
 
 func TestThemedMultichoiceMultiFieldProjects(t *testing.T) {
 	items := []themedFruit{{"apple", "red"}, {"banana", "yellow"}}
-	m, tt := boundMultichoice(t, asciiTheme(false), 10, []any{items[0], items[1]}, WithTemplate(`.Name ", " .Color`))
+	m, tt := boundMultichoice(
+		t,
+		terst.ASCIITheme(false),
+		10,
+		[]any{items[0], items[1]},
+		WithTemplate(`.Name ", " .Color`),
+	)
 	assert.Equal(t,
 		"\r? Fruit\n\r| > o apple, red\n\r|   o banana, yellow\n\r"+multichoiceHelp,
 		mframe(t, m, tt))
@@ -248,21 +254,21 @@ func TestThemedMultichoiceMultiFieldProjects(t *testing.T) {
 
 func TestThemedMultichoiceHiddenAnswerRetainsNothing(t *testing.T) {
 	erase := "\x1b[4A\r"
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Templates.Multichoice.Answer = theme.Hidden
 	o, out, _ := themedMultichoiceOpt(t, th, " ", "\r")
 	_, err := Multichoice(t.Context(), "Fruit", fruits, o)
 	assert.NoError(t, err)
 	assert.True(t, strings.HasSuffix(out.String(), erase))
 
-	o, out, _ = themedMultichoiceOpt(t, asciiTheme(false), " ", "\r")
+	o, out, _ = themedMultichoiceOpt(t, terst.ASCIITheme(false), " ", "\r")
 	_, err = Multichoice(t.Context(), "Fruit", fruits, o, WithHide())
 	assert.NoError(t, err)
 	assert.True(t, strings.HasSuffix(out.String(), erase))
 }
 
 func TestThemedMultichoiceSlotPrecedence(t *testing.T) {
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Templates.Choice.Inactive = `{{ printf "-%s" .Value }}`
 	th.Templates.Multichoice.Active = `[{{ .Value }}]`
 	th.Templates.Dropdown.Inactive = `dropdown only`
@@ -277,7 +283,7 @@ func TestThemedMultichoiceSlotPrecedence(t *testing.T) {
 }
 
 func TestThemedMultichoiceStateSlotsSeeSelection(t *testing.T) {
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Templates.Choice.Inactive = `{{ if .Selected }}{{ upper .Value }}{{ else }}{{ .Value }}{{ end }}`
 	th.Funcs = template.FuncMap{"upper": strings.ToUpper}
 	m, tt := boundMultichoice(t, th, 10, []any{"apple", "banana"})
@@ -287,7 +293,7 @@ func TestThemedMultichoiceStateSlotsSeeSelection(t *testing.T) {
 }
 
 func TestThemedMultichoiceAnswerValueAndSharedAnswer(t *testing.T) {
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Templates.Prompt.Answer = `{{ .Label }}: {{ .Value }} ({{ .Count }})`
 	th.Templates.Multichoice.AnswerValue = `{{ range .Values }}[{{ . }}]{{ end }}`
 	o, out, _ := themedMultichoiceOpt(t, th, "\x1b[B", " ", "\x1b[B", " ", "\r")
@@ -298,14 +304,14 @@ func TestThemedMultichoiceAnswerValueAndSharedAnswer(t *testing.T) {
 
 func TestThemedMultichoiceKVShowsKeys(t *testing.T) {
 	items := map[string]int{"b": 2, "a": 1}
-	o, out, _ := themedMultichoiceOpt(t, asciiTheme(false), "\x1b[B", " ", "\r")
+	o, out, _ := themedMultichoiceOpt(t, terst.ASCIITheme(false), "\x1b[B", " ", "\r")
 	keys, err := MultichoiceKVK(t.Context(), "Pick", items, o)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"b"}, keys)
 	assert.True(t, strings.HasPrefix(out.String(), "\r? Pick\n\r| > o a\n\r|   o b\n"))
 	assert.True(t, strings.HasSuffix(out.String(), "+ Pick · b\n"))
 
-	o, out, _ = themedMultichoiceOpt(t, asciiTheme(false), " ", "\r")
+	o, out, _ = themedMultichoiceOpt(t, terst.ASCIITheme(false), " ", "\r")
 	values, err := MultichoiceKVV(t.Context(), "Pick", items, o)
 	assert.NoError(t, err)
 	assert.Equal(t, []int{1}, values)
@@ -313,7 +319,7 @@ func TestThemedMultichoiceKVShowsKeys(t *testing.T) {
 }
 
 func TestThemedMultichoiceTypedDefaultChecksAfterBinding(t *testing.T) {
-	o, out, _ := themedMultichoiceOpt(t, asciiTheme(false), "\r")
+	o, out, _ := themedMultichoiceOpt(t, terst.ASCIITheme(false), "\r")
 	got, err := Multichoice(t.Context(), "Pick", []string{"a", "b", "c"}, o, WithDefault([]string{"c", "a"}))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"a", "c"}, got)
@@ -321,14 +327,14 @@ func TestThemedMultichoiceTypedDefaultChecksAfterBinding(t *testing.T) {
 	assert.True(t, strings.HasPrefix(out.String(), "\r? Pick\n\r| > x a\n\r|   o b\n\r|   x c\n"))
 	assert.True(t, strings.HasSuffix(out.String(), "+ Pick · a, c\n"))
 
-	o, _, restored := themedMultichoiceOpt(t, asciiTheme(false), "\r")
+	o, _, restored := themedMultichoiceOpt(t, terst.ASCIITheme(false), "\r")
 	_, err = Multichoice(t.Context(), "Pick", []string{"a"}, o, WithDefault([]string{"zz"}))
 	assert.ErrorIs(t, err, ErrInvalidOption)
 	assert.True(t, *restored)
 }
 
 func TestThemedMultichoiceHintMatchesProjection(t *testing.T) {
-	o, out, _ := themedMultichoiceOpt(t, asciiTheme(false), "\r")
+	o, out, _ := themedMultichoiceOpt(t, terst.ASCIITheme(false), "\r")
 	got, err := Multichoice(t.Context(), "Pick", fruits, o, WithTemplate(`(printf "z%s" .)`), WithDefault("zb"))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"banana"}, got)
@@ -338,7 +344,7 @@ func TestThemedMultichoiceHintMatchesProjection(t *testing.T) {
 func TestThemedMultichoiceAutomaticAnswerRunsOnlyProjection(t *testing.T) {
 	terst.StrictOutput(t)
 	boom := errors.New("boom")
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
 	// no presentation slot runs without a terminal: only the projection
 	th.Templates.Prompt.Label = `{{ fails .Label }}`
@@ -365,7 +371,7 @@ func TestThemedMultichoiceAutomaticAnswerRunsOnlyProjection(t *testing.T) {
 }
 
 func TestThemedMultichoiceSearchSkipsDecoration(t *testing.T) {
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Templates.Choice.Active = `{{ .Value }} zzz`
 	th.Templates.Choice.Inactive = `{{ .Value }} zzz`
 	th.Templates.Multichoice.Row = `zzz {{ .Value }}`
@@ -383,7 +389,7 @@ func TestThemedMultichoiceSearchSkipsDecoration(t *testing.T) {
 
 func TestThemedMultichoiceProjectsOnceAndDrawsLazily(t *testing.T) {
 	calls := map[string]int{}
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Funcs = template.FuncMap{"count": func(kind, s string) string { calls[kind+":"+s]++; return s }}
 	th.Templates.Choice.Value = `{{ count "value" . }}`
 	th.Templates.Choice.Details = `{{ count "details" . }}`
@@ -404,7 +410,7 @@ func TestThemedMultichoiceProjectsOnceAndDrawsLazily(t *testing.T) {
 }
 
 func TestThemedMultichoiceLazyConfirmsAfterExhaustion(t *testing.T) {
-	terst.UseTheme(t, asciiTheme(false))
+	terst.UseTheme(t, terst.ASCIITheme(false))
 	stream := &completionChecklistIO{ready: make(chan struct{}), marker: "x banana"}
 	got, err := MultichoiceLazy(t.Context(), "Fruit", lazySeq("apple", "banana"),
 		WithDefault("banana"), WithInput(stream), WithOutput(stream))
@@ -419,7 +425,7 @@ func TestThemedMultichoiceLazyProducerErrorRestoresTerminal(t *testing.T) {
 			yield("", boom)
 		}
 	}
-	o, out, restored := themedMultichoiceOpt(t, asciiTheme(false))
+	o, out, restored := themedMultichoiceOpt(t, terst.ASCIITheme(false))
 	_, err := MultichoiceLazy(t.Context(), "Fruit", failing, o)
 	assert.ErrorIs(t, err, boom)
 	assert.True(t, *restored)
@@ -428,7 +434,7 @@ func TestThemedMultichoiceLazyProducerErrorRestoresTerminal(t *testing.T) {
 
 func TestThemedMultichoiceHelperErrorRestoresTerminal(t *testing.T) {
 	boom := errors.New("boom")
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
 	th.Templates.Multichoice.Row = `{{ fails .Value }}`
 	o, _, restored := themedMultichoiceOpt(t, th, "\r")
@@ -437,7 +443,7 @@ func TestThemedMultichoiceHelperErrorRestoresTerminal(t *testing.T) {
 	assert.Contains(t, err.Error(), "theme.Templates.Multichoice.Row")
 	assert.True(t, *restored)
 
-	th = asciiTheme(false)
+	th = terst.ASCIITheme(false)
 	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
 	th.Templates.Multichoice.AnswerValue = `{{ fails "x" }}`
 	o, out, restored := themedMultichoiceOpt(t, th, "\r")
@@ -448,13 +454,13 @@ func TestThemedMultichoiceHelperErrorRestoresTerminal(t *testing.T) {
 }
 
 func TestThemedMultichoicePasteFiltersAndCancellationRestores(t *testing.T) {
-	o, _, _ := themedMultichoiceOpt(t, asciiTheme(false), "\x1b[200~ban\x1b[201~", " ", "\r")
+	o, _, _ := themedMultichoiceOpt(t, terst.ASCIITheme(false), "\x1b[200~ban\x1b[201~", " ", "\r")
 	got, err := Multichoice(t.Context(), "Fruit", fruits, o)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"banana"}, got)
 
 	ctx, cancel := context.WithCancel(t.Context())
-	o, out, restored := themedMultichoiceOpt(t, asciiTheme(false))
+	o, out, restored := themedMultichoiceOpt(t, terst.ASCIITheme(false))
 	acquired := make(chan struct{})
 	signal := option.OpT(func(m *multichoice) error {
 		next := m.makeTermIO
@@ -483,7 +489,7 @@ func TestThemedMultichoicePasteFiltersAndCancellationRestores(t *testing.T) {
 
 func TestThemedMultichoiceRolesStyleMarks(t *testing.T) {
 	terst.WithEnv(t, "FORCE_COLOR=3")
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Light = true
 	m, tt := boundMultichoice(t, th, 10, []any{"a", "b"})
 	m.handleKey(' ')
@@ -514,7 +520,7 @@ func frameStaysOnScreen(t *testing.T, out string) {
 }
 
 func TestThemedMultichoiceFullHeightFrameKeepsLabelOnScreen(t *testing.T) {
-	o, out, _ := themedMultichoiceOpt(t, asciiTheme(false), "\x1b[B", "\x1b[B", " ", "\x1b[A", "\x1b[B", "\r")
+	o, out, _ := themedMultichoiceOpt(t, terst.ASCIITheme(false), "\x1b[B", "\x1b[B", " ", "\x1b[A", "\x1b[B", "\r")
 	six := option.OpT(func(m *multichoice) error {
 		next := m.makeTermIO
 		m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {

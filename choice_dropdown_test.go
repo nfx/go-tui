@@ -130,7 +130,7 @@ func (r *blockingByteReader) Close() {
 // testIOforDropdown provides channel-driven prompt I/O at a fixed terminal size.
 func testIOforDropdown(t *testing.T, width, height int, o ...option.Opt) (*term.ChanIO, option.Opt) {
 	t.Helper()
-	terst.UseTheme(t, asciiTheme(false))
+	terst.UseTheme(t, terst.ASCIITheme(false))
 	ctx, cancel := context.WithCancel(t.Context())
 	cio := &term.ChanIO{
 		Ctx: ctx,
@@ -1289,7 +1289,7 @@ func (s *scriptedTerminal) makeTermIO(in io.Reader, out io.Writer) (*term.IO, er
 }
 
 func TestDropdownConfirmClearsFrameOnce(t *testing.T) {
-	terst.UseTheme(t, asciiTheme(false))
+	terst.UseTheme(t, terst.ASCIITheme(false))
 	var out bytes.Buffer
 	_, err := Dropdown(t.Context(), "Fruit", fruits, WithOutput(&out),
 		WithInput(&terst.ChunkReader{Chunks: [][]byte{[]byte("\r")}}),

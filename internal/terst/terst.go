@@ -276,6 +276,49 @@ func ProbingKeyboard(t *testing.T, fd uintptr) {
 // ASCIISymbols replace the presets on terminals without the Unicode glyphs.
 var ASCIISymbols = theme.New().Symbols.ASCII()
 
+// ASCIITheme is the preset theme with ASCII symbols, Guided or Inline.
+func ASCIITheme(inline bool) theme.Theme {
+	th := theme.New()
+	th.Symbols = ASCIISymbols
+	th.Inline = inline
+	return th
+}
+
+// NotifyingReader exposes a descriptor while reporting when a blocking read starts.
+type NotifyingReader struct {
+	*os.File
+	Started chan struct{}
+	once    sync.Once
+}
+
+// NewNotifyingReader wraps f.
+func NewNotifyingReader(f *os.File) *NotifyingReader {
+	return &NotifyingReader{File: f, Started: make(chan struct{})}
+}
+
+// Read signals entry before reading one byte, like a wrapper that limits chunks.
+func (r *NotifyingReader) Read(p []byte) (int, error) {
+	r.once.Do(func() { close(r.Started) })
+	return r.File.Read(p[:1])
+}
+
+// NextKey reads the next key of in through a fresh terminal, the way the next
+// prompt on the same input would after a cancelled one.
+func NextKey(t *testing.T, in io.Reader) rune {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	tio := &term.IO{In: in, Input: term.SharedInputState(in), Width: 20, Height: 2}
+	permits := make(chan struct{}, 1)
+	permits <- struct{}{}
+	keys := tio.ReadEvents(ctx, permits)
+	defer tio.AwaitReader()
+	defer cancel()
+	ev := <-keys
+	assert.NoError(t, ev.Err)
+	return ev.Key
+}
+
 // UseTheme installs th and routes migrated widgets through it for the test.
 func UseTheme(t *testing.T, th theme.Theme) {
 	t.Helper()

@@ -892,7 +892,7 @@ func themedBar(t *testing.T, th theme.Theme, state progressState) *Progressbar {
 
 // compactTheme is the ASCII theme with the single-row progress layout.
 func compactTheme() theme.Theme {
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Progress.Compact = true
 	return th
 }

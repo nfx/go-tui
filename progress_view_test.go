@@ -56,7 +56,7 @@ func TestThemedProgressRowDropsMetricsToFit(t *testing.T) {
 
 func TestThemedProgressASCIISymbols(t *testing.T) {
 	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
-	p := themedBar(t, asciiTheme(false), halfDone(now))
+	p := themedBar(t, terst.ASCIITheme(false), halfDone(now))
 	row, err := p.row(47, now)
 	assert.NoError(t, err)
 	// the elapsed time does not fit the hint row, which drops it whole
@@ -89,7 +89,7 @@ func TestThemedProgressBarWidthBounds(t *testing.T) {
 	assert.Equal(t, "build 50%  ==========>---------- 50.00/s", row.String())
 
 	// the stacked bar is bounded the same way; the hint has its own row
-	th = asciiTheme(false)
+	th = terst.ASCIITheme(false)
 	th.Progress.MaxBarWidth = 4
 	p = themedBar(t, th, halfDone(now))
 	row, err = p.row(80, now)
@@ -145,7 +145,7 @@ func TestThemedProgressUnknownAndExceededTotals(t *testing.T) {
 			state := halfDone(now)
 			state.showElapsed = false
 			tc.edit(&state)
-			row, err := themedBar(t, asciiTheme(false), state).row(tc.width, now)
+			row, err := themedBar(t, terst.ASCIITheme(false), state).row(tc.width, now)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.stacked, row.String())
 			row, err = themedBar(t, compactTheme(), state).row(tc.width, now)
@@ -292,7 +292,7 @@ func TestThemedProgressRoles(t *testing.T) {
 }
 
 func TestThemedProgressCompletes(t *testing.T) {
-	p, frames, tick, restored := themedProgress(t, asciiTheme(false), 100)
+	p, frames, tick, restored := themedProgress(t, terst.ASCIITheme(false), 100)
 	p.Add(50)
 	tick(time.Second)
 	// the estimate does not fit the hint row, which drops it whole
@@ -309,7 +309,7 @@ func TestThemedProgressCompletes(t *testing.T) {
 }
 
 func TestThemedProgressCloseBeforeDone(t *testing.T) {
-	p, frames, tick, restored := themedProgress(t, asciiTheme(false), 100)
+	p, frames, tick, restored := themedProgress(t, terst.ASCIITheme(false), 100)
 	p.Add(5)
 	tick(time.Second)
 	assert.Equal(t, frameOf("build  5%   =>"+strings.Repeat("-", 25), "5 / 100 items | 0.00 items/s"), <-frames)
@@ -322,7 +322,7 @@ func TestThemedProgressCloseBeforeDone(t *testing.T) {
 }
 
 func TestThemedProgressResize(t *testing.T) {
-	p, frames, tick, _ := themedProgress(t, asciiTheme(false), 100)
+	p, frames, tick, _ := themedProgress(t, terst.ASCIITheme(false), 100)
 	p.Add(50)
 	tick(time.Second)
 	assert.Equal(t, frameOf("build  50%  "+strings.Repeat("=", 13)+">"+strings.Repeat("-", 13),
@@ -343,7 +343,7 @@ func TestThemedProgressResize(t *testing.T) {
 }
 
 func TestThemedProgressShortTerminal(t *testing.T) {
-	p, frames, tick, _ := themedProgress(t, asciiTheme(false), 100)
+	p, frames, tick, _ := themedProgress(t, terst.ASCIITheme(false), 100)
 	p.Add(50)
 	// one row has no room for the hint, so the metrics join the bar row
 	p.io.Height = 1
@@ -379,7 +379,7 @@ func TestThemedProgressLongLabel(t *testing.T) {
 		// too narrow for the bar: the start of the row
 		{4, "50%…"},
 	} {
-		p := themedBar(t, asciiTheme(false), halfDone(now))
+		p := themedBar(t, terst.ASCIITheme(false), halfDone(now))
 		p.label = ansi.Text("ファイル build")
 		p.showRate, p.showEstimate, p.showElapsed = false, false, false
 		rows, err := p.rows(tc.width, 0, now)
@@ -390,7 +390,7 @@ func TestThemedProgressLongLabel(t *testing.T) {
 }
 
 func TestThemedProgressRenderErrorEndsBar(t *testing.T) {
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
 	th.Templates.Progress.Label = `{{ if eq .Current 150 }}{{ boom }}{{ end }}{{ .Label }}`
 	p, frames, tick, restored := themedProgress(t, th, 200)
@@ -462,11 +462,11 @@ func TestThemedProgressWithoutTerminal(t *testing.T) {
 }
 
 func TestThemedProgressCapturesTheme(t *testing.T) {
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Symbols.BarFill = "#"
 	p, frames, tick, _ := themedProgress(t, th, 100)
 	// a theme installed later does not reach the running bar
-	later := asciiTheme(false)
+	later := terst.ASCIITheme(false)
 	later.Symbols.BarFill = "="
 	later.Progress.Compact = true
 	assert.NoError(t, term.Default.InstallTheme(later))

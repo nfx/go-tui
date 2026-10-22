@@ -85,10 +85,6 @@ func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
 	assert.Equal(t, in, d.in)
 	assert.Equal(t, cio, d.out)
 
-	input := newInput(t.Context(), "label")
-	assert.Equal(t, in, input.In)
-	assert.Equal(t, cio, input.Out)
-
 	s := newSpinners(t.Context())
 	assert.Equal(t, in, s.In)
 	assert.Equal(t, cio, s.Out)
@@ -113,10 +109,6 @@ func TestSetDefaultIO(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.Equal(t, in, d.in)
 	assert.Equal(t, out, d.out)
-
-	input := newInput(t.Context(), "label")
-	assert.Equal(t, in, input.In)
-	assert.Equal(t, out, input.Out)
 
 	s := newSpinners(t.Context())
 	assert.Equal(t, in, s.In)

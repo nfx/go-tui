@@ -114,7 +114,7 @@ func TestInputValidatorNilIsInvalidOption(t *testing.T) {
 }
 
 func TestInputValidatorWrongWidget(t *testing.T) {
-	err := WithValidation(func(context.Context, string) error { return nil })(newDropdown(t.Context()))
+	err := WithValidation(func(context.Context, string) error { return nil })(&struct{}{})
 	assert.ErrorIs(t, err, ErrWrongWidget)
 }
 

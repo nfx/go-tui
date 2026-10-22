@@ -12,7 +12,6 @@ import (
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
@@ -401,26 +400,13 @@ func TestInputRunCancelledReadKeepsNextKey(t *testing.T) {
 	assert.Equal(t, "x", got)
 }
 
-// notifyingReader exposes a descriptor while reporting when a blocking read starts.
-type notifyingReader struct {
-	*os.File
-	started chan struct{}
-	once    sync.Once
-}
-
-// Read signals entry before reading one byte, like a wrapper that limits chunks.
-func (r *notifyingReader) Read(p []byte) (int, error) {
-	r.once.Do(func() { close(r.started) })
-	return r.File.Read(p[:1])
-}
-
 // TestInputRunCancelledWrappedReadKeepsNextKey verifies handoff of a blocked read across fresh termIO instances.
 func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	pr, pw, err := os.Pipe()
 	assert.NoError(t, err)
 	defer pr.Close() //nolint:errcheck // test cleanup
 	defer pw.Close() //nolint:errcheck // test cleanup
-	in := &notifyingReader{File: pr, started: make(chan struct{})}
+	in := terst.NewNotifyingReader(pr)
 	mk := func(in io.Reader, out io.Writer) (*term.IO, error) {
 		return &term.IO{
 			In:      in,
@@ -441,7 +427,7 @@ func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 		finished <- err
 	}()
 	select {
-	case <-in.started:
+	case <-in.Started:
 	case <-time.After(time.Second):
 		t.Fatal("first prompt did not start reading")
 	}
@@ -644,4 +630,17 @@ func TestInputNeedsTwoRowsForFeedback(t *testing.T) {
 	assert.NoError(t, WithValidation(func(context.Context, string) error { return errors.New("no") })(i))
 	_, err := i.run(i.Ctx)
 	assert.ErrorIs(t, err, ErrNoSpace)
+}
+
+func TestNewInputUsesDefaultIO(t *testing.T) {
+	prevIn := term.Default.Input()
+	prevOut := term.Default.RawOutput()
+	t.Cleanup(func() { term.Default.SetIO(prevIn, prevOut) })
+	in := bytes.NewBufferString("in")
+	out := &bytes.Buffer{}
+	term.Default.SetIO(in, out)
+
+	i := newInput(t.Context(), "label")
+	assert.Equal(t, in, i.In)
+	assert.Equal(t, out, i.Out)
 }

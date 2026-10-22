@@ -94,7 +94,7 @@ func TestSpinnerWithKeep(t *testing.T) {
 }
 
 func TestSpinnerWithCustomFrames(t *testing.T) {
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Symbols.Spinner = []string{"a", "b", "c", "d"}
 	terst.UseTheme(t, th)
 	s, cio, tick := spinnersForTest(t)

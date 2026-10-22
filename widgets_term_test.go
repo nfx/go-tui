@@ -90,12 +90,12 @@ func TestSharedInputState_CancelledClosedReaderReleased(t *testing.T) {
 	assert.NoError(t, err)
 	defer pr.Close() //nolint:errcheck // test cleanup
 	defer pw.Close() //nolint:errcheck // test cleanup
-	in := &notifyingReader{File: pr, started: make(chan struct{})}
+	in := terst.NewNotifyingReader(pr)
 	tio := &term.IO{In: in}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	tio.ReadEvents(ctx, nil)
-	<-in.started
+	<-in.Started
 	cancel()
 	tio.AwaitReader()
 	assert.NoError(t, pr.Close())

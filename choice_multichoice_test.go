@@ -163,7 +163,8 @@ func TestMultichoicePreparationAndCapabilities(t *testing.T) {
 		if err := one(newDropdown(t.Context())); err != nil {
 			t.Fatal(err)
 		}
-		if err := one(newInput(t.Context(), "Input")); !errors.Is(err, ErrWrongWidget) {
+		_, err := Input(t.Context(), "Input", one, WithInput(strings.NewReader("")), WithOutput(io.Discard))
+		if !errors.Is(err, ErrWrongWidget) {
 			t.Fatalf("input accepted choice option: %v", err)
 		}
 	}

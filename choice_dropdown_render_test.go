@@ -138,7 +138,7 @@ func frame(t *testing.T, d *dropdown, tt *term.IO) string {
 var fruits = []string{"apple", "banana", "cherry"}
 
 func TestThemedDropdownGuidedFrameAndAnswer(t *testing.T) {
-	o, out, restored := themedDropdownOpt(t, asciiTheme(false), 30, "\x1b[B", "\r")
+	o, out, restored := themedDropdownOpt(t, terst.ASCIITheme(false), 30, "\x1b[B", "\r")
 	got, err := Dropdown(t.Context(), "Fruit", fruits, o)
 	assert.NoError(t, err)
 	assert.Equal(t, "banana", got)
@@ -156,7 +156,7 @@ func TestThemedDropdownGuidedFrameAndAnswer(t *testing.T) {
 }
 
 func TestThemedDropdownInlineIndentsRowsUnderLabel(t *testing.T) {
-	o, out, _ := themedDropdownOpt(t, asciiTheme(true), 30, "\x1b[B", "\r")
+	o, out, _ := themedDropdownOpt(t, terst.ASCIITheme(true), 30, "\x1b[B", "\r")
 	_, err := Dropdown(t.Context(), "Fruit", fruits, o)
 	assert.NoError(t, err)
 	assert.True(t, strings.HasPrefix(out.String(), ""+
@@ -165,7 +165,7 @@ func TestThemedDropdownInlineIndentsRowsUnderLabel(t *testing.T) {
 }
 
 func TestThemedDropdownInlineLabelTooWideTakesItsRow(t *testing.T) {
-	d, tt := boundDropdown(t, asciiTheme(true), 12, 10, []any{"apple", "banana"})
+	d, tt := boundDropdown(t, terst.ASCIITheme(true), 12, 10, []any{"apple", "banana"})
 	assert.Equal(t, "\r? Fruit\n\r> apple\n\r  banana\n\r^v move · …\n\r", frame(t, d, tt))
 }
 
@@ -184,7 +184,7 @@ func TestThemedDropdownMoreRowAndShortTerminals(t *testing.T) {
 		{3, "\r? Fruit\n\r| > a\n\r"},
 	} {
 		t.Run(strconv.Itoa(tc.height), func(t *testing.T) {
-			d, tt := boundDropdown(t, asciiTheme(false), 40, tc.height, items)
+			d, tt := boundDropdown(t, terst.ASCIITheme(false), 40, tc.height, items)
 			assert.Equal(t, tc.want, frame(t, d, tt))
 			assert.Equal(t, strings.Count(tc.want, "\n"), d.height())
 		})
@@ -192,7 +192,7 @@ func TestThemedDropdownMoreRowAndShortTerminals(t *testing.T) {
 }
 
 func TestThemedDropdownMoreCountsRowsBelowAfterScrolling(t *testing.T) {
-	d, tt := boundDropdown(t, asciiTheme(false), 40, 6, []any{"a", "b", "c", "d", "e"})
+	d, tt := boundDropdown(t, terst.ASCIITheme(false), 40, 6, []any{"a", "b", "c", "d", "e"})
 	frame(t, d, tt)
 	for range 4 {
 		d.pressDown(len(d.displayed))
@@ -206,7 +206,7 @@ type themedFruit struct{ Name, Color string }
 func TestThemedDropdownProjectionMatchesAndAnswers(t *testing.T) {
 	items := []themedFruit{{"apple", "red"}, {"banana", "yellow"}, {"cherry", "blue"}}
 	// "b" is the start of a detail too, but only the projected name matches
-	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "b", "\r")
+	o, out, _ := themedDropdownOpt(t, terst.ASCIITheme(false), 40, "b", "\r")
 	got, err := Dropdown(t.Context(), "Fruit", items, o, WithTemplate(".Name", ".Color"))
 	assert.NoError(t, err)
 	assert.Equal(t, items[1], got)
@@ -219,28 +219,35 @@ func TestThemedDropdownProjectionMatchesAndAnswers(t *testing.T) {
 
 func TestThemedDropdownMultiFieldProjects(t *testing.T) {
 	items := []themedFruit{{"apple", "red"}, {"banana", "yellow"}}
-	d, tt := boundDropdown(t, asciiTheme(false), 40, 10, []any{items[0], items[1]}, WithTemplate(`.Name ", " .Color`))
+	d, tt := boundDropdown(
+		t,
+		terst.ASCIITheme(false),
+		40,
+		10,
+		[]any{items[0], items[1]},
+		WithTemplate(`.Name ", " .Color`),
+	)
 	assert.Equal(t,
 		"\r? Fruit\n\r| > apple, red\n\r|   banana, yellow\n\r| ^v move · type filter\n\r",
 		frame(t, d, tt))
 }
 
 func TestThemedDropdownHiddenAnswerRetainsNothing(t *testing.T) {
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Templates.Dropdown.Answer = theme.Hidden
 	o, out, _ := themedDropdownOpt(t, th, 40, "\r")
 	_, err := Dropdown(t.Context(), "Fruit", fruits, o)
 	assert.NoError(t, err)
 	assert.True(t, strings.HasSuffix(out.String(), "\x1b[4A\r"))
 
-	o, out, _ = themedDropdownOpt(t, asciiTheme(false), 40, "\r")
+	o, out, _ = themedDropdownOpt(t, terst.ASCIITheme(false), 40, "\r")
 	_, err = Dropdown(t.Context(), "Fruit", fruits, o, WithHide())
 	assert.NoError(t, err)
 	assert.True(t, strings.HasSuffix(out.String(), "\x1b[4A\r"))
 }
 
 func TestThemedDropdownSlotPrecedence(t *testing.T) {
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Templates.Choice.Inactive = `{{ printf "-%s" .Value }}`
 	th.Templates.Dropdown.Active = `[{{ .Value }}]`
 	th.Templates.Prompt.Hint = theme.Hidden
@@ -251,7 +258,7 @@ func TestThemedDropdownSlotPrecedence(t *testing.T) {
 }
 
 func TestThemedDropdownKVShowsKeys(t *testing.T) {
-	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "\x1b[B", "\r")
+	o, out, _ := themedDropdownOpt(t, terst.ASCIITheme(false), 40, "\x1b[B", "\r")
 	k, v, err := DropdownKV(t.Context(), "Pick", map[string]int{"b": 2, "a": 1}, o)
 	assert.NoError(t, err)
 	assert.Equal(t, "b", k)
@@ -261,7 +268,7 @@ func TestThemedDropdownKVShowsKeys(t *testing.T) {
 }
 
 func TestThemedDropdownIndexKeepsSourceIndexOfDuplicates(t *testing.T) {
-	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "\x1b[B", "\r")
+	o, out, _ := themedDropdownOpt(t, terst.ASCIITheme(false), 40, "\x1b[B", "\r")
 	i, err := DropdownIndex(t.Context(), "Pick", []any{"same", "same"}, o)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, i)
@@ -269,7 +276,7 @@ func TestThemedDropdownIndexKeepsSourceIndexOfDuplicates(t *testing.T) {
 }
 
 func TestThemedDropdownTypedDefaultSeedsFirstRow(t *testing.T) {
-	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "\r")
+	o, out, _ := themedDropdownOpt(t, terst.ASCIITheme(false), 40, "\r")
 	got, err := Dropdown(t.Context(), "Pick", []int{1, 2, 3}, o, WithDefault(2))
 	assert.NoError(t, err)
 	assert.Equal(t, 2, got)
@@ -277,7 +284,7 @@ func TestThemedDropdownTypedDefaultSeedsFirstRow(t *testing.T) {
 }
 
 func TestThemedDropdownOneReturnAnswersWithoutFrame(t *testing.T) {
-	o, out, restored := themedDropdownOpt(t, asciiTheme(false), 40)
+	o, out, restored := themedDropdownOpt(t, terst.ASCIITheme(false), 40)
 	got, err := Dropdown(t.Context(), "Fruit", []string{"apple"}, o, WithOneReturn())
 	assert.NoError(t, err)
 	assert.Equal(t, "apple", got)
@@ -288,7 +295,7 @@ func TestThemedDropdownOneReturnAnswersWithoutFrame(t *testing.T) {
 func TestThemedDropdownAutomaticAnswerMatchesProjection(t *testing.T) {
 	terst.StrictOutput(t)
 	boom := errors.New("boom")
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
 	// no presentation slot runs without a terminal: only the projection
 	th.Templates.Prompt.Label = `{{ fails .Label }}`
@@ -309,7 +316,7 @@ func TestThemedDropdownAutomaticAnswerMatchesProjection(t *testing.T) {
 }
 
 func TestThemedDropdownSearchSkipsDecoration(t *testing.T) {
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Templates.Choice.Active = `{{ .Value }} zzz`
 	th.Templates.Choice.Inactive = `{{ .Value }} zzz`
 	d, tt := boundDropdown(t, th, 40, 10, []any{"apple", "banana"})
@@ -326,7 +333,7 @@ func TestThemedDropdownSearchSkipsDecoration(t *testing.T) {
 }
 
 func TestThemedDropdownLazyOneReturnAndProducerError(t *testing.T) {
-	o, out, restored := themedDropdownOpt(t, asciiTheme(false), 40)
+	o, out, restored := themedDropdownOpt(t, terst.ASCIITheme(false), 40)
 	got, err := DropdownLazy(t.Context(), "Fruit", lazySeq("apple"), o, WithOneReturn())
 	assert.NoError(t, err)
 	assert.Equal(t, "apple", got)
@@ -339,7 +346,7 @@ func TestThemedDropdownLazyOneReturnAndProducerError(t *testing.T) {
 			yield("", boom)
 		}
 	}
-	o, out, restored = themedDropdownOpt(t, asciiTheme(false), 40)
+	o, out, restored = themedDropdownOpt(t, terst.ASCIITheme(false), 40)
 	_, err = DropdownLazy(t.Context(), "Fruit", failing, o)
 	assert.ErrorIs(t, err, boom)
 	assert.True(t, *restored)
@@ -348,7 +355,7 @@ func TestThemedDropdownLazyOneReturnAndProducerError(t *testing.T) {
 
 func TestThemedDropdownHelperErrorRestoresTerminal(t *testing.T) {
 	boom := errors.New("boom")
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
 	th.Templates.Choice.Inactive = `{{ fails .Value }}`
 	o, _, restored := themedDropdownOpt(t, th, 40, "\r")
@@ -360,7 +367,7 @@ func TestThemedDropdownHelperErrorRestoresTerminal(t *testing.T) {
 
 func TestThemedDropdownRolesStyleFocusAndRows(t *testing.T) {
 	terst.WithEnv(t, "FORCE_COLOR=3")
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Light = true
 	d, tt := boundDropdown(t, th, 40, 10, []any{"a", "b"})
 	got := frame(t, d, tt)
@@ -373,7 +380,7 @@ func TestThemedDropdownRolesStyleFocusAndRows(t *testing.T) {
 }
 
 func TestThemedDropdownFullHeightFrameKeepsLabelOnScreen(t *testing.T) {
-	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 60, "\x1b[B", "\x1b[B", "\x1b[A", "\x1b[B", "\r")
+	o, out, _ := themedDropdownOpt(t, terst.ASCIITheme(false), 60, "\x1b[B", "\x1b[B", "\x1b[A", "\x1b[B", "\r")
 	six := option.OpT(func(d *dropdown) error {
 		next := d.makeTermIO
 		d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {

@@ -218,7 +218,7 @@ func TestNewParallelProgressBarPropagatesCloseError(t *testing.T) {
 }
 
 func TestThemedParallelProgressCompletes(t *testing.T) {
-	terst.UseTheme(t, asciiTheme(false))
+	terst.UseTheme(t, terst.ASCIITheme(false))
 	started := make(chan int, 4)
 	gates := []chan struct{}{make(chan struct{}), make(chan struct{}), make(chan struct{}), make(chan struct{})}
 	r := runParallel(t.Context(), t, []int{0, 1, 2, 3}, func(v int) error {
@@ -243,7 +243,7 @@ func TestThemedParallelProgressCompletes(t *testing.T) {
 }
 
 func TestThemedParallelProgressSharesOneRow(t *testing.T) {
-	th := asciiTheme(false)
+	th := terst.ASCIITheme(false)
 	th.Symbols.BarEmpty = "_"
 	terst.UseTheme(t, th)
 	var active, maxActive atomic.Int64
@@ -263,7 +263,7 @@ func TestThemedParallelProgressSharesOneRow(t *testing.T) {
 	}, WithWorkers(3))
 	receiveN(t, all, 1)
 	// a theme installed while the workers run does not reach the bar
-	later := asciiTheme(false)
+	later := terst.ASCIITheme(false)
 	later.Symbols.BarEmpty = "."
 	assert.NoError(t, term.Default.InstallTheme(later))
 	r.tick(time.Second)
@@ -277,7 +277,7 @@ func TestThemedParallelProgressSharesOneRow(t *testing.T) {
 }
 
 func TestThemedParallelProgressFirstFailure(t *testing.T) {
-	terst.UseTheme(t, asciiTheme(false))
+	terst.UseTheme(t, terst.ASCIITheme(false))
 	fail := errors.New("fail")
 	started := make(chan int, 3)
 	gate0, gate1 := make(chan struct{}), make(chan struct{})
@@ -309,7 +309,7 @@ func TestThemedParallelProgressFirstFailure(t *testing.T) {
 }
 
 func TestThemedParallelProgressCancel(t *testing.T) {
-	terst.UseTheme(t, asciiTheme(false))
+	terst.UseTheme(t, terst.ASCIITheme(false))
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	started := make(chan int, 2)

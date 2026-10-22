@@ -9,7 +9,6 @@ import (
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/internal/trie"
-	"io"
 	"os"
 	"testing"
 	"time"
@@ -23,7 +22,7 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 	assert.NoError(t, err)
 	defer pr.Close() //nolint:errcheck // test cleanup
 	defer pw.Close() //nolint:errcheck // test cleanup
-	in := &notifyingReader{File: pr, started: make(chan struct{})}
+	in := terst.NewNotifyingReader(pr)
 	d := newDropdown(t.Context())
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -35,7 +34,7 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 		finished <- err
 	}()
 	select {
-	case <-in.started:
+	case <-in.Started:
 	case <-time.After(time.Second):
 		t.Fatal("dropdown did not start reading")
 	}
@@ -48,16 +47,7 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 	}
 	_, err = pw.Write([]byte{'x', term.KeyEnter})
 	assert.NoError(t, err)
-	next := newInput(t.Context(), "next")
-	next.Ctx, cancel = context.WithTimeout(t.Context(), time.Second)
-	defer cancel()
-	next.In, next.Out = in, &bytes.Buffer{}
-	next.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{In: in, Out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
-	}
-	got, err := next.run(t.Context())
-	assert.NoError(t, err)
-	assert.Equal(t, "x", got)
+	assert.Equal(t, 'x', terst.NextKey(t, in))
 }
 
 func TestDropdownPressKeyRuneAndRenderMore(t *testing.T) {
