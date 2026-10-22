@@ -6,6 +6,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"slices"
 	"unicode"
 )
@@ -179,8 +180,8 @@ func (Symbols) singleColumn(s string) error {
 			return fmt.Errorf("%q: control character", s)
 		}
 	}
-	w := Text(s).Width()
-	if w != 1 || len(Text(s).Clusters()) != 1 {
+	w := ansi.Text(s).Width()
+	if w != 1 || len(ansi.Text(s).Clusters()) != 1 {
 		return fmt.Errorf("%q: want one display column, got %d", s, w)
 	}
 	return nil

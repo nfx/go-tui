@@ -5,6 +5,8 @@ package tui
 
 import (
 	"errors"
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/color"
 	"strings"
 	"testing"
 	"text/template"
@@ -148,32 +150,32 @@ func TestBoundSlotRendersOrFailsWhole(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	data := struct{ Label string }{"x"}
-	render := func(s *compiledSlot, p Profile) (Text, error) {
+	render := func(s *compiledSlot, p color.Profile) (ansi.Text, error) {
 		b, err := s.bind(c.funcs(p, roleStyles{}))
 		assert.NoError(t, err)
 		return b.render(data)
 	}
 
-	out, err := render(c.templates.Prompt.Label, ProfileTrueColor)
+	out, err := render(c.templates.Prompt.Label, color.ProfileTrueColor)
 	assert.NoError(t, err)
 	assert.Equal(t, "\x1b[1mx\x1b[0m", out.String())
-	out, err = render(c.templates.Prompt.Label, ProfilePlain)
+	out, err = render(c.templates.Prompt.Label, color.ProfilePlain)
 	assert.NoError(t, err)
 	assert.Equal(t, "x", out.String()) // binding does not change the installed slot
 
-	out, err = render(c.templates.Prompt.Hint, ProfileTrueColor)
+	out, err = render(c.templates.Prompt.Hint, color.ProfileTrueColor)
 	assert.ErrorIs(t, err, boom)
 	assert.Contains(t, err.Error(), "theme.Templates.Prompt.Hint")
 	assert.True(t, out == nil)
 
 	for _, s := range []*compiledSlot{c.templates.Prompt.Feedback, c.templates.Prompt.Answer} {
-		out, err = render(s, ProfileTrueColor)
+		out, err = render(s, color.ProfileTrueColor)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "want text and SGR only")
 		assert.True(t, out == nil)
 	}
 
-	out, err = render(c.templates.Choice.Empty, ProfileTrueColor)
+	out, err = render(c.templates.Choice.Empty, color.ProfileTrueColor)
 	assert.NoError(t, err)
 	assert.True(t, out == nil)
 }
@@ -183,7 +185,7 @@ func TestBuiltinPromptSlots(t *testing.T) {
 	assert.NoError(t, err)
 	render := func(s *compiledSlot, data any) string {
 		t.Helper()
-		b, err := s.bind(c.funcs(ProfilePlain, roleStyles{}))
+		b, err := s.bind(c.funcs(color.ProfilePlain, roleStyles{}))
 		assert.NoError(t, err)
 		out, err := b.render(data)
 		assert.NoError(t, err)
@@ -194,7 +196,7 @@ func TestBuiltinPromptSlots(t *testing.T) {
 	assert.Equal(t, "? Name", render(tt.Password.Label, labelView{"Name"}))
 	assert.Equal(t, "+ Name · v", render(tt.Input.Answer, answerView{Label: "Name", Value: "v"}))
 	assert.Equal(t, "! bad", render(tt.Number.Feedback, feedbackView{"bad"}))
-	keys := hintView{{Text("up/down"), Text("adjust")}, {Text("enter"), Text("submit")}}
+	keys := hintView{{ansi.Text("up/down"), ansi.Text("adjust")}, {ansi.Text("enter"), ansi.Text("submit")}}
 	assert.Equal(t, "up/down adjust · enter submit", render(tt.Number.Hint, keys))
 	assert.Equal(t, "", render(tt.Number.Hint, hintView{}))
 	// built-ins stay out of the editable configuration
@@ -206,7 +208,7 @@ func TestBuiltinMultichoiceSlots(t *testing.T) {
 	assert.NoError(t, err)
 	render := func(s *compiledSlot, data any) string {
 		t.Helper()
-		b, err := s.bind(c.funcs(ProfilePlain, roleStyles{}))
+		b, err := s.bind(c.funcs(color.ProfilePlain, roleStyles{}))
 		assert.NoError(t, err)
 		out, err := b.render(data)
 		assert.NoError(t, err)
@@ -236,7 +238,7 @@ func TestMultichoiceRowAndAnswerValueFallBackToBuiltins(t *testing.T) {
 		th.Templates.Multichoice.AnswerValue = Hidden
 	})
 	assert.NoError(t, err)
-	builtin, err := builtinTemplates.compile(c.funcs(ProfilePlain, roleStyles{}), templates{})
+	builtin, err := builtinTemplates.compile(c.funcs(color.ProfilePlain, roleStyles{}), templates{})
 	assert.NoError(t, err)
 	tt := c.templates.Multichoice
 	assert.Equal(t, builtin.Multichoice.Row.tmpl.Root.String(), tt.Row.tmpl.Root.String())
@@ -284,7 +286,7 @@ func TestBuiltinSpinnerSlots(t *testing.T) {
 	assert.NoError(t, err)
 	render := func(s *compiledSlot, data spinnerView) string {
 		t.Helper()
-		b, err := s.bind(c.funcs(ProfilePlain, roleStyles{}))
+		b, err := s.bind(c.funcs(color.ProfilePlain, roleStyles{}))
 		assert.NoError(t, err)
 		out, err := b.render(data)
 		assert.NoError(t, err)
@@ -357,7 +359,7 @@ func TestBuiltinProgressSlots(t *testing.T) {
 	assert.NoError(t, err)
 	render := func(s *compiledSlot, data progressView) string {
 		t.Helper()
-		b, err := s.bind(c.funcs(ProfilePlain, roleStyles{}))
+		b, err := s.bind(c.funcs(color.ProfilePlain, roleStyles{}))
 		assert.NoError(t, err)
 		out, err := b.render(data)
 		assert.NoError(t, err)
@@ -376,16 +378,16 @@ func TestBuiltinProgressSlots(t *testing.T) {
 
 	hint := func(s *compiledSlot, data hintView) string {
 		t.Helper()
-		b, err := s.bind(c.funcs(ProfilePlain, roleStyles{}))
+		b, err := s.bind(c.funcs(color.ProfilePlain, roleStyles{}))
 		assert.NoError(t, err)
 		out, err := b.render(data)
 		assert.NoError(t, err)
 		return out.String()
 	}
 	pairs := hintView{
-		{Left: Text("62 / 100"), Right: Text("MiB")},
-		{Left: Text("900 KiB / 10 MiB")},
-		{Left: Text("12s"), Right: Text("left")},
+		{Left: ansi.Text("62 / 100"), Right: ansi.Text("MiB")},
+		{Left: ansi.Text("900 KiB / 10 MiB")},
+		{Left: ansi.Text("12s"), Right: ansi.Text("left")},
 	}
 	assert.Equal(t, "62 / 100 MiB · 900 KiB / 10 MiB · 12s left", hint(tt.Hint, pairs))
 	assert.Equal(t, "", hint(tt.Hint, nil))
@@ -511,10 +513,10 @@ const cyan = "\x1b[36m"
 func TestBuiltinTableSlots(t *testing.T) {
 	c, err := compileTemplates(t, func(*Theme) {})
 	assert.NoError(t, err)
-	render := func(p Profile, s *compiledSlot, data any) string {
+	render := func(p color.Profile, s *compiledSlot, data any) string {
 		t.Helper()
-		roles := roleStyles{foreground: Text(cyan)}
-		if p < ProfileANSI16 {
+		roles := roleStyles{foreground: ansi.Text(cyan)}
+		if p < color.ProfileANSI16 {
 			roles = roleStyles{}
 		}
 		b, err := s.bind(c.funcs(p, roles))
@@ -525,11 +527,15 @@ func TestBuiltinTableSlots(t *testing.T) {
 	}
 	tt := c.templates.Table
 	column := columnView{Header: "NAME", Name: "Name", Kind: "string"}
-	assert.Equal(t, "NAME", render(ProfilePlain, tt.Header, column))
-	assert.Equal(t, Bold+"NAME"+Reset, render(ProfileAttrs, tt.Header, column))
-	assert.Equal(t, Bold+cyan+"NAME"+FgDefault+Reset, render(ProfileTrueColor, tt.Header, column))
-	assert.Equal(t, "x", render(ProfilePlain, tt.Cell, cellView{columnView: column, Value: "x"}))
-	assert.Equal(t, cyan+"x"+FgDefault, render(ProfileTrueColor, tt.Cell, cellView{columnView: column, Value: "x"}))
+	assert.Equal(t, "NAME", render(color.ProfilePlain, tt.Header, column))
+	assert.Equal(t, ansi.Bold+"NAME"+ansi.Reset, render(color.ProfileAttrs, tt.Header, column))
+	assert.Equal(t, ansi.Bold+cyan+"NAME"+color.FgDefault+ansi.Reset, render(color.ProfileTrueColor, tt.Header, column))
+	assert.Equal(t, "x", render(color.ProfilePlain, tt.Cell, cellView{columnView: column, Value: "x"}))
+	assert.Equal(
+		t,
+		cyan+"x"+color.FgDefault,
+		render(color.ProfileTrueColor, tt.Cell, cellView{columnView: column, Value: "x"}),
+	)
 }
 
 func TestTableSlotsHiding(t *testing.T) {

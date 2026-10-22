@@ -6,6 +6,8 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/color"
 	"io"
 	"strings"
 	"sync/atomic"
@@ -158,7 +160,7 @@ func TestThemedProgressView(t *testing.T) {
 	state := halfDone(now)
 	state.fmtRate = func(r float64) string { return fmt.Sprintf("%.0f\nitems", r) }
 	p := themedBar(t, th, state)
-	p.label = Text("multi\nline\x1b[2K")
+	p.label = ansi.Text("multi\nline\x1b[2K")
 	row, err := p.row(80, now)
 	assert.NoError(t, err)
 	// the rate is formatted by WithFormatRate and kept on one line
@@ -183,7 +185,7 @@ func TestThemedProgressView(t *testing.T) {
 	th.Templates.Progress.Hint = `{{ range . }}[{{ .Left }}{{ with .Right }} {{ . }}{{ end }}]{{ end }}`
 	th.Templates.Progress.Frame = `{{ .Label }} {{ .Percent }} [{{ .Bar }}] {{ len .Hints }}/{{ len .Values }}{{ .Metrics }}`
 	p = themedBar(t, th, state)
-	p.label = Text("multi\nline\x1b[2K")
+	p.label = ansi.Text("multi\nline\x1b[2K")
 	row, err = p.row(40, now)
 	assert.NoError(t, err)
 	assert.Equal(t, "<multi line> 50 [=========---------] 3/2\n[50 / 100 items][50 items /s][1s left]", row.String())
@@ -254,10 +256,10 @@ func TestThemedProgressRoles(t *testing.T) {
 	th.Light = true
 	c, err := th.compile()
 	assert.NoError(t, err)
-	look := c.bind(ProfileTrueColor, Background{Light: true})
+	look := c.bind(color.ProfileTrueColor, color.Background{Light: true})
 	roles := look.roles
 	assert.True(t, len(roles.accent) > 0 && len(roles.guide) > 0 && len(roles.muted) > 0 && len(roles.foreground) > 0)
-	p := &Progressbar{progressState: halfDone(now), label: Text("build"), theme: c}
+	p := &Progressbar{progressState: halfDone(now), label: ansi.Text("build"), theme: c}
 	p.look, err = p.bind(look)
 	assert.NoError(t, err)
 	rows, err := p.rows(60, 0, now)
@@ -266,11 +268,15 @@ func TestThemedProgressRoles(t *testing.T) {
 	bar, hint := rows[0].String(), rows[1].String()
 	assert.Contains(t, bar, string(roles.foreground)+"build")
 	assert.Contains(t, bar, string(roles.accent)+"50% ")
-	assert.Contains(t, bar, string(roles.accent)+strings.Repeat("━", 24)+FgDefault+
-		string(roles.guide)+strings.Repeat("─", 24)+FgDefault)
+	assert.Contains(t, bar, string(roles.accent)+strings.Repeat("━", 24)+color.FgDefault+
+		string(roles.guide)+strings.Repeat("─", 24)+color.FgDefault)
 	// the hint sets the values apart from their units and separators
-	assert.Contains(t, hint, string(roles.accent)+"50 / 100"+FgDefault+" "+string(roles.guide)+"items"+FgDefault)
-	assert.Contains(t, hint, string(roles.guide)+" · "+FgDefault+string(roles.accent)+"50.00"+FgDefault)
+	assert.Contains(
+		t,
+		hint,
+		string(roles.accent)+"50 / 100"+color.FgDefault+" "+string(roles.guide)+"items"+color.FgDefault,
+	)
+	assert.Contains(t, hint, string(roles.guide)+" · "+color.FgDefault+string(roles.accent)+"50.00"+color.FgDefault)
 	assert.Equal(t, "50 / 100 items · 50.00 items/s · 1s left · 1s elapsed", stripSGR(hint))
 	// running work is not a success or a failure
 	for _, row := range rows {
@@ -369,7 +375,7 @@ func TestThemedProgressLongLabel(t *testing.T) {
 		{4, "50%…"},
 	} {
 		p := themedBar(t, asciiTheme(false), halfDone(now))
-		p.label = Text("ファイル build")
+		p.label = ansi.Text("ファイル build")
 		p.showRate, p.showEstimate, p.showElapsed = false, false, false
 		rows, err := p.rows(tc.width, 0, now)
 		assert.NoError(t, err)

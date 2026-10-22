@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"github.com/nfx/go-tui/internal/ansi"
 	"math"
 )
 
@@ -19,16 +20,16 @@ type geometry struct {
 }
 
 // lead returns the guide prefix for guided rows outside inline layouts.
-func (g geometry) lead(guided bool) Text {
+func (g geometry) lead(guided bool) ansi.Text {
 	if !guided || g.inline {
 		return nil
 	}
-	return Text(g.guide + " ")
+	return ansi.Text(g.guide + " ")
 }
 
 // columns returns space after lead, reserving the last column against autowrap;
 // unknown widths are unbounded, and negative results mean lead does not fit.
-func (g geometry) columns(lead Text) int {
+func (g geometry) columns(lead ansi.Text) int {
 	if g.width <= 0 {
 		return math.MaxInt
 	}
@@ -36,7 +37,7 @@ func (g geometry) columns(lead Text) int {
 }
 
 // valueLead returns the guide or an inline label clipped to reserve value and caret space.
-func (g geometry) valueLead(label Text) Text {
+func (g geometry) valueLead(label ansi.Text) ansi.Text {
 	switch {
 	case !g.inline:
 		return g.lead(true)
@@ -48,7 +49,7 @@ func (g geometry) valueLead(label Text) Text {
 
 // valueColumns reserves the last column for the caret and returns ErrNoSpace
 // if no value column fits after lead.
-func (g geometry) valueColumns(lead Text) (int, error) {
+func (g geometry) valueColumns(lead ansi.Text) (int, error) {
 	cols := g.columns(lead)
 	if cols < 1 {
 		return 0, ErrNoSpace
@@ -59,7 +60,7 @@ func (g geometry) valueColumns(lead Text) (int, error) {
 // frameRow is one physical row of a frame before fitting. A row that composes
 // its own lead, such as the value row, is not guided.
 type frameRow struct {
-	content Text
+	content ansi.Text
 	guided  bool
 	// drop orders optional rows: when the height is short, the largest drop
 	// goes first, and of equal ones the later row. Zero is required.
@@ -68,7 +69,7 @@ type frameRow struct {
 
 // fitted are the rows of a frame that fit, each with its lead and clipped.
 type fitted struct {
-	lines []Text
+	lines []ansi.Text
 	// at is the position in lines of every row given to fit, or -1 when the
 	// row was dropped.
 	at []int
@@ -104,7 +105,7 @@ func (g geometry) fit(rows []frameRow) (fitted, error) {
 		}
 		keep[victim] = false
 	}
-	out := fitted{lines: make([]Text, 0, kept), at: make([]int, len(rows))}
+	out := fitted{lines: make([]ansi.Text, 0, kept), at: make([]int, len(rows))}
 	for i, r := range rows {
 		if !keep[i] {
 			out.at[i] = -1
@@ -116,7 +117,7 @@ func (g geometry) fit(rows []frameRow) (fitted, error) {
 			content = content.TruncateColumns(cols)
 		}
 		out.at[i] = len(out.lines)
-		out.lines = append(out.lines, append(append(Text{}, lead...), content...))
+		out.lines = append(out.lines, append(append(ansi.Text{}, lead...), content...))
 	}
 	return out, nil
 }

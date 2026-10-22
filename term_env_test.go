@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"github.com/nfx/go-tui/internal/color"
 	"strings"
 	"testing"
 
@@ -14,10 +15,10 @@ import (
 func TestOutputEnvEstimatesBackgroundAtStartup(t *testing.T) {
 	vars := map[string]string{"COLORFGBG": "0;15"}
 	e := readOutputEnv(func(k string) (string, bool) { v, ok := vars[k]; return v, ok })
-	assert.Equal(t, Background{Light: true}, e.bgHint)
+	assert.Equal(t, color.Background{Light: true}, e.bgHint)
 	vars["COLORFGBG"] = "15;0" // later changes are not seen
-	assert.Equal(t, Background{Light: true}, e.bgHint)
-	assert.Equal(t, Background{}, readOutputEnv(func(string) (string, bool) { return "", false }).bgHint)
+	assert.Equal(t, color.Background{Light: true}, e.bgHint)
+	assert.Equal(t, color.Background{}, readOutputEnv(func(string) (string, bool) { return "", false }).bgHint)
 }
 
 func TestOutputEnvDetectsUnicode(t *testing.T) {

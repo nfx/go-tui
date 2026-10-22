@@ -5,6 +5,7 @@ package tui
 
 import (
 	"context"
+	"github.com/nfx/go-tui/internal/color"
 	"io"
 	"os"
 	"reflect"
@@ -26,7 +27,7 @@ type tio struct {
 	cancel   context.CancelCauseFunc
 	env      outputEnv
 	// bg caches appearance, including timeouts, until setIO replaces the route.
-	bg    *Background
+	bg    *color.Background
 	bgGen uint64
 	// bgMu serializes probes; acquire before mu and release mu before probing.
 	bgMu sync.Mutex
@@ -141,18 +142,18 @@ func (t *tio) Close() error {
 //     COLORTERM, TERM and WT_SESSION.
 //
 // A forced profile never enables prompts, raw mode or redraw.
-func (t *tio) profileFor(w io.Writer) Profile {
+func (t *tio) profileFor(w io.Writer) color.Profile {
 	e := t.env
 	if e.forceColor != nil {
 		switch strings.ToLower(*e.forceColor) {
 		case "0", "false":
-			return ProfilePlain
+			return color.ProfilePlain
 		case "2":
-			return ProfileANSI256
+			return color.ProfileANSI256
 		case "3":
-			return ProfileTrueColor
+			return color.ProfileTrueColor
 		}
-		return ProfileANSI16
+		return color.ProfileANSI16
 	}
 	switch w.(type) {
 	case *chanIO, *viewport, *Tui:
@@ -161,13 +162,13 @@ func (t *tio) profileFor(w io.Writer) Profile {
 	terminal := t.isTerminalWriter(w)
 	switch {
 	case e.noColor && terminal:
-		return ProfileAttrs
+		return color.ProfileAttrs
 	case e.noColor:
-		return ProfilePlain
+		return color.ProfilePlain
 	case e.cliColorForce:
 		return e.depth()
 	case !terminal, e.term == "dumb", !consoleVT(w):
-		return ProfilePlain
+		return color.ProfilePlain
 	}
 	return e.depth()
 }
@@ -210,7 +211,7 @@ func (t *tio) outputLocked(ctx context.Context) io.Writer {
 // background shares detection for the current route, caching only uncancelled,
 // still-current results. Other routes bypass the cache. Without a reply,
 // detection falls back to hint.
-func (t *tio) background(ctx context.Context, tt *termIO, hint Background) Background {
+func (t *tio) background(ctx context.Context, tt *termIO, hint color.Background) color.Background {
 	t.bgMu.Lock()
 	defer t.bgMu.Unlock()
 	t.mu.RLock()
@@ -240,9 +241,9 @@ func (t *tio) background(ctx context.Context, tt *termIO, hint Background) Backg
 // A forced light variant and a destination without color detect nothing.
 func (t *tio) bindTheme(ctx context.Context, c *compiledTheme, out io.Writer, tt *termIO) binding {
 	p := t.profileFor(out)
-	var bg Background
+	var bg color.Background
 	switch {
-	case c.source.Light, p < ProfileANSI16:
+	case c.source.Light, p < color.ProfileANSI16:
 	case tt != nil:
 		bg = t.background(ctx, tt, t.env.bgHint)
 	default:
@@ -254,7 +255,7 @@ func (t *tio) bindTheme(ctx context.Context, c *compiledTheme, out io.Writer, tt
 // routeBackground is the cached detection of the current route when out
 // draws on it, else the environment estimate. It never waits for a probe
 // in progress, so output-only work cannot block on a prompt.
-func (t *tio) routeBackground(out io.Writer) Background {
+func (t *tio) routeBackground(out io.Writer) color.Background {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.bg == nil || !t.drawsOnRouteLocked(out) {

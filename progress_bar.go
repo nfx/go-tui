@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"io"
 	"log/slog"
 	"sync"
@@ -53,7 +54,7 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, o ...o
 	p.showRate = true
 	p.showEstimate = true
 	p.maxNum = size
-	p.label = Text(label)
+	p.label = ansi.Text(label)
 	p.io, err = p.makeTermIO(p.in, p.out)
 	if errors.Is(err, ErrNoTTY) {
 		return p, nil // logs milestones instead, see [Progressbar.logProgress]
@@ -79,7 +80,7 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, o ...o
 type Progressbar struct {
 	config
 	progressState
-	label      Text
+	label      ansi.Text
 	increments chan int64
 	stopped    chan struct{}
 	cancel     context.CancelCauseFunc
@@ -260,7 +261,7 @@ func (p *Progressbar) tick(frame *bytes.Buffer) bool {
 		}
 	}
 	widths := make([]int, len(rows))
-	out := make(Text, 0, 2*max(p.io.Width, 4)*len(rows))
+	out := make(ansi.Text, 0, 2*max(p.io.Width, 4)*len(rows))
 	for i, row := range rows {
 		out = append(out, '\r')
 		out = append(out, row...)
@@ -292,7 +293,7 @@ func (p *Progressbar) linesToClear(width int) int {
 	return max(lines, 1)
 }
 
-func (p *Progressbar) flushLine(frame *bytes.Buffer, line Text) error {
+func (p *Progressbar) flushLine(frame *bytes.Buffer, line ansi.Text) error {
 	if _, err := frame.Write(line); err != nil {
 		return err
 	}

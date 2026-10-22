@@ -5,6 +5,7 @@ package tui
 
 import (
 	"cmp"
+	"github.com/nfx/go-tui/internal/color"
 	"io"
 	"runtime"
 	"slices"
@@ -22,7 +23,7 @@ type outputEnv struct {
 	windowsTerminal bool
 	// bgHint is the background estimated from COLORFGBG, the fallback of
 	// detection, read with the same lifetime as the color policy.
-	bgHint Background
+	bgHint color.Background
 	// ci is set in CI logs, which are rarely color-capable but are viewed in
 	// browsers with the Unicode glyphs. A CI job may run on a pseudo-terminal,
 	// but nobody answers prompts or watches redraws there, so it is never
@@ -96,12 +97,12 @@ func (e outputEnv) utf8Locale() bool {
 var consoleVT = func(io.Writer) bool { return true }
 
 // depth derives color depth from terminal hints, defaulting to ansi16.
-func (e outputEnv) depth() Profile {
+func (e outputEnv) depth() color.Profile {
 	switch {
 	case e.colorTerm == "truecolor" || e.colorTerm == "24bit", e.windowsTerminal:
-		return ProfileTrueColor
+		return color.ProfileTrueColor
 	case strings.Contains(e.term, "256color"):
-		return ProfileANSI256
+		return color.ProfileANSI256
 	}
-	return ProfileANSI16
+	return color.ProfileANSI16
 }

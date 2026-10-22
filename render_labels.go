@@ -6,6 +6,7 @@ package tui
 import (
 	"bytes"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"reflect"
 	"strings"
 )
@@ -27,10 +28,10 @@ func (d choiceLabels) itemLabel(item any) string {
 }
 
 // rowLabel flattens item labels to fit single-line choice slots.
-func (d choiceLabels) rowLabel(item any) string { return Text(d.itemLabel(item)).OneLine() }
+func (d choiceLabels) rowLabel(item any) string { return ansi.Text(d.itemLabel(item)).OneLine() }
 
 // plainText removes terminal styling and preserves word boundaries for ranking.
-func (choiceLabels) plainText(t Text) string {
+func (choiceLabels) plainText(t ansi.Text) string {
 	var b strings.Builder
 	for seg := range t.Segments() {
 		if seg.IsText() {

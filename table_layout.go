@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"reflect"
 	"strings"
 	"text/template"
@@ -115,13 +116,13 @@ func (t *table) renderCells(v any) ([]string, error) {
 // the line before, so a style spanning a line break continues; truncation
 // closes every line, so it cannot bleed into the next column.
 func (*table) carryStyles(lines []string) {
-	var open Text
-	var active SGRChannel
+	var open ansi.Text
+	var active ansi.SGRChannel
 	for k, line := range lines {
 		if k > 0 && len(open) > 0 && line != "" {
 			lines[k] = string(open) + line
 		}
-		for seg := range Text(line).Segments() {
+		for seg := range ansi.Text(line).Segments() {
 			if _, sgr := seg.SGRParams(); !sgr {
 				continue
 			}
@@ -138,7 +139,7 @@ func (*table) carryStyles(lines []string) {
 
 // decorate wraps each line of an automatic row template in its scale color
 // and then in the Cell slot. Explicit row templates are left as rendered.
-func (t *table) decorate(row []Text, colors []string) error {
+func (t *table) decorate(row []ansi.Text, colors []string) error {
 	if !t.autoTemplate {
 		return nil
 	}
@@ -151,7 +152,7 @@ func (t *table) decorate(row []Text, colors []string) error {
 			continue
 		}
 		if i < len(colors) {
-			line = t.look.style(Text(colors[i]), line)
+			line = t.look.style(ansi.Text(colors[i]), line)
 		}
 		meta := t.columns[i].meta
 		out, err := t.cell.execute(cellView{columnView: t.column(meta), Value: line.String()})
@@ -167,7 +168,7 @@ func (t *table) decorate(row []Text, colors []string) error {
 }
 
 // padded writes cell aligned within column col.
-func (t *table) padded(buf *bytes.Buffer, cell Text, col int) error {
+func (t *table) padded(buf *bytes.Buffer, cell ansi.Text, col int) error {
 	padding := t.columns[col].width - cell.Width()
 	if t.columns[col].meta.alignRight { // right align
 		err := t.pad(buf, padding)
@@ -205,12 +206,12 @@ func (t *table) fitPending() {
 		t.allocateWidths()
 	}
 	for _, line := range t.pending {
-		row := make([]Text, len(line))
+		row := make([]ansi.Text, len(line))
 		for i, c := range line {
 			if len(c.text) == 0 {
 				// value is not available, but we need to insert something
 				// to keep the table structure intact.
-				row[i] = Text(" ")
+				row[i] = ansi.Text(" ")
 				continue
 			}
 			row[i] = c.text.TruncateVisible(t.columns[i].maxVisible, ' ')

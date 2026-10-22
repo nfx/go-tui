@@ -46,8 +46,6 @@ type termIO struct {
 	reader <-chan struct{} // closed once the last [termIO.readEvents] goroutine is done with pending
 }
 
-var ErrNoTTY = errors.New("no tty")
-
 var termMakeRaw = term.MakeRaw
 var termRestore = term.Restore
 

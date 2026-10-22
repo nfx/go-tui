@@ -5,16 +5,17 @@ package tui
 
 import (
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"reflect"
 	"strconv"
 )
 
 // themedHint renders slot for keys, led by the count of hidden items.
-func themedHint(slot boundSlot, keys []hint, hidden int) (Text, error) {
+func themedHint(slot boundSlot, keys []hint, hidden int) (ansi.Text, error) {
 	if hidden <= 0 {
 		return slot.render(hintView(keys))
 	}
-	view := append(hintView{{Text(strconv.Itoa(hidden)), Text("more")}}, keys...)
+	view := append(hintView{{ansi.Text(strconv.Itoa(hidden)), ansi.Text("more")}}, keys...)
 	return slot.render(view)
 }
 

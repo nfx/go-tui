@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"io"
 	"regexp"
 	"strconv"
@@ -200,7 +201,7 @@ func (v *viewport) writeTo(w io.Writer) (int64, []int, error) {
 			return bytes, widths, err
 		}
 		bytes += int64(b)
-		widths = append(widths, Text(l).Width())
+		widths = append(widths, ansi.Text(l).Width())
 	}
 	return bytes, widths, nil
 }
@@ -210,7 +211,7 @@ func (v *viewport) writeTo(w io.Writer) (int64, []int, error) {
 func (v *viewport) padded(chunk []byte, lo, mid int) (int, int) {
 	line := bytes.Clone(chunk[lo:mid])
 	if !v.fixedHeight {
-		pl := v.width - Text(line).Width()
+		pl := v.width - ansi.Text(line).Width()
 		if pl < 0 {
 			pl = 0
 		}
@@ -229,7 +230,7 @@ func (v *viewport) padded(chunk []byte, lo, mid int) (int, int) {
 func (v *viewport) appendToLinebuffer(chunk []byte) int {
 	lo, mid, hi := 0, 0, len(chunk)
 	var printed, addedLines int
-	for t := range Text(chunk).Segments() {
+	for t := range ansi.Text(chunk).Segments() {
 		switch t.Text[0] {
 		case '\n': // FIXME: windows is \r\n ?..
 			lo, mid = v.padded(chunk, lo, mid)
@@ -262,7 +263,7 @@ func (v *viewport) joinPartial(chunk []byte) []byte {
 		// the neighbors form the clusters that are wrapped
 		chunk = bytes.ReplaceAll(chunk, []byte{'\r'}, nil)
 	}
-	text := Text(chunk).StripBroken()
+	text := ansi.Text(chunk).StripBroken()
 	if n := text.IncompleteTail(); n > 0 {
 		v.partial = bytes.Clone(text[len(text)-n:])
 		text = text[:len(text)-n]

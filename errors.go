@@ -3,12 +3,20 @@
 
 package tui
 
-import "errors"
+import "github.com/nfx/go-tui/internal/errs"
 
 var (
-	ErrBug                 = errors.New("bug")
-	ErrNoItems             = errors.New("no items")
-	ErrInvalidState        = errors.New("invalid state")
-	ErrUnsupportedPlatform = errors.New("unsupported platform")
-	ErrWrongWidget         = errors.New("wrong widget type")
+	ErrBug                 = errs.ErrBug
+	ErrNoItems             = errs.ErrNoItems
+	ErrInvalidState        = errs.ErrInvalidState
+	ErrUnsupportedPlatform = errs.ErrUnsupportedPlatform
+	ErrWrongWidget         = errs.ErrWrongWidget
+	// ErrNoTTY is returned when a prompt needs a terminal and there is none.
+	ErrNoTTY = errs.ErrNoTTY
+	// ErrNoSpace is returned when the terminal is too small to draw the widget.
+	ErrNoSpace = errs.ErrNoSpace
+	// ErrEmptyLazyResult is empty lazy result.
+	ErrEmptyLazyResult = errs.ErrEmptyLazyResult
+	// ErrInvalidOption identifies invalid configuration values.
+	ErrInvalidOption = errs.ErrInvalidOption
 )

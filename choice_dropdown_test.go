@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/trie"
 	"io"
 	"strings"
 	"sync"
@@ -607,14 +609,14 @@ func TestDropdownItemLabelFallsBackToPointerStringer(t *testing.T) {
 func TestDropdownSetItemUsesResolvedLabelForTrie(t *testing.T) {
 	d := newDropdown(t.Context())
 	item := dropdownHeuristicLabelItem{ID: 3, Name: "omega"}
-	d.active = make([]Text, 1)
+	d.active = make([]ansi.Text, 1)
 	d.activeWidths = make([]int, 1)
-	d.inactive = make([]Text, 1)
+	d.inactive = make([]ansi.Text, 1)
 	d.widths = make([]int, 1)
-	d.content = make([]Text, 1)
+	d.content = make([]ansi.Text, 1)
 	d.search = make([]string, 1)
 	d.relevant = make([]int, 1)
-	d.trie = NewTrie()
+	d.trie = trie.NewTrie()
 	bindDropdown(t, d)
 	assert.NoError(t, d.setItem(0, item))
 	assert.Equal(t, []int{0}, d.trie.Prefix("ome"))
@@ -674,8 +676,8 @@ func TestDropdownShowAnswerWriteError(t *testing.T) {
 
 func TestDropdownRunMainConsumesInputChannel(t *testing.T) {
 	d := newDropdown(t.Context())
-	d.trie = NewTrie()
-	d.trie.Add(Text("a"), 0)
+	d.trie = trie.NewTrie()
+	d.trie.Add(ansi.Text("a"), 0)
 	d.Items = []any{"a"}
 	d.relevant = []int{0}
 	d.displayed = []int{0}
@@ -706,7 +708,7 @@ func TestDropdownRunMainRejectsInvalidConfirmedIndex(t *testing.T) {
 
 func TestDropdownAddItemPreservesFilter(t *testing.T) {
 	d := newDropdown(t.Context())
-	d.trie = NewTrie()
+	d.trie = trie.NewTrie()
 	bindDropdown(t, d)
 	assert.NoError(t, d.addItem(6, "alpha"))
 	assert.True(t, !d.filterWith("a", len(d.displayed), 6, 3))

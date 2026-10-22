@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"io"
 	"strings"
 	"unicode"
@@ -42,7 +43,7 @@ func (m *multichoice) handleKey(key rune) bool {
 			m.count++
 		}
 	case 0x7f, 0x08:
-		clusters := Text(m.typed).Clusters()
+		clusters := ansi.Text(m.typed).Clusters()
 		if len(clusters) > 0 {
 			runes := []rune(m.typed)
 			m.filter(string(runes[:clusters[len(clusters)-1].Start]))

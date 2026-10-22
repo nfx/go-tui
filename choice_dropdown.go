@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/trie"
 	"io"
 	"slices"
 )
@@ -17,10 +19,10 @@ type dropdown struct {
 	Ctx          context.Context
 	Label        string
 	Items        []any
-	trie         *Trie
-	active       []Text
+	trie         *trie.Trie
+	active       []ansi.Text
 	activeWidths []int
-	inactive     []Text
+	inactive     []ansi.Text
 	widths       []int
 	relevant     []int
 	displayed    []int
@@ -42,11 +44,11 @@ type dropdown struct {
 	look    binding
 	inherit binding
 	slot    choiceSlots
-	label   Text
+	label   ansi.Text
 	hint    boundSlot
 	// content is the projected main content of every item, and search the
 	// plain text of it that filtering and ranking see.
-	content []Text
+	content []ansi.Text
 	search  []string
 	// rows is the height of the last frame.
 	rows int
@@ -206,7 +208,7 @@ func newDropdown(ctx context.Context) *dropdown {
 		Label:         "Select from list",
 		makeTermIO:    makePromptIO,
 		IterBatchSize: 10,
-		trie:          NewTrie(),
+		trie:          trie.NewTrie(),
 		theme:         theme,
 		family:        theme.templates.Dropdown,
 	}

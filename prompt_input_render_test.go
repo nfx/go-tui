@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/internal/ansi"
 	"io"
 	"strings"
 	"testing"
@@ -136,7 +137,7 @@ func TestInputRenderClipsWithoutOrphanCombiningRune(t *testing.T) {
 // a cursor inside of a cluster stands on the whole cluster.
 func TestInputRenderClipsOrphanCombiningRuneAtCursor(t *testing.T) {
 	i := &input{typed: "は\u3099ab", cursor: 1}
-	start, end := i.visibleWindow(Text(i.typed).Clusters(), 2)
+	start, end := i.visibleWindow(ansi.Text(i.typed).Clusters(), 2)
 	assert.Equal(t, 0, start)
 	assert.Equal(t, 1, end)
 	got := renderInput(t, &input{Label: "L", typed: "は\u3099ab", cursor: 1}, 4)

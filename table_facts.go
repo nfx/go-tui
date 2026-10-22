@@ -6,14 +6,15 @@ package tui
 import (
 	"bytes"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"io"
 	"os"
 	"text/template"
 )
 
 type factCell struct {
-	title      Text
-	value      Text
+	title      ansi.Text
+	value      ansi.Text
 	width      int
 	alignRight bool
 }
@@ -104,7 +105,7 @@ func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 		if err != nil {
 			return nil, fmt.Errorf("column %q template: %w", meta.name, err)
 		}
-		var buf Text
+		var buf ansi.Text
 		err = tmpl.Execute(&buf, facts)
 		if err != nil {
 			return nil, fmt.Errorf("column %q render: %w", meta.name, err)
@@ -129,8 +130,8 @@ func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 // fact presents a key and its formatted value through the Header and Cell
 // slots, the latter over the first line of the value. An empty value stays
 // empty, as in tables.
-func (f *facts) fact(meta *fieldMetadata, out Text) (key, value Text, err error) {
-	value = Text(bytes.ReplaceAll(bytes.TrimRight(out, "\r\n"), []byte{'\t'}, []byte{' '}))
+func (f *facts) fact(meta *fieldMetadata, out ansi.Text) (key, value ansi.Text, err error) {
+	value = ansi.Text(bytes.ReplaceAll(bytes.TrimRight(out, "\r\n"), []byte{'\t'}, []byte{' '}))
 	view := cellView{columnView: f.column(meta), Value: f.cellText(value.BeforeNewline()).String()}
 	key, err = f.header.render(view.columnView)
 	if err != nil || view.Value == "" {
@@ -178,8 +179,8 @@ func (f *facts) packFactRows(cells []factCell, cols, maxWidth int) ([][]factCell
 
 // renderFactRow clips a fact row to its allocated column widths.
 func (f *facts) renderFactRow(row []factCell, colWidths []int) error {
-	headers := make([]Text, len(row))
-	values := make([]Text, len(row))
+	headers := make([]ansi.Text, len(row))
+	values := make([]ansi.Text, len(row))
 	keys := false
 	f.columns = make([]tableColumn, len(row))
 	for i, cell := range row {

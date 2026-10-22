@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"github.com/nfx/go-tui/internal/color"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
@@ -80,14 +81,14 @@ func TestThemeRoundTripKeepsTemplateSources(t *testing.T) {
 func TestRGBParse(t *testing.T) {
 	for _, tc := range []struct {
 		in   RGB
-		want SRGB
+		want color.SRGB
 	}{
-		{"#00ADD8", SRGB{0x00, 0xAD, 0xD8}},
-		{"#00add8", SRGB{0x00, 0xAD, 0xD8}},
-		{"#0AD", SRGB{0x00, 0xAA, 0xDD}},
-		{"#0ad", SRGB{0x00, 0xAA, 0xDD}},
-		{"#000000", SRGB{}},
-		{"#FFF", SRGB{255, 255, 255}},
+		{"#00ADD8", color.SRGB{0x00, 0xAD, 0xD8}},
+		{"#00add8", color.SRGB{0x00, 0xAD, 0xD8}},
+		{"#0AD", color.SRGB{0x00, 0xAA, 0xDD}},
+		{"#0ad", color.SRGB{0x00, 0xAA, 0xDD}},
+		{"#000000", color.SRGB{}},
+		{"#FFF", color.SRGB{255, 255, 255}},
 	} {
 		t.Run(string(tc.in), func(t *testing.T) {
 			got, err := tc.in.parse()
@@ -101,7 +102,7 @@ func TestRGBParse(t *testing.T) {
 func TestRGBEmptyIsUnset(t *testing.T) {
 	got, err := RGB("").parse()
 	assert.NoError(t, err)
-	assert.Equal(t, SRGB{}, got)
+	assert.Equal(t, color.SRGB{}, got)
 	assert.NoError(t, RGB("").Validate())
 }
 

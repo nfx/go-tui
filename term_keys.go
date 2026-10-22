@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"io"
 	"slices"
 	"time"
@@ -89,7 +90,7 @@ func (t *termIO) readRuneBytes(ctx context.Context) ([]byte, int, error) {
 // readRuneTail reads the remaining bytes of a multi-byte UTF-8 rune
 // that was split across reads, one byte at a time.
 func (t *termIO) readRuneTail(ctx context.Context, buf []byte, n int, readErr error) int {
-	for readErr == nil && n > 0 && n < len(buf) && Text(buf[:n]).PartialRuneTail() > 0 {
+	for readErr == nil && n > 0 && n < len(buf) && ansi.Text(buf[:n]).PartialRuneTail() > 0 {
 		if !t.nextByteReady(ctx, escapeTimeout) {
 			return n
 		}
@@ -140,7 +141,7 @@ func (t *termIO) decodeRuneBytes(buf []byte, n int) (rune, int, error) {
 // so that a paste that filled the buffer mid-rune completes on the next read.
 // It returns the number of bytes left in buf.
 func (t *termIO) holdPartialRune(buf []byte, n int) int {
-	start := n - Text(buf[:n]).PartialRuneTail()
+	start := n - ansi.Text(buf[:n]).PartialRuneTail()
 	if start == 0 || start == n {
 		return n
 	}
@@ -200,7 +201,7 @@ func (t *termIO) escapeSequenceLen(buf []byte) (int, bool) {
 	}
 	switch b := buf[1]; {
 	case b == 0x5b: // CSI
-		p := Text(buf).CSISegment()
+		p := ansi.Text(buf).CSISegment()
 		return len(p.Text), !p.IsIncomplete
 	case b == ']': // OSC
 		if f := t.scanControlFrame(buf); !f.isInvalid {

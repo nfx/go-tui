@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"io"
 	"log/slog"
 	"math"
@@ -24,9 +25,9 @@ type table struct {
 	tmpl             *template.Template
 	columns          []tableColumn
 	metadata         structFields
-	rows             [][]Text
+	rows             [][]ansi.Text
 	pending          [][]cell
-	scratch          Text
+	scratch          ansi.Text
 	cellEnds         []int
 	cellPad          int
 	batchSize        int
@@ -60,7 +61,7 @@ type table struct {
 // cell is a structured table cell: its text never contains tabs or newlines,
 // so field data cannot be confused with layout.
 type cell struct {
-	text  Text
+	text  ansi.Text
 	width int // visible width of text, tailer included
 }
 
@@ -144,11 +145,11 @@ func (t *table) bind() error {
 
 // column is the view of the column of meta.
 func (*table) column(meta *fieldMetadata) columnView {
-	return columnView{Header: Text(meta.header).OneLine(), Name: meta.name, Kind: meta.kind.String()}
+	return columnView{Header: ansi.Text(meta.header).OneLine(), Name: meta.name, Kind: meta.kind.String()}
 }
 
 // heading renders the header of a column through the Header slot.
-func (t *table) heading(meta *fieldMetadata) (Text, error) {
+func (t *table) heading(meta *fieldMetadata) (ansi.Text, error) {
 	return t.header.render(t.column(meta))
 }
 
@@ -198,7 +199,7 @@ func (t *table) addRecord(cells, colors []string) error {
 		count = max(count, len(lines[i]))
 	}
 	for k := range count {
-		row := make([]Text, len(lines))
+		row := make([]ansi.Text, len(lines))
 		var rowColors []string
 		if colors != nil {
 			rowColors = make([]string, len(lines))
@@ -207,7 +208,7 @@ func (t *table) addRecord(cells, colors []string) error {
 			if k >= len(lines[i]) {
 				continue
 			}
-			row[i] = Text(lines[i][k])
+			row[i] = ansi.Text(lines[i][k])
 			if rowColors != nil && i < len(colors) {
 				rowColors[i] = colors[i]
 			}
@@ -223,15 +224,15 @@ func (t *table) addRecord(cells, colors []string) error {
 
 // cellSegment reports whether seg may appear in a cell line: text, SGR or a
 // hyperlink. Invalid bytes become U+FFFD when the line is truncated.
-func (*table) cellSegment(seg Segment) bool {
+func (*table) cellSegment(seg ansi.Segment) bool {
 	_, sgr := seg.SGRParams()
 	_, link := seg.OSC8()
 	return seg.IsText() || seg.IsInvalid || seg.IsEscape && (sgr || link)
 }
 
 // cellText drops the controls and escape sequences a cell line cannot keep.
-func (t *table) cellText(line Text) Text {
-	var out Text
+func (t *table) cellText(line ansi.Text) ansi.Text {
+	var out ansi.Text
 	for seg := range line.Segments() {
 		if t.cellSegment(seg) {
 			out = append(out, seg.Text...)
@@ -241,7 +242,7 @@ func (t *table) cellText(line Text) Text {
 }
 
 // cellOutput reports output of slot that a cell line cannot keep.
-func (t *table) cellOutput(slot boundSlot, out Text) error {
+func (t *table) cellOutput(slot boundSlot, out ansi.Text) error {
 	for seg := range out.Segments() {
 		if !t.cellSegment(seg) {
 			return fmt.Errorf("theme.Templates.%s: %q: want text, SGR and hyperlinks only", slot.tmpl.Name(), seg.Text)
@@ -251,7 +252,7 @@ func (t *table) cellOutput(slot boundSlot, out Text) error {
 }
 
 // addRow queues one physical row, keeping exactly one cell per column.
-func (t *table) addRow(texts []Text) {
+func (t *table) addRow(texts []ansi.Text) {
 	row := make([]cell, len(t.columns))
 	for i := range row {
 		if i >= len(texts) || len(texts[i]) == 0 {

@@ -5,6 +5,8 @@ package tui
 
 import (
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/color"
 	"strings"
 	"sync"
 	"testing"
@@ -18,7 +20,7 @@ func TestSpanHelperHandlesTypes(t *testing.T) {
 	ptr := &str
 	arr := []string{"alpha", "beta"}
 	num := 5
-	formatter := destination{}.newSpan(Reset, Text("\x1b[31m"), Text("\x1b[1m")).helper()
+	formatter := destination{}.newSpan(ansi.Reset, ansi.Text("\x1b[31m"), ansi.Text("\x1b[1m")).helper()
 
 	got := formatter(ptr, arr, &num, "end")
 	if !strings.HasPrefix(got, "\x1b[31m\x1b[1m") {
@@ -30,7 +32,7 @@ func TestSpanHelperHandlesTypes(t *testing.T) {
 	if !strings.Contains(got, "5") {
 		t.Fatalf("expected pointer value, got %q", got)
 	}
-	if !strings.HasSuffix(got, Reset) {
+	if !strings.HasSuffix(got, ansi.Reset) {
 		t.Fatalf("expected reset suffix, got %q", got)
 	}
 }
@@ -47,7 +49,7 @@ func execute(t *testing.T, funcs template.FuncMap, src string, data any) string 
 
 // installedFuncs are the helpers of the installed theme, for a plain destination.
 func installedFuncs() template.FuncMap {
-	return defaultIO.currentTheme().funcs(ProfilePlain, roleStyles{})
+	return defaultIO.currentTheme().funcs(color.ProfilePlain, roleStyles{})
 }
 
 func TestThemeFuncsAreCopied(t *testing.T) {
@@ -70,7 +72,7 @@ func TestThemeFuncsReachSlotsAndAreValidated(t *testing.T) {
 		th.Templates.Prompt.Label = `{{ shout .Label }}`
 	})
 	assert.NoError(t, err)
-	b, err := c.templates.Input.Label.bind(c.funcs(ProfilePlain, roleStyles{}))
+	b, err := c.templates.Input.Label.bind(c.funcs(color.ProfilePlain, roleStyles{}))
 	assert.NoError(t, err)
 	out, err := b.render(struct{ Label string }{"name"})
 	assert.NoError(t, err)
@@ -88,8 +90,8 @@ func TestThemeFuncsReachSlotsAndAreValidated(t *testing.T) {
 // truecolor supplies test helpers with truecolor output and an accent role.
 func truecolor() template.FuncMap {
 	return destination{
-		profile: ProfileTrueColor,
-		roles:   roleStyles{accent: Text("\x1b[38;2;0;173;216m")},
+		profile: color.ProfileTrueColor,
+		roles:   roleStyles{accent: ansi.Text("\x1b[38;2;0;173;216m")},
 		symbols: unicodeSymbols,
 	}.funcs()
 }
@@ -136,8 +138,8 @@ func TestNestedHelpersRestoreOuterStyle(t *testing.T) {
 }
 
 func TestHelpersFollowProfile(t *testing.T) {
-	attrs := destination{profile: ProfileAttrs}.funcs()
-	plain := destination{profile: ProfilePlain}.funcs()
+	attrs := destination{profile: color.ProfileAttrs}.funcs()
+	plain := destination{profile: color.ProfilePlain}.funcs()
 	for _, tc := range []struct {
 		funcs     template.FuncMap
 		src, want string
@@ -150,20 +152,20 @@ func TestHelpersFollowProfile(t *testing.T) {
 	} {
 		assert.Equal(t, tc.want, execute(t, tc.funcs, tc.src, nil))
 	}
-	ansi16 := destination{profile: ProfileANSI16}.funcs()
+	ansi16 := destination{profile: color.ProfileANSI16}.funcs()
 	assert.Equal(t, "\x1b[91mx\x1b[39m", execute(t, ansi16, `{{ fg "#F00" "x" }}`, nil))
 }
 
 func TestColorHelpersComposeWithStringHelpers(t *testing.T) {
 	up := template.FuncMap{"upper": func(s string) string { return "<" + s + ">" }}
 	for _, tc := range []struct {
-		profile   Profile
+		profile   color.Profile
 		src, want string
 	}{
-		{ProfileANSI16, `{{ fg "#F00" "hi" | upper }}`, "<\x1b[91mhi\x1b[39m>"},
-		{ProfileANSI16, `{{ bg "#F00" "hi" | upper }}`, "<\x1b[101mhi\x1b[49m>"},
-		{ProfilePlain, `{{ fg "#F00" "hi" | upper }}`, "<hi>"},
-		{ProfilePlain, `{{ bg "#F00" "hi" | upper }}`, "<hi>"},
+		{color.ProfileANSI16, `{{ fg "#F00" "hi" | upper }}`, "<\x1b[91mhi\x1b[39m>"},
+		{color.ProfileANSI16, `{{ bg "#F00" "hi" | upper }}`, "<\x1b[101mhi\x1b[49m>"},
+		{color.ProfilePlain, `{{ fg "#F00" "hi" | upper }}`, "<hi>"},
+		{color.ProfilePlain, `{{ bg "#F00" "hi" | upper }}`, "<hi>"},
 	} {
 		funcs := destination{profile: tc.profile}.funcs()
 		for k, v := range up {
@@ -192,7 +194,7 @@ func TestSymbolHelper(t *testing.T) {
 }
 
 func TestClippingNestedHelpersKeepsStyleBalanced(t *testing.T) {
-	out := Text(execute(t, truecolor(), `{{ italic (bold "ab") "cd" }}`, nil)).TruncateColumns(3)
+	out := ansi.Text(execute(t, truecolor(), `{{ italic (bold "ab") "cd" }}`, nil)).TruncateColumns(3)
 	assert.Equal(t, 3, out.Width())
 	assert.Equal(t, "\x1b[3m\x1b[1mab\x1b[0m\x1b[3m…\x1b[0m", out.String())
 }
@@ -220,14 +222,14 @@ func TestConcurrentHelperExecutions(t *testing.T) {
 func TestBuiltinHintAccentsKeys(t *testing.T) {
 	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = asciiSymbols })
 	assert.NoError(t, err)
-	funcs := c.funcs(ProfileTrueColor, roleStyles{
-		foreground: Text("\x1b[38;5;1m"),
-		accent:     Text("\x1b[38;5;2m"),
-		guide:      Text("\x1b[38;5;3m"),
+	funcs := c.funcs(color.ProfileTrueColor, roleStyles{
+		foreground: ansi.Text("\x1b[38;5;1m"),
+		accent:     ansi.Text("\x1b[38;5;2m"),
+		guide:      ansi.Text("\x1b[38;5;3m"),
 	})
 	b, err := c.templates.Dropdown.Hint.bind(funcs)
 	assert.NoError(t, err)
-	out, err := b.render(hintView{{Text("3"), Text("more")}, {Text("type"), Text("filter")}})
+	out, err := b.render(hintView{{ansi.Text("3"), ansi.Text("more")}, {ansi.Text("type"), ansi.Text("filter")}})
 	assert.NoError(t, err)
 	// the left side is accented, the rest is the faintest
 	assert.Equal(t, "\x1b[38;5;2m3\x1b[39m \x1b[38;5;3mmore\x1b[39m\x1b[38;5;3m · \x1b[39m"+
@@ -237,10 +239,10 @@ func TestBuiltinHintAccentsKeys(t *testing.T) {
 func TestBuiltinHintSidesDifferOnAssumedBackground(t *testing.T) {
 	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = asciiSymbols })
 	assert.NoError(t, err)
-	look := c.bind(ProfileTrueColor, Background{})
+	look := c.bind(color.ProfileTrueColor, color.Background{})
 	b, err := c.templates.Dropdown.Hint.bind(look.funcs)
 	assert.NoError(t, err)
-	out, err := b.render(hintView{{Text("^v"), Text("move")}})
+	out, err := b.render(hintView{{ansi.Text("^v"), ansi.Text("move")}})
 	assert.NoError(t, err)
 	// the neutrals keep the default color, so the right side is faint
 	assert.Equal(t, "\x1b[38;2;0;173;216m^v\x1b[39m \x1b[2mmove\x1b[22m", out.String())

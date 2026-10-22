@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/trie"
 	"io"
 	"slices"
 	"unicode/utf8"
@@ -16,7 +18,7 @@ import (
 // hintMatches looks up prefix hints in the labels of items without drawing them.
 func (d *dropdown) hintMatches(items []any) func(string) ([]int, error) {
 	return func(hint string) ([]int, error) {
-		t := NewTrie()
+		t := trie.NewTrie()
 		for i, item := range items {
 			label, err := d.searchText(item)
 			if err != nil {
@@ -24,12 +26,12 @@ func (d *dropdown) hintMatches(items []any) func(string) ([]int, error) {
 			}
 			t.Add(label, i)
 		}
-		return HintFromTrie(t)(hint)
+		return trie.HintFromTrie(t)(hint)
 	}
 }
 
 // searchText returns searchable item content without theme decoration.
-func (d *dropdown) searchText(item any) (Text, error) {
+func (d *dropdown) searchText(item any) (ansi.Text, error) {
 	err := d.bindOnce()
 	if err != nil {
 		return nil, err

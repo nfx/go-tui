@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"io"
 	"os"
 	"reflect"
@@ -125,7 +126,7 @@ func TestMultichoiceStateAndGeometry(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, line := range strings.Split(frame.String(), "\n") {
-			if !utf8.ValidString(line) || Text(line).Width() > width {
+			if !utf8.ValidString(line) || ansi.Text(line).Width() > width {
 				t.Fatalf("width %d: %q", width, line)
 			}
 		}

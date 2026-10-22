@@ -6,6 +6,7 @@ package tui
 import (
 	"bytes"
 	"context"
+	"github.com/nfx/go-tui/internal/ansi"
 	"testing"
 	"unicode/utf8"
 
@@ -244,13 +245,13 @@ func FuzzInputWindow(f *testing.F) {
 	f.Fuzz(func(t *testing.T, s string, cursor, avail uint8) {
 		i := &input{typed: s, cursor: int(cursor)}
 		runes := i.displayRunes()
-		cells := Text(string(runes)).Clusters()
+		cells := ansi.Text(string(runes)).Clusters()
 		first, last := i.visibleWindow(cells, int(avail))
 		if first < 0 || first > last || last > len(cells) {
 			t.Fatalf("window [%d,%d) of %d clusters", first, last, len(cells))
 		}
 		visible := string(runes[cells.RuneOffset(first):cells.RuneOffset(last)])
-		if avail > 0 && Text(visible).Width() > int(avail) {
+		if avail > 0 && ansi.Text(visible).Width() > int(avail) {
 			t.Fatalf("window %q wider than %d", visible, avail)
 		}
 		for range 3 {

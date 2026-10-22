@@ -6,12 +6,13 @@ package tui
 import (
 	"bytes"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"strings"
 )
 
 // formatArgs joins helper arguments without separators.
-func (span) formatArgs(args []any) Text {
-	var result Text
+func (span) formatArgs(args []any) ansi.Text {
+	var result ansi.Text
 	for _, t := range args {
 		switch x := t.(type) {
 		case *string:
@@ -35,14 +36,14 @@ func (span) formatArgs(args []any) Text {
 // no state between calls, so its helpers are safe for concurrent executions.
 type span struct {
 	open     []sgrCode
-	channels SGRChannel
+	channels ansi.SGRChannel
 	closer   string
 }
 
 // sgrCode is one opening SGR sequence and the channels it sets.
 type sgrCode struct {
 	seq      string
-	channels SGRChannel
+	channels ansi.SGRChannel
 }
 
 // helper adapts s to a template helper with the argument conversions.
@@ -52,18 +53,18 @@ func (s span) helper() func(...any) string {
 
 // wrap styles body, restoring outer channels after nested resets when content follows.
 // Non-SGR escape sequences pass through unchanged.
-func (s span) wrap(body Text) Text {
+func (s span) wrap(body ansi.Text) ansi.Text {
 	if len(s.open) == 0 {
 		return body
 	}
-	var out Text
+	var out ansi.Text
 	for _, c := range s.open {
 		out = append(out, c.seq...)
 	}
 	if bytes.IndexByte(body, 0x1b) < 0 {
 		out = append(out, body...)
 	} else {
-		var pending SGRChannel
+		var pending ansi.SGRChannel
 		for seg := range body.Segments() {
 			if pending != 0 {
 				s.restore(&out, pending)
@@ -78,7 +79,7 @@ func (s span) wrap(body Text) Text {
 }
 
 // restore appends the opening codes of s that set any of channels, in order.
-func (s span) restore(out *Text, channels SGRChannel) {
+func (s span) restore(out *ansi.Text, channels ansi.SGRChannel) {
 	for _, c := range s.open {
 		if c.channels&channels != 0 {
 			*out = append(*out, c.seq...)

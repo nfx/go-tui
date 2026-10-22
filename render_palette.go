@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"github.com/nfx/go-tui/internal/color"
 	"strings"
 )
 
@@ -13,24 +14,24 @@ import (
 // computed from, and never written back to, the caller's [Palette].
 type resolvedPalette struct {
 	Light      bool // the variant that was selected
-	Background SRGB
+	Background color.SRGB
 	// Known reports whether Background was measured rather than assumed
 	// from the variant's reference background.
 	Known bool
 
-	Foreground SRGB
-	Muted      SRGB
-	Guide      SRGB
-	Track      SRGB
-	Accent     SRGB
-	Success    SRGB
-	Error      SRGB
+	Foreground color.SRGB
+	Muted      color.SRGB
+	Guide      color.SRGB
+	Track      color.SRGB
+	Accent     color.SRGB
+	Success    color.SRGB
+	Error      color.SRGB
 }
 
 // slot is a parsed palette color. Set is false when the caller left the field
 // empty: a required field then holds its preset, an optional one is absent.
 type slot struct {
-	rgb SRGB
+	rgb color.SRGB
 	set bool
 }
 
@@ -99,7 +100,7 @@ func (p Palette) parse() (out parsedPalette, err error) {
 // per-variant override is always rendered literally, and so is a Foreground
 // the caller set; the preset Foreground is moved like a seed. Derived roles
 // come from the rendered colors, not from the raw seeds.
-func (p Palette) resolve(light bool, measured SRGB, known bool) (resolvedPalette, error) {
+func (p Palette) resolve(light bool, measured color.SRGB, known bool) (resolvedPalette, error) {
 	pp, err := p.parse()
 	if err != nil {
 		return resolvedPalette{}, err
@@ -109,7 +110,7 @@ func (p Palette) resolve(light bool, measured SRGB, known bool) (resolvedPalette
 
 // resolve is [Palette.resolve] for a palette that was parsed once, as a
 // compiled theme holds it. It cannot fail.
-func (pp parsedPalette) resolve(light bool, measured SRGB, known bool) resolvedPalette {
+func (pp parsedPalette) resolve(light bool, measured color.SRGB, known bool) resolvedPalette {
 	if known {
 		light = measured.IsLight()
 	}
@@ -123,15 +124,15 @@ func (pp parsedPalette) resolve(light bool, measured SRGB, known bool) resolvedP
 	}
 	fg := v.foreground.rgb
 	if !v.foreground.set {
-		fg = fg.AtLeast(bg, ContrastText)
+		fg = fg.AtLeast(bg, color.ContrastText)
 	}
-	seed := func(override, shared slot, target float64) SRGB {
+	seed := func(override, shared slot, target float64) color.SRGB {
 		if override.set {
 			return override.rgb
 		}
 		return shared.rgb.AtLeast(bg, target)
 	}
-	quiet := func(override slot, target float64) SRGB {
+	quiet := func(override slot, target float64) color.SRGB {
 		if override.set {
 			return override.rgb
 		}
@@ -142,11 +143,11 @@ func (pp parsedPalette) resolve(light bool, measured SRGB, known bool) resolvedP
 		Background: bg,
 		Known:      known,
 		Foreground: fg,
-		Accent:     seed(v.accent, pp.accent, ContrastText),
-		Success:    seed(v.success, pp.success, ContrastMark),
-		Error:      seed(v.err, pp.err, ContrastText),
-		Muted:      quiet(v.muted, ContrastText),
-		Guide:      quiet(v.guide, ContrastGuide),
+		Accent:     seed(v.accent, pp.accent, color.ContrastText),
+		Success:    seed(v.success, pp.success, color.ContrastMark),
+		Error:      seed(v.err, pp.err, color.ContrastText),
+		Muted:      quiet(v.muted, color.ContrastText),
+		Guide:      quiet(v.guide, color.ContrastGuide),
 	}
 	out.Track = out.Guide
 	return out
@@ -157,7 +158,7 @@ func (r resolvedPalette) String() string {
 	var b strings.Builder
 	for _, f := range []struct {
 		name string
-		c    SRGB
+		c    color.SRGB
 	}{
 		{"fg", r.Foreground}, {"muted", r.Muted}, {"guide", r.Guide},
 		{"accent", r.Accent}, {"success", r.Success}, {"error", r.Error},

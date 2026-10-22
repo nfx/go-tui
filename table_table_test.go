@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"io"
 	"iter"
 	"math"
@@ -516,8 +517,8 @@ func TestTableMultilineCellsTruncateEachLine(t *testing.T) {
 	assert.Equal(t, 7, len(lines))
 	assert.Equal(t, "TE…", strings.TrimSpace(lines[0]))
 	for _, line := range lines {
-		if Text(line).Width() > 5 {
-			t.Fatalf("width %d > 5: %q", Text(line).Width(), line)
+		if ansi.Text(line).Width() > 5 {
+			t.Fatalf("width %d > 5: %q", ansi.Text(line).Width(), line)
 		}
 	}
 	assert.Equal(t, "dd…", strings.TrimSpace(lines[4]))
@@ -578,8 +579,8 @@ func TestTableEmptyFirstBatchColumnKeepsMinimumWidth(t *testing.T) {
 	buf.Reset()
 	assert.NoError(t, TableAuto(buf, data, suppress, WithMaxWidth(20)))
 	for line := range strings.SplitSeq(strings.TrimRight(buf.String(), "\n"), "\n") {
-		if Text(line).Width() > 20 {
-			t.Fatalf("width %d > 20: %q", Text(line).Width(), line)
+		if ansi.Text(line).Width() > 20 {
+			t.Fatalf("width %d > 20: %q", ansi.Text(line).Width(), line)
 		}
 	}
 }
@@ -601,8 +602,8 @@ func TestTableMaxWidthIsTotalRowBudget(t *testing.T) {
 		lines := strings.Split(strings.TrimRight(factPlain(buf.String()), "\n"), "\n")
 		assert.Equal(t, 26, len(lines))
 		for _, line := range lines {
-			if Text(line).Width() > maxWidth {
-				t.Fatalf("width %d > %d: %q", Text(line).Width(), maxWidth, line)
+			if ansi.Text(line).Width() > maxWidth {
+				t.Fatalf("width %d > %d: %q", ansi.Text(line).Width(), maxWidth, line)
 			}
 		}
 	}
@@ -619,8 +620,8 @@ func factPlain(out string) string {
 
 // stripSGR removes SGR sequences, keeping text and every other sequence.
 func stripSGR(s string) string {
-	var out Text
-	for seg := range Text(s).Segments() {
+	var out ansi.Text
+	for seg := range ansi.Text(s).Segments() {
 		if _, sgr := seg.SGRParams(); seg.IsEscape && sgr {
 			continue
 		}

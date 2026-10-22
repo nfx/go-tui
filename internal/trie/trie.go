@@ -1,9 +1,10 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package trie
 
 import (
+	"github.com/nfx/go-tui/internal/ansi"
 	"slices"
 	"sort"
 	"strings"
@@ -23,7 +24,7 @@ func NewTrie() *Trie {
 }
 
 // Add indexes the words in word, ignoring terminal controls and escapes.
-func (t *Trie) Add(word Text, i int) {
+func (t *Trie) Add(word ansi.Text, i int) {
 	r := t
 	for seg := range word.Segments() {
 		if !seg.IsText() {

@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 )
 
 func WithOneReturn() opt {
@@ -34,7 +35,7 @@ func (d *dropdown) parseTemplates() error {
 
 // dropdownKeys are the bindings beyond confirming that the hint row describes.
 func (d *dropdown) dropdownKeys(s Symbols) []hint {
-	return []hint{{s.arrows(), Text("move")}, {Text("type"), Text("filter")}}
+	return []hint{{s.arrows(), ansi.Text("move")}, {ansi.Text("type"), ansi.Text("filter")}}
 }
 
 type oneHatch int //nolint:errname // hack for [WithDefault]

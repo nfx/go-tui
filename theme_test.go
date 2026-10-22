@@ -6,6 +6,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/color"
 	"strings"
 	"sync"
 	"testing"
@@ -67,7 +68,7 @@ func TestWithFnRegistersForFutureOperations(t *testing.T) {
 	WithFn("shout", func(s string) string { return strings.ToUpper(s) + "!" })
 
 	assert.Equal(t, "HI!", execute(t, installedFuncs(), `{{ shout "hi" }}`, nil))
-	_, ok := before.funcs(ProfilePlain, roleStyles{})["shout"]
+	_, ok := before.funcs(color.ProfilePlain, roleStyles{})["shout"]
 	assert.True(t, !ok) // an operation that started earlier keeps its helpers
 	_, ok = defaultIO.currentTheme().editable().Funcs["shout"]
 	assert.True(t, ok)

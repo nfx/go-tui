@@ -6,6 +6,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/internal/ansi"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
@@ -175,6 +176,6 @@ func TestSpinnerFailedState(t *testing.T) {
 }
 
 func TestSpinnerOneLine(t *testing.T) {
-	got := Text("a\r\nb\tc\x1b[2Kd\x1b[31mred\x1b[0m\xff\x07").OneLine()
+	got := ansi.Text("a\r\nb\tc\x1b[2Kd\x1b[31mred\x1b[0m\xff\x07").OneLine()
 	assert.Equal(t, "a  b cd\x1b[31mred\x1b[0m�", got)
 }

@@ -6,6 +6,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"text/template"
 	"text/template/parse"
 )
@@ -133,7 +134,7 @@ type boundSlot struct {
 }
 
 // render returns complete slot output or an error, allowing only text and SGR.
-func (b boundSlot) render(data any) (Text, error) {
+func (b boundSlot) render(data any) (ansi.Text, error) {
 	out, err := b.execute(data)
 	if err == nil {
 		err = b.styled(out)
@@ -145,11 +146,11 @@ func (b boundSlot) render(data any) (Text, error) {
 }
 
 // execute returns the slot output without checking it.
-func (b boundSlot) execute(data any) (Text, error) {
+func (b boundSlot) execute(data any) (ansi.Text, error) {
 	if b.tmpl == nil {
 		return nil, nil
 	}
-	var out Text
+	var out ansi.Text
 	err := b.tmpl.Execute(&out, data)
 	if err != nil {
 		return nil, fmt.Errorf("theme.Templates.%s: %w", b.tmpl.Name(), err)
@@ -158,7 +159,7 @@ func (b boundSlot) execute(data any) (Text, error) {
 }
 
 // styled reports slot output that is not only text and SGR.
-func (b boundSlot) styled(out Text) error {
+func (b boundSlot) styled(out ansi.Text) error {
 	if seg, ok := out.Unstyled(); ok {
 		return fmt.Errorf("theme.Templates.%s: %q: want text and SGR only", b.tmpl.Name(), seg.Text)
 	}

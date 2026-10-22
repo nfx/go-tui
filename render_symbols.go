@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 )
 
 // named returns the glyph of a field by name.
@@ -51,4 +52,4 @@ func (s Symbols) named(name string) (string, error) {
 }
 
 // arrows names the up and down arrow keys in key hints.
-func (s Symbols) arrows() Text { return Text(s.Up + s.Down) }
+func (s Symbols) arrows() ansi.Text { return ansi.Text(s.Up + s.Down) }

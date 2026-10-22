@@ -5,6 +5,7 @@ package tui
 
 import (
 	"bytes"
+	"github.com/nfx/go-tui/internal/ansi"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
@@ -21,7 +22,7 @@ func TestSpinnerRedrawTruncatesLongMessage(t *testing.T) {
 	s.state = []*spinnerState{
 		{
 			frames:  []string{"..."},
-			Message: Text("this is a very long spinner message that should be truncated"),
+			Message: ansi.Text("this is a very long spinner message that should be truncated"),
 			tick:    0,
 		},
 	}
@@ -36,6 +37,6 @@ func TestSpinnerRedrawTruncatesLongMessage(t *testing.T) {
 			continue
 		}
 		// each line must fit within the full width = 20
-		assert.True(t, Text(line).Width() <= 20)
+		assert.True(t, ansi.Text(line).Width() <= 20)
 	}
 }

@@ -5,7 +5,6 @@ package tui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"iter"
 	"reflect"
@@ -131,6 +130,3 @@ func MultichoiceLazy[T any](ctx context.Context, label string, items iter.Seq2[T
 	}
 	return result, nil
 }
-
-// ErrInvalidOption identifies invalid configuration values.
-var ErrInvalidOption = errors.New("invalid option")

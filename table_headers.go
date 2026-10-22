@@ -6,6 +6,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"maps"
 	"reflect"
 	"strings"
@@ -26,7 +27,7 @@ func (t *table) headers() error {
 	}
 	t.columns = make([]tableColumn, len(headers))
 	columns := make([]tableColumnInfo, len(headers))
-	bold := make([]Text, len(headers))
+	bold := make([]ansi.Text, len(headers))
 	for i := range headers {
 		meta, ok := lookup[headers[i]]
 		if !ok {
@@ -66,7 +67,7 @@ func (t *table) headers() error {
 func (t *table) autoHeaders() error {
 	t.columns = make([]tableColumn, len(t.metadata))
 	columns := make([]tableColumnInfo, len(t.metadata))
-	headers := make([]Text, len(t.metadata))
+	headers := make([]ansi.Text, len(t.metadata))
 	for i, meta := range t.metadata {
 		t.columns[i].meta = meta
 		columns[i] = tableColumnInfo{

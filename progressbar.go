@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"io"
 	"iter"
 )
@@ -123,7 +124,7 @@ func NewFileProgressReader(ctx context.Context, r io.Reader, label string, o ...
 	p.showRate = true
 	p.showEstimate = true
 	p.maxNum = size
-	p.label = Text(label)
+	p.label = ansi.Text(label)
 	p.io, err = p.makeTermIO(p.in, p.out)
 	if errors.Is(err, ErrNoTTY) {
 		p.io = nil

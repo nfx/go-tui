@@ -1,9 +1,10 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package color
 
 import (
+	"github.com/nfx/go-tui/internal/ansi"
 	"strconv"
 	"testing"
 
@@ -108,27 +109,27 @@ func TestDistinctCollapsesByEncoding(t *testing.T) {
 func TestSGREffect(t *testing.T) {
 	for _, tc := range []struct {
 		seq          string
-		set, cleared SGRChannel
+		set, cleared ansi.SGRChannel
 	}{
-		{"\x1b[m", 0, SGRAll},
-		{"\x1b[0m", 0, SGRAll},
-		{"\x1b[31m", SGRForeground, 0},
-		{"\x1b[0;31m", SGRForeground, SGRAll &^ SGRForeground},
-		{"\x1b[31;0m", 0, SGRAll},
-		{"\x1b[1;22m", 0, SGRIntensity},
-		{"\x1b[22m", 0, SGRIntensity},
-		{"\x1b[23;24;29m", 0, SGRItalic | SGRUnderline | SGRStrike},
-		{"\x1b[39;49m", 0, SGRForeground | SGRBackground},
-		{"\x1b[38;5;0m", SGRForeground, 0},
-		{"\x1b[38;2;0;0;0m", SGRForeground, 0},
-		{"\x1b[48:2::0:0:0m", SGRBackground, 0},
-		{"\x1b[58;5;0;1m", SGRIntensity, 0},
-		{"\x1b[97;104m", SGRForeground | SGRBackground, 0},
+		{"\x1b[m", 0, ansi.SGRAll},
+		{"\x1b[0m", 0, ansi.SGRAll},
+		{"\x1b[31m", ansi.SGRForeground, 0},
+		{"\x1b[0;31m", ansi.SGRForeground, ansi.SGRAll &^ ansi.SGRForeground},
+		{"\x1b[31;0m", 0, ansi.SGRAll},
+		{"\x1b[1;22m", 0, ansi.SGRIntensity},
+		{"\x1b[22m", 0, ansi.SGRIntensity},
+		{"\x1b[23;24;29m", 0, ansi.SGRItalic | ansi.SGRUnderline | ansi.SGRStrike},
+		{"\x1b[39;49m", 0, ansi.SGRForeground | ansi.SGRBackground},
+		{"\x1b[38;5;0m", ansi.SGRForeground, 0},
+		{"\x1b[38;2;0;0;0m", ansi.SGRForeground, 0},
+		{"\x1b[48:2::0:0:0m", ansi.SGRBackground, 0},
+		{"\x1b[58;5;0;1m", ansi.SGRIntensity, 0},
+		{"\x1b[97;104m", ansi.SGRForeground | ansi.SGRBackground, 0},
 		{"\x1b[99999999999999999999m", 0, 0},
 		{"\x1b[2K", 0, 0},
 		{"\x1b[>4m", 0, 0},
 	} {
-		set, cleared := Text(tc.seq).Scan().SGREffect()
+		set, cleared := ansi.Text(tc.seq).Scan().SGREffect()
 		if set != tc.set || cleared != tc.cleared {
 			t.Errorf("%q: got set %06b cleared %06b, want %06b %06b", tc.seq, set, cleared, tc.set, tc.cleared)
 		}

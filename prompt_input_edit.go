@@ -6,6 +6,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -13,7 +14,7 @@ import (
 
 // visibleWindow returns the start and end indexes of the clusters
 // that fit into availW terminal columns, anchored around the cursor.
-func (i *input) visibleWindow(cells Clusters, availW int) (int, int) {
+func (i *input) visibleWindow(cells ansi.Clusters, availW int) (int, int) {
 	at := cells.At(i.cursor)
 	if availW <= 0 {
 		return at, at
@@ -47,7 +48,7 @@ func (i *input) visibleWindow(cells Clusters, availW int) (int, int) {
 
 // prevBoundary returns the rune offset of the cluster boundary before cursor.
 func (i *input) prevBoundary(cursor int) int {
-	cells := Text(string(i.displayRunes())).Clusters()
+	cells := ansi.Text(string(i.displayRunes())).Clusters()
 	if k := cells.At(cursor - 1); k < len(cells) {
 		return cells[k].Start
 	}
@@ -56,7 +57,7 @@ func (i *input) prevBoundary(cursor int) int {
 
 // nextBoundary returns the rune offset of the cluster boundary after cursor.
 func (i *input) nextBoundary(cursor int) int {
-	cells := Text(string(i.displayRunes())).Clusters()
+	cells := ansi.Text(string(i.displayRunes())).Clusters()
 	if k := cells.At(cursor); k < len(cells) {
 		return cells[k].End
 	}

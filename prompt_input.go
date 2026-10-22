@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"io"
 	"unicode/utf8"
 )
@@ -25,7 +26,7 @@ type input struct {
 	// bound slots of the prompt family.
 	theme            *compiledTheme
 	look             binding
-	label, hint      Text
+	label, hint      ansi.Text
 	answer, feedback boundSlot
 	// numeric selects the Number slots of the theme.
 	numeric bool

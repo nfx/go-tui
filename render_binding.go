@@ -4,6 +4,8 @@
 package tui
 
 import (
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/color"
 	"text/template"
 )
 
@@ -12,7 +14,7 @@ import (
 // installed default, so one operation cannot mix two themes.
 type binding struct {
 	theme   *compiledTheme
-	profile Profile
+	profile color.Profile
 	palette resolvedPalette
 	roles   roleStyles
 	// funcs are the helpers of theme slots and projections. Templates
@@ -24,12 +26,12 @@ type binding struct {
 // in its role color.
 func (b binding) geometry(width, height int) geometry {
 	g := b.theme.geometry(width, height)
-	g.guide = b.style(b.roles.guide, Text(g.guide)).String()
+	g.guide = b.style(b.roles.guide, ansi.Text(g.guide)).String()
 	return g
 }
 
 // style wraps renderer-owned content, such as an editable value, in a role.
-func (binding) style(role, content Text) Text {
+func (binding) style(role, content ansi.Text) ansi.Text {
 	if len(content) == 0 {
 		return content
 	}
@@ -37,4 +39,4 @@ func (binding) style(role, content Text) Text {
 }
 
 // diverging is the diverging scale of [compiledTheme.diverging] for the destination.
-func (b binding) diverging() []Text { return b.theme.diverging(b.profile, b.palette, b.roles) }
+func (b binding) diverging() []ansi.Text { return b.theme.diverging(b.profile, b.palette, b.roles) }

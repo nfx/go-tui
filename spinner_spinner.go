@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"text/template"
 )
 
@@ -16,8 +17,8 @@ type spinnerState struct {
 	active  bool
 	keep    bool
 	frames  []string
-	Prefix  Text
-	Message Text
+	Prefix  ansi.Text
+	Message ansi.Text
 	Failed  bool
 	Done    bool
 }

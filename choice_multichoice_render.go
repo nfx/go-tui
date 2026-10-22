@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/internal/ansi"
 )
 
 // render builds a width-bounded frame from cached content and current selection state.
@@ -81,7 +82,7 @@ func (m *multichoice) bindRun(ctx context.Context, tio *termIO) error {
 }
 
 // projectItem caches searchable content, deferring details and non-searchable rows until drawing.
-func (m *multichoice) projectItem(item any) (Text, error) {
+func (m *multichoice) projectItem(item any) (ansi.Text, error) {
 	content, err := m.projectContent(m.slot.value, item)
 	if err != nil {
 		return nil, err
@@ -106,7 +107,7 @@ func (m *multichoice) drawItem(i int) (err error) {
 }
 
 // themedRow wraps state-specific content in the Row slot that owns focus and check marks.
-func (m *multichoice) themedRow(i int, active bool) (Text, error) {
+func (m *multichoice) themedRow(i int, active bool) (ansi.Text, error) {
 	err := m.drawItem(i)
 	if err != nil {
 		return nil, err

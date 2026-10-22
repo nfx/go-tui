@@ -1,10 +1,11 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package color
 
 import (
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 )
 
 // Profile is what SGR a destination accepts, ordered by capability.
@@ -32,10 +33,10 @@ func (p Profile) Attrs() bool { return p >= ProfileAttrs }
 
 // Encode returns the foreground or background SGR sequence for c, or nil for
 // profiles without color.
-func (p Profile) Encode(c SRGB, background bool) Text {
+func (p Profile) Encode(c SRGB, background bool) ansi.Text {
 	switch p {
 	case ProfileANSI16:
-		return Text(c.ansi16Escape(background))
+		return ansi.Text(c.ansi16Escape(background))
 	case ProfileANSI256:
 		return fmt.Appendf(nil, "\x1b[%d;5;%dm", c.base(background), c.nearestIndex(256))
 	case ProfileTrueColor:
@@ -46,12 +47,12 @@ func (p Profile) Encode(c SRGB, background bool) Text {
 }
 
 // Named preserves a Named SGR code only when the profile supports it.
-func (p Profile) Named(seq Text) string {
+func (p Profile) Named(seq ansi.Text) string {
 	set, _ := seq.Scan().SGREffect()
 	switch {
 	case p >= ProfileANSI16:
 		return seq.String()
-	case p == ProfileAttrs && set&(SGRForeground|SGRBackground) == 0:
+	case p == ProfileAttrs && set&(ansi.SGRForeground|ansi.SGRBackground) == 0:
 		return seq.String()
 	default:
 		return ""
@@ -59,10 +60,10 @@ func (p Profile) Named(seq Text) string {
 }
 
 // Fg returns the SGR sequence selecting c as foreground.
-func (p Profile) Fg(c SRGB) Text { return p.Encode(c, false) }
+func (p Profile) Fg(c SRGB) ansi.Text { return p.Encode(c, false) }
 
 // bg returns the SGR sequence selecting c as background.
-func (p Profile) bg(c SRGB) Text { return p.Encode(c, true) }
+func (p Profile) bg(c SRGB) ansi.Text { return p.Encode(c, true) }
 
 // Shown is what a destination displays for c: the nearest palette entry for
 // indexed profiles, c itself for truecolor.

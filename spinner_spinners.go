@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"io"
 	"sync"
 	"time"
@@ -240,7 +241,7 @@ func (s *Spinners) updateSpinner(update updateOffset) {
 	if update.err != nil {
 		update.message = update.err.Error()
 		s.state[update.offset].Failed = true
-		s.state[update.offset].Message = Text(update.message)
+		s.state[update.offset].Message = ansi.Text(update.message)
 		s.logStage(slog.LevelError, update.message, update.offset, "failed")
 		s.emit(spinnerFailed{
 			Index: update.offset,
@@ -251,7 +252,7 @@ func (s *Spinners) updateSpinner(update updateOffset) {
 	if s.state[update.offset].Message.String() != update.message {
 		s.logStage(slog.LevelInfo, update.message, update.offset, "running")
 	}
-	s.state[update.offset].Message = Text(update.message)
+	s.state[update.offset].Message = ansi.Text(update.message)
 	s.emit(spinnerUpdated{
 		Index:   update.offset,
 		Message: update.message,
@@ -348,7 +349,7 @@ func (s *Spinners) redraw(prevActive int) (int, error) {
 // row renders a spinner through the slot of its state. Only a running
 // spinner advances its frame. The row is clipped before the last column, so
 // that it cannot autowrap.
-func (s *Spinners) row(spinner *spinnerState) (Text, error) {
+func (s *Spinners) row(spinner *spinnerState) (ansi.Text, error) {
 	slot, state := s.rows.running, "running"
 	switch {
 	case spinner.Failed:
@@ -376,8 +377,8 @@ func (s *Spinners) row(spinner *spinnerState) (Text, error) {
 // oneLine keeps the text and SGR of caller content on one row: line breaks
 // and tabs become spaces, invalid bytes U+FFFD, and other controls and
 // escape sequences are dropped.
-func (*Spinners) oneLine(t Text) string {
-	var out Text
+func (*Spinners) oneLine(t ansi.Text) string {
+	var out ansi.Text
 	for seg := range t.Segments() {
 		_, sgr := seg.SGRParams()
 		switch {
@@ -437,7 +438,7 @@ func (s *Spinners) newSpinner(ns createSpinner) {
 	offset := len(s.state)
 	s.state = append(s.state, &spinnerState{
 		cancel: ns.cancel,
-		Prefix: Text(ns.prefix),
+		Prefix: ansi.Text(ns.prefix),
 		tick:   (len(s.state) + 1) % len(ns.frames),
 		frames: ns.frames,
 		active: true,

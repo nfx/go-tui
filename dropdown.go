@@ -5,7 +5,6 @@ package tui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"iter"
 	"reflect"
@@ -150,8 +149,3 @@ func WithHide() opt {
 		return nil
 	})
 }
-
-var ErrNoSpace = errors.New("no space in terminal")
-
-// ErrEmptyLazyResult is empty lazy result.
-var ErrEmptyLazyResult = errors.New("empty lazy result")

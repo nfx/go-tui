@@ -85,7 +85,7 @@ func main() {
 	}
 	resp.Body.Close()
 	fmt.Println()
-	fmt.Println("package tui")
+	fmt.Println("package ansi")
 	fmt.Println()
 	fmt.Printf("const unicodeVersion = %q\n\n", unicode.Version)
 	fmt.Println("var glyphRanges = []glyphRange{")

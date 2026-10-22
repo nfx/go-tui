@@ -3,6 +3,10 @@
 
 package tui
 
+import (
+	"github.com/nfx/go-tui/internal/color"
+)
+
 // RGB is a 24-bit sRGB color in CSS hex notation, "#RRGGBB" or the
 // shorthand "#RGB". Hex digits are case-insensitive. The empty string
 // means unset: the slot inherits or derives its color.
@@ -18,7 +22,7 @@ func (c RGB) Validate() error {
 }
 
 // must parses a color that was already validated or is a constant.
-func (c RGB) must() SRGB {
+func (c RGB) must() color.SRGB {
 	rgb, err := c.parse()
 	if err != nil {
 		panic(err)
@@ -28,9 +32,9 @@ func (c RGB) must() SRGB {
 
 // parse returns the color bytes. The empty (unset) value parses to zero
 // bytes without error, so callers that care check c == "" themselves.
-func (c RGB) parse() (SRGB, error) {
+func (c RGB) parse() (color.SRGB, error) {
 	if c == "" {
-		return SRGB{}, nil
+		return color.SRGB{}, nil
 	}
-	return ParseHex(string(c))
+	return color.ParseHex(string(c))
 }

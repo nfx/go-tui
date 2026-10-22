@@ -3,6 +3,10 @@
 
 package tui
 
+import (
+	"github.com/nfx/go-tui/internal/ansi"
+)
+
 // labelView is the payload of a label slot.
 type labelView struct{ Label string }
 
@@ -20,7 +24,7 @@ type feedbackView struct{ Message string }
 
 // hint is one entry of a hint row: a key and what it does, a count and
 // what it counts, or a value and its unit.
-type hint struct{ Left, Right Text }
+type hint struct{ Left, Right ansi.Text }
 
 // hintView is the payload of a hint slot: the keys the widget actually
 // handles, led by the count of hidden items in a choice list, or the

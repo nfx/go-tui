@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
 	"strings"
 	"unicode"
 )
@@ -98,12 +99,12 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 		return err
 	}
 	runes := i.displayRunes()
-	cells := Text(string(runes)).Clusters()
+	cells := ansi.Text(string(runes)).Clusters()
 	first, last := i.visibleWindow(cells, cols)
-	visible := Text(string(runes[cells.RuneOffset(first):cells.RuneOffset(last)]))
+	visible := ansi.Text(string(runes[cells.RuneOffset(first):cells.RuneOffset(last)]))
 	if i.Password {
 		// Keep one mask per visible typed rune, even for multi-rune masks.
-		visible = Text(strings.Repeat(i.theme.source.Symbols.Mask, last-first))
+		visible = ansi.Text(strings.Repeat(i.theme.source.Symbols.Mask, last-first))
 	}
 	feedback, err := i.themedFeedback()
 	if err != nil {
@@ -114,7 +115,7 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 		rows = append(rows, frameRow{content: i.label, drop: 1})
 	}
 	value := len(rows)
-	row := append(append(Text{}, lead...), i.look.style(i.look.roles.foreground, visible)...)
+	row := append(append(ansi.Text{}, lead...), i.look.style(i.look.roles.foreground, visible)...)
 	rows = append(rows, frameRow{content: row})
 	if len(feedback) > 0 {
 		rows = append(rows, frameRow{content: feedback, guided: true})
@@ -169,7 +170,7 @@ func (i *input) writeFrame(io *termIO, frame *bytes.Buffer, fit fitted, caret, c
 
 // themedFeedback renders the rejection with the feedback slot. The geometry
 // clips it.
-func (i *input) themedFeedback() (Text, error) {
+func (i *input) themedFeedback() (ansi.Text, error) {
 	if i.rejection == "" {
 		return nil, nil
 	}

@@ -40,7 +40,7 @@
 // dealings in these Data Files or Software without prior written
 // authorization of the copyright holder.
 
-package tui
+package ansi
 
 const unicodeVersion = "17.0.0"
 

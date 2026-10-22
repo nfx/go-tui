@@ -6,6 +6,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/trie"
 	"io"
 	"iter"
 	"reflect"
@@ -28,16 +30,16 @@ type multichoice struct {
 	theme *compiledTheme
 	look  binding
 	slot  multichoiceSlots
-	label Text
+	label ansi.Text
 	help  boundSlot
 	// pending holds the items until binding projects them.
 	pending []any
 	// content is the projected main content of every item. Its details
 	// render when a frame first draws it, which drawn records.
-	content, details []Text
+	content, details []ansi.Text
 	drawn            []bool
 
-	trie      *Trie
+	trie      *trie.Trie
 	hintRunes []rune
 	scores    []int
 
@@ -118,7 +120,7 @@ func (m *multichoice) prepare(o []opt) error {
 	if err != nil {
 		return fmt.Errorf("templates: %w", err)
 	}
-	m.trie = NewTrie()
+	m.trie = trie.NewTrie()
 	m.hintRunes = []rune(strings.ToLower(m.hint))
 	items := m.Items
 	m.Items = nil
@@ -155,7 +157,7 @@ func (m *multichoice) addItem(item any) error {
 	m.scores = append(m.scores, score)
 	matches := true
 	if m.typed != "" {
-		single := NewTrie()
+		single := trie.NewTrie()
 		single.Add(search, i)
 		matches = len(single.Prefix(m.typed)) > 0
 	}
@@ -173,7 +175,7 @@ func (m *multichoice) addItem(item any) error {
 }
 
 // indexItem caches item content and returns the text used for filtering.
-func (m *multichoice) indexItem(item any) (Text, error) {
+func (m *multichoice) indexItem(item any) (ansi.Text, error) {
 	return m.projectItem(item)
 }
 
@@ -235,7 +237,7 @@ func (m *multichoice) resolveDefault() error {
 
 // resolveTyped resolves the default against the entries collected so far.
 func (m *multichoice) resolveTyped() ([]int, error) {
-	return m.target.resolveSelection(m.def.raw, m.Items, HintFromTrie(m.trie))
+	return m.target.resolveSelection(m.def.raw, m.Items, trie.HintFromTrie(m.trie))
 }
 
 // answerFromDefault checks the entries of the default without a terminal.
@@ -373,7 +375,11 @@ func (m *multichoice) writeAnswer(line []byte) error {
 
 // multichoiceKeys are the bindings beyond confirming that the hint row describes.
 func (m *multichoice) multichoiceKeys(s Symbols) []hint {
-	return []hint{{s.arrows(), Text("move")}, {Text("space"), Text("toggle")}, {Text("type"), Text("filter")}}
+	return []hint{
+		{s.arrows(), ansi.Text("move")},
+		{ansi.Text("space"), ansi.Text("toggle")},
+		{ansi.Text("type"), ansi.Text("filter")},
+	}
 }
 
 // selection reports whether d is a slice of the target type, and returns its members.
