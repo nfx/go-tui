@@ -480,7 +480,13 @@ func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, o ...opt) (*table
 			slog.Debug("table: generated template", "template", rowTmpl)
 		}
 	}
-	t.tmpl, err = template.New("row").Funcs(t.templateFuncs()).Parse(rowTmpl)
+	for name, columnTmpl := range t.columnTemplates {
+		_, err = template.New(fmt.Sprintf("column %q template", name)).Funcs(t.templateFuncs()).Parse(columnTmpl)
+		if err != nil {
+			return nil, fmt.Errorf("template: %w", err)
+		}
+	}
+	t.tmpl, err = template.New("row template").Funcs(t.templateFuncs()).Parse(rowTmpl)
 	if err != nil {
 		return nil, fmt.Errorf("template: %w", err)
 	}

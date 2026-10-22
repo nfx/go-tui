@@ -68,7 +68,7 @@ func iterate[T any](items []T) iter.Seq2[T, error] {
 
 func main() {
 	err := tui.TableIter(os.Stdout,
-		"{{ green .Name | italic | underline }}\t{{ dim .Age }}\t{{ yellow .Type }}\t{{.Owner.Name}}\t{{.Owner.Age}}",
+		"{{ accent .Name | italic | underline }}\t{{ dim .Age }}\t{{ muted .Type }}\t{{.Owner.Name}}\t{{.Owner.Age}}",
 		iterate(dummyPets))
 	if err != nil {
 		panic(err)
