@@ -1,15 +1,17 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package table
 
 import (
 	"bytes"
-	"github.com/nfx/go-tui/internal/ansi"
-	"github.com/nfx/go-tui/internal/render"
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/render"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -73,7 +75,7 @@ func TestGeometryValueColumns(t *testing.T) {
 			assert.Equal(t, tc.wantLead, lead.String())
 			cols, err := g.ValueColumns(lead)
 			if tc.wantErr {
-				assert.ErrorIs(t, err, ErrNoSpace)
+				assert.ErrorIs(t, err, errs.ErrNoSpace)
 				return
 			}
 			assert.NoError(t, err)
@@ -167,7 +169,7 @@ func TestGeometryFit(t *testing.T) {
 			g := render.Geometry{Inline: tc.inline, Guide: "│", Width: tc.width, Height: tc.height}
 			got, err := g.Fit(tc.rows)
 			if tc.wantErr {
-				assert.ErrorIs(t, err, ErrNoSpace)
+				assert.ErrorIs(t, err, errs.ErrNoSpace)
 				return
 			}
 			assert.NoError(t, err)

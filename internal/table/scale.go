@@ -1,17 +1,18 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package table
 
 import (
 	"fmt"
-	"github.com/nfx/go-tui/internal/ansi"
 	"math"
 	"reflect"
 	"slices"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/nfx/go-tui/internal/ansi"
 )
 
 // signedPercent formats v as a percentage, positive in the success role and

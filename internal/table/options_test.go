@@ -1,15 +1,17 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package table
 
 import (
 	"bytes"
 	"fmt"
-	"github.com/nfx/go-tui/internal/option"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -321,8 +323,8 @@ func TestWithMaxWidthRejectsNonPositive(t *testing.T) {
 		Name string
 	}
 	err := Facts(buf, row{Name: "A"}, WithMaxWidth(0))
-	assert.ErrorIs(t, err, ErrInvalidState)
+	assert.ErrorIs(t, err, errs.ErrInvalidState)
 
 	err = Facts(buf, row{Name: "A"}, WithMaxWidth(-1))
-	assert.ErrorIs(t, err, ErrInvalidState)
+	assert.ErrorIs(t, err, errs.ErrInvalidState)
 }

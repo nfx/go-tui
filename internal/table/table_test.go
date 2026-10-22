@@ -1,16 +1,12 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package table
 
 import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/nfx/go-tui/internal/ansi"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"iter"
 	"math"
@@ -19,6 +15,12 @@ import (
 	"strings"
 	"testing"
 	"text/template"
+
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -282,12 +284,12 @@ func TestTableRejectsOptionsOfOtherWidgets(t *testing.T) {
 		Name string
 	}
 	data := []item{{Name: "a"}}
-	err := TableAuto(&bytes.Buffer{}, data, WithHide())
-	assert.ErrorIs(t, err, ErrWrongWidget)
-	assert.Contains(t, err.Error(), "need option.Prompt, got *tui.table")
+	err := TableAuto(&bytes.Buffer{}, data, option.WithHide())
+	assert.ErrorIs(t, err, errs.ErrWrongWidget)
+	assert.Contains(t, err.Error(), "need option.Prompt, got *table.table")
 
-	err = TableAuto(&bytes.Buffer{}, data, WithOutput(&bytes.Buffer{}))
-	assert.ErrorIs(t, err, ErrWrongWidget)
+	err = TableAuto(&bytes.Buffer{}, data, option.WithOutput(&bytes.Buffer{}))
+	assert.ErrorIs(t, err, errs.ErrWrongWidget)
 }
 
 func TestTableIterHandlesIteratorError(t *testing.T) {

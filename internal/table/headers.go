@@ -1,16 +1,17 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package table
 
 import (
 	"errors"
 	"fmt"
-	"github.com/nfx/go-tui/internal/ansi"
 	"maps"
 	"reflect"
 	"strings"
 	"text/template"
+
+	"github.com/nfx/go-tui/internal/ansi"
 )
 
 func (t *table) headers() error {

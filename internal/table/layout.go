@@ -1,17 +1,18 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package table
 
 import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/nfx/go-tui/internal/ansi"
 	"reflect"
 	"strings"
 	"text/template"
 	"text/template/parse"
+
+	"github.com/nfx/go-tui/internal/ansi"
 )
 
 // columnView is the data of the Table.Header slot.
