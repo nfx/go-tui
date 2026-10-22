@@ -6,9 +6,6 @@ package tui
 import (
 	"bytes"
 	"iter"
-	"slices"
-	"strconv"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -31,66 +28,6 @@ func (t *text) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// glyph is a code point, as a terminal shows it.
-type glyph rune
-
-// glyphFlags are the Unicode properties of a rune that [glyphRanges] records.
-type glyphFlags uint8
-
-const (
-	wideGlyph  glyphFlags = 1 << iota // East_Asian_Width W or F
-	pictGlyph                         // Extended_Pictographic
-	emojiGlyph                        // Emoji
-)
-
-//go:generate sh -c "go run glyphs_gen.go | gofmt > glyphs.go"
-
-type glyphRange struct {
-	lo, hi rune
-	flags  glyphFlags
-}
-
-// has reports whether r has all the properties p.
-func (r glyph) has(p glyphFlags) bool {
-	i, found := slices.BinarySearchFunc(glyphRanges, rune(r), func(c glyphRange, r rune) int {
-		switch {
-		case r < c.lo:
-			return 1
-		case r > c.hi:
-			return -1
-		default:
-			return 0
-		}
-	})
-	return found && glyphRanges[i].flags&p == p
-}
-
-// segment is a part of text that is never split.
-//
-// It is a cluster (one or more runes shown as 0, 1 or 2 columns) unless one of
-// the flags is set.
-type segment struct {
-	text  []byte
-	width int // terminal columns
-
-	// isInvalid is set for a single byte that is not UTF-8.
-	isInvalid bool
-	// isControl is set for a control character, like \n, \t or DEL.
-	isControl bool
-	// isEscape is set for a complete escape sequence.
-	isEscape bool
-	// isIncomplete is set for an escape sequence cut by the end of input.
-	isIncomplete bool
-	// isBroken is set for a lone ESC, or an escape sequence cancelled by a byte
-	// that cannot belong to it, so it would swallow the text appended after it.
-	isBroken bool
-}
-
-// isText reports whether t is printable text rather than terminal control data.
-func (t segment) isText() bool {
-	return !t.isInvalid && !t.isControl && !t.isEscape && !t.isIncomplete && !t.isBroken
-}
-
 // unstyled reports the first segment that is neither text nor SGR.
 func (t text) unstyled() (segment, bool) {
 	for seg := range t.segments() {
@@ -100,105 +37,6 @@ func (t text) unstyled() (segment, bool) {
 		return seg, true
 	}
 	return segment{}, false
-}
-
-// sgrStyle reports whether t is SGR and may leave a style open.
-func (t segment) sgrStyle() (styled, ok bool) {
-	params, ok := t.sgrParams()
-	if !ok {
-		return false, false
-	}
-	return len(bytes.Trim(params, "0;")) > 0, true
-}
-
-// sgrParams returns SGR parameters, rejecting non-SGR sequences.
-func (t segment) sgrParams() (text, bool) {
-	params, ok := bytes.CutPrefix(t.text, []byte("\x1b["))
-	if !ok {
-		return nil, false
-	}
-	params, ok = bytes.CutSuffix(params, []byte("m"))
-	// private parameters, like in ESC [ > 4 m, are not SGR
-	if !ok || len(bytes.Trim(params, "0123456789;:")) > 0 {
-		return nil, false
-	}
-	return params, true
-}
-
-// sgrChannel is a part of the style that SGR sets and resets independently.
-type sgrChannel uint8
-
-const (
-	sgrForeground sgrChannel = 1 << iota
-	sgrBackground
-	sgrIntensity // bold and dim share reset 22
-	sgrItalic
-	sgrUnderline
-	sgrStrike
-
-	sgrAll = sgrForeground | sgrBackground | sgrIntensity | sgrItalic | sgrUnderline | sgrStrike
-)
-
-// sgrEffect reports final channel changes without treating color arguments as resets.
-func (t segment) sgrEffect() (set, cleared sgrChannel) {
-	params, ok := t.sgrParams()
-	if !ok {
-		return 0, 0
-	}
-	fields := bytes.Split(params, []byte(";"))
-	for i := 0; i < len(fields); i++ {
-		head, _, colon := bytes.Cut(fields[i], []byte(":"))
-		code := -1
-		if len(head) == 0 {
-			code = 0 // an empty parameter is a reset
-		} else if n, err := strconv.Atoi(string(head)); err == nil {
-			code = n
-		}
-		on, off := t.sgrCodeEffect(code)
-		set, cleared = (set|on)&^off, (cleared|off)&^on
-		if (code == 38 || code == 48 || code == 58) && !colon && i+1 < len(fields) {
-			switch string(fields[i+1]) {
-			case "5":
-				i += 2
-			case "2":
-				i += 4
-			}
-		}
-	}
-	return set, cleared
-}
-
-// sgrCodeEffect returns the channels one SGR parameter sets and resets.
-func (t segment) sgrCodeEffect(code int) (on, off sgrChannel) {
-	switch {
-	case code == 0:
-		return 0, sgrAll
-	case code == 1 || code == 2:
-		return sgrIntensity, 0
-	case code == 3:
-		return sgrItalic, 0
-	case code == 4:
-		return sgrUnderline, 0
-	case code == 9:
-		return sgrStrike, 0
-	case code == 22:
-		return 0, sgrIntensity
-	case code == 23:
-		return 0, sgrItalic
-	case code == 24:
-		return 0, sgrUnderline
-	case code == 29:
-		return 0, sgrStrike
-	case code >= 30 && code <= 38, code >= 90 && code <= 97:
-		return sgrForeground, 0
-	case code == 39:
-		return 0, sgrForeground
-	case code >= 40 && code <= 48, code >= 100 && code <= 107:
-		return sgrBackground, 0
-	case code == 49:
-		return 0, sgrBackground
-	}
-	return 0, 0
 }
 
 // segments returns the segments of t, in order.
@@ -279,20 +117,6 @@ func (t text) scanCluster(r glyph, size int) segment {
 	return segment{text: t[:n], width: w}
 }
 
-// isRegionalIndicator reports whether r participates in a flag pair.
-func (r glyph) isRegionalIndicator() bool {
-	return r >= 0x1f1e6 && r <= 0x1f1ff
-}
-
-// isZeroWidth reports whether r occupies no column by itself.
-func (r glyph) isZeroWidth() bool {
-	if r < 0x300 {
-		return r == 0xad // soft hyphen
-	}
-	return unicode.In(rune(r), unicode.Mn, unicode.Me, unicode.Mc, unicode.Cf) ||
-		(r >= 0x1160 && r <= 0x11ff) || (r >= 0xd7b0 && r <= 0xd7ff)
-}
-
 // width returns the number of terminal columns the text occupies.
 func (t text) width() int {
 	w := 0
@@ -300,21 +124,6 @@ func (t text) width() int {
 		w += seg.width
 	}
 	return w
-}
-
-// width returns r's standalone terminal width.
-func (r glyph) width() int {
-	switch {
-	case r < 0x20 || (r >= 0x7f && r < 0xa0):
-		return 0
-	// see unicode combining marks in https://www.unicode.org/reports/tr29/
-	case r.isZeroWidth():
-		return 0
-	case r >= 0x1100 && r.has(wideGlyph):
-		return 2
-	default:
-		return 1
-	}
 }
 
 // truncateVisible keeps t's first line within maxLen columns and appends tailer.
@@ -353,29 +162,6 @@ func (t text) beforeNewline() text {
 		}
 	}
 	return t
-}
-
-// osc8 returns the URI of an OSC 8 sequence, and whether t is one.
-func (t segment) osc8() (uri []byte, ok bool) {
-	body, ok := bytes.CutPrefix(t.text, []byte("\x1b]8;"))
-	if !ok {
-		return nil, false
-	}
-	body = bytes.TrimSuffix(bytes.TrimSuffix(body, []byte("\a")), []byte("\x1b\\"))
-	_, uri, ok = bytes.Cut(body, []byte(";"))
-	return uri, ok
-}
-
-// isHyperlink reports whether t is an OSC 8 sequence that opens a link.
-func (t segment) isHyperlink() bool {
-	uri, ok := t.osc8()
-	return ok && len(uri) > 0
-}
-
-// endsHyperlink reports whether t is an OSC 8 sequence that closes a link.
-func (t segment) endsHyperlink() bool {
-	uri, ok := t.osc8()
-	return ok && len(uri) == 0
 }
 
 // truncateColumns fits t into maxLen columns, closing an open hyperlink and
@@ -550,55 +336,4 @@ func (t text) stripBroken() text {
 		return t
 	}
 	return append(out, t[kept:]...)
-}
-
-// cluster is a segment of text, measured in runes and columns.
-type cluster struct {
-	start, end int // rune offsets: [start, end)
-	width      int
-}
-
-// clusters splits t into cursor and wrapping boundaries.
-type clusters []cluster
-
-func (t text) clusters() clusters {
-	cells := make(clusters, 0, len(t))
-	offset := 0
-	for seg := range t.segments() {
-		runes := utf8.RuneCount(seg.text)
-		cells = append(cells, cluster{start: offset, end: offset + runes, width: seg.width})
-		offset += runes
-	}
-	return cells
-}
-
-// width returns the terminal columns occupied by c.
-func (c clusters) width() int {
-	w := 0
-	for _, cell := range c {
-		w += cell.width
-	}
-	return w
-}
-
-// at returns the cluster containing cursor, or len(c) at the end.
-func (c clusters) at(cursor int) int {
-	for k, cell := range c {
-		if cursor < cell.end {
-			return k
-		}
-	}
-	return len(c)
-}
-
-// runeOffset returns the rune offset at cluster k's start.
-func (c clusters) runeOffset(k int) int {
-	switch {
-	case k < len(c):
-		return c[k].start
-	case len(c) > 0:
-		return c[len(c)-1].end
-	default:
-		return 0
-	}
 }

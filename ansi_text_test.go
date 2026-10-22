@@ -285,13 +285,6 @@ func TestIncompleteTail(t *testing.T) {
 	}
 }
 
-func TestClusters(t *testing.T) {
-	got := text("ae\u0301\u754c\x1b[0m👍🏽").clusters()
-	assert.Equal(t, clusters{
-		{0, 1, 1}, {1, 3, 1}, {3, 4, 2}, {4, 8, 0}, {8, 10, 2},
-	}, got)
-}
-
 func TestWidthEmoji(t *testing.T) {
 	for _, tt := range []struct {
 		in   string
@@ -410,18 +403,6 @@ func FuzzViewportWrap(f *testing.F) {
 			}
 		}
 	})
-}
-
-// oneCluster reports whether line holds a single visible segment,
-// which is wider than the viewport and cannot be wrapped.
-func oneCluster(line text) bool {
-	visible := 0
-	for seg := range line.segments() {
-		if seg.width > 0 {
-			visible++
-		}
-	}
-	return visible <= 1
 }
 
 func TestStripBroken(t *testing.T) {
