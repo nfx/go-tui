@@ -5,13 +5,13 @@ layout: hextra-home
 
 <div class="hx:mt-6 hx:mb-6">
 {{< hextra/hero-headline >}}
-  Terminal UI widgets in Go
+  Interactivity for your Go CLI
 {{< /hextra/hero-headline >}}
 </div>
 
 <div class="hx:mb-12">
 {{< hextra/hero-subtitle >}}
-  Zero-dependency interactive widgets for CLIs: dropdowns, input, spinners, progress bars, tables, file pickers, and JSON formatting.
+  Typed prompts, coordinated progress and logs, and explicit defaults for automation. Keep your application's control flow.
 {{< /hextra/hero-subtitle >}}
 </div>
 
@@ -21,18 +21,23 @@ layout: hextra-home
 
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card
-    title="Interactive"
+    title="Keep your architecture"
     icon="sparkles"
-    subtitle="Keyboard-driven widgets for real terminal workflows."
+    subtitle="Call widgets from ordinary Go functions, with contexts, readers, writers and typed results."
   >}}
   {{< hextra/feature-card
-    title="Composable"
+    title="One terminal coordinator"
     icon="puzzle"
-    subtitle="Shared options and template helpers across widgets."
+    subtitle="Prompts and progress coexist with logs routed through tui.Stderr()."
   >}}
   {{< hextra/feature-card
-    title="Pragmatic"
+    title="Ready for automation"
     icon="lightning-bolt"
-    subtitle="Works in real apps with context cancellation and stream-friendly APIs."
+    subtitle="Without a TTY, prompts validate explicit defaults without reading input; progress becomes structured logs."
   >}}
 {{< /hextra/feature-grid >}}
+
+go-tui directly depends only on `golang.org/x/sys` and `golang.org/x/term`.
+It fits commands that need interactivity alongside their existing work.
+Rich applications with grids, pages, trees and navigable views are outside
+its scope; read [Alternatives](docs/alternatives/) for the tradeoffs.

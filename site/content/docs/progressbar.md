@@ -200,7 +200,7 @@ th.Templates.Progress.Frame = `{{ .Label }} [{{ .Bar }}] {{ .Metrics }}`
 
 ## Behavior notes
 
-- `NewMaxProgressBar`, `NewSliceProgressBar`, and `NewParallelProgressBar` tolerate non-TTY output and degrade to no-op updates.
+- `NewMaxProgressBar`, `NewSliceProgressBar`, and `NewParallelProgressBar` tolerate non-TTY output and report milestones through `slog` instead of redrawing.
 - `Close()` stops rendering, erases every row of the bar and releases its terminal resources.
 - Progress bars can share the default output with `Input` and `Password`, including their validation feedback. They do not change terminal input mode, so closing a bar leaves an active prompt's editing functional.
 

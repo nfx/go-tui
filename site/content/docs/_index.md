@@ -20,3 +20,4 @@ Core guides:
 - [File Picker](filepicker.md)
 - [Text handling](text.md)
 - [Testing in Other Terminals](testing.md)
+- [Alternatives](alternatives.md)
