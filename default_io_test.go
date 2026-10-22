@@ -80,16 +80,6 @@ func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
 	cio, ok := defaultOut.(*term.ChanIO)
 	assert.True(t, ok)
 	assert.NotNil(t, cio)
-
-	s := newSpinners(t.Context())
-	assert.Equal(t, in, s.In)
-	assert.Equal(t, cio, s.Out)
-	s.ticker.Stop()
-
-	p := newProgressbar(t.Context())
-	assert.Equal(t, in, p.In)
-	assert.Equal(t, cio, p.Out)
-	p.ticker.Stop()
 }
 
 func TestSetDefaultIO(t *testing.T) {
@@ -102,15 +92,8 @@ func TestSetDefaultIO(t *testing.T) {
 	out := &bytes.Buffer{}
 	SetDefaultIO(in, out)
 
-	s := newSpinners(t.Context())
-	assert.Equal(t, in, s.In)
-	assert.Equal(t, out, s.Out)
-	s.ticker.Stop()
-
-	p := newProgressbar(t.Context())
-	assert.Equal(t, in, p.In)
-	assert.Equal(t, out, p.Out)
-	p.ticker.Stop()
+	assert.Equal(t, in, term.Default.Input())
+	assert.Equal(t, out, term.Default.RawOutput())
 }
 
 func TestSpinnersCloseNil(t *testing.T) {

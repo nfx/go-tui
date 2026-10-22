@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"fmt"
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
 )
@@ -410,15 +411,6 @@ func TestSpinnersLogFallbackRejectsOtherErrors(t *testing.T) {
 	assert.ErrorIs(t, err, io.ErrClosedPipe)
 }
 
-// frameWriter delivers every write as one receive. Unlike a [chanIO]
-// without a viewport, spinners clear their rows on it when they stop.
-type frameWriter chan string
-
-func (w frameWriter) Write(p []byte) (int, error) {
-	w <- string(p)
-	return len(p), nil
-}
-
 // themedSpinners is a spinner group rendering through th on a terminal of the
 // given width, with manual ticks. Each write is one receive from frames.
 // restored reports a released terminal.
@@ -427,11 +419,11 @@ func themedSpinners(
 	th theme.Theme,
 	width int,
 	o ...option.Opt,
-) (*Spinners, frameWriter, func(), *atomic.Bool) {
+) (*Spinners, terst.FrameWriter, func(), *atomic.Bool) {
 	t.Helper()
 	terst.UseTheme(t, th)
 	restored := &atomic.Bool{}
-	frames := make(frameWriter)
+	frames := make(terst.FrameWriter)
 	cio, tick, options := testIOforSpinners(t, width, 10, append([]option.Opt{option.OpT(func(s *Spinners) error {
 		s.makeTermIO = func(in io.Reader, _ io.Writer) (*term.IO, error) {
 			return &term.IO{In: in, Out: frames, Width: width, Height: 10, Restore: func() error {
@@ -456,7 +448,7 @@ func themedSpinners(
 
 // untilStopped returns everything the group writes until its loop ends,
 // failing the test unless it ends within a second.
-func untilStopped(t *testing.T, s *Spinners, frames frameWriter) string {
+func untilStopped(t *testing.T, s *Spinners, frames terst.FrameWriter) string {
 	t.Helper()
 	var out strings.Builder
 	timeout := time.After(time.Second)
@@ -470,4 +462,74 @@ func untilStopped(t *testing.T, s *Spinners, frames frameWriter) string {
 			t.Fatal("spinner group did not stop")
 		}
 	}
+}
+
+func TestChanIO_Forward(t *testing.T) {
+	t.SkipNow()
+	cio, stdout := terst.ChainIOForTest(t, 12, 3)
+
+	// write 5 lines
+	_, err := fmt.Fprint(cio, "a\nb\nc\nd\ne\n")
+	assert.NoError(t, err)
+
+	// render 3 lines due to the viewport height
+	assert.Equal(t, "\rc           \n\rd           \n\re           ", <-stdout.C)
+
+	// write one more line
+	_, err = fmt.Fprint(cio, "f\n")
+	assert.NoError(t, err)
+
+	// and have the previous two lines still rendered
+	assert.Equal(t,
+		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rd           \n\re           \n\rf           ",
+		<-stdout.C)
+
+	ticks := make(chan time.Time)
+	defer close(ticks)
+	tick := func() {
+		go func() {
+			select {
+			case <-cio.Ctx.Done():
+			case ticks <- time.Now():
+			}
+		}()
+	}
+
+	s, err := NewSpinners(cio.Ctx,
+		WithOutput(cio),
+		option.OpT(func(s *Spinners) error { //nolint:unparam // ..
+			s.ticks = ticks
+			return nil
+		}),
+	)
+	assert.NoError(t, err)
+
+	s.MustAddBackground().Update("s: A")
+	tick()
+
+	assert.Equal(t,
+		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\r\r... s: A   \n\r\r           \n\rf           ",
+		<-stdout.C)
+
+	// write one more line
+	_, err = fmt.Fprint(cio, "g\n")
+	assert.NoError(t, err)
+
+	assert.Equal(t,
+		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\r\r... s: A   \n\r\r           \n\rg           ",
+		<-stdout.C)
+}
+
+func TestNewSpinnersUsesDefaultIO(t *testing.T) {
+	prevIn := term.Default.Input()
+	prevOut := term.Default.RawOutput()
+	t.Cleanup(func() { term.Default.SetIO(prevIn, prevOut) })
+	in := bytes.NewBufferString("in")
+	out := &bytes.Buffer{}
+	term.Default.SetIO(in, out)
+
+	s := newSpinners(t.Context())
+	assert.Equal(t, in, s.In)
+	assert.Equal(t, out, s.Out)
+	s.ticker.Stop()
 }

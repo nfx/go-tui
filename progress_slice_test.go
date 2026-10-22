@@ -113,7 +113,7 @@ func TestNewSliceProgressBarReturnsError(t *testing.T) {
 
 func TestThemedSliceProgress(t *testing.T) {
 	terst.UseTheme(t, terst.ASCIITheme(false))
-	frames := make(frameWriter, 16)
+	frames := make(terst.FrameWriter, 16)
 	ticks := make(chan time.Time)
 	var clock atomic.Int64
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)

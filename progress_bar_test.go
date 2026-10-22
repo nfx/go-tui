@@ -916,7 +916,7 @@ func halfDone(now time.Time) progressState {
 // the given time since the start; each write is one receive from frames.
 // restored reports a released terminal.
 type fakeTerminal struct {
-	frames   frameWriter
+	frames   terst.FrameWriter
 	tick     func(time.Duration)
 	restored *atomic.Bool
 	terminal option.Opt
@@ -925,7 +925,7 @@ type fakeTerminal struct {
 // newFakeTerminal is a terminal width columns wide.
 func newFakeTerminal(t *testing.T, width int) fakeTerminal {
 	t.Helper()
-	ft := fakeTerminal{frames: make(frameWriter), restored: &atomic.Bool{}}
+	ft := fakeTerminal{frames: make(terst.FrameWriter), restored: &atomic.Bool{}}
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	clock := &atomic.Int64{}
@@ -977,7 +977,7 @@ func themedProgress(
 	t *testing.T,
 	th theme.Theme,
 	size int64,
-) (*Progressbar, frameWriter, func(time.Duration), *atomic.Bool) {
+) (*Progressbar, terst.FrameWriter, func(time.Duration), *atomic.Bool) {
 	t.Helper()
 	terst.UseTheme(t, th)
 	ft := newFakeTerminal(t, 40)
@@ -989,7 +989,7 @@ func themedProgress(
 
 // untilProgressStopped returns everything the bar writes until its loop
 // ends, failing the test unless it ends within a second.
-func untilProgressStopped(t *testing.T, p *Progressbar, frames frameWriter) string {
+func untilProgressStopped(t *testing.T, p *Progressbar, frames terst.FrameWriter) string {
 	t.Helper()
 	var out strings.Builder
 	timeout := time.After(time.Second)
@@ -1149,4 +1149,24 @@ func themedFile(t *testing.T, th theme.Theme, src io.Reader) (*wrapReader, fakeT
 	assert.NoError(t, err)
 	ft.closeOnCleanup(t, r.p)
 	return r, ft
+}
+
+func TestWithOptionsPropagatesInvalidValues(t *testing.T) {
+	err := WithOptions(WithWorkers(0))(newProgressbar(t.Context()))
+	assert.ErrorIs(t, err, ErrInvalidState)
+	assert.True(t, !errors.Is(err, ErrWrongWidget))
+}
+
+func TestNewProgressbarUsesDefaultIO(t *testing.T) {
+	prevIn := term.Default.Input()
+	prevOut := term.Default.RawOutput()
+	t.Cleanup(func() { term.Default.SetIO(prevIn, prevOut) })
+	in := bytes.NewBufferString("in")
+	out := &bytes.Buffer{}
+	term.Default.SetIO(in, out)
+
+	p := newProgressbar(t.Context())
+	assert.Equal(t, in, p.In)
+	assert.Equal(t, out, p.Out)
+	p.ticker.Stop()
 }

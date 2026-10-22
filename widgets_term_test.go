@@ -7,74 +7,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
-	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
 )
-
-func TestChanIO_Forward(t *testing.T) {
-	t.SkipNow()
-	cio, stdout := terst.ChainIOForTest(t, 12, 3)
-
-	// write 5 lines
-	_, err := fmt.Fprint(cio, "a\nb\nc\nd\ne\n")
-	assert.NoError(t, err)
-
-	// render 3 lines due to the viewport height
-	assert.Equal(t, "\rc           \n\rd           \n\re           ", <-stdout.C)
-
-	// write one more line
-	_, err = fmt.Fprint(cio, "f\n")
-	assert.NoError(t, err)
-
-	// and have the previous two lines still rendered
-	assert.Equal(t,
-		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rd           \n\re           \n\rf           ",
-		<-stdout.C)
-
-	ticks := make(chan time.Time)
-	defer close(ticks)
-	tick := func() {
-		go func() {
-			select {
-			case <-cio.Ctx.Done():
-			case ticks <- time.Now():
-			}
-		}()
-	}
-
-	s, err := NewSpinners(cio.Ctx,
-		WithOutput(cio),
-		option.OpT(func(s *Spinners) error { //nolint:unparam // ..
-			s.ticks = ticks
-			return nil
-		}),
-	)
-	assert.NoError(t, err)
-
-	s.MustAddBackground().Update("s: A")
-	tick()
-
-	assert.Equal(t,
-		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\r\r... s: A   \n\r\r           \n\rf           ",
-		<-stdout.C)
-
-	// write one more line
-	_, err = fmt.Fprint(cio, "g\n")
-	assert.NoError(t, err)
-
-	assert.Equal(t,
-		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\r\r... s: A   \n\r\r           \n\rg           ",
-		<-stdout.C)
-}
 
 func TestInput_ScriptedReaderAndWriter(t *testing.T) {
 	var out bytes.Buffer

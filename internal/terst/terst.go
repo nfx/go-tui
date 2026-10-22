@@ -322,6 +322,15 @@ func (r *BlockingByteReader) Close() {
 	close(r.ch)
 }
 
+// FrameWriter delivers every write as one receive. Unlike a [term.ChanIO]
+// without a viewport, spinners clear their rows on it when they stop.
+type FrameWriter chan string
+
+func (w FrameWriter) Write(p []byte) (int, error) {
+	w <- string(p)
+	return len(p), nil
+}
+
 // StripSGR removes SGR sequences, keeping text and every other sequence.
 func StripSGR(s string) string {
 	var out ansi.Text

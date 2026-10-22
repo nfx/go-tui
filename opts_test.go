@@ -5,7 +5,6 @@ package tui
 
 import (
 	"bytes"
-	"errors"
 	"github.com/nfx/go-tui/internal/option"
 	"io"
 	"testing"
@@ -59,12 +58,6 @@ func TestWithOptionsEmptyIsNoop(t *testing.T) {
 	assert.NoError(t, WithOptions()(&optsDummy{}))
 }
 
-func TestWithOptionsPropagatesInvalidValues(t *testing.T) {
-	err := WithOptions(WithWorkers(0))(newProgressbar(t.Context()))
-	assert.ErrorIs(t, err, ErrInvalidState)
-	assert.True(t, !errors.Is(err, ErrWrongWidget))
-}
-
 func TestEntryPointsRejectOptionsOfOtherWidgets(t *testing.T) {
 	_, err := Input(t.Context(), "Name", WithWorkers(2))
 	assert.ErrorIs(t, err, ErrWrongWidget)
@@ -78,7 +71,10 @@ func TestEntryPointsRejectOptionsOfOtherWidgets(t *testing.T) {
 	_, err = NewSpinners(t.Context(), WithPrefixf("group"))
 	assert.ErrorIs(t, err, ErrWrongWidget)
 
-	_, err = newSpinners(t.Context()).Add(t.Context(), WithHide())
+	group, err := NewSpinners(t.Context(), WithOutput(io.Discard))
+	assert.NoError(t, err)
+	defer group.Close()
+	_, err = group.Add(t.Context(), WithHide())
 	assert.ErrorIs(t, err, ErrWrongWidget)
 
 	_, err = FilePicker(t.Context(), "Pick", WithWorkers(2))
