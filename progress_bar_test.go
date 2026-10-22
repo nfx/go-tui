@@ -12,6 +12,7 @@ import (
 	"github.com/nfx/go-tui/internal/color"
 	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"log/slog"
@@ -61,8 +62,8 @@ func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
-	cio := &chanIO{
-		ctx: ctx,
+	cio := &term.ChanIO{
+		Ctx: ctx,
 		In:  make(chan string),
 		Out: make(chan string, 4),
 	}
@@ -78,10 +79,10 @@ func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
 			pb.redrawAt = start
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-				return &termIO{
-					in:      in,
-					out:     out,
+			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+				return &term.IO{
+					In:      in,
+					Out:     out,
 					Width:   40,
 					Height:  1,
 					Restore: func() error { return nil },
@@ -130,8 +131,8 @@ func TestProgressbarTickRenders(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
-	cio := &chanIO{
-		ctx: ctx,
+	cio := &term.ChanIO{
+		Ctx: ctx,
 		In:  make(chan string),
 		Out: make(chan string, 4),
 	}
@@ -147,10 +148,10 @@ func TestProgressbarTickRenders(t *testing.T) {
 			pb.redrawAt = start
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-				return &termIO{
-					in:      in,
-					out:     out,
+			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+				return &term.IO{
+					In:      in,
+					Out:     out,
 					Width:   40,
 					Height:  1,
 					Restore: func() error { return nil },
@@ -209,8 +210,8 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
-	cio := &chanIO{
-		ctx: ctx,
+	cio := &term.ChanIO{
+		Ctx: ctx,
 		In:  make(chan string),
 		Out: make(chan string, 4),
 	}
@@ -230,10 +231,10 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 			pb.redrawAt = start
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-				return &termIO{
-					in:      in,
-					out:     out,
+			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+				return &term.IO{
+					In:      in,
+					Out:     out,
 					Width:   40,
 					Height:  1,
 					Restore: func() error { return nil },
@@ -277,8 +278,8 @@ func TestProgressbarDoneEmitsClosed(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
-	cio := &chanIO{
-		ctx: ctx,
+	cio := &term.ChanIO{
+		Ctx: ctx,
 		In:  make(chan string),
 		Out: make(chan string, 4),
 	}
@@ -298,10 +299,10 @@ func TestProgressbarDoneEmitsClosed(t *testing.T) {
 			pb.redrawAt = start
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-				return &termIO{
-					in:      in,
-					out:     out,
+			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+				return &term.IO{
+					In:      in,
+					Out:     out,
 					Width:   40,
 					Height:  1,
 					Restore: func() error { return nil },
@@ -348,7 +349,7 @@ func TestNewMaxProgressBar(t *testing.T) {
 
 func TestNewMaxProgressBarAppliesOptions(t *testing.T) {
 	_, err := NewMaxProgressBar(t.Context(), "max", 1, option.OpT(func(p *Progressbar) error {
-		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		p.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 			return nil, errors.New("boom")
 		}
 		return nil
@@ -390,8 +391,8 @@ func TestNewFileProgressReader(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
-	cio := &chanIO{
-		ctx: ctx,
+	cio := &term.ChanIO{
+		Ctx: ctx,
 		In:  make(chan string),
 		Out: make(chan string, 4),
 	}
@@ -408,10 +409,10 @@ func TestNewFileProgressReader(t *testing.T) {
 			pb.increments = make(chan int64, 8)
 			pb.now = func() time.Time { return time.Now() }
 			pb.redrawAt = pb.now()
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-				return &termIO{
-					in:      in,
-					out:     out,
+			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+				return &term.IO{
+					In:      in,
+					Out:     out,
 					Width:   30,
 					Height:  1,
 					Restore: func() error { return nil },
@@ -520,7 +521,7 @@ func TestFileProgressReaderLogsWithoutTTY(t *testing.T) {
 
 func TestProgressBarLogsWithoutTTY(t *testing.T) {
 	noTTY := option.OpT(func(p *Progressbar) error {
-		p.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { return nil, ErrNoTTY }
+		p.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) { return nil, ErrNoTTY }
 		return nil
 	})
 	for _, tc := range []struct {
@@ -591,7 +592,7 @@ func TestProgressBarLogsWithoutTTY(t *testing.T) {
 func TestFileProgressReaderReturnsTerminalErrors(t *testing.T) {
 	_, err := NewFileProgressReader(t.Context(), strings.NewReader("data"), "Download",
 		option.OpT(func(p *Progressbar) error {
-			p.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
+			p.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) {
 				return nil, io.ErrClosedPipe
 			}
 			return nil
@@ -617,7 +618,7 @@ func TestProgressbarCloseNoIO(t *testing.T) {
 }
 
 func TestProgressbarCloseWithIO(t *testing.T) {
-	p := &Progressbar{io: &termIO{}, cancel: func(error) {}, err: io.EOF}
+	p := &Progressbar{io: &term.IO{}, cancel: func(error) {}, err: io.EOF}
 	err := p.Close()
 	if !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF, got %v", err)
@@ -629,10 +630,10 @@ func TestProgressbarCloseWaitsForBackgroundStop(t *testing.T) {
 	p, err := newStartedProgressBar(t.Context(), "sync", 1, option.OpT(func(pb *Progressbar) error {
 		pb.ticks = make(chan time.Time)
 		pb.ticker = time.NewTicker(time.Hour)
-		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-			return &termIO{
-				in:     in,
-				out:    &bytes.Buffer{},
+		pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+			return &term.IO{
+				In:     in,
+				Out:    &bytes.Buffer{},
 				Width:  30,
 				Height: 1,
 				Restore: func() error {
@@ -668,7 +669,7 @@ func TestProgressbarAddContextDone(t *testing.T) {
 	cancel()
 	p := &Progressbar{
 		Config:     option.Config{Ctx: ctx},
-		io:         &termIO{},
+		io:         &term.IO{},
 		increments: nil,
 	}
 	p.Add(1)
@@ -690,7 +691,7 @@ func (c *closeReader) Close() error {
 // withLook binds the installed theme to p, as a started bar does.
 func withLook(t *testing.T, p *Progressbar) *Progressbar {
 	t.Helper()
-	p.theme = defaultIO.currentTheme()
+	p.theme = term.Default.CurrentTheme()
 	assert.NoError(t, p.bindLook(t.Context()))
 	return p
 }
@@ -705,8 +706,8 @@ func TestProgressbarTickShowsElapsed(t *testing.T) {
 			redrawAt:    time.Now().Add(-1 * time.Second),
 		},
 		label: ansi.Text("test"),
-		io: &termIO{
-			out:     &bytes.Buffer{},
+		io: &term.IO{
+			Out:     &bytes.Buffer{},
 			Width:   40,
 			Height:  1,
 			Restore: func() error { return nil },
@@ -717,7 +718,7 @@ func TestProgressbarTickShowsElapsed(t *testing.T) {
 	if p.tick(frame) {
 		t.Fatalf("unexpected done")
 	}
-	out, ok := p.io.out.(*bytes.Buffer)
+	out, ok := p.io.Out.(*bytes.Buffer)
 	assert.True(t, ok)
 	assert.Contains(t, stripSGR(out.String()), "2s elapsed")
 }
@@ -737,8 +738,8 @@ func TestProgressbarTickWriteError(t *testing.T) {
 			startedAt:  time.Now().Add(-time.Second),
 		},
 		label: ansi.Text("test"),
-		io: &termIO{
-			out:     errWriterPB{},
+		io: &term.IO{
+			Out:     errWriterPB{},
 			Width:   40,
 			Height:  1,
 			Restore: func() error { return nil },
@@ -757,8 +758,8 @@ func TestProgressbarTickWriteError(t *testing.T) {
 func TestProgressbarStopRestoreError(t *testing.T) {
 	p := &Progressbar{
 		rendered: true,
-		io: &termIO{
-			out:     &bytes.Buffer{},
+		io: &term.IO{
+			Out:     &bytes.Buffer{},
 			Restore: func() error { return io.EOF },
 		},
 		ticker: time.NewTicker(time.Hour),
@@ -785,10 +786,10 @@ func TestProgressBarWithContextCancelBound(t *testing.T) {
 		option.OpT(func(pb *Progressbar) error {
 			pb.ticks = make(chan time.Time)
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-				return &termIO{
-					in:      in,
-					out:     &bytes.Buffer{},
+			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+				return &term.IO{
+					In:      in,
+					Out:     &bytes.Buffer{},
 					Width:   40,
 					Height:  1,
 					Restore: func() error { return nil },
@@ -825,10 +826,10 @@ func TestNewFileProgressReaderWithContextCancelBound(t *testing.T) {
 		option.OpT(func(pb *Progressbar) error {
 			pb.ticks = make(chan time.Time)
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-				return &termIO{
-					in:      in,
-					out:     &bytes.Buffer{},
+			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+				return &term.IO{
+					In:      in,
+					Out:     &bytes.Buffer{},
 					Width:   40,
 					Height:  1,
 					Restore: func() error { return nil },
@@ -862,7 +863,7 @@ func TestProgressbarAddAfterStoppedDoesNotBlock(t *testing.T) {
 	stopped := make(chan struct{})
 	close(stopped)
 	p := &Progressbar{
-		io:         &termIO{},
+		io:         &term.IO{},
 		Ctx:        t.Context(),
 		stopped:    stopped,
 		increments: make(chan int64),
@@ -930,8 +931,8 @@ func newFakeTerminal(t *testing.T, width int) fakeTerminal {
 	ft.terminal = option.OpT(func(pb *Progressbar) error {
 		pb.now = func() time.Time { return start.Add(time.Duration(clock.Load())) }
 		pb.ticks = ticks
-		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
-			return &termIO{in: in, out: ft.frames, Width: width, Height: 10, Restore: func() error {
+		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*term.IO, error) {
+			return &term.IO{In: in, Out: ft.frames, Width: width, Height: 10, Restore: func() error {
 				ft.restored.Store(true)
 				return nil
 			}}, nil
@@ -1016,7 +1017,7 @@ func frameOf(rows ...string) string {
 func erased(t *testing.T, n int) string {
 	t.Helper()
 	var b bytes.Buffer
-	assert.NoError(t, new(termIO).clear(n, &b))
+	assert.NoError(t, new(term.IO).Clear(n, &b))
 	return b.String()
 }
 

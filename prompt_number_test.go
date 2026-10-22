@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"math"
@@ -433,7 +434,7 @@ func TestThemedNumberHintErrorRestoresTerminal(t *testing.T) {
 	strictOutput(t)
 	n, out, _ = themedNumber[int](t, th, 30, 5)
 	n.prompt.Out = out
-	n.prompt.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
+	n.prompt.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) {
 		t.Fatal("acquired a terminal")
 		return nil, ErrNoTTY
 	}

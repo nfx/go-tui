@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ import (
 type viewportChanged struct {
 	lines   int
 	done    chan struct{}
-	release *viewport // set by [chanIO.releaseViewport]
+	release *Viewport // set by [chanIO.releaseViewport]
 }
 
 type writeToResponse struct {
@@ -35,15 +35,15 @@ type writeTo struct {
 	height int // if positive, the height budget to render within
 }
 
-type viewport struct {
+type Viewport struct {
 	width, height int
 	lines         [][]byte
-	next          *viewport
+	Next          *Viewport
 	inner         chan viewportWrite
 	notify        chan viewportChanged
 	writeTos      chan *writeTo
 	ctx           context.Context
-	fixedHeight   bool
+	FixedHeight   bool
 	lastLines     int
 	// partial holds a rune or escape sequence split across writes until the rest arrives.
 	partial []byte
@@ -60,8 +60,8 @@ type viewportWrite struct {
 
 // initViewport allocates a viewport with the given
 // dimensions and starts its event loop goroutine.
-func initViewport(ctx context.Context, notify chan viewportChanged, width, height int) *viewport {
-	v := &viewport{
+func initViewport(ctx context.Context, notify chan viewportChanged, width, height int) *Viewport {
+	v := &Viewport{
 		ctx:      ctx,
 		inner:    make(chan viewportWrite),
 		writeTos: make(chan *writeTo),
@@ -75,7 +75,7 @@ func initViewport(ctx context.Context, notify chan viewportChanged, width, heigh
 
 // WriteTo walks the viewport chain and renders each
 // viewport into w within the height budget.
-func (v *viewport) WriteTo(w io.Writer) (int64, error) {
+func (v *Viewport) WriteTo(w io.Writer) (int64, error) {
 	var total int64
 	curr := v
 	budget := v.height
@@ -105,25 +105,25 @@ func (v *viewport) WriteTo(w io.Writer) (int64, error) {
 					return total, nil
 				}
 				// simplified assumption: tail viewport cannot have fixed height
-				curr = curr.next
+				curr = curr.Next
 			}
 		}
 	}
 	return total, nil
 }
 
-func (v *viewport) WriteByte(b byte) error {
+func (v *Viewport) WriteByte(b byte) error {
 	_, err := v.Write([]byte{b})
 	return err
 }
 
 // Write queues a copied frame for asynchronous viewport rendering.
-func (v *viewport) Write(chunk []byte) (n int, err error) {
+func (v *Viewport) Write(chunk []byte) (n int, err error) {
 	return v.write(chunk, nil, 0)
 }
 
 // write queues an owned copy with its width update and optional acknowledgement.
-func (v *viewport) write(chunk []byte, done chan struct{}, width int) (n int, err error) {
+func (v *Viewport) write(chunk []byte, done chan struct{}, width int) (n int, err error) {
 	select {
 	case <-v.ctx.Done():
 		return 0, io.EOF
@@ -134,12 +134,12 @@ func (v *viewport) write(chunk []byte, done chan struct{}, width int) (n int, er
 }
 
 // writeWithWidth applies frame content and width together before wrapping.
-func (v *viewport) writeWithWidth(chunk []byte, width int) (n int, err error) {
+func (v *Viewport) writeWithWidth(chunk []byte, width int) (n int, err error) {
 	return v.write(chunk, nil, width)
 }
 
-// writeAndWait waits for the arbiter to apply the frame and optional width.
-func (v *viewport) writeAndWait(chunk []byte, width ...int) error {
+// WriteAndWait waits for the arbiter to apply the frame and optional width.
+func (v *Viewport) WriteAndWait(chunk []byte, width ...int) error {
 	w := 0
 	if len(width) > 0 {
 		w = width[0]
@@ -158,32 +158,32 @@ func (v *viewport) writeAndWait(chunk []byte, width ...int) error {
 
 // combinedHeight sums the height of this viewport
 // and all linked viewports in the chain.
-func (v *viewport) combinedHeight() int {
+func (v *Viewport) combinedHeight() int {
 	var n int
 	curr := v
 	for curr != nil {
 		n += curr.height
-		curr = curr.next
+		curr = curr.Next
 	}
 	return n
 }
 
 // numLines counts the total buffered lines across
 // this viewport and all linked viewports.
-func (v *viewport) numLines() int {
+func (v *Viewport) numLines() int {
 	var n int
 	curr := v
 	for curr != nil {
 		n += len(curr.lines)
-		curr = curr.next
+		curr = curr.Next
 	}
 	return n
 }
 
 // writeTo writes the viewport to the given writer, called from [viewport.loop], which
 // confines all mutability to a single goroutine.
-func (v *viewport) writeTo(w io.Writer) (int64, []int, error) {
-	if v.fixedHeight {
+func (v *Viewport) writeTo(w io.Writer) (int64, []int, error) {
+	if v.FixedHeight {
 		if v.lastLines == 0 {
 			v.lines = [][]byte{}
 		} else {
@@ -208,9 +208,9 @@ func (v *viewport) writeTo(w io.Writer) (int64, []int, error) {
 
 // padded extracts a line from chunk[lo:mid], pads it to
 // the terminal width, and appends it to the line buffer.
-func (v *viewport) padded(chunk []byte, lo, mid int) (int, int) {
+func (v *Viewport) padded(chunk []byte, lo, mid int) (int, int) {
 	line := bytes.Clone(chunk[lo:mid])
-	if !v.fixedHeight {
+	if !v.FixedHeight {
 		pl := v.width - ansi.Text(line).Width()
 		if pl < 0 {
 			pl = 0
@@ -227,7 +227,7 @@ func (v *viewport) padded(chunk []byte, lo, mid int) (int, int) {
 }
 
 // appendToLinebuffer wraps prepared text without splitting clusters or escapes.
-func (v *viewport) appendToLinebuffer(chunk []byte) int {
+func (v *Viewport) appendToLinebuffer(chunk []byte) int {
 	lo, mid, hi := 0, 0, len(chunk)
 	var printed, addedLines int
 	for t := range ansi.Text(chunk).Segments() {
@@ -253,7 +253,7 @@ func (v *viewport) appendToLinebuffer(chunk []byte) int {
 }
 
 // joinPartial joins cross-write sequences and removes broken terminal data.
-func (v *viewport) joinPartial(chunk []byte) []byte {
+func (v *Viewport) joinPartial(chunk []byte) []byte {
 	if len(v.partial) > 0 {
 		chunk = append(v.partial, chunk...)
 		v.partial = nil
@@ -276,7 +276,7 @@ func (v *viewport) joinPartial(chunk []byte) []byte {
 }
 
 // addLine flushes bytes before a width-based wrap boundary.
-func (v *viewport) addLine(chunk []byte, lo, mid int, addedLines int) (int, int) {
+func (v *Viewport) addLine(chunk []byte, lo, mid int, addedLines int) (int, int) {
 	if lo < mid {
 		v.lines = append(v.lines, append(bytes.Clone(chunk[lo:mid]), '\n'))
 		addedLines++
@@ -287,7 +287,7 @@ func (v *viewport) addLine(chunk []byte, lo, mid int, addedLines int) (int, int)
 
 // loop is the viewport's single-goroutine event loop that
 // serializes writes and writeTo requests to avoid data races.
-func (v *viewport) loop() {
+func (v *Viewport) loop() {
 	for {
 		// technically, we can cleanup the old lines here on a time interval,
 		// maitaining "append" and "display" offsets
@@ -321,7 +321,7 @@ func (v *viewport) loop() {
 // sendNotify delivers ev to [chanIO.forwardTo] while still serving render
 // requests, so a full notify queue cannot deadlock a redraw that waits on
 // this viewport. It returns false once the context is done.
-func (v *viewport) sendNotify(ev viewportChanged) bool {
+func (v *Viewport) sendNotify(ev viewportChanged) bool {
 	for {
 		select {
 		case <-v.ctx.Done():
@@ -338,7 +338,7 @@ func (v *viewport) sendNotify(ev viewportChanged) bool {
 
 // serveWriteTo renders a frame and reports its row widths and final caret offset.
 // It returns false once the context is done.
-func (v *viewport) serveWriteTo(w *writeTo) bool {
+func (v *Viewport) serveWriteTo(w *writeTo) bool {
 	if w.height > 0 {
 		v.height = w.height
 	}
@@ -362,7 +362,7 @@ func (v *viewport) serveWriteTo(w *writeTo) bool {
 var cursorUpTail = regexp.MustCompile(`\x1b\[(\d*)A(?:\x1b\[\d*[GC])?\n?\z`)
 
 // cursorRowsUp reports how many rows above the last line the frame ends the cursor.
-func (v *viewport) cursorRowsUp(lines [][]byte) int {
+func (v *Viewport) cursorRowsUp(lines [][]byte) int {
 	if len(lines) == 0 {
 		return 0
 	}

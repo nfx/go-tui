@@ -10,6 +10,7 @@ import (
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"sync"
 	"time"
@@ -21,7 +22,7 @@ type Spinners struct {
 	option.Config
 	// cancel ends the group; a render failure is its cause.
 	cancel  context.CancelCauseFunc
-	io      *termIO
+	io      *term.IO
 	stopped chan struct{}
 
 	creates chan createSpinner
@@ -32,7 +33,7 @@ type Spinners struct {
 	ticks   <-chan time.Time
 
 	state      []*spinnerState
-	makeTermIO func(io.Reader, io.Writer) (*termIO, error)
+	makeTermIO func(io.Reader, io.Writer) (*term.IO, error)
 	eventSink  func(spinnerEvent)
 
 	// theme is captured with the group, so a spinner added later keeps it.
@@ -44,9 +45,9 @@ type Spinners struct {
 // newSpinners initializes spinner updates without taking ownership of terminal mode.
 func newSpinners(ctx context.Context) *Spinners {
 	ctx, cancel := context.WithCancelCause(ctx)
-	theme := defaultIO.currentTheme()
+	theme := term.Default.CurrentTheme()
 	ticker := time.NewTicker(theme.Source.Spinner.Interval)
-	in, out := defaultStreams(ctx)
+	in, out := term.DefaultStreams(ctx)
 	return &Spinners{
 		Ctx:        ctx,
 		In:         in,
@@ -56,7 +57,7 @@ func newSpinners(ctx context.Context) *Spinners {
 		cancel:     cancel,
 		theme:      theme,
 		stopped:    make(chan struct{}),
-		makeTermIO: makeOutputIO,
+		makeTermIO: term.MakeOutputIO,
 		creates:    make(chan createSpinner),
 		updates:    make(chan updateOffset),
 		stops:      make(chan int),
@@ -141,7 +142,7 @@ func (s *Spinners) start(ctx context.Context) {
 	defer close(s.stopped)
 	var onResize <-chan struct{}
 	if s.io != nil {
-		onResize = s.io.onResize
+		onResize = s.io.OnResize
 	}
 	var prevActive int
 	for {
@@ -319,11 +320,11 @@ func (s *Spinners) markDone(offset int) {
 // the prevActive rows of the previous frame. It returns the rows drawn, and
 // writes nothing when a row fails to render.
 func (s *Spinners) redraw(prevActive int) (int, error) {
-	s.io.refreshSize()
+	s.io.RefreshSize()
 	frame := bytes.NewBuffer(make([]byte, 2*s.io.Width))
 	frame.Reset()
 	if prevActive > 0 {
-		if err := s.io.clear(prevActive, frame); err != nil {
+		if err := s.io.Clear(prevActive, frame); err != nil {
 			return prevActive, err
 		}
 	}
@@ -418,11 +419,11 @@ func (s *Spinners) clearOnStop(drawn int) {
 	if s.io == nil || drawn == 0 {
 		return
 	}
-	_, ok := s.io.out.(*chanIO)
-	if ok && s.io.vp == nil {
+	_, ok := s.io.Out.(*term.ChanIO)
+	if ok && s.io.Vp == nil {
 		return
 	}
-	err := s.io.clear(drawn, s.io)
+	err := s.io.Clear(drawn, s.io)
 	if err != nil {
 		slog.Debug("clear spinners", "err", err)
 	}

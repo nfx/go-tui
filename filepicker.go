@@ -6,6 +6,7 @@ package tui
 import (
 	"context"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,7 +57,7 @@ func FilePicker(ctx context.Context, title string, o ...option.Opt) (string, err
 	stack := []os.DirEntry{
 		&dirEntry{name: f.start, isDir: true},
 	}
-	terminal := outputIsTerminal(d.out)
+	terminal := term.OutputIsTerminal(d.out)
 	if !terminal && !d.canAnswer() {
 		// nothing can answer, so no directory is walked
 		return "", option.NoDefault(title)

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
@@ -29,13 +30,13 @@ func TestConfirmfRunsWithFormattedAction(t *testing.T) {
 }
 
 func TestDefaultConfirmRunnerReturnsTrue(t *testing.T) {
-	in := bytes.NewBuffer([]byte{keyEnter})
+	in := bytes.NewBuffer([]byte{term.KeyEnter})
 	out := &bytes.Buffer{}
 	opt := option.OpT(func(d *dropdown) error {
-		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-			return &termIO{
-				in:      in,
-				out:     out,
+		d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+			return &term.IO{
+				In:      in,
+				Out:     out,
 				Width:   20,
 				Height:  6,
 				Restore: func() error { return nil },
@@ -48,7 +49,7 @@ func TestDefaultConfirmRunnerReturnsTrue(t *testing.T) {
 
 func TestDefaultConfirmRunnerReturnsFalseOnError(t *testing.T) {
 	opt := option.OpT(func(d *dropdown) error {
-		d.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
+		d.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) {
 			return nil, io.EOF
 		}
 
@@ -187,7 +188,7 @@ func TestThemedConfirmRolesMarkYesAndNoAsCompleted(t *testing.T) {
 	for _, keys := range [][]string{{"\r"}, {"\x1b[B", "\r"}} {
 		o, out, _ := themedDropdownOpt(t, th, 40, keys...)
 		Confirm(t.Context(), "Sure?", o)
-		roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), out, nil).Roles
+		roles := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), out, nil).Roles
 		assert.True(t, len(roles.Success) > 0 && len(roles.Failure) > 0)
 		answer := out.String()[strings.LastIndex(out.String(), "\x1b[3A\r")+len("\x1b[3A\r"):]
 		assert.True(t, strings.HasPrefix(answer, string(roles.Success)+"+"))

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/internal/trie"
 	"slices"
 	"strings"
@@ -36,11 +37,11 @@ func (d *dropdown) bindOnce() error {
 
 // destination is the inherited binding, or binds the theme to the output,
 // probing through tio when it holds the prompt lease.
-func (d *dropdown) destination(ctx context.Context, tio *termIO) render.Binding {
+func (d *dropdown) destination(ctx context.Context, tio *term.IO) render.Binding {
 	if d.inherit.Theme != nil {
 		return d.inherit
 	}
-	return defaultIO.bindTheme(ctx, d.theme, d.out, tio)
+	return term.Default.BindTheme(ctx, d.theme, d.out, tio)
 }
 
 // renderChrome renders the label row and binds the hint once per run.
@@ -144,7 +145,7 @@ func (d *dropdown) clampDisplay(height int) {
 	d.selected = pos - d.offset
 }
 
-func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
+func (d *dropdown) renderInit(io *term.IO) (longest int, err error) {
 	if len(d.displayed) > 0 {
 		return d.longest, nil // already initialized
 	}
@@ -198,8 +199,8 @@ func (d *dropdown) renderStates(i int, item any) (ansi.Text, error) {
 // render draws the label, the visible rows and the hint, led by the count of
 // rows below them, in the geometry of the theme. Every row ends with a newline,
 // so that [termIO.clear] erases the frame.
-func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
-	io.refreshSize()
+func (d *dropdown) render(io *term.IO, buf *bytes.Buffer) error {
+	io.RefreshSize()
 	_, err := d.renderInit(io)
 	if err != nil {
 		return fmt.Errorf("init: %w", err)

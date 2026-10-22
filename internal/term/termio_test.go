@@ -1,12 +1,13 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/internal/errs"
 	"io"
 	"os"
 	"reflect"
@@ -34,7 +35,7 @@ func TestMakeTermIO_NoChanIO_NoDescriptor(t *testing.T) {
 	_, err := makeTermIO(in, out)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "stderr")
-	assert.ErrorIs(t, err, ErrNoTTY)
+	assert.ErrorIs(t, err, errs.ErrNoTTY)
 }
 
 func TestMakeTermIO_NoDescriptorInput(t *testing.T) {
@@ -44,11 +45,11 @@ func TestMakeTermIO_NoDescriptorInput(t *testing.T) {
 	_, err := makeTermIO(in, out)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "stdin")
-	assert.ErrorIs(t, err, ErrNoTTY)
+	assert.ErrorIs(t, err, errs.ErrNoTTY)
 }
 
 func TestMakeTermIO_WithChanIO(t *testing.T) {
-	cio, _ := chainIOforTest(t, 40, 5)
+	cio, _ := chainIOforTest(t, 5)
 	in := &mockDescriptor{
 		Reader: bytes.NewBuffer(nil),
 		Writer: bytes.NewBuffer(nil),
@@ -60,10 +61,10 @@ func TestMakeTermIO_WithChanIO(t *testing.T) {
 	if termio == nil {
 		t.Fatal("expected termIO")
 	}
-	if !reflect.DeepEqual(termio.in, in) {
+	if !reflect.DeepEqual(termio.In, in) {
 		t.Fatalf("unexpected stdin")
 	}
-	if termio.Width != cio.width {
+	if termio.Width != cio.Width {
 		t.Fatalf("unexpected width")
 	}
 	if termio.Restore == nil {
@@ -74,17 +75,17 @@ func TestMakeTermIO_WithChanIO(t *testing.T) {
 }
 
 func TestMakeTermIO_WithChanIO_RawTTYInput(t *testing.T) {
-	cio, _ := chainIOforTest(t, 40, 5)
-	origCheck := terminalInputChecker
-	origRaw := termMakeRaw
-	origRestore := termRestore
-	terminalInputChecker = func(int) bool { return true }
-	termMakeRaw = func(int) (*term.State, error) { return &term.State{}, nil }
-	termRestore = func(int, *term.State) error { return nil }
+	cio, _ := chainIOforTest(t, 5)
+	origCheck := InputChecker
+	origRaw := MakeRaw
+	origRestore := Restore
+	InputChecker = func(int) bool { return true }
+	MakeRaw = func(int) (*term.State, error) { return &term.State{}, nil }
+	Restore = func(int, *term.State) error { return nil }
 	t.Cleanup(func() {
-		terminalInputChecker = origCheck
-		termMakeRaw = origRaw
-		termRestore = origRestore
+		InputChecker = origCheck
+		MakeRaw = origRaw
+		Restore = origRestore
 	})
 	in := &mockDescriptor{
 		Reader: bytes.NewBuffer(nil),
@@ -99,14 +100,14 @@ func TestMakeTermIO_WithChanIO_RawTTYInput(t *testing.T) {
 }
 
 func TestMakeTermIO_WithChanIO_RawError(t *testing.T) {
-	cio, _ := chainIOforTest(t, 40, 5)
-	origCheck := terminalInputChecker
-	origRaw := termMakeRaw
-	terminalInputChecker = func(int) bool { return true }
-	termMakeRaw = func(int) (*term.State, error) { return nil, io.EOF }
+	cio, _ := chainIOforTest(t, 5)
+	origCheck := InputChecker
+	origRaw := MakeRaw
+	InputChecker = func(int) bool { return true }
+	MakeRaw = func(int) (*term.State, error) { return nil, io.EOF }
 	t.Cleanup(func() {
-		terminalInputChecker = origCheck
-		termMakeRaw = origRaw
+		InputChecker = origCheck
+		MakeRaw = origRaw
 	})
 	in := &mockDescriptor{
 		Reader: bytes.NewBuffer(nil),
@@ -132,8 +133,8 @@ func TestMakeTermIO_WithDescriptor(t *testing.T) {
 	}
 
 	assert.NotNil(t, termIO)
-	assert.Equal(t, in, termIO.in)
-	assert.Equal(t, out, termIO.out)
+	assert.Equal(t, in, termIO.In)
+	assert.Equal(t, out, termIO.Out)
 	assert.True(t, termIO.Width > 0)
 	assert.True(t, termIO.Height > 0)
 	assert.NotNil(t, termIO.Restore)
@@ -144,16 +145,16 @@ func TestMakeTermIO_WithDescriptor(t *testing.T) {
 }
 
 func TestMakeTermIO_WithDescriptorStubbed(t *testing.T) {
-	origGet := termGetSize
-	origRaw := termMakeRaw
-	origRestore := termRestore
-	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
-	termMakeRaw = func(int) (*term.State, error) { return &term.State{}, nil }
-	termRestore = func(int, *term.State) error { return nil }
+	origGet := GetSize
+	origRaw := MakeRaw
+	origRestore := Restore
+	GetSize = func(int) (int, int, error) { return 80, 24, nil }
+	MakeRaw = func(int) (*term.State, error) { return &term.State{}, nil }
+	Restore = func(int, *term.State) error { return nil }
 	t.Cleanup(func() {
-		termGetSize = origGet
-		termMakeRaw = origRaw
-		termRestore = origRestore
+		GetSize = origGet
+		MakeRaw = origRaw
+		Restore = origRestore
 	})
 	in := &mockDescriptor{
 		Reader: bytes.NewBuffer(nil),
@@ -176,16 +177,16 @@ func TestMakeTermIO_WithDescriptorStubbed(t *testing.T) {
 }
 
 func TestMakeTermIO_RawError(t *testing.T) {
-	origGet := termGetSize
-	origRaw := termMakeRaw
-	origCheck := terminalInputChecker
-	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
-	termMakeRaw = func(int) (*term.State, error) { return nil, io.EOF }
-	terminalInputChecker = func(int) bool { return true }
+	origGet := GetSize
+	origRaw := MakeRaw
+	origCheck := InputChecker
+	GetSize = func(int) (int, int, error) { return 80, 24, nil }
+	MakeRaw = func(int) (*term.State, error) { return nil, io.EOF }
+	InputChecker = func(int) bool { return true }
 	t.Cleanup(func() {
-		termGetSize = origGet
-		termMakeRaw = origRaw
-		terminalInputChecker = origCheck
+		GetSize = origGet
+		MakeRaw = origRaw
+		InputChecker = origCheck
 	})
 	in := &mockDescriptor{
 		Reader: bytes.NewBuffer(nil),
@@ -203,7 +204,7 @@ func TestMakeTermIO_RawError(t *testing.T) {
 
 func TestTermIO_Read(t *testing.T) {
 	buf := bytes.NewBufferString("test")
-	termIO := &termIO{in: buf}
+	termIO := &IO{In: buf}
 
 	p := make([]byte, 4)
 	n, err := termIO.Read(p)
@@ -216,7 +217,7 @@ func TestTermIO_Write_WithViewport(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	vp := initViewport(ctx, make(chan viewportChanged, 1), 10, 2)
-	termIO := &termIO{vp: vp}
+	termIO := &IO{Vp: vp}
 
 	data := []byte("test")
 	n, err := termIO.Write(data)
@@ -226,7 +227,7 @@ func TestTermIO_Write_WithViewport(t *testing.T) {
 
 func TestTermIO_Write_WithoutViewport(t *testing.T) {
 	buf := &bytes.Buffer{}
-	termIO := &termIO{out: buf}
+	termIO := &IO{Out: buf}
 
 	data := []byte("test")
 	n, err := termIO.Write(data)
@@ -240,8 +241,8 @@ func TestTermIOClearFixedViewportRemovesLines(t *testing.T) {
 	t.Cleanup(cancel)
 	notify := make(chan viewportChanged, 10)
 	vp := initViewport(ctx, notify, 10, 2)
-	vp.fixedHeight = true
-	termio := &termIO{vp: vp}
+	vp.FixedHeight = true
+	termio := &IO{Vp: vp}
 
 	_, err := termio.Write([]byte("hello\n"))
 	assert.NoError(t, err)
@@ -252,7 +253,7 @@ func TestTermIOClearFixedViewportRemovesLines(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "\rhello\n", buf.String())
 
-	err = termio.clear(1, termio)
+	err = termio.Clear(1, termio)
 	assert.NoError(t, err)
 	<-notify
 
@@ -278,7 +279,7 @@ func TestTermIO_ReadKey(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := bytes.NewBufferString(tt.input)
-			termIO := &termIO{in: buf}
+			termIO := &IO{In: buf}
 
 			r, err := termIO.ReadKey()
 			if tt.wantErr {
@@ -306,15 +307,15 @@ func TestTermIO_ReadRune(t *testing.T) {
 		{"ctrl-c", []byte{0x03}, 0, true},
 		{"ctrl-d", []byte{0x04}, 0, true},
 		{"normal char", []byte{'a'}, 'a', false},
-		{"unknown escape", []byte{0x1b, 0x5b, 0x50}, keyIgnored, false},
+		{"unknown escape", []byte{0x1b, 0x5b, 0x50}, KeyIgnored, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := bytes.NewBuffer(tt.input)
-			termIO := &termIO{in: buf}
+			termIO := &IO{In: buf}
 
-			r, n, err := termIO.readRune(t.Context())
+			r, n, err := termIO.ReadRuneCtx(t.Context())
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.ErrorIs(t, err, io.EOF)
@@ -329,12 +330,12 @@ func TestTermIO_ReadRune(t *testing.T) {
 
 func TestTermIO_ReadRunePasteError(t *testing.T) {
 	buf := bytes.NewBufferString("ab")
-	termIO := &termIO{in: buf}
-	_, _, err := termIO.readRune(t.Context())
+	termIO := &IO{In: buf}
+	_, _, err := termIO.ReadRuneCtx(t.Context())
 	if err == nil {
 		t.Fatalf("expected error")
 	}
-	var paste *pasteTextError
+	var paste *PasteTextError
 	if !errors.As(err, &paste) {
 		t.Fatalf("expected paste error, got %T", err)
 	}
@@ -360,35 +361,35 @@ func TestTermIO_ReadRuneIgnoresNonArrowEscape(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			rest := "\x03next keys"
 			buf := bytes.NewBufferString(tt.seq + rest)
-			termIO := &termIO{in: iotest.OneByteReader(buf)}
-			r, n, err := termIO.readRune(t.Context())
+			termIO := &IO{In: iotest.OneByteReader(buf)}
+			r, n, err := termIO.ReadRuneCtx(t.Context())
 			assert.NoError(t, err)
-			assert.Equal(t, keyIgnored, r)
+			assert.Equal(t, KeyIgnored, r)
 			assert.Equal(t, len(tt.seq), n)
 			// a byte read past the sequence stays buffered for the next key
-			assert.Equal(t, rest, string(termIO.pending)+buf.String())
-			_, _, err = termIO.readRune(t.Context())
+			assert.Equal(t, rest, string(termIO.Pending)+buf.String())
+			_, _, err = termIO.ReadRuneCtx(t.Context())
 			assert.ErrorIs(t, err, io.EOF)
 		})
 	}
 }
 
 func TestTermIO_ReadRuneEscapeBeforeControlKey(t *testing.T) {
-	termIO := &termIO{in: iotest.OneByteReader(bytes.NewBufferString("\x1b\x03"))}
-	r, n, err := termIO.readRune(t.Context())
+	termIO := &IO{In: iotest.OneByteReader(bytes.NewBufferString("\x1b\x03"))}
+	r, n, err := termIO.ReadRuneCtx(t.Context())
 	assert.NoError(t, err)
-	assert.Equal(t, keyEscape, r)
+	assert.Equal(t, KeyEscape, r)
 	assert.Equal(t, 1, n)
-	_, _, err = termIO.readRune(t.Context())
+	_, _, err = termIO.ReadRuneCtx(t.Context())
 	assert.ErrorIs(t, err, io.EOF)
 }
 
 func TestTermIO_ReadRuneEscapePairs(t *testing.T) {
-	termIO := &termIO{in: bytes.NewBufferString("\x1b\x1b[B")}
-	r, _, err := termIO.readRune(t.Context())
+	termIO := &IO{In: bytes.NewBufferString("\x1b\x1b[B")}
+	r, _, err := termIO.ReadRuneCtx(t.Context())
 	assert.NoError(t, err)
-	assert.Equal(t, keyEscape, r)
-	r, _, err = termIO.readRune(t.Context())
+	assert.Equal(t, KeyEscape, r)
+	r, _, err = termIO.ReadRuneCtx(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, '↓', r)
 }
@@ -401,27 +402,27 @@ func TestTermIO_ReadRuneLoneEscapeTimesOut(t *testing.T) {
 		assert.NoError(t, r.Close())
 		assert.NoError(t, w.Close())
 	})
-	termIO := &termIO{in: r}
+	termIO := &IO{In: r}
 	tests := []struct {
 		name string
 		seq  string
 		want rune
 	}{
-		{"lone escape", "\x1b", keyEscape},
-		{"incomplete csi", "\x1b[", keyIgnored},
-		{"incomplete ss3", "\x1bO", keyIgnored},
+		{"lone escape", "\x1b", KeyEscape},
+		{"incomplete csi", "\x1b[", KeyIgnored},
+		{"incomplete ss3", "\x1bO", KeyIgnored},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := w.WriteString(tt.seq)
 			assert.NoError(t, err)
-			got, n, err := termIO.readRune(t.Context())
+			got, n, err := termIO.ReadRuneCtx(t.Context())
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, len(tt.seq), n)
 			_, err = w.WriteString("q")
 			assert.NoError(t, err)
-			got, _, err = termIO.readRune(t.Context())
+			got, _, err = termIO.ReadRuneCtx(t.Context())
 			assert.NoError(t, err)
 			assert.Equal(t, 'q', got)
 		})
@@ -441,8 +442,8 @@ func TestTermIO_ReadRuneSplitArrow(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := bytes.NewBufferString(tt.seq + "q")
-			termIO := &termIO{in: iotest.OneByteReader(buf)}
-			r, n, err := termIO.readRune(t.Context())
+			termIO := &IO{In: iotest.OneByteReader(buf)}
+			r, n, err := termIO.ReadRuneCtx(t.Context())
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want, r)
 			assert.Equal(t, len(tt.seq), n)
@@ -455,8 +456,8 @@ func TestTermIO_ReadRuneMultiByte(t *testing.T) {
 	for _, want := range []rune{'é', '日', '🙂'} {
 		t.Run(string(want), func(t *testing.T) {
 			buf := bytes.NewBufferString(string(want) + "q")
-			termIO := &termIO{in: iotest.OneByteReader(buf)}
-			r, n, err := termIO.readRune(t.Context())
+			termIO := &IO{In: iotest.OneByteReader(buf)}
+			r, n, err := termIO.ReadRuneCtx(t.Context())
 			assert.NoError(t, err)
 			assert.Equal(t, want, r)
 			assert.Equal(t, utf8.RuneLen(want), n)
@@ -466,8 +467,8 @@ func TestTermIO_ReadRuneMultiByte(t *testing.T) {
 }
 
 func TestTermIO_ReadRuneInvalidByte(t *testing.T) {
-	termIO := &termIO{in: bytes.NewBuffer([]byte{0xff})}
-	r, _, err := termIO.readRune(t.Context())
+	termIO := &IO{In: bytes.NewBuffer([]byte{0xff})}
+	r, _, err := termIO.ReadRuneCtx(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, utf8.RuneError, r)
 }
@@ -475,12 +476,12 @@ func TestTermIO_ReadRuneInvalidByte(t *testing.T) {
 func TestTermIO_ReadRunePasteKeepsRunesWhole(t *testing.T) {
 	// the 16-byte read buffer fills in the middle of the trailing "é"
 	text := strings.Repeat("a", 15) + "é"
-	termIO := &termIO{in: bytes.NewBufferString(text)}
-	_, _, err := termIO.readRune(t.Context())
-	var paste *pasteTextError
+	termIO := &IO{In: bytes.NewBufferString(text)}
+	_, _, err := termIO.ReadRuneCtx(t.Context())
+	var paste *PasteTextError
 	assert.True(t, errors.As(err, &paste))
-	assert.Equal(t, strings.Repeat("a", 15), string(paste.buf))
-	r, n, err := termIO.readRune(t.Context())
+	assert.Equal(t, strings.Repeat("a", 15), string(paste.Buf))
+	r, n, err := termIO.ReadRuneCtx(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, 'é', r)
 	assert.Equal(t, 2, n)
@@ -494,16 +495,16 @@ func TestTermIO_ReadRuneIncompleteRuneTimesOut(t *testing.T) {
 		assert.NoError(t, r.Close())
 		assert.NoError(t, w.Close())
 	})
-	termIO := &termIO{in: r}
+	termIO := &IO{In: r}
 	_, err = w.Write([]byte{0xe2, 0x82})
 	assert.NoError(t, err)
-	_, n, err := termIO.readRune(t.Context())
-	var paste *pasteTextError
+	_, n, err := termIO.ReadRuneCtx(t.Context())
+	var paste *PasteTextError
 	assert.True(t, errors.As(err, &paste))
 	assert.Equal(t, 2, n)
 	_, err = w.WriteString("q")
 	assert.NoError(t, err)
-	got, _, err := termIO.readRune(t.Context())
+	got, _, err := termIO.ReadRuneCtx(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, 'q', got)
 }
@@ -535,37 +536,37 @@ func TestIsPrintable(t *testing.T) {
 
 // Input ownership follows the reader even when a new prompt changes output.
 func TestMakeTermIO_SharedInputAcrossOutputs(t *testing.T) {
-	oldSize, oldCheck := termGetSize, terminalInputChecker
-	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
-	terminalInputChecker = func(int) bool { return false }
-	t.Cleanup(func() { termGetSize, terminalInputChecker = oldSize, oldCheck })
+	oldSize, oldCheck := GetSize, InputChecker
+	GetSize = func(int) (int, int, error) { return 80, 24, nil }
+	InputChecker = func(int) bool { return false }
+	t.Cleanup(func() { GetSize, InputChecker = oldSize, oldCheck })
 	in := &mockDescriptor{Reader: bytes.NewBufferString("\x1b[A\r"), fd: 0}
 	out1 := &mockDescriptor{Writer: &bytes.Buffer{}, fd: 1}
 	out2 := &mockDescriptor{Writer: &bytes.Buffer{}, fd: 2}
 	first, err := makeTermIO(in, out1)
 	assert.NoError(t, err)
-	read, _ := first.startRead(t.Context())
-	<-read.done // completed but not yet accepted by the cancelled prompt
+	read, _ := first.StartRead(t.Context())
+	<-read.Done // completed but not yet accepted by the cancelled prompt
 	second, err := makeTermIO(in, out2)
 	assert.NoError(t, err)
-	if first == second || second.out != out2 || first.input != second.input {
+	if first == second || second.Out != out2 || first.Input != second.Input {
 		t.Fatal("expected fresh terminal state with shared input")
 	}
-	adopted, accept := second.startRead(t.Context())
+	adopted, accept := second.StartRead(t.Context())
 	if adopted != read {
 		t.Fatal("outstanding read was not adopted")
 	}
-	assert.Equal(t, '↑', adopted.event.key)
+	assert.Equal(t, '↑', adopted.Event.Key)
 	accept()
 	third, err := makeTermIO(in, out1)
 	assert.NoError(t, err)
-	pending, accept := third.startRead(t.Context())
-	<-pending.done
-	assert.Equal(t, rune(keyEnter), pending.event.key)
+	pending, accept := third.StartRead(t.Context())
+	<-pending.Done
+	assert.Equal(t, rune(KeyEnter), pending.Event.Key)
 	accept()
-	inputStates.Lock()
-	_, retained := inputStates.states[in]
-	inputStates.Unlock()
+	InputStates.Lock()
+	_, retained := InputStates.States[in]
+	InputStates.Unlock()
 	if retained {
 		t.Fatal("idle input state retained in registry")
 	}
@@ -576,41 +577,41 @@ func TestMakeTermIO_SharedInputAcrossOutputs(t *testing.T) {
 
 func TestTermIO_ReadEventsAdoptsUnacceptedRead(t *testing.T) {
 	in := &mockDescriptor{Reader: bytes.NewBufferString("\x1b[A\r"), fd: 0}
-	first := &termIO{in: in}
-	read, _ := first.startRead(t.Context())
-	<-read.done
-	second := &termIO{in: in}
-	ev := <-second.readEvents(t.Context(), nil)
-	second.awaitReader()
-	assert.NoError(t, ev.err)
-	assert.Equal(t, '↑', ev.key)
-	ev = <-second.readEvents(t.Context(), nil)
-	second.awaitReader()
-	assert.NoError(t, ev.err)
-	assert.Equal(t, rune(keyEnter), ev.key)
-	ev = <-second.readEvents(t.Context(), nil)
-	second.awaitReader()
-	assert.ErrorIs(t, ev.err, io.EOF)
+	first := &IO{In: in}
+	read, _ := first.StartRead(t.Context())
+	<-read.Done
+	second := &IO{In: in}
+	ev := <-second.ReadEvents(t.Context(), nil)
+	second.AwaitReader()
+	assert.NoError(t, ev.Err)
+	assert.Equal(t, '↑', ev.Key)
+	ev = <-second.ReadEvents(t.Context(), nil)
+	second.AwaitReader()
+	assert.NoError(t, ev.Err)
+	assert.Equal(t, rune(KeyEnter), ev.Key)
+	ev = <-second.ReadEvents(t.Context(), nil)
+	second.AwaitReader()
+	assert.ErrorIs(t, ev.Err, io.EOF)
 }
 
 func TestMakeTermIORestoresRawModeWhenViewportFails(t *testing.T) {
-	prevRaw, prevRestore, prevChecker := termMakeRaw, termRestore, terminalInputChecker
+	prevRaw, prevRestore, prevChecker := MakeRaw, Restore, InputChecker
 	t.Cleanup(func() {
-		termMakeRaw, termRestore, terminalInputChecker = prevRaw, prevRestore, prevChecker
+		MakeRaw, Restore, InputChecker = prevRaw, prevRestore, prevChecker
 	})
 	raw := false
-	terminalInputChecker = func(int) bool { return true }
-	termMakeRaw = func(int) (*term.State, error) {
+	InputChecker = func(int) bool { return true }
+	MakeRaw = func(int) (*term.State, error) {
 		raw = true
 		return &term.State{}, nil
 	}
 	restoreErr := errors.New("restore failed")
-	termRestore = func(int, *term.State) error {
+	Restore = func(int, *term.State) error {
 		raw = false
 		return restoreErr
 	}
 	ctx, cancel := context.WithCancel(t.Context())
-	cio := startChanIO(ctx, 80, 24)
+	cio := startChanIO(ctx)
 	cancel()
 
 	tio, err := makeTermIO(&mockDescriptor{fd: 5}, cio)
@@ -621,23 +622,23 @@ func TestMakeTermIORestoresRawModeWhenViewportFails(t *testing.T) {
 }
 
 func TestTermIORestoreReleasesViewportAndLeavesRawModeOnce(t *testing.T) {
-	prevRaw, prevRestore, prevChecker := termMakeRaw, termRestore, terminalInputChecker
+	prevRaw, prevRestore, prevChecker := MakeRaw, Restore, InputChecker
 	t.Cleanup(func() {
-		termMakeRaw, termRestore, terminalInputChecker = prevRaw, prevRestore, prevChecker
+		MakeRaw, Restore, InputChecker = prevRaw, prevRestore, prevChecker
 	})
 	var restores int
-	terminalInputChecker = func(int) bool { return true }
-	termMakeRaw = func(int) (*term.State, error) { return &term.State{}, nil }
-	termRestore = func(int, *term.State) error {
+	InputChecker = func(int) bool { return true }
+	MakeRaw = func(int) (*term.State, error) { return &term.State{}, nil }
+	Restore = func(int, *term.State) error {
 		restores++
 		return nil
 	}
-	cio := startChanIO(t.Context(), 80, 24)
+	cio := startChanIO(t.Context())
 	tio, err := makeTermIO(&mockDescriptor{fd: 5}, cio)
 	assert.NoError(t, err)
 
 	// output-only widgets leave raw mode but keep drawing
-	assert.NoError(t, tio.restoreMode())
+	assert.NoError(t, tio.RestoreMode())
 	assert.Equal(t, 1, restores)
 	assert.Equal(t, 1, managedViewports(cio))
 	_, err = tio.Write([]byte("still drawing"))

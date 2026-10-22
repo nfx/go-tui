@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/term"
 	"testing"
 	"unicode/utf8"
 
@@ -14,9 +15,9 @@ import (
 	"github.com/nfx/go-tui/internal/fuzzseeds"
 )
 
-func (p *input) pressKey(tio *termIO) (string, error) {
-	ev, ok := <-tio.readEvents(context.Background(), nil)
-	tio.awaitReader()
+func (p *input) pressKey(tio *term.IO) (string, error) {
+	ev, ok := <-tio.ReadEvents(context.Background(), nil)
+	tio.AwaitReader()
 	done, err := p.handleKeyEvent(p.Ctx, ev, ok)
 	if err != nil {
 		return "", err
@@ -32,7 +33,7 @@ func TestInputPressKeyBackspace(t *testing.T) {
 		typed:  "ab",
 		cursor: 2,
 	}
-	tio := &termIO{in: bytes.NewBuffer([]byte{0x7f})}
+	tio := &term.IO{In: bytes.NewBuffer([]byte{0x7f})}
 	_, err := i.pressKey(tio)
 	assert.NoError(t, err)
 	assert.Equal(t, "a", i.typed)
@@ -44,7 +45,7 @@ func TestInputPressKeyArrowLeft(t *testing.T) {
 		typed:  "ab",
 		cursor: 2,
 	}
-	tio := &termIO{in: bytes.NewBuffer([]byte{0x1b, 0x5b, 0x44})}
+	tio := &term.IO{In: bytes.NewBuffer([]byte{0x1b, 0x5b, 0x44})}
 	_, err := i.pressKey(tio)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, i.cursor)
@@ -52,14 +53,14 @@ func TestInputPressKeyArrowLeft(t *testing.T) {
 
 func TestInputPressKeyEOF(t *testing.T) {
 	i := &input{typed: ""}
-	tio := &termIO{in: bytes.NewBuffer(nil)}
+	tio := &term.IO{In: bytes.NewBuffer(nil)}
 	_, err := i.pressKey(tio)
 	assert.Error(t, err)
 }
 
 func TestInputPressKeyEnter(t *testing.T) {
 	i := &input{typed: "done"}
-	tio := &termIO{in: bytes.NewBuffer([]byte{keyEnter})}
+	tio := &term.IO{In: bytes.NewBuffer([]byte{term.KeyEnter})}
 	out, err := i.pressKey(tio)
 	assert.NoError(t, err)
 	assert.Equal(t, "done", out)
@@ -67,7 +68,7 @@ func TestInputPressKeyEnter(t *testing.T) {
 
 func TestInputPressKeyAddsChar(t *testing.T) {
 	i := &input{typed: "a", cursor: 1}
-	tio := &termIO{in: bytes.NewBuffer([]byte{'b'})}
+	tio := &term.IO{In: bytes.NewBuffer([]byte{'b'})}
 	_, err := i.pressKey(tio)
 	assert.NoError(t, err)
 	assert.Equal(t, "ab", i.typed)
@@ -76,7 +77,7 @@ func TestInputPressKeyAddsChar(t *testing.T) {
 
 func TestInputPressKeyPaste(t *testing.T) {
 	i := &input{}
-	tio := &termIO{in: bytes.NewBufferString("ab")}
+	tio := &term.IO{In: bytes.NewBufferString("ab")}
 	_, err := i.pressKey(tio)
 	assert.NoError(t, err)
 	runes := []rune(i.typed)
@@ -95,7 +96,7 @@ func TestInputPressKeyDoesNotEmitLowLevelOutputEvents(t *testing.T) {
 	i.eventSink = func(ev inputOutgoing) {
 		events = append(events, ev)
 	}
-	tio := &termIO{in: bytes.NewBuffer([]byte{'b'})}
+	tio := &term.IO{In: bytes.NewBuffer([]byte{'b'})}
 	_, err := i.pressKey(tio)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(events))
@@ -111,7 +112,7 @@ func TestInputPressKeyEnterEmitsCompletedEvent(t *testing.T) {
 	i.eventSink = func(ev inputOutgoing) {
 		events = append(events, ev)
 	}
-	tio := &termIO{in: bytes.NewBuffer([]byte{keyEnter})}
+	tio := &term.IO{In: bytes.NewBuffer([]byte{term.KeyEnter})}
 	out, err := i.pressKey(tio)
 	assert.NoError(t, err)
 	assert.Equal(t, "done", out)
@@ -124,7 +125,7 @@ func TestInputPressKeyEnterEmitsCompletedEvent(t *testing.T) {
 func TestInputPressKeyEnterWithNonEmptyRejectsEmpty(t *testing.T) {
 	i := newInput(t.Context(), "Label")
 	assert.NoError(t, WithNonEmpty()(i))
-	tio := &termIO{in: bytes.NewBuffer([]byte{keyEnter})}
+	tio := &term.IO{In: bytes.NewBuffer([]byte{term.KeyEnter})}
 	out, err := i.pressKey(tio)
 	assert.NoError(t, err)
 	assert.Equal(t, "", out)
@@ -170,9 +171,9 @@ func TestInputCursorActionsMultiByte(t *testing.T) {
 func TestInputPasteMultiByte(t *testing.T) {
 	i := &input{typed: "a", cursor: 1}
 	paste := []byte("\u65e5\u672cé")
-	done, err := i.handleKeyEvent(t.Context(), keyEvent{
-		err:   &pasteTextError{buf: paste},
-		paste: paste,
+	done, err := i.handleKeyEvent(t.Context(), term.KeyEvent{
+		Err:   &term.PasteTextError{Buf: paste},
+		Paste: paste,
 	}, true)
 	assert.NoError(t, err)
 	assert.True(t, !done)
@@ -183,7 +184,7 @@ func TestInputPasteMultiByte(t *testing.T) {
 // regression: a backspace that deletes nothing must not move the cursor
 func TestInputBackspaceAtStartKeepsCursor(t *testing.T) {
 	i := &input{typed: "abc", cursor: 0}
-	done, err := i.handleKeyEvent(t.Context(), keyEvent{key: 0x7f}, true)
+	done, err := i.handleKeyEvent(t.Context(), term.KeyEvent{Key: 0x7f}, true)
 	assert.NoError(t, err)
 	assert.True(t, !done)
 	assert.Equal(t, "abc", i.typed)

@@ -11,6 +11,7 @@ import (
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/internal/trie"
 	"io"
 	"slices"
@@ -87,7 +88,7 @@ type dropdown struct {
 	out io.Writer
 
 	// TODO: special case for testing?..
-	makeTermIO func(in io.Reader, out io.Writer) (*termIO, error)
+	makeTermIO func(in io.Reader, out io.Writer) (*term.IO, error)
 	eventSink  func(dropdownOutputEvent)
 	input      <-chan dropdownInputEvent
 }
@@ -100,7 +101,7 @@ func (d *dropdown) pick(ctx context.Context, label string, items []any) (int, er
 	if err != nil {
 		return -1, err
 	}
-	if !outputIsTerminal(d.out) {
+	if !term.OutputIsTerminal(d.out) {
 		return i, nil // an automatic answer prints nothing
 	}
 	err = d.themedAnswer(label, i)
@@ -123,7 +124,7 @@ func (d *dropdown) dropdownIndex(ctx context.Context) (int, error) {
 // selectIndex runs a dropdown with parsed templates and returns the original
 // item index. [dropdown.run] returns a position in d.relevant instead.
 func (d *dropdown) selectIndex(ctx context.Context) (int, error) {
-	if !outputIsTerminal(d.out) {
+	if !term.OutputIsTerminal(d.out) {
 		err := ctx.Err()
 		if err != nil {
 			return -1, err
@@ -201,14 +202,14 @@ func (d *dropdown) seedFirst(relevant []int) {
 }
 
 func newDropdown(ctx context.Context) *dropdown {
-	in, out := defaultStreams(ctx)
-	theme := defaultIO.currentTheme()
+	in, out := term.DefaultStreams(ctx)
+	theme := term.Default.CurrentTheme()
 	return &dropdown{
 		in:            in,
 		out:           out,
 		Ctx:           ctx,
 		Label:         "Select from list",
-		makeTermIO:    makePromptIO,
+		makeTermIO:    term.MakePromptIO,
 		IterBatchSize: 10,
 		trie:          trie.NewTrie(),
 		theme:         theme,
@@ -239,9 +240,9 @@ func (d *dropdown) SetReader(r io.Reader) {
 
 // implements [withIO].
 func (d *dropdown) SetWriter(w io.Writer) {
-	tui, ok := w.(*Tui)
+	tui, ok := w.(*term.Tui)
 	if ok {
-		w = tui.prependView(10) // TODO: height is properly available only after render, right?...
+		w = tui.PrependView(10) // TODO: height is properly available only after render, right?...
 	}
 	d.out = w
 }
@@ -287,7 +288,7 @@ func (d *dropdown) emit(ev dropdownOutputEvent) {
 // decodeInputEvent maps terminal keys into semantic dropdown input actions.
 func (d *dropdown) decodeInputEvent(key rune) dropdownInputEvent {
 	switch key {
-	case keyEnter:
+	case term.KeyEnter:
 		i := -1
 		pos := d.offset + d.selected
 		if pos >= 0 && pos < len(d.relevant) {
@@ -339,7 +340,7 @@ func (d *dropdown) run(ctx context.Context) (int, error) {
 	}
 }
 
-func (d *dropdown) runRender(ctx context.Context, io *termIO, frame *bytes.Buffer) (int, error) {
+func (d *dropdown) runRender(ctx context.Context, io *term.IO, frame *bytes.Buffer) (int, error) {
 	err := d.render(io, frame)
 	if err != nil {
 		var oneMatch oneHatch
@@ -360,7 +361,7 @@ func (d *dropdown) runRender(ctx context.Context, io *termIO, frame *bytes.Buffe
 		err := d.loadItem(io, frame, it, more, space)
 		return -1, err
 	case <-d.Ctx.Done():
-		err = io.clear(space, frame)
+		err = io.Clear(space, frame)
 		if err != nil {
 			return -1, fmt.Errorf("clear: %w", err)
 		}
@@ -374,9 +375,9 @@ func (d *dropdown) runRender(ctx context.Context, io *termIO, frame *bytes.Buffe
 	}
 }
 
-func (d *dropdown) runMain(ctx context.Context, io *termIO, frame *bytes.Buffer, space, displayed int) (int, error) {
+func (d *dropdown) runMain(ctx context.Context, io *term.IO, frame *bytes.Buffer, space, displayed int) (int, error) {
 	i, err := d.pressKey(ctx, io, frame, space, displayed)
-	if isPasteText(err) {
+	if term.IsPasteText(err) {
 		// Ctrl+V or CMD+V pressed
 		return -1, nil
 	} else if err != nil {

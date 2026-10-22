@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"bytes"
@@ -13,42 +13,42 @@ import (
 )
 
 func TestTermIORefreshSizeDirectTTY(t *testing.T) {
-	origGet := termGetSize
-	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
-	t.Cleanup(func() { termGetSize = origGet })
-	tio := &termIO{
+	origGet := GetSize
+	GetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { GetSize = origGet })
+	tio := &IO{
 		Width:  80,
 		Height: 24,
-		fd:     2, // stderr
+		Fd:     2, // stderr
 	}
-	tio.refreshSize()
+	tio.RefreshSize()
 	assert.Equal(t, 120, tio.Width)
 	assert.Equal(t, 40, tio.Height)
 }
 
 func TestTermIORefreshSizeNoFd(t *testing.T) {
-	tio := &termIO{Width: 80, Height: 24, fd: 0}
-	tio.refreshSize()
+	tio := &IO{Width: 80, Height: 24, Fd: 0}
+	tio.RefreshSize()
 	// should not change when fd < 1
 	assert.Equal(t, 80, tio.Width)
 	assert.Equal(t, 24, tio.Height)
 }
 
 func TestTermIORefreshSizeWithChanIO(t *testing.T) {
-	origGet := termGetSize
-	termGetSize = func(int) (int, int, error) { return 100, 50, nil }
-	t.Cleanup(func() { termGetSize = origGet })
-	cio := &chanIO{fd: 2, width: 80, height: 24}
-	tio := &termIO{Width: 80, Height: 24, cio: cio}
-	tio.refreshSize()
+	origGet := GetSize
+	GetSize = func(int) (int, int, error) { return 100, 50, nil }
+	t.Cleanup(func() { GetSize = origGet })
+	cio := &ChanIO{fd: 2, Width: 80, Height: 24}
+	tio := &IO{Width: 80, Height: 24, Cio: cio}
+	tio.RefreshSize()
 	assert.Equal(t, 100, tio.Width)
 	assert.Equal(t, 50, tio.Height)
 }
 
 func TestTermIORefreshSizeChanIONoFd(t *testing.T) {
-	cio := &chanIO{fd: 0}
-	tio := &termIO{Width: 80, Height: 24, cio: cio}
-	tio.refreshSize()
+	cio := &ChanIO{fd: 0}
+	tio := &IO{Width: 80, Height: 24, Cio: cio}
+	tio.RefreshSize()
 	assert.Equal(t, 80, tio.Width)
 }
 
@@ -70,8 +70,8 @@ func TestViewportWriteWithWidthUpdatesWidth(t *testing.T) {
 }
 
 func TestChanIOClearsWrappedManagedRowsAfterWidthShrink(t *testing.T) {
-	cio, stdout := chainIOforTest(t, 40, 6)
-	vp, err := cio.pushViewport()
+	cio, stdout := chainIOforTest(t, 6)
+	vp, err := cio.PushViewport()
 	assert.NoError(t, err)
 
 	const wideLine = "123456789012345678901234567890123456789"
@@ -80,7 +80,7 @@ func TestChanIOClearsWrappedManagedRowsAfterWidthShrink(t *testing.T) {
 	_ = waitOutputContains(t, stdout.C, wideLine)
 
 	cio.sizeMu.Lock()
-	cio.width = 10
+	cio.Width = 10
 	cio.sizeMu.Unlock()
 	_, err = vp.writeWithWidth([]byte("short\n\r"), 10)
 	assert.NoError(t, err)

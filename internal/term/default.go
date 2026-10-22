@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"context"
@@ -18,95 +18,95 @@ import (
 	"golang.org/x/term"
 )
 
-// tio owns package-default terminal IO and lazily upgrades stderr to a shared
+// Terminal owns package-default terminal IO and lazily upgrades stderr to a shared
 // arbiter when the configured output is an interactive TTY.
-type tio struct {
-	reader   io.Reader
-	writer   io.Writer
+type Terminal struct {
+	Reader   io.Reader
+	Writer   io.Writer
 	external io.Writer
 	mu       sync.RWMutex
-	arbiter  *chanIO
-	cancel   context.CancelCauseFunc
-	env      outputEnv
+	Arbiter  *ChanIO
+	Cancel   context.CancelCauseFunc
+	Env      outputEnv
 	// bg caches appearance, including timeouts, until setIO replaces the route.
 	bg    *color.Background
 	bgGen uint64
 	// bgMu serializes probes; acquire before mu and release mu before probing.
 	bgMu sync.Mutex
-	// theme is the installed snapshot, set only on defaultIO. Renderers load
+	// Theme is the installed snapshot, set only on defaultIO. Renderers load
 	// it without locking.
-	theme atomic.Pointer[render.Compiled]
+	Theme atomic.Pointer[render.Compiled]
 	// themeMu serializes installations, so that an edit of the installed
 	// theme cannot lose a concurrent one. It is never held while rendering.
 	themeMu sync.Mutex
 }
 
-func (t *tio) currentTheme() *render.Compiled { return t.theme.Load() }
+func (t *Terminal) CurrentTheme() *render.Compiled { return t.Theme.Load() }
 
-// installTheme replaces the configuration and custom helpers only after validation.
-func (t *tio) installTheme(th theme.Theme) error {
+// InstallTheme replaces the configuration and custom helpers only after validation.
+func (t *Terminal) InstallTheme(th theme.Theme) error {
 	t.themeMu.Lock()
 	defer t.themeMu.Unlock()
 	return t.storeThemeLocked(th)
 }
 
-// updateTheme serializes edits to the installed configuration to prevent lost updates.
-func (t *tio) updateTheme(edit func(*theme.Theme)) error {
+// UpdateTheme serializes edits to the installed configuration to prevent lost updates.
+func (t *Terminal) UpdateTheme(edit func(*theme.Theme)) error {
 	t.themeMu.Lock()
 	defer t.themeMu.Unlock()
-	th := t.currentTheme().Editable()
+	th := t.CurrentTheme().Editable()
 	edit(&th)
 	return t.storeThemeLocked(th)
 }
 
 // storeThemeLocked publishes a validated theme while the caller holds themeMu.
-func (t *tio) storeThemeLocked(th theme.Theme) error {
+func (t *Terminal) storeThemeLocked(th theme.Theme) error {
 	c, err := t.compileTheme(th)
 	if err != nil {
 		return err
 	}
-	t.theme.Store(c)
+	t.Theme.Store(c)
 	return nil
 }
 
 // compileTheme compiles th for the terminal of the process: without the
 // Unicode symbols in the environment, the presets become ASCII.
-func (t *tio) compileTheme(th theme.Theme) (*render.Compiled, error) {
+func (t *Terminal) compileTheme(th theme.Theme) (*render.Compiled, error) {
 	c, err := render.Compile(th)
-	if err != nil || t.env.hasUnicode() {
+	if err != nil || t.Env.hasUnicode() {
 		return c, err
 	}
 	c.Source.Symbols = c.Source.Symbols.ASCII()
 	return c, nil
 }
 
-var defaultIO = newDefaultIO()
+var Default = newDefaultIO()
 
 // newDefaultIO initializes standard streams and the built-in theme.
-func newDefaultIO() *tio {
-	t := &tio{
-		reader: os.Stdin,
-		writer: os.Stderr,
-		env:    readOutputEnv(os.LookupEnv),
+func newDefaultIO() *Terminal {
+	t := &Terminal{
+		Reader: os.Stdin,
+		Writer: os.Stderr,
+		Env:    ReadOutputEnv(os.LookupEnv),
 	}
 	c, err := t.compileTheme(theme.New())
 	if err != nil {
 		panic(err) // the preset is valid
 	}
-	t.theme.Store(c)
+	t.Theme.Store(c)
 	return t
 }
 
-// defaultStreams returns the default reader and writer as one snapshot, so a
+// DefaultStreams returns the default reader and writer as one snapshot, so a
 // concurrent [SetDefaultIO] cannot pair the old reader with the new writer.
-func defaultStreams(ctx context.Context) (io.Reader, io.Writer) {
-	return defaultIO.streams(ctx)
+func DefaultStreams(ctx context.Context) (io.Reader, io.Writer) {
+	return Default.streams(ctx)
 }
 
 // Flush drains all buffered terminal output without shutting down the arbiter.
-func (t *tio) Flush() error {
+func (t *Terminal) Flush() error {
 	t.mu.RLock()
-	arbiter := t.arbiter
+	arbiter := t.Arbiter
 	t.mu.RUnlock()
 	if arbiter == nil {
 		return nil
@@ -116,10 +116,10 @@ func (t *tio) Flush() error {
 
 // Close cancels the terminal arbiter and blocks until forwardTo has drained
 // all buffered output to the underlying writer. Safe to call more than once.
-func (t *tio) Close() error {
+func (t *Terminal) Close() error {
 	t.mu.Lock()
-	arbiter := t.arbiter
-	cancel := t.cancel
+	arbiter := t.Arbiter
+	cancel := t.Cancel
 	t.mu.Unlock()
 	if cancel != nil {
 		cancel(nil)
@@ -127,11 +127,11 @@ func (t *tio) Close() error {
 	if arbiter == nil {
 		return nil
 	}
-	<-arbiter.done
+	<-arbiter.Done
 	return arbiter.err
 }
 
-// profileFor resolves the color profile for one destination writer.
+// ProfileFor resolves the color profile for one destination writer.
 // Managed writers (the arbiter, viewports, [Tui]) draw on t's raw output.
 // The first matching rule wins:
 //
@@ -144,8 +144,8 @@ func (t *tio) Close() error {
 //     COLORTERM, TERM and WT_SESSION.
 //
 // A forced profile never enables prompts, raw mode or redraw.
-func (t *tio) profileFor(w io.Writer) color.Profile {
-	e := t.env
+func (t *Terminal) ProfileFor(w io.Writer) color.Profile {
+	e := t.Env
 	if e.forceColor != nil {
 		switch strings.ToLower(*e.forceColor) {
 		case "0", "false":
@@ -158,8 +158,8 @@ func (t *tio) profileFor(w io.Writer) color.Profile {
 		return color.ProfileANSI16
 	}
 	switch w.(type) {
-	case *chanIO, *viewport, *Tui:
-		w = t.rawOutput()
+	case *ChanIO, *Viewport, *Tui:
+		w = t.RawOutput()
 	}
 	terminal := t.isTerminalWriter(w)
 	switch {
@@ -169,43 +169,43 @@ func (t *tio) profileFor(w io.Writer) color.Profile {
 		return color.ProfilePlain
 	case e.cliColorForce:
 		return e.depth()
-	case !terminal, e.term == "dumb", !consoleVT(w):
+	case !terminal, e.term == "dumb", !ConsoleVT(w):
 		return color.ProfilePlain
 	}
 	return e.depth()
 }
 
-func (t *tio) input() io.Reader {
+func (t *Terminal) Input() io.Reader {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return t.reader
+	return t.Reader
 }
 
-func (t *tio) rawOutput() io.Writer {
+func (t *Terminal) RawOutput() io.Writer {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return t.writer
+	return t.Writer
 }
 
 // streams takes the exclusive lock because [tio.outputLocked] may start the arbiter.
-func (t *tio) streams(ctx context.Context) (io.Reader, io.Writer) {
+func (t *Terminal) streams(ctx context.Context) (io.Reader, io.Writer) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.reader, t.outputLocked(ctx)
+	return t.Reader, t.outputLocked(ctx)
 }
 
 // outputLocked resolves the effective writer,
 // upgrading to arbiter for TTY outputs.
-func (t *tio) outputLocked(ctx context.Context) io.Writer {
-	if cio, ok := t.writer.(*chanIO); ok {
+func (t *Terminal) outputLocked(ctx context.Context) io.Writer {
+	if cio, ok := t.Writer.(*ChanIO); ok {
 		return cio
 	}
-	if !t.interactiveWriter(t.writer) {
-		return t.writer
+	if !t.interactiveWriter(t.Writer) {
+		return t.Writer
 	}
 	cio := t.ensureArbiterLocked(ctx)
 	if cio == nil {
-		return t.writer
+		return t.Writer
 	}
 	return cio
 }
@@ -213,7 +213,7 @@ func (t *tio) outputLocked(ctx context.Context) io.Writer {
 // background shares detection for the current route, caching only uncancelled,
 // still-current results. Other routes bypass the cache. Without a reply,
 // detection falls back to hint.
-func (t *tio) background(ctx context.Context, tt *termIO, hint color.Background) color.Background {
+func (t *Terminal) background(ctx context.Context, tt *IO, hint color.Background) color.Background {
 	t.bgMu.Lock()
 	defer t.bgMu.Unlock()
 	t.mu.RLock()
@@ -236,18 +236,18 @@ func (t *tio) background(ctx context.Context, tt *termIO, hint color.Background)
 	return b
 }
 
-// bindTheme binds c to out, the destination of one operation. Only a prompt
+// BindTheme binds c to out, the destination of one operation. Only a prompt
 // holding the terminal lease passes tt, and may then probe the background
 // before it starts reading keys; other operations reuse a completed
 // detection of the route they draw on, or estimate it from the environment.
 // A forced light variant and a destination without color detect nothing.
-func (t *tio) bindTheme(ctx context.Context, c *render.Compiled, out io.Writer, tt *termIO) render.Binding {
-	p := t.profileFor(out)
+func (t *Terminal) BindTheme(ctx context.Context, c *render.Compiled, out io.Writer, tt *IO) render.Binding {
+	p := t.ProfileFor(out)
 	var bg color.Background
 	switch {
 	case c.Source.Light, p < color.ProfileANSI16:
 	case tt != nil:
-		bg = t.background(ctx, tt, t.env.bgHint)
+		bg = t.background(ctx, tt, t.Env.bgHint)
 	default:
 		bg = t.routeBackground(out)
 	}
@@ -257,66 +257,66 @@ func (t *tio) bindTheme(ctx context.Context, c *render.Compiled, out io.Writer, 
 // routeBackground is the cached detection of the current route when out
 // draws on it, else the environment estimate. It never waits for a probe
 // in progress, so output-only work cannot block on a prompt.
-func (t *tio) routeBackground(out io.Writer) color.Background {
+func (t *Terminal) routeBackground(out io.Writer) color.Background {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.bg == nil || !t.drawsOnRouteLocked(out) {
-		return t.env.bgHint
+		return t.Env.bgHint
 	}
 	return *t.bg
 }
 
 // drawsOnRouteLocked reports, with mu held, whether out writes to the
 // terminal of the current route: its writer, the arbiter on it, or [Stderr].
-func (t *tio) drawsOnRouteLocked(out io.Writer) bool {
-	if w, ok := out.(*terminalStderr); ok {
-		return w.parent == t
+func (t *Terminal) drawsOnRouteLocked(out io.Writer) bool {
+	if w, ok := out.(*TerminalStderr); ok {
+		return w.Parent == t
 	}
-	return t.sameStream(out, t.writer) || t.sameStream(out, t.arbiter)
+	return t.sameStream(out, t.Writer) || t.sameStream(out, t.Arbiter)
 }
 
 // routesLocked checks route ownership with mu held.
-func (t *tio) routesLocked(tt *termIO) bool {
-	return t.sameStream(tt.in, t.reader) &&
-		(t.sameStream(tt.out, t.writer) || t.sameStream(tt.out, t.arbiter))
+func (t *Terminal) routesLocked(tt *IO) bool {
+	return t.sameStream(tt.In, t.Reader) &&
+		(t.sameStream(tt.Out, t.Writer) || t.sameStream(tt.Out, t.Arbiter))
 }
 
 // sameStream compares stream identity without panicking on uncomparable values.
-func (t *tio) sameStream(a, b any) bool {
+func (t *Terminal) sameStream(a, b any) bool {
 	if a == nil || b == nil || !reflect.TypeOf(a).Comparable() || !reflect.TypeOf(b).Comparable() {
 		return false
 	}
 	return a == b
 }
 
-// stderrWriter returns a writer for external
+// StderrWriter returns a writer for external
 // stderr, routed through the arbiter on TTYs.
-func (t *tio) stderrWriter() io.Writer {
+func (t *Terminal) StderrWriter() io.Writer {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	cio, ok := t.writer.(*chanIO)
+	cio, ok := t.Writer.(*ChanIO)
 	if ok {
 		return cio
 	}
-	if !t.interactiveWriter(t.writer) {
-		return t.writer
+	if !t.interactiveWriter(t.Writer) {
+		return t.Writer
 	}
 	cio = t.ensureArbiterLocked(context.Background())
 	if cio == nil {
-		return t.writer
+		return t.Writer
 	}
 	if t.external == nil {
-		t.external = &terminalStderr{parent: t}
+		t.external = &TerminalStderr{Parent: t}
 	}
 	return t.external
 }
 
 // writeExternal sends output through the arbiter or
 // falls back to the raw writer.
-func (t *tio) writeExternal(p []byte) (int, error) {
+func (t *Terminal) writeExternal(p []byte) (int, error) {
 	t.mu.Lock()
 	cio := t.ensureArbiterLocked(context.Background())
-	raw := t.writer
+	raw := t.Writer
 	t.mu.Unlock()
 	if cio != nil {
 		return cio.Write(p)
@@ -327,35 +327,35 @@ func (t *tio) writeExternal(p []byte) (int, error) {
 	return raw.Write(p)
 }
 
-// setIO replaces the default reader and/or writer,
+// SetIO replaces the default reader and/or writer,
 // resetting the arbiter on writer change.
-func (t *tio) setIO(in io.Reader, out io.Writer) {
+func (t *Terminal) SetIO(in io.Reader, out io.Writer) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if in != nil {
-		t.reader = in
+		t.Reader = in
 		t.bg, t.bgGen = nil, t.bgGen+1
 	}
 	if out == nil {
 		return
 	}
 	t.bg, t.bgGen = nil, t.bgGen+1
-	t.writer = t.unwrapWriterLocked(out)
+	t.Writer = t.unwrapWriterLocked(out)
 	t.resetArbiterLocked()
 }
 
 // unwrapWriterLocked resolves self-referential writers
 // to avoid circular write chains.
-func (t *tio) unwrapWriterLocked(out io.Writer) io.Writer {
+func (t *Terminal) unwrapWriterLocked(out io.Writer) io.Writer {
 	switch w := out.(type) {
-	case *terminalStderr:
-		if w.parent == t {
-			return t.writer
+	case *TerminalStderr:
+		if w.Parent == t {
+			return t.Writer
 		}
-		return w.parent.rawOutput()
-	case *chanIO:
-		if w == t.arbiter {
-			return t.writer
+		return w.Parent.RawOutput()
+	case *ChanIO:
+		if w == t.Arbiter {
+			return t.Writer
 		}
 	}
 	return out
@@ -364,54 +364,54 @@ func (t *tio) unwrapWriterLocked(out io.Writer) io.Writer {
 // resetArbiterLocked tears down
 // the arbiter goroutine and clears
 // related state.
-func (t *tio) resetArbiterLocked() {
-	if t.cancel != nil {
-		t.cancel(nil)
+func (t *Terminal) resetArbiterLocked() {
+	if t.Cancel != nil {
+		t.Cancel(nil)
 	}
-	t.cancel = nil
-	t.arbiter = nil
+	t.Cancel = nil
+	t.Arbiter = nil
 	t.external = nil
 }
 
 // ensureArbiterLocked lazily creates
 // the channel-based IO arbiter for TTY outputs.
-func (t *tio) ensureArbiterLocked(ctx context.Context) *chanIO {
-	if cio, ok := t.writer.(*chanIO); ok {
+func (t *Terminal) ensureArbiterLocked(ctx context.Context) *ChanIO {
+	if cio, ok := t.Writer.(*ChanIO); ok {
 		return cio
 	}
-	if t.arbiter != nil {
-		return t.arbiter
+	if t.Arbiter != nil {
+		return t.Arbiter
 	}
-	if !t.interactiveWriter(t.writer) {
+	if !t.interactiveWriter(t.Writer) {
 		return nil
 	}
 	// the arbiter is shared by the whole process, so it must outlive the first caller's cancellation.
 	arbiterCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
-	cio, err := startIO(arbiterCtx, t.writer)
+	cio, err := StartIO(arbiterCtx, t.Writer)
 	if err != nil {
 		cancel(err)
 		return nil
 	}
-	t.arbiter = cio
-	t.cancel = cancel
+	t.Arbiter = cio
+	t.Cancel = cancel
 	return cio
 }
 
-var termGetSize = term.GetSize
-var terminalWriterChecker = func(fd int) bool {
+var GetSize = term.GetSize
+var WriterChecker = func(fd int) bool {
 	return term.IsTerminal(fd)
 }
 
 // interactiveWriter reports whether w is a terminal to redraw on: a terminal
 // outside of CI. Color depth still follows [tio.isTerminalWriter].
-func (t *tio) interactiveWriter(w io.Writer) bool {
-	return !t.env.ci && t.isTerminalWriter(w)
+func (t *Terminal) interactiveWriter(w io.Writer) bool {
+	return !t.Env.Ci && t.isTerminalWriter(w)
 }
 
-func (*tio) isTerminalWriter(w io.Writer) bool {
-	fdw, ok := w.(descriptor)
+func (*Terminal) isTerminalWriter(w io.Writer) bool {
+	fdw, ok := w.(Descriptor)
 	if !ok {
 		return false
 	}
-	return terminalWriterChecker(int(fdw.Fd()))
+	return WriterChecker(int(fdw.Fd()))
 }

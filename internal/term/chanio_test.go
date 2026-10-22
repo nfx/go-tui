@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"bytes"
@@ -19,8 +19,8 @@ func TestChanIOReadWrite(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	cio := &chanIO{
-		ctx: ctx,
+	cio := &ChanIO{
+		Ctx: ctx,
 		In:  make(chan string, 1),
 		Out: make(chan string, 1),
 	}
@@ -46,10 +46,10 @@ func TestChanIOReadWrite(t *testing.T) {
 func TestChanIOForwardToWrites(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := newUnstartedIO(ctx, 10, 3, 0)
+	cio := NewUnstartedIO(ctx, 10, 3, 0)
 	var out syncBuffer
-	go cio.forwardTo(ctx, &out)
-	_, err := cio.head.Write([]byte("hi\n"))
+	go cio.ForwardTo(ctx, &out)
+	_, err := cio.Head.Write([]byte("hi\n"))
 	assert.NoError(t, err)
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) && out.Len() == 0 {
@@ -57,7 +57,7 @@ func TestChanIOForwardToWrites(t *testing.T) {
 	}
 	assert.True(t, out.Len() > 0)
 	first := out.String()
-	_, err = cio.head.Write([]byte("there\n"))
+	_, err = cio.Head.Write([]byte("there\n"))
 	assert.NoError(t, err)
 	deadline = time.Now().Add(time.Second)
 	for time.Now().Before(deadline) && out.Len() == len(first) {
@@ -69,37 +69,37 @@ func TestChanIOForwardToWrites(t *testing.T) {
 func TestChanIOPushViewportCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	cio := newUnstartedIO(ctx, 10, 3, 0)
-	_, err := cio.pushViewport()
+	cio := NewUnstartedIO(ctx, 10, 3, 0)
+	_, err := cio.PushViewport()
 	assert.Error(t, err)
 }
 
 func TestChanIOPushViewportCanceledAfterSend(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	cio := &chanIO{
-		ctx:    ctx,
+	cio := &ChanIO{
+		Ctx:    ctx,
 		In:     make(chan string),
 		Out:    make(chan string),
-		vreply: make(chan chan *viewport, 1),
+		vreply: make(chan chan *Viewport, 1),
 		notify: make(chan viewportChanged, 1),
-		width:  10,
-		height: 3,
+		Width:  10,
+		Height: 3,
 	}
-	cio.head = initViewport(ctx, cio.notify, cio.width, cio.height)
-	cio.tail = cio.head
+	cio.Head = initViewport(ctx, cio.notify, cio.Width, cio.Height)
+	cio.tail = cio.Head
 	go func() {
 		time.Sleep(10 * time.Millisecond)
 		cancel()
 	}()
-	_, err := cio.pushViewport()
+	_, err := cio.PushViewport()
 	assert.Error(t, err)
 }
 
 func TestChanIOWriteCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	cio := &chanIO{
-		ctx: ctx,
+	cio := &ChanIO{
+		Ctx: ctx,
 		In:  make(chan string),
 		Out: make(chan string),
 	}
@@ -110,9 +110,9 @@ func TestChanIOWriteCanceled(t *testing.T) {
 func TestChanIOPushViewportSuccess(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := newUnstartedIO(ctx, 10, 3, 0)
-	go cio.handleViewports(ctx)
-	vp, err := cio.pushViewport()
+	cio := NewUnstartedIO(ctx, 10, 3, 0)
+	go cio.HandleViewports(ctx)
+	vp, err := cio.PushViewport()
 	assert.NoError(t, err)
 	assert.NotNil(t, vp)
 }
@@ -120,24 +120,24 @@ func TestChanIOPushViewportSuccess(t *testing.T) {
 func TestChanIOPushViewportAppendsAfterExistingManagedViewport(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := newUnstartedIO(ctx, 10, 3, 0)
-	base := cio.head
-	go cio.handleViewports(ctx)
+	cio := NewUnstartedIO(ctx, 10, 3, 0)
+	base := cio.Head
+	go cio.HandleViewports(ctx)
 
-	first, err := cio.pushViewport()
+	first, err := cio.PushViewport()
 	assert.NoError(t, err)
-	second, err := cio.pushViewport()
+	second, err := cio.PushViewport()
 	assert.NoError(t, err)
 
-	assert.Equal(t, first, cio.head)
-	assert.Equal(t, second, first.next)
-	assert.Equal(t, base, second.next)
+	assert.Equal(t, first, cio.Head)
+	assert.Equal(t, second, first.Next)
+	assert.Equal(t, base, second.Next)
 }
 
 func TestChanIOWriteCanceledDuringSend(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	cio := &chanIO{
-		ctx: ctx,
+	cio := &ChanIO{
+		Ctx: ctx,
 		In:  make(chan string),
 		Out: nil,
 	}
@@ -152,7 +152,7 @@ func TestChanIOWriteCanceledDuringSend(t *testing.T) {
 func TestWriteCWritesToChannel(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	w := newWriteC(ctx)
+	w := NewWriteC(ctx)
 	message := "hello"
 	go func() {
 		_, err := w.Write([]byte(message))
@@ -169,15 +169,15 @@ func TestWriteCWritesToChannel(t *testing.T) {
 func TestChanIOForwardToDrainsPendingOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var out bytes.Buffer
-	cio := newUnstartedIO(ctx, 80, 24, 0)
-	go cio.forwardTo(ctx, &out)
+	cio := NewUnstartedIO(ctx, 80, 24, 0)
+	go cio.ForwardTo(ctx, &out)
 
 	// send messages directly to the buffered channel before cancelling,
 	// so the drain path must handle them rather than the main loop.
 	cio.Out <- "first\n"
 	cio.Out <- "second\n"
 	cancel()
-	<-cio.done // block until forwardTo has finished draining
+	<-cio.Done // block until forwardTo has finished draining
 
 	assert.True(t, strings.Contains(out.String(), "first"))
 	assert.True(t, strings.Contains(out.String(), "second"))
@@ -186,10 +186,10 @@ func TestChanIOForwardToDrainsPendingOnCancel(t *testing.T) {
 func TestChanIOFlushDrainsBufferedOutput(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := newUnstartedIO(ctx, 80, 24, 0)
+	cio := NewUnstartedIO(ctx, 80, 24, 0)
 	var out bytes.Buffer
-	go cio.handleViewports(ctx)
-	go cio.forwardTo(ctx, &out)
+	go cio.HandleViewports(ctx)
+	go cio.ForwardTo(ctx, &out)
 
 	_, err := cio.Write([]byte("flushed\n"))
 	assert.NoError(t, err)
@@ -206,12 +206,12 @@ func TestChanIOFlushDrainsBufferedOutput(t *testing.T) {
 func TestChanIOWriteAndWaitCompletesWithoutCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := newUnstartedIO(ctx, 10, 3, 0)
+	cio := NewUnstartedIO(ctx, 10, 3, 0)
 	var out bytes.Buffer
-	go cio.forwardTo(ctx, &out)
+	go cio.ForwardTo(ctx, &out)
 
 	result := make(chan error, 1)
-	go func() { result <- cio.head.writeAndWait([]byte("hello")) }()
+	go func() { result <- cio.Head.WriteAndWait([]byte("hello")) }()
 
 	select {
 	case err := <-result:
@@ -223,35 +223,35 @@ func TestChanIOWriteAndWaitCompletesWithoutCancel(t *testing.T) {
 }
 
 func TestChanIOSharedGeometryRefreshIsRaceFree(t *testing.T) {
-	prevSize := termGetSize
+	prevSize := GetSize
 	ctx, cancel := context.WithCancel(t.Context())
 	var bg sync.WaitGroup
 	// stop background goroutines before restoring the global they read
 	t.Cleanup(func() {
 		cancel()
 		bg.Wait()
-		termGetSize = prevSize
+		GetSize = prevSize
 	})
-	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
+	GetSize = func(int) (int, int, error) { return 80, 24, nil }
 	// a real fd makes every refresh write the shared geometry
-	cio := newUnstartedIO(ctx, 80, 24, 2)
+	cio := NewUnstartedIO(ctx, 80, 24, 2)
 	bg.Add(2)
-	go func() { defer bg.Done(); cio.handleViewports(ctx) }()
-	go func() { defer bg.Done(); cio.forwardTo(ctx, io.Discard) }()
+	go func() { defer bg.Done(); cio.HandleViewports(ctx) }()
+	go func() { defer bg.Done(); cio.ForwardTo(ctx, io.Discard) }()
 
 	done := make(chan struct{})
 	for range 2 {
 		go func() {
 			defer func() { done <- struct{}{} }()
-			vp, err := cio.pushViewport()
+			vp, err := cio.PushViewport()
 			if err != nil {
 				t.Error(err)
 				return
 			}
 			w, h := cio.size()
-			tio := &termIO{cio: cio, vp: vp, Width: w, Height: h}
+			tio := &IO{Cio: cio, Vp: vp, Width: w, Height: h}
 			for range 50 {
-				tio.refreshSize()
+				tio.RefreshSize()
 				if _, err := tio.Write([]byte("frame")); err != nil {
 					t.Error(err)
 					return
@@ -268,7 +268,7 @@ func TestChanIOSharedGeometryRefreshIsRaceFree(t *testing.T) {
 }
 
 func TestChanIOReadKeepsBytesThatDoNotFit(t *testing.T) {
-	cio := newUnstartedIO(t.Context(), 80, 24, 0)
+	cio := NewUnstartedIO(t.Context(), 80, 24, 0)
 	go func() { cio.In <- "abcdef" }()
 
 	var got []string
@@ -283,7 +283,7 @@ func TestChanIOReadKeepsBytesThatDoNotFit(t *testing.T) {
 }
 
 func TestChanIOZeroLengthReadDoesNotConsumeInput(t *testing.T) {
-	cio := newUnstartedIO(t.Context(), 80, 24, 0)
+	cio := NewUnstartedIO(t.Context(), 80, 24, 0)
 	n, err := cio.Read(nil)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, n)
@@ -295,12 +295,12 @@ func TestChanIOZeroLengthReadDoesNotConsumeInput(t *testing.T) {
 	assert.Equal(t, "x", string(p[:n]))
 }
 
-func managedViewports(cio *chanIO) int {
-	cio.chainMu.Lock()
-	defer cio.chainMu.Unlock()
+func managedViewports(cio *ChanIO) int {
+	cio.ChainMu.Lock()
+	defer cio.ChainMu.Unlock()
 	var n int
-	for curr := cio.head; curr != nil; curr = curr.next {
-		if curr.fixedHeight {
+	for curr := cio.Head; curr != nil; curr = curr.Next {
+		if curr.FixedHeight {
 			n++
 		}
 	}
@@ -308,13 +308,13 @@ func managedViewports(cio *chanIO) int {
 }
 
 func TestChanIOReleasedViewportsDoNotAccumulate(t *testing.T) {
-	cio := startChanIO(t.Context(), 80, 24)
-	var released []*viewport
+	cio := startChanIO(t.Context())
+	var released []*Viewport
 	for range 3 {
-		vp, err := cio.pushViewport()
+		vp, err := cio.PushViewport()
 		assert.NoError(t, err)
-		assert.NoError(t, vp.writeAndWait([]byte("prompt")))
-		assert.NoError(t, vp.writeAndWait(nil))
+		assert.NoError(t, vp.WriteAndWait([]byte("prompt")))
+		assert.NoError(t, vp.WriteAndWait(nil))
 		cio.releaseViewport(vp)
 		cio.releaseViewport(vp) // idempotent
 		released = append(released, vp)
@@ -325,20 +325,20 @@ func TestChanIOReleasedViewportsDoNotAccumulate(t *testing.T) {
 		assert.NotNil(t, vp.ctx.Err())
 	}
 	// the chain still accepts new prompts
-	vp, err := cio.pushViewport()
+	vp, err := cio.PushViewport()
 	assert.NoError(t, err)
 	assert.Equal(t, 1, managedViewports(cio))
 	cio.releaseViewport(vp)
 }
 
 func TestChanIOReleasedViewportKeepsLastFrameInScrollback(t *testing.T) {
-	cio, stdout := chainIOforTest(t, 40, 6)
-	kept, err := cio.pushViewport()
+	cio, stdout := chainIOforTest(t, 6)
+	kept, err := cio.PushViewport()
 	assert.NoError(t, err)
-	live, err := cio.pushViewport()
+	live, err := cio.PushViewport()
 	assert.NoError(t, err)
-	assert.NoError(t, kept.writeAndWait([]byte("aborted")))
-	assert.NoError(t, live.writeAndWait([]byte("live")))
+	assert.NoError(t, kept.WriteAndWait([]byte("aborted")))
+	assert.NoError(t, live.WriteAndWait([]byte("live")))
 	_ = waitOutputContains(t, stdout.C, "live")
 
 	cio.releaseViewport(kept)

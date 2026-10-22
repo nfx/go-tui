@@ -5,6 +5,7 @@ package tui
 
 import (
 	"context"
+	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"os"
 )
@@ -15,7 +16,7 @@ import (
 // arbiter so prompts and external output are ordered by one renderer. On
 // non-TTY outputs it returns the configured raw writer directly.
 func Stderr() io.Writer {
-	return defaultIO.stderrWriter()
+	return term.Default.StderrWriter()
 }
 
 // SetDefaultIO overrides package-wide default input/output used by widgets that
@@ -24,10 +25,10 @@ func Stderr() io.Writer {
 // Deprecated: prefer the package defaults plus [Stderr] for normal CLI + TUI
 // integration. This remains for tests and explicit advanced overrides.
 func SetDefaultIO(in io.Reader, out io.Writer) {
-	defaultIO.setIO(in, out)
+	term.Default.SetIO(in, out)
 }
 
 // Deprecated: use [Stderr].
-func NewIO(ctx context.Context) (*chanIO, error) {
-	return startIO(ctx, os.Stderr)
+func NewIO(ctx context.Context) (*term.ChanIO, error) {
+	return term.StartIO(ctx, os.Stderr)
 }

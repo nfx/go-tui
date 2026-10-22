@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"iter"
@@ -358,7 +359,7 @@ func scaleSGR(t *testing.T) []string {
 	th.Light = true
 	themedTable(t, th, "FORCE_COLOR=3")
 	var levels []string
-	for _, c := range defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), &bytes.Buffer{}, nil).Diverging() {
+	for _, c := range term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), &bytes.Buffer{}, nil).Diverging() {
 		assert.True(t, !slices.Contains(levels, string(c)))
 		levels = append(levels, string(c))
 	}
@@ -659,9 +660,9 @@ func lines(out string) []string {
 // ttyWidth makes every writer report width columns.
 func ttyWidth(t *testing.T, width int) {
 	t.Helper()
-	orig := termGetSize
-	termGetSize = func(int) (int, int, error) { return width, 40, nil }
-	t.Cleanup(func() { termGetSize = orig })
+	orig := term.GetSize
+	term.GetSize = func(int) (int, int, error) { return width, 40, nil }
+	t.Cleanup(func() { term.GetSize = orig })
 }
 
 type factsRow struct {

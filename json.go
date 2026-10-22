@@ -6,6 +6,7 @@ package tui
 import (
 	"bytes"
 	"context"
+	"github.com/nfx/go-tui/internal/term"
 	"io"
 )
 
@@ -17,13 +18,13 @@ import (
 // the terminal is never queried. Without color the output is plain JSON.
 // Malformed input returns an error before anything is written.
 func PrettyJSON(w io.Writer, src any) error {
-	theme := defaultIO.currentTheme()
+	theme := term.Default.CurrentTheme()
 	out, err := jsonIndent(src, theme.Source.JSON)
 	if err != nil {
 		return err
 	}
-	if p := defaultIO.profileFor(w); p.Attrs() {
-		style := newJSONLook(defaultIO.bindTheme(context.Background(), theme, w, nil))
+	if p := term.Default.ProfileFor(w); p.Attrs() {
+		style := newJSONLook(term.Default.BindTheme(context.Background(), theme, w, nil))
 		colored := bytes.NewBuffer(make([]byte, 0, 2*out.Len()))
 		style.recolor(out, colored)
 		out = colored

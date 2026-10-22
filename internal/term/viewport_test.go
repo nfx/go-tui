@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"bytes"
@@ -61,7 +61,7 @@ without any escaping characters.`,
 		},
 	} {
 		t.Run(fmt.Sprint(tt), func(t *testing.T) {
-			v := &viewport{
+			v := &Viewport{
 				width:  10,
 				height: 10,
 			}
@@ -80,8 +80,8 @@ func TestViewportLinkedList(t *testing.T) {
 	notify := make(chan viewportChanged)
 	v := initViewport(ctx, notify, 10, 4)
 	v.lines = [][]byte{[]byte("a\n"), []byte("b\n")}
-	v.next = initViewport(ctx, notify, 10, 2)
-	v.next.lines = [][]byte{[]byte("c\n"), []byte("d\n")}
+	v.Next = initViewport(ctx, notify, 10, 2)
+	v.Next.lines = [][]byte{[]byte("c\n"), []byte("d\n")}
 	assert.Equal(t, 4, v.numLines())
 
 	var buf bytes.Buffer
@@ -94,11 +94,11 @@ func TestWriteToRotated(t *testing.T) {
 	ctx := t.Context()
 	notify := make(chan viewportChanged)
 	v := initViewport(ctx, notify, 10, 5)
-	v.fixedHeight = true
+	v.FixedHeight = true
 	v.lastLines = 2
 	v.lines = [][]byte{[]byte("a\n"), []byte("b\n"), []byte("aa\n"), []byte("bb\n")}
-	v.next = initViewport(ctx, notify, 10, 5)
-	v.next.lines = [][]byte{[]byte("c\n"), []byte("d\n"), []byte("e\n"), []byte("f\n"), []byte("g\n")}
+	v.Next = initViewport(ctx, notify, 10, 5)
+	v.Next.lines = [][]byte{[]byte("c\n"), []byte("d\n"), []byte("e\n"), []byte("f\n"), []byte("g\n")}
 	var buf bytes.Buffer
 	_, err := v.WriteTo(&buf)
 	assert.NoError(t, err)
@@ -147,8 +147,8 @@ func TestViewportCombinedHeight(t *testing.T) {
 	v2 := initViewport(ctx, notify, 10, 4)
 	v3 := initViewport(ctx, notify, 10, 2)
 
-	v1.next = v2
-	v2.next = v3
+	v1.Next = v2
+	v2.Next = v3
 
 	assert.Equal(t, 9, v1.combinedHeight())
 	assert.Equal(t, 6, v2.combinedHeight())
@@ -159,7 +159,7 @@ func TestViewportFixedHeight(t *testing.T) {
 	ctx := t.Context()
 	notify := make(chan viewportChanged, 10)
 	v := initViewport(ctx, notify, 10, 3)
-	v.fixedHeight = true
+	v.FixedHeight = true
 	v.lastLines = 2
 	v.lines = [][]byte{[]byte("line1\n"), []byte("line2\n"), []byte("line3\n"), []byte("line4\n")}
 
@@ -213,7 +213,7 @@ func TestViewportPaddedFixedHeightDoesNotAppendSpaces(t *testing.T) {
 	ctx := t.Context()
 	notify := make(chan viewportChanged)
 	v := initViewport(ctx, notify, 10, 5)
-	v.fixedHeight = true
+	v.FixedHeight = true
 
 	chunk := []byte("hello\x1b[3D")
 	lo, mid := v.padded(chunk, 0, len(chunk))
@@ -245,7 +245,7 @@ func TestViewportWriteToWithBudgetExceeded(t *testing.T) {
 	notify := make(chan viewportChanged, 10)
 	v1 := initViewport(ctx, notify, 10, 2)
 	v2 := initViewport(ctx, notify, 10, 5)
-	v1.next = v2
+	v1.Next = v2
 
 	v1.lines = [][]byte{[]byte("line1\n"), []byte("line2\n")}
 	v2.lines = [][]byte{[]byte("line3\n"), []byte("line4\n"), []byte("line5\n")}
@@ -288,7 +288,7 @@ func TestViewportWrapsByTerminalColumns(t *testing.T) {
 		{"escape is never split", "ab\x1b[1;31mcdé", []string{"ab\x1b[1;31mcd\n", "é\n"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			v := &viewport{width: 4, height: 10, fixedHeight: true}
+			v := &Viewport{width: 4, height: 10, FixedHeight: true}
 			v.appendToLinebuffer([]byte(tt.in))
 			var lines []string
 			for _, line := range v.lines {
@@ -301,7 +301,7 @@ func TestViewportWrapsByTerminalColumns(t *testing.T) {
 }
 
 func TestViewportPadsByTerminalColumns(t *testing.T) {
-	v := &viewport{width: 4, height: 10}
+	v := &Viewport{width: 4, height: 10}
 	v.appendToLinebuffer([]byte("\u754c"))
 	assert.Equal(t, []string{"\u754c  \n"}, []string{string(v.lines[0])})
 }
@@ -337,7 +337,7 @@ func TestViewportJoinsSplitWrites(t *testing.T) {
 		{"carriage return joins a cluster", []string{"abc\re\r\u0301x"}, []string{"abce\u0301\n", "x\n"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			v := &viewport{width: 4, height: 10, fixedHeight: true}
+			v := &Viewport{width: 4, height: 10, FixedHeight: true}
 			for _, w := range tt.writes {
 				v.appendToLinebuffer(v.joinPartial([]byte(w)))
 			}
@@ -352,7 +352,7 @@ func TestViewportJoinsSplitWrites(t *testing.T) {
 }
 
 func TestViewportDropsLongSequence(t *testing.T) {
-	v := &viewport{width: 4, height: 10, fixedHeight: true}
+	v := &Viewport{width: 4, height: 10, FixedHeight: true}
 	title := "\x1b]0;" + strings.Repeat("x", ansi.MaxHeldBytes)
 	assert.Equal(t, 0, len(v.joinPartial([]byte(title[:4]))))
 	assert.Equal(t, 4, len(v.partial))
@@ -364,10 +364,10 @@ func TestViewportDropsLongSequence(t *testing.T) {
 }
 
 func TestCursorRowsUp(t *testing.T) {
-	assert.Equal(t, 0, new(viewport).cursorRowsUp(nil))
-	assert.Equal(t, 0, new(viewport).cursorRowsUp([][]byte{[]byte("plain\n")}))
-	assert.Equal(t, 1, new(viewport).cursorRowsUp([][]byte{[]byte("msg\x1b[1A\x1b[12G\n")}))
-	assert.Equal(t, 2, new(viewport).cursorRowsUp([][]byte{[]byte("msg\x1b[2A")}))
+	assert.Equal(t, 0, new(Viewport).cursorRowsUp(nil))
+	assert.Equal(t, 0, new(Viewport).cursorRowsUp([][]byte{[]byte("plain\n")}))
+	assert.Equal(t, 1, new(Viewport).cursorRowsUp([][]byte{[]byte("msg\x1b[1A\x1b[12G\n")}))
+	assert.Equal(t, 2, new(Viewport).cursorRowsUp([][]byte{[]byte("msg\x1b[2A")}))
 }
 
 func FuzzViewportWrap(f *testing.F) {
@@ -376,7 +376,7 @@ func FuzzViewportWrap(f *testing.F) {
 		f.Add([]byte(seed), []byte("\x1b[0m\u0301"), uint8(2))
 	}
 	f.Fuzz(func(t *testing.T, first, second []byte, cols uint8) {
-		v := &viewport{width: int(cols%40) + 2, height: 100}
+		v := &Viewport{width: int(cols%40) + 2, height: 100}
 		for _, chunk := range [][]byte{first, second} {
 			v.appendToLinebuffer(v.joinPartial(chunk))
 		}

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
 	"strings"
 	"unicode"
 )
@@ -47,8 +48,8 @@ func (p *input) slots() render.PromptSlots {
 // bind captures the presentation of one run for its destination, before the
 // first frame: the helpers, the bound
 // slots, and the label and hint, which render once. tt is the terminal lease.
-func (p *input) bind(ctx context.Context, tt *termIO) error {
-	p.look = defaultIO.bindTheme(ctx, p.theme, p.Out, tt)
+func (p *input) bind(ctx context.Context, tt *term.IO) error {
+	p.look = term.Default.BindTheme(ctx, p.theme, p.Out, tt)
 	slots := p.slots()
 	var err error
 	if p.answer, err = slots.Answer.Bind(p.look.Funcs); err != nil {
@@ -90,8 +91,8 @@ func (p *input) bindHint(hint *render.Slot) error {
 }
 
 // render draws the prompt, leaving the caret on the value row for the next frame.
-func (i *input) render(io *termIO, frame *bytes.Buffer) error {
-	io.refreshSize()
+func (i *input) render(io *term.IO, frame *bytes.Buffer) error {
+	io.RefreshSize()
 	frame.Reset()
 	g := i.look.Geometry(io.Width, io.Height)
 	lead := g.ValueLead(i.label)
@@ -137,8 +138,8 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 // writeFrame draws fitted rows from the top of the previous frame, erases
 // the rows it had beyond them and puts the caret on row caret, col columns
 // in, which is left columns before the end of that row.
-func (i *input) writeFrame(io *termIO, frame *bytes.Buffer, fit render.Fitted, caret, col, left int) {
-	if io.vp == nil && i.caretRow > 0 {
+func (i *input) writeFrame(io *term.IO, frame *bytes.Buffer, fit render.Fitted, caret, col, left int) {
+	if io.Vp == nil && i.caretRow > 0 {
 		fmt.Fprintf(frame, "\x1b[%dA", i.caretRow)
 	}
 	for k, line := range fit.Lines {

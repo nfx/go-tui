@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"os"
 	"testing"
@@ -16,8 +17,8 @@ import (
 )
 
 func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
-	prevIn := defaultIO.input()
-	prevOut := defaultIO.rawOutput()
+	prevIn := term.Default.Input()
+	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() {
 		SetDefaultIO(prevIn, prevOut)
 	})
@@ -47,7 +48,7 @@ func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
 	reader.SendByte(0x5b)
 	reader.SendByte(0x44)
 	reader.SendByte('X')
-	reader.SendByte(keyEnter)
+	reader.SendByte(term.KeyEnter)
 
 	select {
 	case err := <-errs:
@@ -58,24 +59,24 @@ func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
 }
 
 func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
-	prevIn := defaultIO.input()
-	prevOut := defaultIO.rawOutput()
-	prevTTY := terminalWriterChecker
-	prevSize := termGetSize
+	prevIn := term.Default.Input()
+	prevOut := term.Default.RawOutput()
+	prevTTY := term.WriterChecker
+	prevSize := term.GetSize
 	t.Cleanup(func() {
-		terminalWriterChecker = prevTTY
-		termGetSize = prevSize
+		term.WriterChecker = prevTTY
+		term.GetSize = prevSize
 		SetDefaultIO(prevIn, prevOut)
 	})
 	in := bytes.NewBufferString("in")
 	out := &mockDescriptor{Writer: &bytes.Buffer{}, fd: 7}
-	terminalWriterChecker = func(int) bool { return true }
-	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
+	term.WriterChecker = func(int) bool { return true }
+	term.GetSize = func(int) (int, int, error) { return 80, 24, nil }
 	SetDefaultIO(in, out)
 	_ = Stderr()
 
-	_, defaultOut := defaultStreams(t.Context())
-	cio, ok := defaultOut.(*chanIO)
+	_, defaultOut := term.DefaultStreams(t.Context())
+	cio, ok := defaultOut.(*term.ChanIO)
 	assert.True(t, ok)
 	assert.NotNil(t, cio)
 
@@ -99,8 +100,8 @@ func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
 }
 
 func TestSetDefaultIO(t *testing.T) {
-	prevIn := defaultIO.input()
-	prevOut := defaultIO.rawOutput()
+	prevIn := term.Default.Input()
+	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() {
 		SetDefaultIO(prevIn, prevOut)
 	})
@@ -133,8 +134,8 @@ func TestSpinnersCloseNil(t *testing.T) {
 }
 
 func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
-	prevIn := defaultIO.input()
-	prevOut := defaultIO.rawOutput()
+	prevIn := term.Default.Input()
+	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() {
 		SetDefaultIO(prevIn, prevOut)
 	})
@@ -171,7 +172,7 @@ func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
 	reader.SendByte('q')
 	reader.SendByte('q')
 	reader.SendByte('q')
-	reader.SendByte(keyEnter)
+	reader.SendByte(term.KeyEnter)
 
 	select {
 	case err := <-errs:
@@ -204,8 +205,8 @@ func TestNewIOWithTTY(t *testing.T) {
 }
 
 func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
-	prevIn := defaultIO.input()
-	prevOut := defaultIO.rawOutput()
+	prevIn := term.Default.Input()
+	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() {
 		SetDefaultIO(prevIn, prevOut)
 	})
@@ -214,7 +215,7 @@ func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
 		Reader: &chunkReader{chunks: [][]byte{
 			{'h'},
 			{'i'},
-			{keyEnter},
+			{term.KeyEnter},
 		}},
 		fd: 0,
 	}
@@ -245,8 +246,8 @@ func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
 }
 
 func TestDefaultStreamsArePairedUnderSetDefaultIO(t *testing.T) {
-	prevIn := defaultIO.input()
-	prevOut := defaultIO.rawOutput()
+	prevIn := term.Default.Input()
+	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() { SetDefaultIO(prevIn, prevOut) })
 	in1, out1 := bytes.NewBufferString("1"), &bytes.Buffer{}
 	in2, out2 := bytes.NewBufferString("2"), &bytes.Buffer{}
@@ -267,7 +268,7 @@ func TestDefaultStreamsArePairedUnderSetDefaultIO(t *testing.T) {
 		}
 	}()
 	for range 1000 {
-		in, out := defaultStreams(t.Context())
+		in, out := term.DefaultStreams(t.Context())
 		paired := (in == io.Reader(in1) && out == io.Writer(out1)) ||
 			(in == io.Reader(in2) && out == io.Writer(out2))
 		if !paired {
@@ -279,9 +280,9 @@ func TestDefaultStreamsArePairedUnderSetDefaultIO(t *testing.T) {
 }
 
 func TestNewIOWithStubError(t *testing.T) {
-	orig := termGetSize
-	termGetSize = func(int) (int, int, error) { return 0, 0, errors.New("boom") }
-	t.Cleanup(func() { termGetSize = orig })
+	orig := term.GetSize
+	term.GetSize = func(int) (int, int, error) { return 0, 0, errors.New("boom") }
+	t.Cleanup(func() { term.GetSize = orig })
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	_, err := NewIO(ctx)
@@ -294,23 +295,23 @@ func TestNewIOWithStubError(t *testing.T) {
 }
 
 func TestNewIOWithStubSize(t *testing.T) {
-	orig := termGetSize
-	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
-	t.Cleanup(func() { termGetSize = orig })
+	orig := term.GetSize
+	term.GetSize = func(int) (int, int, error) { return 80, 24, nil }
+	t.Cleanup(func() { term.GetSize = orig })
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	cio, err := NewIO(ctx)
 	if err != nil {
 		t.Fatalf("NewIO failed: %v", err)
 	}
-	if cio.width != 80 || cio.height != 24 {
-		t.Fatalf("unexpected size %dx%d", cio.width, cio.height)
+	if cio.Width != 80 || cio.Height != 24 {
+		t.Fatalf("unexpected size %dx%d", cio.Width, cio.Height)
 	}
 }
 
 func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {
-	prevIn := defaultIO.input()
-	prevOut := defaultIO.rawOutput()
+	prevIn := term.Default.Input()
+	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() {
 		SetDefaultIO(prevIn, prevOut)
 	})
@@ -332,7 +333,7 @@ func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {
 	reader.SendBytes([]byte{0x1b, 0x5b, 0x42})
 	updated := waitOutputContains(t, stdout.C, "Are you sure?", "Yes", "No")
 	assert.True(t, initial != updated)
-	reader.SendByte(keyEnter)
+	reader.SendByte(term.KeyEnter)
 	assert.True(t, !<-result)
 }
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
@@ -22,8 +23,8 @@ func TestNewSliceProgressBar(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
-	cio := &chanIO{
-		ctx: ctx,
+	cio := &term.ChanIO{
+		Ctx: ctx,
 		In:  make(chan string),
 		Out: make(chan string, 2),
 	}
@@ -41,10 +42,10 @@ func TestNewSliceProgressBar(t *testing.T) {
 			pb.increments = make(chan int64, 8)
 			pb.now = func() time.Time { return time.Now() }
 			pb.redrawAt = pb.now()
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-				return &termIO{
-					in:      in,
-					out:     out,
+			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+				return &term.IO{
+					In:      in,
+					Out:     out,
 					Width:   30,
 					Height:  1,
 					Restore: func() error { return nil },
@@ -77,7 +78,7 @@ drainedSlice:
 
 func TestNewSliceProgressBarStopsOnYieldFalse(t *testing.T) {
 	seq := NewSliceProgressBar(t.Context(), "label", []int{1, 2, 3}, option.OpT(func(p *Progressbar) error {
-		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		p.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 			return nil, ErrNoTTY
 		}
 		return nil
@@ -94,7 +95,7 @@ func TestNewSliceProgressBarStopsOnYieldFalse(t *testing.T) {
 
 func TestNewSliceProgressBarReturnsError(t *testing.T) {
 	seq := NewSliceProgressBar(t.Context(), "label", []int{1}, option.OpT(func(p *Progressbar) error {
-		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		p.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 			return nil, errors.New("boom")
 		}
 		return nil
@@ -119,8 +120,8 @@ func TestThemedSliceProgress(t *testing.T) {
 	seq := NewSliceProgressBar(t.Context(), "items", items, option.OpT(func(pb *Progressbar) error {
 		pb.now = func() time.Time { return start.Add(time.Duration(clock.Load())) }
 		pb.ticks = ticks
-		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
-			return &termIO{in: in, out: frames, Width: 30, Height: 10, Restore: func() error { return nil }}, nil
+		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*term.IO, error) {
+			return &term.IO{In: in, Out: frames, Width: 30, Height: 10, Restore: func() error { return nil }}, nil
 		}
 		return nil
 	}))
@@ -153,8 +154,8 @@ func TestThemedSliceProgressReturnsRenderError(t *testing.T) {
 	ticks := make(chan time.Time)
 	seq := NewSliceProgressBar(t.Context(), "items", []int{1, 2}, option.OpT(func(pb *Progressbar) error {
 		pb.ticks = ticks
-		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
-			return &termIO{in: in, out: io.Discard, Width: 30, Height: 10, Restore: func() error { return nil }}, nil
+		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*term.IO, error) {
+			return &term.IO{In: in, Out: io.Discard, Width: 30, Height: 10, Restore: func() error { return nil }}, nil
 		}
 		return nil
 	}))

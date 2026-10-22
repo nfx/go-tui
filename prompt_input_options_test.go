@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"strings"
 	"testing"
@@ -49,8 +50,8 @@ func runValidated(t *testing.T, password bool, keys string, o ...option.Opt) (st
 	i.In = &chunkReader{chunks: chunks}
 	var out bytes.Buffer
 	i.Out = &out
-	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{in: in, out: out, Width: 40, Height: 3, Restore: func() error { return nil }}, nil
+	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+		return &term.IO{In: in, Out: out, Width: 40, Height: 3, Restore: func() error { return nil }}, nil
 	}
 	if err := option.Opts(o).Apply(i); err != nil {
 		return "", "", err

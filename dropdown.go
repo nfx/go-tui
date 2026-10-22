@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"iter"
 	"reflect"
 	"sort"
@@ -104,7 +105,7 @@ func DropdownLazy[V any](ctx context.Context, label string, itemFn iter.Seq2[V, 
 			}
 		}
 	})
-	terminal := outputIsTerminal(d.out)
+	terminal := term.OutputIsTerminal(d.out)
 	// the producer is owned by this call: it stops on every return path
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

@@ -10,6 +10,7 @@ import (
 	"github.com/nfx/go-tui/internal/color"
 	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
@@ -414,8 +415,8 @@ func TestThemedProgressWriteErrorEndsBar(t *testing.T) {
 	restored := false
 	p, err := NewMaxProgressBar(t.Context(), "build", 10, option.OpT(func(pb *Progressbar) error {
 		pb.ticks = time.After(0)
-		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
-			return &termIO{in: in, out: errWriterPB{}, Width: 40, Height: 1, Restore: func() error {
+		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*term.IO, error) {
+			return &term.IO{In: in, Out: errWriterPB{}, Width: 40, Height: 1, Restore: func() error {
 				restored = true
 				return nil
 			}}, nil
@@ -437,7 +438,7 @@ func TestThemedProgressWithoutTerminal(t *testing.T) {
 	th.Templates.Progress.Frame = `{{ boom }}{{ .Bar }}`
 	useTheme(t, th)
 	noTTY := option.OpT(func(pb *Progressbar) error {
-		pb.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { return nil, ErrNoTTY }
+		pb.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) { return nil, ErrNoTTY }
 		return nil
 	})
 	p, err := NewMaxProgressBar(t.Context(), "build", 3, noTTY)
@@ -467,7 +468,7 @@ func TestThemedProgressCapturesTheme(t *testing.T) {
 	later := asciiTheme(false)
 	later.Symbols.BarFill = "="
 	later.Progress.Compact = true
-	assert.NoError(t, defaultIO.installTheme(later))
+	assert.NoError(t, term.Default.InstallTheme(later))
 	p.Add(60)
 	tick(time.Second)
 	assert.Equal(t, frameOf("build  60%  "+strings.Repeat("#", 16)+">"+strings.Repeat("-", 10),

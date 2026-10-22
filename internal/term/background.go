@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"context"
@@ -12,21 +12,21 @@ import (
 	"time"
 )
 
-// backgroundProbeSupported excludes Windows consoles without VT input enabled.
-var backgroundProbeSupported = runtime.GOOS != "windows"
+// ProbeSupported excludes Windows consoles without VT input enabled.
+var ProbeSupported = runtime.GOOS != "windows"
 
 // canProbe checks for terminal input and a control output path.
-func (t *termIO) canProbe() bool {
-	in, ok := t.in.(descriptor)
-	if !ok || !backgroundProbeSupported || !terminalInputChecker(int(in.Fd())) {
+func (t *IO) canProbe() bool {
+	in, ok := t.In.(Descriptor)
+	if !ok || !ProbeSupported || !InputChecker(int(in.Fd())) {
 		return false
 	}
-	return t.cio != nil || t.fd > 0
+	return t.Cio != nil || t.Fd > 0
 }
 
 // detectBackground uses the existing input owner for OSC 11, then falls back
 // to hint, the COLORFGBG estimate or dark. [tio.background] handles caching.
-func (t *termIO) detectBackground(ctx context.Context, hint color.Background) color.Background {
+func (t *IO) detectBackground(ctx context.Context, hint color.Background) color.Background {
 	if t.canProbe() {
 		if b, ok := t.probeBackground(ctx); ok {
 			return b
@@ -39,25 +39,25 @@ func (t *termIO) detectBackground(ctx context.Context, hint color.Background) co
 const backgroundProbeTimeout = 200 * time.Millisecond
 
 // probeBackground queries OSC 11 without consuming keys; invalid replies fail.
-func (t *termIO) probeBackground(ctx context.Context) (color.Background, bool) {
+func (t *IO) probeBackground(ctx context.Context) (color.Background, bool) {
 	ctx, cancel := context.WithTimeout(ctx, backgroundProbeTimeout)
 	// Register before reading to catch fast replies; drain and replay intervening keys.
 	q := t.expectControl(11)
 	defer q.cancel()
 	permits := make(chan struct{})
-	keys := t.readEvents(ctx, permits)
-	var typed []keyEvent
+	keys := t.ReadEvents(ctx, permits)
+	var typed []KeyEvent
 	drained := make(chan struct{})
 	go func() {
 		defer close(drained)
 		for ev := range keys {
 			// Readiness failures carry no input; every read-backed event, including
 			// paste and Ctrl-C/D errors, was acknowledged and must be replayed.
-			if ev.readOrder == 0 {
+			if ev.ReadOrder == 0 {
 				continue
 			}
-			if ev.bracketed {
-				ev.err = nil // undo [termIO.shapeEvent] so replay reshapes for its consumer
+			if ev.Bracketed {
+				ev.Err = nil // undo [termIO.shapeEvent] so replay reshapes for its consumer
 			}
 			typed = append(typed, ev)
 		}
@@ -73,7 +73,7 @@ func (t *termIO) probeBackground(ctx context.Context) (color.Background, bool) {
 	}()
 	defer func() {
 		cancel()
-		t.awaitReader()
+		t.AwaitReader()
 		<-drained
 		t.restoreKeys(typed)
 	}()
@@ -98,7 +98,7 @@ func (t *termIO) probeBackground(ctx context.Context) (color.Background, bool) {
 }
 
 // parseOSCColor scales xterm rgb:R/G/B components of one to four hex digits to bytes.
-func (t *termIO) parseOSCColor(data string) (rgb color.SRGB, ok bool) {
+func (t *IO) parseOSCColor(data string) (rgb color.SRGB, ok bool) {
 	spec, found := strings.CutPrefix(data, "rgb:")
 	if !found {
 		return rgb, false
@@ -122,7 +122,7 @@ func (t *termIO) parseOSCColor(data string) (rgb color.SRGB, ok bool) {
 }
 
 // parseColorFGBG estimates the background from fg;bg or fg;xpm;bg using the ANSI palette.
-func (t *termIO) parseColorFGBG(v string) (rgb color.SRGB, ok bool) {
+func (t *IO) parseColorFGBG(v string) (rgb color.SRGB, ok bool) {
 	fields := strings.Split(v, ";")
 	if len(fields) < 2 || len(fields) > 3 {
 		return rgb, false
@@ -135,7 +135,7 @@ func (t *termIO) parseColorFGBG(v string) (rgb color.SRGB, ok bool) {
 }
 
 // backgroundFromEnv classifies COLORFGBG, or falls back to dark.
-func (t *termIO) backgroundFromEnv(lookup func(string) (string, bool)) color.Background {
+func (t *IO) backgroundFromEnv(lookup func(string) (string, bool)) color.Background {
 	if lookup == nil {
 		return color.Background{}
 	}

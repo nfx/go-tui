@@ -11,6 +11,7 @@ import (
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"log/slog"
 	"sync"
@@ -21,16 +22,16 @@ import (
 func newProgressbar(ctx context.Context) *Progressbar {
 	ctx, cancel := context.WithCancelCause(ctx)
 	ticker := time.NewTicker(100 * time.Millisecond)
-	in, out := defaultStreams(ctx)
+	in, out := term.DefaultStreams(ctx)
 	return &Progressbar{
 		Ctx:        ctx,
 		In:         in,
 		Out:        out,
-		theme:      defaultIO.currentTheme(),
+		theme:      term.Default.CurrentTheme(),
 		ticker:     ticker,
 		ticks:      ticker.C,
 		cancel:     cancel,
-		makeTermIO: makeOutputIO,
+		makeTermIO: term.MakeOutputIO,
 		increments: make(chan int64),
 		stopped:    make(chan struct{}),
 		now:        time.Now,
@@ -64,7 +65,7 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, o ...o
 		p.cancel(err)
 		return nil, fmt.Errorf("make io: %w", err)
 	}
-	err = p.io.restoreMode()
+	err = p.io.RestoreMode()
 	if err != nil {
 		p.cancel(err)
 		return nil, fmt.Errorf("restore: %w", err)
@@ -86,8 +87,8 @@ type Progressbar struct {
 	increments chan int64
 	stopped    chan struct{}
 	cancel     context.CancelCauseFunc
-	io         *termIO
-	makeTermIO func(io.Reader, io.Writer) (*termIO, error)
+	io         *term.IO
+	makeTermIO func(io.Reader, io.Writer) (*term.IO, error)
 	ticker     *time.Ticker
 	ticks      <-chan time.Time
 	now        func() time.Time
@@ -233,7 +234,7 @@ func (p *Progressbar) start(ctx context.Context) {
 			if done {
 				return
 			}
-		case <-p.io.onResize:
+		case <-p.io.OnResize:
 			if p.tick(frame) {
 				return
 			}
@@ -244,10 +245,10 @@ func (p *Progressbar) start(ctx context.Context) {
 // tick refreshes geometry, composes the rows of the bar from one snapshot
 // and writes them, replacing the previous frame, at once.
 func (p *Progressbar) tick(frame *bytes.Buffer) bool {
-	p.io.refreshSize()
+	p.io.RefreshSize()
 	// reserve one column to avoid the terminal's autowrap column
 	height := p.io.Height
-	if p.io.vp == nil && height > 1 {
+	if p.io.Vp == nil && height > 1 {
 		// the newline after the last row moves the cursor to a row of its
 		// own, which would scroll the first row off a terminal without it
 		height--
@@ -258,7 +259,7 @@ func (p *Progressbar) tick(frame *bytes.Buffer) bool {
 		return true
 	}
 	if p.rendered {
-		if err := p.io.clear(p.linesToClear(p.io.Width), frame); err != nil {
+		if err := p.io.Clear(p.linesToClear(p.io.Width), frame); err != nil {
 			p.err = fmt.Errorf("clear: %w", err)
 		}
 	}
@@ -305,8 +306,8 @@ func (p *Progressbar) flushLine(frame *bytes.Buffer, line ansi.Text) error {
 
 func (p *Progressbar) stop() error {
 	if p.rendered {
-		p.io.refreshSize()
-		err := p.io.clear(p.linesToClear(p.io.Width), p.io)
+		p.io.RefreshSize()
+		err := p.io.Clear(p.linesToClear(p.io.Width), p.io)
 		if err != nil {
 			return fmt.Errorf("clear: %w", err)
 		}

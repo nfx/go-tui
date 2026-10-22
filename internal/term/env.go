@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"cmp"
@@ -24,11 +24,11 @@ type outputEnv struct {
 	// bgHint is the background estimated from COLORFGBG, the fallback of
 	// detection, read with the same lifetime as the color policy.
 	bgHint color.Background
-	// ci is set in CI logs, which are rarely color-capable but are viewed in
+	// Ci is set in CI logs, which are rarely color-capable but are viewed in
 	// browsers with the Unicode glyphs. A CI job may run on a pseudo-terminal,
 	// but nobody answers prompts or watches redraws there, so it is never
 	// interactive, see [tio.interactiveWriter] and [hostsTerminal].
-	ci bool
+	Ci bool
 	// locale is the first set of LC_ALL, LC_CTYPE and LANG.
 	locale string
 	// unicodeHost is set by the terminals that announce themselves and show
@@ -36,7 +36,7 @@ type outputEnv struct {
 	unicodeHost bool
 }
 
-func readOutputEnv(lookup func(string) (string, bool)) outputEnv {
+func ReadOutputEnv(lookup func(string) (string, bool)) outputEnv {
 	get := func(k string) string { v, _ := lookup(k); return v }
 	truthy := func(k string) bool {
 		v := strings.ToLower(get(k))
@@ -52,8 +52,8 @@ func readOutputEnv(lookup func(string) (string, bool)) outputEnv {
 		term:            term,
 		colorTerm:       strings.ToLower(get("COLORTERM")),
 		windowsTerminal: get("WT_SESSION") != "",
-		bgHint:          new(termIO).backgroundFromEnv(lookup),
-		ci:              ci,
+		bgHint:          new(IO).backgroundFromEnv(lookup),
+		Ci:              ci,
 		locale:          cmp.Or(get("LC_ALL"), get("LC_CTYPE"), get("LANG")),
 		unicodeHost: get("TERM_PROGRAM") == "vscode" ||
 			get("TERMINAL_EMULATOR") == "JetBrains-JediTerm" ||
@@ -67,9 +67,9 @@ func readOutputEnv(lookup func(string) (string, bool)) outputEnv {
 	return e
 }
 
-// legacyConsoles reports whether the default terminal of the platform may be
+// LegacyConsoles reports whether the default terminal of the platform may be
 // the legacy Windows console host, whose fonts lack the Unicode symbols.
-var legacyConsoles = runtime.GOOS == "windows"
+var LegacyConsoles = runtime.GOOS == "windows"
 
 // hasUnicode guesses whether the terminal font has the glyphs of the Unicode
 // symbols, which no terminal can be asked about. Where the legacy Windows
@@ -77,10 +77,10 @@ var legacyConsoles = runtime.GOOS == "windows"
 // themselves show them. Elsewhere, every terminal does but the Linux virtual
 // console and one with a locale other than UTF-8.
 func (e outputEnv) hasUnicode() bool {
-	if !legacyConsoles {
+	if !LegacyConsoles {
 		return e.term != "linux" && e.utf8Locale()
 	}
-	return e.ci || e.windowsTerminal || e.unicodeHost
+	return e.Ci || e.windowsTerminal || e.unicodeHost
 }
 
 // utf8Locale reports whether the locale, language_TERRITORY.charset@modifier,
@@ -91,10 +91,10 @@ func (e outputEnv) utf8Locale() bool {
 	return !ok || strings.EqualFold(strings.ReplaceAll(charset, "-", ""), "utf8")
 }
 
-// consoleVT enables VT output processing on a console writer and reports
+// ConsoleVT enables VT output processing on a console writer and reports
 // whether the console accepts escape sequences. Only Windows consoles need
 // explicit enabling, see io_windows.go.
-var consoleVT = func(io.Writer) bool { return true }
+var ConsoleVT = func(io.Writer) bool { return true }
 
 // depth derives color depth from terminal hints, defaulting to ansi16.
 func (e outputEnv) depth() color.Profile {

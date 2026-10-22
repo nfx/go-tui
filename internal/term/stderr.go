@@ -1,48 +1,48 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"io"
 )
 
-type terminalStderr struct {
-	parent *tio
+type TerminalStderr struct {
+	Parent *Terminal
 }
 
-func (w *terminalStderr) Write(p []byte) (n int, err error) {
-	if w == nil || w.parent == nil {
+func (w *TerminalStderr) Write(p []byte) (n int, err error) {
+	if w == nil || w.Parent == nil {
 		return 0, io.ErrClosedPipe
 	}
-	return w.parent.writeExternal(p)
+	return w.Parent.writeExternal(p)
 }
 
 // Close flushes and shuts down the terminal arbiter by delegating to the parent tio.
-func (w *terminalStderr) Close() error {
-	if w == nil || w.parent == nil {
+func (w *TerminalStderr) Close() error {
+	if w == nil || w.Parent == nil {
 		return nil
 	}
-	return w.parent.Close()
+	return w.Parent.Close()
 }
 
 // Sync flushes all buffered terminal output to the underlying writer without closing.
 // Satisfies the same interface as os.File.Sync so callers can drain TUI
 // output without closing the descriptor.
-func (w *terminalStderr) Sync() error {
-	if w == nil || w.parent == nil {
+func (w *TerminalStderr) Sync() error {
+	if w == nil || w.Parent == nil {
 		return nil
 	}
-	return w.parent.Flush()
+	return w.Parent.Flush()
 }
 
 // Fd returns the file descriptor of
 // the underlying terminal writer.
-func (w *terminalStderr) Fd() uintptr {
-	if w == nil || w.parent == nil {
+func (w *TerminalStderr) Fd() uintptr {
+	if w == nil || w.Parent == nil {
 		return 0
 	}
-	fdw, ok := w.parent.rawOutput().(descriptor)
+	fdw, ok := w.Parent.RawOutput().(Descriptor)
 	if !ok {
 		return 0
 	}

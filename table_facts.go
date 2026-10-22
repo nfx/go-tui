@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"os"
 	"text/template"
@@ -45,13 +46,13 @@ func (f *facts) factsMaxWidth(w io.Writer) int {
 }
 
 func (*facts) readTTYWidth(w io.Writer) (int, bool) {
-	if out, ok := w.(descriptor); ok {
-		width, _, err := termGetSize(int(out.Fd()))
+	if out, ok := w.(term.Descriptor); ok {
+		width, _, err := term.GetSize(int(out.Fd()))
 		if err == nil && width > 0 {
 			return width, true
 		}
 	}
-	width, _, err := termGetSize(int(os.Stderr.Fd()))
+	width, _, err := term.GetSize(int(os.Stderr.Fd()))
 	if err == nil && width > 0 {
 		return width, true
 	}

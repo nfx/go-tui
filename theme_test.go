@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/color"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"strings"
 	"sync"
@@ -18,32 +19,32 @@ import (
 )
 
 func TestInstallAtomicAndIsolation(t *testing.T) {
-	prev := defaultIO.currentTheme()
-	t.Cleanup(func() { defaultIO.theme.Store(prev) })
+	prev := term.Default.CurrentTheme()
+	t.Cleanup(func() { term.Default.Theme.Store(prev) })
 
 	th := theme.New()
 	th.Palette.Accent = "#112233"
-	assert.NoError(t, defaultIO.installTheme(th))
-	c := defaultIO.currentTheme()
+	assert.NoError(t, term.Default.InstallTheme(th))
+	c := term.Default.CurrentTheme()
 	assert.Equal(t, theme.RGB("#112233"), c.Editable().Palette.Accent)
 
 	// Mutating the caller's value and the returned copy leaves the snapshot alone.
 	th.Palette.Accent = "#445566"
-	got := defaultIO.currentTheme().Editable()
+	got := term.Default.CurrentTheme().Editable()
 	got.Palette.Accent = "#778899"
 	assert.Equal(t, theme.RGB("#112233"), c.Source.Palette.Accent)
-	assert.Equal(t, theme.RGB("#112233"), defaultIO.currentTheme().Editable().Palette.Accent)
+	assert.Equal(t, theme.RGB("#112233"), term.Default.CurrentTheme().Editable().Palette.Accent)
 
 	// A failed installation changes nothing.
 	bad := theme.New()
 	bad.Palette.Accent = "nope"
-	assert.Error(t, defaultIO.installTheme(bad))
-	assert.True(t, defaultIO.currentTheme() == c)
+	assert.Error(t, term.Default.InstallTheme(bad))
+	assert.True(t, term.Default.CurrentTheme() == c)
 }
 
 func TestConcurrentInstall(t *testing.T) {
-	prev := defaultIO.currentTheme()
-	t.Cleanup(func() { defaultIO.theme.Store(prev) })
+	prev := term.Default.CurrentTheme()
+	t.Cleanup(func() { term.Default.Theme.Store(prev) })
 	var wg sync.WaitGroup
 	for i := range 16 {
 		wg.Go(func() {
@@ -51,13 +52,13 @@ func TestConcurrentInstall(t *testing.T) {
 			if i%2 == 0 {
 				th.Palette.Accent = "nope"
 			}
-			err := defaultIO.installTheme(th)
+			err := term.Default.InstallTheme(th)
 			if i%2 == 0 {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
 			}
-			if c := defaultIO.currentTheme(); c == nil {
+			if c := term.Default.CurrentTheme(); c == nil {
 				t.Error("torn theme")
 			}
 		})
@@ -72,7 +73,7 @@ func TestWithFnRegistersForFutureOperations(t *testing.T) {
 	assert.Equal(t, "HI!", execute(t, installedFuncs(), `{{ shout "hi" }}`))
 	_, ok := before.Funcs(color.ProfilePlain, render.Roles{})["shout"]
 	assert.True(t, !ok) // an operation that started earlier keeps its helpers
-	_, ok = defaultIO.currentTheme().Editable().Funcs["shout"]
+	_, ok = term.Default.CurrentTheme().Editable().Funcs["shout"]
 	assert.True(t, ok)
 
 	WithFn("shout", func(s string) string { return s + "?" })
@@ -110,7 +111,7 @@ func TestWithFnPanicsAndKeepsInstalled(t *testing.T) {
 		"threeResults":           func() (int, int, error) { return 0, 0, nil },
 	} {
 		t.Run(name, func(t *testing.T) {
-			installed := defaultIO.currentTheme()
+			installed := term.Default.CurrentTheme()
 			defer func() {
 				r := recover()
 				err, ok := r.(error)
@@ -118,7 +119,7 @@ func TestWithFnPanicsAndKeepsInstalled(t *testing.T) {
 					t.Fatalf("want a panic with an error, got %v", r)
 				}
 				assert.Contains(t, err.Error(), "tui.WithFn: theme.Funcs."+name+":")
-				assert.True(t, defaultIO.currentTheme() == installed)
+				assert.True(t, term.Default.CurrentTheme() == installed)
 			}()
 			WithFn(name, fn)
 		})
@@ -141,7 +142,7 @@ func TestConcurrentWithFnLosesNothing(t *testing.T) {
 		wg.Go(func() { WithFn(fmt.Sprintf("fn%d", i), strings.ToUpper) })
 	}
 	wg.Wait()
-	funcs := defaultIO.currentTheme().Editable().Funcs
+	funcs := term.Default.CurrentTheme().Editable().Funcs
 	for i := range 16 {
 		_, ok := funcs[fmt.Sprintf("fn%d", i)]
 		assert.True(t, ok)
@@ -153,8 +154,8 @@ func TestInstallReplacesFuncs(t *testing.T) {
 	WithFn("forgotten", strings.ToUpper)
 	th := theme.New()
 	th.Funcs = template.FuncMap{"kept": strings.ToLower}
-	assert.NoError(t, defaultIO.installTheme(th))
-	funcs := defaultIO.currentTheme().Editable().Funcs
+	assert.NoError(t, term.Default.InstallTheme(th))
+	funcs := term.Default.CurrentTheme().Editable().Funcs
 	_, forgotten := funcs["forgotten"]
 	_, kept := funcs["kept"]
 	assert.True(t, !forgotten && kept)
@@ -198,13 +199,13 @@ func TestThemeFuncsAreCopied(t *testing.T) {
 	keepTheme(t)
 	th := theme.New()
 	th.Funcs = template.FuncMap{"h": strings.ToUpper}
-	assert.NoError(t, defaultIO.installTheme(th))
+	assert.NoError(t, term.Default.InstallTheme(th))
 	th.Funcs["h"] = strings.ToLower
 	th.Funcs["extra"] = strings.ToLower
-	got := defaultIO.currentTheme().Editable()
+	got := term.Default.CurrentTheme().Editable()
 	got.Funcs["h"] = strings.ToLower
 	assert.Equal(t, "A", execute(t, installedFuncs(), `{{ h "a" }}`))
-	_, ok := defaultIO.currentTheme().Editable().Funcs["extra"]
+	_, ok := term.Default.CurrentTheme().Editable().Funcs["extra"]
 	assert.True(t, !ok)
 }
 
@@ -212,8 +213,8 @@ func TestSpinnerFramesAreCopied(t *testing.T) {
 	keepTheme(t)
 	th := theme.New()
 	th.Symbols.Spinner = []string{"a", "b"}
-	assert.NoError(t, defaultIO.installTheme(th))
-	installed := defaultIO.currentTheme()
+	assert.NoError(t, term.Default.InstallTheme(th))
+	installed := term.Default.CurrentTheme()
 	th.Symbols.Spinner[0] = "x"
 	got := installed.Editable()
 	got.Symbols.Spinner[1] = "y"

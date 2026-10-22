@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"context"
@@ -15,14 +15,14 @@ import (
 )
 
 const (
-	keyCtrlC = 0x03
+	KeyCtrlC = 0x03
 	keyCtrlD = 0x04
-	keyEnter = 0x0d
-	// keyEscape is a lone Esc key press.
-	keyEscape = 0x1b
-	// keyIgnored stands for escape sequences that widgets do not handle,
+	KeyEnter = 0x0d
+	// KeyEscape is a lone Esc key press.
+	KeyEscape = 0x1b
+	// KeyIgnored stands for escape sequences that widgets do not handle,
 	// such as Home, Delete, function keys, or Alt+key.
-	keyIgnored = 0x00
+	KeyIgnored = 0x00
 )
 
 // escapeTimeout bounds how long an incomplete escape sequence or UTF-8 rune
@@ -30,23 +30,23 @@ const (
 // for another key.
 var escapeTimeout = 50 * time.Millisecond
 
-// isPasteText reports whether err carries buffered keys reported as a paste.
-func isPasteText(err error) bool {
-	target, ok := errors.AsType[*pasteTextError](err)
+// IsPasteText reports whether err carries buffered keys reported as a paste.
+func IsPasteText(err error) bool {
+	target, ok := errors.AsType[*PasteTextError](err)
 	return ok && target != nil
 }
 
-type pasteTextError struct {
-	buf []byte
+type PasteTextError struct {
+	Buf []byte
 }
 
-func (e *pasteTextError) Error() string {
-	return fmt.Sprintf("bigger input (%d bytes)", len(e.buf))
+func (e *PasteTextError) Error() string {
+	return fmt.Sprintf("bigger input (%d bytes)", len(e.Buf))
 }
 
-// readRune reads and decodes a full rune, including
+// ReadRuneCtx reads and decodes a full rune, including
 // multi-byte escape sequences for arrow keys.
-func (t *termIO) readRune(ctx context.Context) (rune, int, error) {
+func (t *IO) ReadRuneCtx(ctx context.Context) (rune, int, error) {
 	buf, n, err := t.readRuneBytes(ctx)
 	if err != nil {
 		return 0, n, err
@@ -54,16 +54,16 @@ func (t *termIO) readRune(ctx context.Context) (rune, int, error) {
 	return t.decodeRuneBytes(buf, n)
 }
 
-type keyEvent struct {
-	key       rune
-	err       error
-	paste     []byte
-	bracketed bool
-	readOrder uint64
+type KeyEvent struct {
+	Key       rune
+	Err       error
+	Paste     []byte
+	Bracketed bool
+	ReadOrder uint64
 }
 
 // readRuneBytes preserves escape-sequence boundaries before decoding an input event.
-func (t *termIO) readRuneBytes(ctx context.Context) ([]byte, int, error) {
+func (t *IO) readRuneBytes(ctx context.Context) ([]byte, int, error) {
 	buf := make([]byte, 16)
 	n, err := t.Read(buf)
 	t.eventOrder = t.readOrder
@@ -73,7 +73,7 @@ func (t *termIO) readRuneBytes(ctx context.Context) ([]byte, int, error) {
 		}
 		return nil, n, err
 	}
-	if n > 0 && buf[0] == keyEscape {
+	if n > 0 && buf[0] == KeyEscape {
 		buf, n, err = t.readEscape(ctx, buf, n, err)
 		if err != nil {
 			if n == 0 {
@@ -89,7 +89,7 @@ func (t *termIO) readRuneBytes(ctx context.Context) ([]byte, int, error) {
 
 // readRuneTail reads the remaining bytes of a multi-byte UTF-8 rune
 // that was split across reads, one byte at a time.
-func (t *termIO) readRuneTail(ctx context.Context, buf []byte, n int, readErr error) int {
+func (t *IO) readRuneTail(ctx context.Context, buf []byte, n int, readErr error) int {
 	for readErr == nil && n > 0 && n < len(buf) && ansi.Text(buf[:n]).PartialRuneTail() > 0 {
 		if !t.nextByteReady(ctx, escapeTimeout) {
 			return n
@@ -105,27 +105,27 @@ func (t *termIO) readRuneTail(ctx context.Context, buf []byte, n int, readErr er
 
 // decodeRuneBytes interprets a byte buffer as a known escape
 // rune, a paste event, or a single character.
-func (t *termIO) decodeRuneBytes(buf []byte, n int) (rune, int, error) {
+func (t *IO) decodeRuneBytes(buf []byte, n int) (rune, int, error) {
 	if n == 0 {
-		return keyIgnored, n, nil
+		return KeyIgnored, n, nil
 	}
 	r, consumed, ok := t.maybeKnownRune(buf[:n])
 	if ok {
 		t.pushPending(buf, consumed, n)
 		return r, consumed, nil
 	}
-	if buf[0] == keyEscape {
+	if buf[0] == KeyEscape {
 		consumed, _ = t.escapeSequenceLen(buf[:n])
 		t.pushPending(buf, consumed, n)
 		if consumed == 1 {
-			return keyEscape, consumed, nil
+			return KeyEscape, consumed, nil
 		}
-		return keyIgnored, consumed, nil
+		return KeyIgnored, consumed, nil
 	}
-	if r, size := utf8.DecodeRune(buf[:n]); size == n || t.splitKeys {
+	if r, size := utf8.DecodeRune(buf[:n]); size == n || t.SplitKeys {
 		t.pushPending(buf, size, n)
 		switch r {
-		case keyCtrlC, keyCtrlD:
+		case KeyCtrlC, keyCtrlD:
 			return 0, size, io.EOF
 		default:
 			return r, size, nil
@@ -134,13 +134,13 @@ func (t *termIO) decodeRuneBytes(buf []byte, n int) (rune, int, error) {
 	n = t.holdPartialRune(buf, n)
 	cp := make([]byte, n)
 	copy(cp, buf[:n])
-	return 0, n, &pasteTextError{buf: cp}
+	return 0, n, &PasteTextError{Buf: cp}
 }
 
 // holdPartialRune moves a trailing incomplete UTF-8 rune into pending,
 // so that a paste that filled the buffer mid-rune completes on the next read.
 // It returns the number of bytes left in buf.
-func (t *termIO) holdPartialRune(buf []byte, n int) int {
+func (t *IO) holdPartialRune(buf []byte, n int) int {
 	start := n - ansi.Text(buf[:n]).PartialRuneTail()
 	if start == 0 || start == n {
 		return n
@@ -152,7 +152,7 @@ func (t *termIO) holdPartialRune(buf []byte, n int) int {
 // readEscape reads additional bytes one at a time until the escape
 // sequence is complete, no next byte arrives within [escapeTimeout],
 // or the buffer fills. An OSC reply grows the buffer to [maxControlFrame].
-func (t *termIO) readEscape(ctx context.Context, buf []byte, n int, readErr error) ([]byte, int, error) {
+func (t *IO) readEscape(ctx context.Context, buf []byte, n int, readErr error) ([]byte, int, error) {
 	wait := escapeTimeout
 	for {
 		if wait == escapeTimeout && t.isControlHeader(buf[:n]) {
@@ -181,13 +181,13 @@ func (t *termIO) readEscape(ctx context.Context, buf []byte, n int, readErr erro
 
 // nextByteReady waits up to wait for the next byte of an escape sequence
 // or rune. Readers that cannot be polled always report ready and block in Read.
-func (t *termIO) nextByteReady(ctx context.Context, wait time.Duration) bool {
-	if len(t.pending) > 0 {
+func (t *IO) nextByteReady(ctx context.Context, wait time.Duration) bool {
+	if len(t.Pending) > 0 {
 		return true
 	}
 	ctx, cancel := context.WithTimeout(ctx, wait)
 	defer cancel()
-	err := t.waitForReadableInput(ctx, t.in)
+	err := t.waitForReadableInput(ctx, t.In)
 	return !errors.Is(err, context.DeadlineExceeded)
 }
 
@@ -195,7 +195,7 @@ func (t *termIO) nextByteReady(ctx context.Context, wait time.Duration) bool {
 // of buf and whether it is complete. A lone Esc has length 1, Alt+key has
 // length 2, and SS3 and CSI sequences extend through their final byte. An OSC
 // reply extends through its BEL or ST terminator, see [scanControlFrame].
-func (t *termIO) escapeSequenceLen(buf []byte) (int, bool) {
+func (t *IO) escapeSequenceLen(buf []byte) (int, bool) {
 	if len(buf) < 2 {
 		return len(buf), false
 	}
@@ -226,7 +226,7 @@ func (t *termIO) escapeSequenceLen(buf []byte) (int, bool) {
 
 // maybeKnownRune checks whether buf starts with
 // a recognized SS3 or CSI arrow-key escape sequence.
-func (t *termIO) maybeKnownRune(buf []byte) (rune, int, bool) {
+func (t *IO) maybeKnownRune(buf []byte) (rune, int, bool) {
 	if len(buf) < 3 || buf[0] != 0x1b {
 		return 0, 0, false
 	}
@@ -242,7 +242,7 @@ func (t *termIO) maybeKnownRune(buf []byte) (rune, int, bool) {
 
 // decodeArrow maps a final escape byte to an
 // arrow-key rune (up/down/left/right).
-func (*termIO) decodeArrow(b byte, consumed int) (rune, int, bool) {
+func (*IO) decodeArrow(b byte, consumed int) (rune, int, bool) {
 	switch b {
 	case 0x41:
 		return '↑', consumed, true
@@ -259,7 +259,7 @@ func (*termIO) decodeArrow(b byte, consumed int) (rune, int, bool) {
 
 // decodeCSIArrow scans a CSI sequence for an arrow-key
 // final byte, skipping numeric and semicolon parameters.
-func (t *termIO) decodeCSIArrow(buf []byte) (rune, int, bool) {
+func (t *IO) decodeCSIArrow(buf []byte) (rune, int, bool) {
 	for i := 2; i < len(buf); i++ {
 		r, consumed, ok := t.decodeArrow(buf[i], i+1)
 		if ok {
@@ -273,13 +273,13 @@ func (t *termIO) decodeCSIArrow(buf []byte) (rune, int, bool) {
 }
 
 // pushPending retains unread bytes and their source arrival order for the next event.
-func (t *termIO) pushPending(buf []byte, consumed, n int) {
+func (t *IO) pushPending(buf []byte, consumed, n int) {
 	if consumed >= n {
 		return
 	}
 	// Read drains one source buffer before fetching more, so all leftovers
 	// share its arrival order. Prepend them to the remaining pending bytes.
-	t.pending = append(buf[consumed:n:n], t.pending...)
+	t.Pending = append(buf[consumed:n:n], t.Pending...)
 	t.pendingOrder = t.readOrder
 }
 

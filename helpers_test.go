@@ -9,6 +9,7 @@ import (
 	"github.com/nfx/go-tui/internal/color"
 	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"iter"
 	"os"
@@ -67,21 +68,21 @@ func (r *fdByteReader) Fd() uintptr {
 	return r.f.Fd()
 }
 
-func startChanIO(ctx context.Context, width, height int) *chanIO {
+func startChanIO(ctx context.Context, width, height int) *term.ChanIO {
 	return startChanIOTo(ctx, io.Discard, width, height)
 }
 
-func startChanIOTo(ctx context.Context, out io.Writer, width, height int) *chanIO {
-	cio := newUnstartedIO(ctx, width, height, 0)
-	go cio.handleViewports(ctx)
-	go cio.forwardTo(ctx, out)
+func startChanIOTo(ctx context.Context, out io.Writer, width, height int) *term.ChanIO {
+	cio := term.NewUnstartedIO(ctx, width, height, 0)
+	go cio.HandleViewports(ctx)
+	go cio.ForwardTo(ctx, out)
 	return cio
 }
 
-func newTestTermIO(width, height int) *termIO {
-	return &termIO{
-		in:      bytes.NewBuffer(nil),
-		out:     &bytes.Buffer{},
+func newTestTermIO(width, height int) *term.IO {
+	return &term.IO{
+		In:      bytes.NewBuffer(nil),
+		Out:     &bytes.Buffer{},
 		Width:   width,
 		Height:  height,
 		Restore: func() error { return nil },
@@ -216,14 +217,14 @@ func (s *boundedScreen) visible() (rows []string) {
 // keepTheme restores the installed theme after a test.
 func keepTheme(t *testing.T) *render.Compiled {
 	t.Helper()
-	prev := defaultIO.currentTheme()
-	t.Cleanup(func() { defaultIO.theme.Store(prev) })
+	prev := term.Default.CurrentTheme()
+	t.Cleanup(func() { term.Default.Theme.Store(prev) })
 	return prev
 }
 
 // installedFuncs are the helpers of the installed theme, for a plain destination.
 func installedFuncs() template.FuncMap {
-	return defaultIO.currentTheme().Funcs(color.ProfilePlain, render.Roles{})
+	return term.Default.CurrentTheme().Funcs(color.ProfilePlain, render.Roles{})
 }
 
 // execute renders src with funcs and fails the test on any error.
@@ -244,20 +245,20 @@ func withEnv(t *testing.T, pairs ...string) {
 		k, v, _ := strings.Cut(p, "=")
 		vars[k] = v
 	}
-	prev := defaultIO.env
-	defaultIO.env = readOutputEnv(func(k string) (string, bool) { v, ok := vars[k]; return v, ok })
-	t.Cleanup(func() { defaultIO.env = prev })
+	prev := term.Default.Env
+	term.Default.Env = term.ReadOutputEnv(func(k string) (string, bool) { v, ok := vars[k]; return v, ok })
+	t.Cleanup(func() { term.Default.Env = prev })
 }
 
 func ttyWriter(t *testing.T) *mockDescriptor {
 	t.Helper()
-	prev := terminalWriterChecker
-	terminalWriterChecker = func(int) bool { return true }
-	prevVT := consoleVT
-	consoleVT = func(io.Writer) bool { return true }
+	prev := term.WriterChecker
+	term.WriterChecker = func(int) bool { return true }
+	prevVT := term.ConsoleVT
+	term.ConsoleVT = func(io.Writer) bool { return true }
 	t.Cleanup(func() {
-		terminalWriterChecker = prev
-		consoleVT = prevVT
+		term.WriterChecker = prev
+		term.ConsoleVT = prevVT
 	})
 	return &mockDescriptor{Reader: &bytes.Buffer{}, Writer: &bytes.Buffer{}, fd: 7}
 }
@@ -286,13 +287,13 @@ func waitOutputContains(t *testing.T, out <-chan string, parts ...string) string
 
 var regexpSGR = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-func chainIOforTest(t *testing.T, width, height int) (*chanIO, *writeC) {
+func chainIOforTest(t *testing.T, width, height int) (*term.ChanIO, *term.WriteC) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
-	realOut := newWriteC(ctx)
-	cio := newUnstartedIO(ctx, width, height, 0)
-	go cio.handleViewports(ctx)
-	go cio.forwardTo(ctx, realOut)
+	realOut := term.NewWriteC(ctx)
+	cio := term.NewUnstartedIO(ctx, width, height, 0)
+	go cio.HandleViewports(ctx)
+	go cio.ForwardTo(ctx, realOut)
 	t.Cleanup(func() {
 		cancel()
 		close(cio.In)
@@ -307,10 +308,10 @@ func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
 
 func TestChanIOFlushAndCloseReportWriteFailure(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(t.Context())
-	cio := newUnstartedIO(ctx, 80, 24, 0)
-	go cio.handleViewports(ctx)
-	go cio.forwardTo(ctx, failingWriter{io.ErrShortWrite})
-	tio := &tio{arbiter: cio, cancel: cancel}
+	cio := term.NewUnstartedIO(ctx, 80, 24, 0)
+	go cio.HandleViewports(ctx)
+	go cio.ForwardTo(ctx, failingWriter{io.ErrShortWrite})
+	tio := &term.Terminal{Arbiter: cio, Cancel: cancel}
 
 	_, err := cio.Write([]byte("lost\n"))
 	assert.NoError(t, err) // queueing is asynchronous
@@ -362,14 +363,14 @@ func (r *replyingTerminal) count() int {
 }
 
 // probeTermIO creates a simulated terminal with automatic cleanup.
-func probeTermIO(t *testing.T, reply string) (*termIO, *replyingTerminal) {
+func probeTermIO(t *testing.T, reply string) (*term.IO, *replyingTerminal) {
 	t.Helper()
-	prev, prevSupported := terminalInputChecker, backgroundProbeSupported
-	terminalInputChecker = func(int) bool { return true }
-	backgroundProbeSupported = true // the simulated terminal accepts VT input on every platform
-	t.Cleanup(func() { terminalInputChecker, backgroundProbeSupported = prev, prevSupported })
+	prev, prevSupported := term.InputChecker, term.ProbeSupported
+	term.InputChecker = func(int) bool { return true }
+	term.ProbeSupported = true // the simulated terminal accepts VT input on every platform
+	t.Cleanup(func() { term.InputChecker, term.ProbeSupported = prev, prevSupported })
 	pr, pw := io.Pipe()
 	t.Cleanup(func() { assert.NoError(t, pw.Close()) })
-	term := &replyingTerminal{reply: reply, in: pw}
-	return &termIO{in: &mockDescriptor{Reader: pr, fd: 7}, out: term, fd: 2}, term
+	rt := &replyingTerminal{reply: reply, in: pw}
+	return &term.IO{In: &mockDescriptor{Reader: pr, fd: 7}, Out: rt, Fd: 2}, rt
 }

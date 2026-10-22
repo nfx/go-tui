@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/term"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -100,11 +101,11 @@ func (i *input) safeText(text string) string {
 }
 
 // clear erases the input and any feedback row before the prompt exits.
-func (i *input) clear(io *termIO) error {
+func (i *input) clear(io *term.IO) error {
 	var errs []error
 	rows := max(i.rows, 1)
 	down := rows
-	if io.vp == nil {
+	if io.Vp == nil {
 		// from the caret row to below the frame; a viewport replaces the frame
 		down -= i.caretRow
 	}
@@ -112,7 +113,7 @@ func (i *input) clear(io *termIO) error {
 	if err != nil {
 		errs = append(errs, fmt.Errorf("newline: %w", err))
 	}
-	err = io.clear(rows, io)
+	err = io.Clear(rows, io)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("clear: %w", err))
 	}

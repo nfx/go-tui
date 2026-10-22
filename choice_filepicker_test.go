@@ -6,6 +6,7 @@ package tui
 import (
 	"errors"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
@@ -200,7 +201,7 @@ func TestThemedFilePickerMutesParentEntry(t *testing.T) {
 	o, out, _ := themedDropdownOpt(t, th, 40, "\x1b[B", "\r", "\x1b[B", "\r")
 	_, err := FilePicker(t.Context(), "File", WithStartDir(pickerTree(t)), o)
 	assert.NoError(t, err)
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), out, nil).Roles
+	roles := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), out, nil).Roles
 	assert.True(t, len(roles.Muted) > 0)
 	assert.Contains(t, out.String(), string(roles.Muted)+"..")
 	assert.True(t, !strings.Contains(out.String(), string(roles.Muted)+"inner.txt"))
@@ -215,11 +216,11 @@ func TestThemedFilePickerKeepsOneThemeAcrossDirectories(t *testing.T) {
 	terminals := 0
 	install := option.OpT(func(d *dropdown) error {
 		next := d.makeTermIO
-		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 			terminals++
 			if terminals == 2 {
 				// a new default between directories reaches later invocations only
-				assert.NoError(t, defaultIO.installTheme(other))
+				assert.NoError(t, term.Default.InstallTheme(other))
 			}
 			return next(in, out)
 		}
@@ -237,8 +238,8 @@ func TestFilePickerNextDropdownInheritsThemeAndBinding(t *testing.T) {
 	useTheme(t, asciiTheme(false))
 	f, first, err := newFilePicker(t.Context(), WithStartDir(t.TempDir()))
 	assert.NoError(t, err)
-	f.look = defaultIO.bindTheme(t.Context(), f.theme, first.out, nil)
-	assert.NoError(t, defaultIO.installTheme(asciiTheme(true)))
+	f.look = term.Default.BindTheme(t.Context(), f.theme, first.out, nil)
+	assert.NoError(t, term.Default.InstallTheme(asciiTheme(true)))
 	next, err := f.nextDropdown(t.Context(), nil)
 	assert.NoError(t, err)
 	assert.True(t, next.theme == f.theme)

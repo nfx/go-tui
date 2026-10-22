@@ -11,6 +11,7 @@ import (
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"log/slog"
 	"math"
@@ -133,8 +134,8 @@ func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, o ...option.Opt) 
 // The layout comes from [Theme.Table]; options such as [WithMaxWidth] still
 // apply on top of it.
 func (t *table) bind() error {
-	t.theme = defaultIO.currentTheme()
-	t.look = defaultIO.bindTheme(context.Background(), t.theme, t.w, nil)
+	t.theme = term.Default.CurrentTheme()
+	t.look = term.Default.BindTheme(context.Background(), t.theme, t.w, nil)
 	style := t.theme.Source.Table
 	// a value keeps one trailing column when it is truncated or padded
 	t.cellPad, t.colMinWidth = style.ColumnGap-1, style.MinColumnWidth

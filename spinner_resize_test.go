@@ -6,6 +6,7 @@ package tui
 import (
 	"bytes"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/term"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
@@ -13,8 +14,8 @@ import (
 
 func TestSpinnerRedrawTruncatesLongMessage(t *testing.T) {
 	s := newSpinners(t.Context())
-	s.io = &termIO{
-		out:     &bytes.Buffer{},
+	s.io = &term.IO{
+		Out:     &bytes.Buffer{},
 		Width:   20,
 		Height:  4,
 		Restore: func() error { return nil },
@@ -29,7 +30,7 @@ func TestSpinnerRedrawTruncatesLongMessage(t *testing.T) {
 	prevActive, err := s.redraw(0)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, prevActive)
-	out, ok := s.io.out.(*bytes.Buffer)
+	out, ok := s.io.Out.(*bytes.Buffer)
 	assert.True(t, ok)
 	lines := bytes.Split(out.Bytes(), []byte("\n"))
 	for _, line := range lines {

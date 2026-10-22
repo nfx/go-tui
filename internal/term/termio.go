@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"errors"
@@ -13,53 +13,53 @@ import (
 	"golang.org/x/term"
 )
 
-type descriptor interface {
+type Descriptor interface {
 	Fd() uintptr
 }
 
-type termIO struct {
-	in            io.Reader
-	out           io.Writer
+type IO struct {
+	In            io.Reader
+	Out           io.Writer
 	Width, Height int
 	// Restore gives the viewport back and leaves raw mode.
 	Restore func() error
 	// modeRestore only leaves raw mode, see [termIO.restoreMode].
 	modeRestore func() error
 
-	cio *chanIO
-	vp  *viewport
+	Cio *ChanIO
+	Vp  *Viewport
 
-	pending      []byte
+	Pending      []byte
 	pendingOrder uint64 // pending bytes retain their source-read order
 	readOrder    uint64 // order of the most recent Read
 	eventOrder   uint64 // order of the first bytes of the current event
 	bm1, bm2     byte
-	// splitKeys decodes keys returned together by one read one at a time,
+	// SplitKeys decodes keys returned together by one read one at a time,
 	// keeping the rest pending, instead of reporting them as a paste.
-	splitKeys bool
-	// bracketedPaste opts into framed events; all reads retain paste boundaries.
-	bracketedPaste bool
+	SplitKeys bool
+	// BracketedPaste opts into framed events; all reads retain paste boundaries.
+	BracketedPaste bool
 
-	fd       int             // output file descriptor for resize refresh
-	onResize <-chan struct{} // fires on terminal resize (SIGWINCH)
+	Fd       int             // output file descriptor for resize refresh
+	OnResize <-chan struct{} // fires on terminal resize (SIGWINCH)
 
-	input  *inputState     // input lifetime is independent of terminal acquisition
+	Input  *inputState     // input lifetime is independent of terminal acquisition
 	reader <-chan struct{} // closed once the last [termIO.readEvents] goroutine is done with pending
 }
 
-var termMakeRaw = term.MakeRaw
-var termRestore = term.Restore
+var MakeRaw = term.MakeRaw
+var Restore = term.Restore
 
 // makeTermIO sets up raw terminal mode and creates
 // a termIO for interactive widget rendering.
-func makeTermIO(in io.Reader, out io.Writer) (*termIO, error) {
+func makeTermIO(in io.Reader, out io.Writer) (*IO, error) {
 	return acquireTermIO(in, out, rawRestore)
 }
 
-// makeOutputIO acquires drawing resources without changing terminal mode,
+// MakeOutputIO acquires drawing resources without changing terminal mode,
 // so restoring a progress bar or spinner cannot disable a concurrent prompt's raw mode.
-func makeOutputIO(in io.Reader, out io.Writer) (*termIO, error) {
-	return acquireTermIO(in, out, func(descriptor) (func() error, error) {
+func MakeOutputIO(in io.Reader, out io.Writer) (*IO, error) {
+	return acquireTermIO(in, out, func(Descriptor) (func() error, error) {
 		return func() error { return nil }, nil
 	})
 }
@@ -69,14 +69,14 @@ func makeOutputIO(in io.Reader, out io.Writer) (*termIO, error) {
 func acquireTermIO(
 	in io.Reader,
 	out io.Writer,
-	rawRestore func(descriptor) (func() error, error),
-) (*termIO, error) {
-	stderr, isOutFD := out.(descriptor)
-	cio, isOutChanIO := out.(*chanIO)
+	rawRestore func(Descriptor) (func() error, error),
+) (*IO, error) {
+	stderr, isOutFD := out.(Descriptor)
+	cio, isOutChanIO := out.(*ChanIO)
 	if !isOutFD && !isOutChanIO {
 		return nil, fmt.Errorf("stderr: %w", errs.ErrNoTTY)
 	}
-	stdin, ok := in.(descriptor)
+	stdin, ok := in.(Descriptor)
 	if !ok {
 		return nil, fmt.Errorf("stdin: %w", errs.ErrNoTTY)
 	}
@@ -85,7 +85,7 @@ func acquireTermIO(
 		if err != nil {
 			return nil, fmt.Errorf("raw: %w", err)
 		}
-		vp, err := cio.pushViewport()
+		vp, err := cio.PushViewport()
 		if err != nil {
 			err = fmt.Errorf("viewport: %w", err)
 			if rerr := restore(); rerr != nil {
@@ -94,22 +94,22 @@ func acquireTermIO(
 			return nil, err
 		}
 		width, height := cio.size()
-		return withRestore(&termIO{
-			in:       in,
-			input:    sharedInputState(in),
-			out:      out,
+		return WithRestore(&IO{
+			In:       in,
+			Input:    SharedInputState(in),
+			Out:      out,
 			Width:    width,
 			Height:   height, // first render will set the height
-			vp:       vp,
-			cio:      cio,
-			onResize: resizeNotify(),
+			Vp:       vp,
+			Cio:      cio,
+			OnResize: resizeNotify(),
 		}, restore), nil
 	}
-	if defaultIO.env.ci {
+	if Default.Env.Ci {
 		return nil, fmt.Errorf("stderr: CI: %w", errs.ErrNoTTY)
 	}
 	fd := int(stderr.Fd())
-	width, height, err := termGetSize(fd)
+	width, height, err := GetSize(fd)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errs.ErrNoTTY, err)
 	}
@@ -117,52 +117,52 @@ func acquireTermIO(
 	if err != nil {
 		return nil, fmt.Errorf("raw: %w", err)
 	}
-	return withRestore(&termIO{
-		in:       in,
-		input:    sharedInputState(in),
-		out:      out,
+	return WithRestore(&IO{
+		In:       in,
+		Input:    SharedInputState(in),
+		Out:      out,
 		Width:    width,
 		Height:   height,
-		fd:       fd,
-		onResize: resizeNotify(),
+		Fd:       fd,
+		OnResize: resizeNotify(),
 	}, restore), nil
 }
 
 // plainWidth is the geometry assumed for scripted input and output.
 const plainWidth, plainHeight = 80, 24
 
-// makePromptIO acquires the terminal for prompts. Input that is not a file
+// MakePromptIO acquires the terminal for prompts. Input that is not a file
 // descriptor, e.g. a [strings.Reader] passed to WithInput, cannot be a terminal,
 // so prompts then read it as scripted input and write frames to out as plain
 // text without raw mode or a managed viewport. Real descriptors still require a terminal.
 // Output that cannot host a terminal is never a prompt, whatever the input is.
-func makePromptIO(in io.Reader, out io.Writer) (*termIO, error) {
-	if !outputIsTerminal(out) {
+func MakePromptIO(in io.Reader, out io.Writer) (*IO, error) {
+	if !OutputIsTerminal(out) {
 		return nil, fmt.Errorf("stderr: %w", errs.ErrNoTTY)
 	}
-	_, isInFD := in.(descriptor)
-	_, isOutFD := out.(descriptor)
-	_, isOutChanIO := out.(*chanIO)
+	_, isInFD := in.(Descriptor)
+	_, isOutFD := out.(Descriptor)
+	_, isOutChanIO := out.(*ChanIO)
 	if isInFD && (isOutFD || isOutChanIO) {
 		return makeTermIO(in, out)
 	}
-	t := &termIO{
-		in:       in,
-		input:    sharedInputState(in),
-		out:      out,
+	t := &IO{
+		In:       in,
+		Input:    SharedInputState(in),
+		Out:      out,
 		Width:    plainWidth,
 		Height:   plainHeight,
-		onResize: nil, // never fires
+		OnResize: nil, // never fires
 	}
 	t.modeRestore = func() error { return nil }
 	t.Restore = t.modeRestore
 	return t, nil
 }
 
-// withRestore makes Restore release the viewport, then leave raw mode.
+// WithRestore makes Restore release the viewport, then leave raw mode.
 // Raw mode is left at most once: a repeated call must not restore the mode
 // saved at acquisition over raw mode that a later prompt has entered.
-func withRestore(t *termIO, restore func() error) *termIO {
+func WithRestore(t *IO, restore func() error) *IO {
 	var once sync.Once
 	var err error
 	t.modeRestore = func() error {
@@ -176,9 +176,9 @@ func withRestore(t *termIO, restore func() error) *termIO {
 	return t
 }
 
-// restoreMode leaves raw mode but keeps the viewport, for output-only
+// RestoreMode leaves raw mode but keeps the viewport, for output-only
 // widgets that keep drawing after acquisition.
-func (t *termIO) restoreMode() error {
+func (t *IO) RestoreMode() error {
 	if t.modeRestore == nil {
 		return t.Restore()
 	}
@@ -187,52 +187,52 @@ func (t *termIO) restoreMode() error {
 
 // rawRestore puts stdin into raw mode and returns
 // a function that restores the original state.
-func rawRestore(stdin descriptor) (func() error, error) {
-	if !terminalInputChecker(int(stdin.Fd())) {
+func rawRestore(stdin Descriptor) (func() error, error) {
+	if !InputChecker(int(stdin.Fd())) {
 		return func() error { return nil }, nil
 	}
-	oldState, err := termMakeRaw(int(stdin.Fd()))
+	oldState, err := MakeRaw(int(stdin.Fd()))
 	if err != nil {
 		return nil, err
 	}
 	return func() error {
-		return termRestore(int(stdin.Fd()), oldState)
+		return Restore(int(stdin.Fd()), oldState)
 	}, nil
 }
 
 // release gives the managed viewport back to the arbiter once the widget is
 // done drawing. Its last frame stays in the scrollback. Safe to call more than once.
-func (t *termIO) release() {
-	if t == nil || t.cio == nil || t.vp == nil {
+func (t *IO) release() {
+	if t == nil || t.Cio == nil || t.Vp == nil {
 		return
 	}
-	t.cio.releaseViewport(t.vp)
+	t.Cio.releaseViewport(t.Vp)
 }
 
 // Read preserves buffered arrival order and assigns an order to fresh source bytes.
-func (t *termIO) Read(p []byte) (n int, err error) {
-	if len(t.pending) > 0 {
-		n = copy(p, t.pending)
+func (t *IO) Read(p []byte) (n int, err error) {
+	if len(t.Pending) > 0 {
+		n = copy(p, t.Pending)
 		t.readOrder = t.pendingOrder
-		t.pending = t.pending[n:]
+		t.Pending = t.Pending[n:]
 		return n, nil
 	}
-	n, err = t.in.Read(p)
-	t.readOrder = nextInputOrder()
+	n, err = t.In.Read(p)
+	t.readOrder = NextInputOrder()
 	return n, err
 }
 
-func (t *termIO) Write(p []byte) (n int, err error) {
-	if t.vp != nil {
+func (t *IO) Write(p []byte) (n int, err error) {
+	if t.Vp != nil {
 		// propagate current width so the viewport wraps correctly after resize
-		return t.vp.writeWithWidth(p, t.Width)
+		return t.Vp.writeWithWidth(p, t.Width)
 	}
-	return t.out.Write(p)
+	return t.Out.Write(p)
 }
 
 // ReadKey reads a single byte and returns it as a rune,
 // treating Ctrl-C/D as EOF.
-func (t *termIO) ReadKey() (rune, error) {
+func (t *IO) ReadKey() (rune, error) {
 	buf := make([]byte, 1)
 	_, err := t.Read(buf)
 	if err != nil {
@@ -241,19 +241,19 @@ func (t *termIO) ReadKey() (rune, error) {
 	// keep last two entered bytes
 	t.bm1, t.bm2 = buf[0], t.bm1
 	switch buf[0] {
-	case keyCtrlC, keyCtrlD:
+	case KeyCtrlC, keyCtrlD:
 		return 0, io.EOF
 	default:
 		return rune(buf[0]), nil
 	}
 }
 
-// refreshSize re-queries the terminal dimensions and updates
+// RefreshSize re-queries the terminal dimensions and updates
 // Width/Height so the next render uses the current geometry.
-func (t *termIO) refreshSize() {
-	if t.cio != nil {
-		t.cio.refreshSize()
-		w, h := t.cio.size()
+func (t *IO) RefreshSize() {
+	if t.Cio != nil {
+		t.Cio.refreshSize()
+		w, h := t.Cio.size()
 		if w > 0 {
 			t.Width = w
 		}
@@ -262,10 +262,10 @@ func (t *termIO) refreshSize() {
 		}
 		return
 	}
-	if t.fd < 1 {
+	if t.Fd < 1 {
 		return
 	}
-	w, h, err := termGetSize(t.fd)
+	w, h, err := GetSize(t.Fd)
 	if err != nil {
 		return
 	}
@@ -273,13 +273,13 @@ func (t *termIO) refreshSize() {
 	t.Height = h
 }
 
-// clear erases the given number of terminal lines using
-// ANSI cursor movement and line-clear sequences.
+// Clear erases the given number of terminal lines using
+// ANSI cursor movement and line-Clear sequences.
 //
 //nolint:errcheck // TODO: improve error handling
-func (t *termIO) clear(space int, buf io.Writer) error {
-	if t.vp != nil {
-		if t.vp.fixedHeight {
+func (t *IO) Clear(space int, buf io.Writer) error {
+	if t.Vp != nil {
+		if t.Vp.FixedHeight {
 			return t.clearFixedViewport(buf)
 		}
 		return nil // screen clearing is handled by [chanIO.forwardTo]
@@ -303,13 +303,13 @@ func (t *termIO) clear(space int, buf io.Writer) error {
 }
 
 // clearFixedViewport clears a fixed-height overlay through its managed viewport.
-func (t *termIO) clearFixedViewport(buf io.Writer) error {
+func (t *IO) clearFixedViewport(buf io.Writer) error {
 	if buf != t {
 		return nil
 	}
-	if t.cio != nil {
-		return t.vp.writeAndWait(nil)
+	if t.Cio != nil {
+		return t.Vp.WriteAndWait(nil)
 	}
-	_, err := t.vp.Write(nil)
+	_, err := t.Vp.Write(nil)
 	return err
 }

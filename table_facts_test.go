@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
@@ -19,9 +20,9 @@ import (
 )
 
 func TestFactsBasicRender(t *testing.T) {
-	orig := termGetSize
-	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
-	t.Cleanup(func() { termGetSize = orig })
+	orig := term.GetSize
+	term.GetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { term.GetSize = orig })
 
 	type row struct {
 		Name string
@@ -40,9 +41,9 @@ func TestFactsBasicRender(t *testing.T) {
 }
 
 func TestFactsWrapsOnNarrowTTY(t *testing.T) {
-	orig := termGetSize
-	termGetSize = func(int) (int, int, error) { return 14, 40, nil }
-	t.Cleanup(func() { termGetSize = orig })
+	orig := term.GetSize
+	term.GetSize = func(int) (int, int, error) { return 14, 40, nil }
+	t.Cleanup(func() { term.GetSize = orig })
 
 	type row struct {
 		Alpha string
@@ -69,9 +70,9 @@ func TestFactsWrapsOnNarrowTTY(t *testing.T) {
 }
 
 func TestFactsWithMaxWidthCapsWideTTY(t *testing.T) {
-	orig := termGetSize
-	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
-	t.Cleanup(func() { termGetSize = orig })
+	orig := term.GetSize
+	term.GetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { term.GetSize = orig })
 
 	type row struct {
 		Alpha string
@@ -89,9 +90,9 @@ func TestFactsWithMaxWidthCapsWideTTY(t *testing.T) {
 }
 
 func TestFactsWithMaxWidthDoesNotWidenNarrowTTY(t *testing.T) {
-	orig := termGetSize
-	termGetSize = func(int) (int, int, error) { return 14, 40, nil }
-	t.Cleanup(func() { termGetSize = orig })
+	orig := term.GetSize
+	term.GetSize = func(int) (int, int, error) { return 14, 40, nil }
+	t.Cleanup(func() { term.GetSize = orig })
 
 	type row struct {
 		Alpha string
@@ -108,9 +109,9 @@ func TestFactsWithMaxWidthDoesNotWidenNarrowTTY(t *testing.T) {
 }
 
 func TestFactsHonorsColumnOptions(t *testing.T) {
-	orig := termGetSize
-	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
-	t.Cleanup(func() { termGetSize = orig })
+	orig := term.GetSize
+	term.GetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { term.GetSize = orig })
 
 	data := tableFormatRow{Name: "A", Rate: 0.1, Amount: 9}
 	buf := &bytes.Buffer{}
@@ -130,9 +131,9 @@ func TestFactsHonorsColumnOptions(t *testing.T) {
 }
 
 func TestFactsAlignsColumnStartsAcrossGroups(t *testing.T) {
-	orig := termGetSize
-	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
-	t.Cleanup(func() { termGetSize = orig })
+	orig := term.GetSize
+	term.GetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { term.GetSize = orig })
 
 	type row struct {
 		Alpha string
@@ -158,9 +159,9 @@ func TestFactsAlignsColumnStartsAcrossGroups(t *testing.T) {
 }
 
 func TestFactsAddsTrailingBlankLine(t *testing.T) {
-	orig := termGetSize
-	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
-	t.Cleanup(func() { termGetSize = orig })
+	orig := term.GetSize
+	term.GetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { term.GetSize = orig })
 
 	type row struct {
 		Name string
@@ -173,9 +174,9 @@ func TestFactsAddsTrailingBlankLine(t *testing.T) {
 }
 
 func TestFactsHonorsAlignRightMetadata(t *testing.T) {
-	orig := termGetSize
-	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
-	t.Cleanup(func() { termGetSize = orig })
+	orig := term.GetSize
+	term.GetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { term.GetSize = orig })
 
 	type row struct {
 		Left  string
@@ -194,9 +195,9 @@ func TestFactsHonorsAlignRightMetadata(t *testing.T) {
 }
 
 func TestFactsInterfaceInputUsesDynamicType(t *testing.T) {
-	orig := termGetSize
-	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
-	t.Cleanup(func() { termGetSize = orig })
+	orig := term.GetSize
+	term.GetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { term.GetSize = orig })
 
 	var data any = struct{ Name string }{"Alice"}
 	buf := &bytes.Buffer{}
@@ -212,9 +213,9 @@ func TestFactsInterfaceInputUsesDynamicType(t *testing.T) {
 }
 
 func TestFactsTabIsMeasured(t *testing.T) {
-	orig := termGetSize
-	termGetSize = func(int) (int, int, error) { return 120, 40, nil }
-	t.Cleanup(func() { termGetSize = orig })
+	orig := term.GetSize
+	term.GetSize = func(int) (int, int, error) { return 120, 40, nil }
+	t.Cleanup(func() { term.GetSize = orig })
 
 	type row struct {
 		A string
@@ -269,7 +270,7 @@ func TestThemedFactsRoles(t *testing.T) {
 	themedTable(t, th, "FORCE_COLOR=3")
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Facts(buf, factsData))
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).Roles
+	roles := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), buf, nil).Roles
 	assert.True(t, len(roles.Foreground) > 0)
 	out := buf.String()
 	assert.Contains(t, out, ansi.Bold+string(roles.Foreground)+"OWNER.NAME"+color.FgDefault+ansi.Reset)
@@ -329,7 +330,7 @@ func TestThemedFactsSignedPercent(t *testing.T) {
 	themedTable(t, theme.New(), "FORCE_COLOR=3")
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Facts(buf, tableFormatRow{"A", -0.5, 1}, WithFloat64AsPercentPositiveColored()))
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).Roles
+	roles := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), buf, nil).Roles
 	assert.Contains(t, buf.String(), string(roles.Failure)+"-50%"+color.FgDefault)
 	assert.NotContains(t, buf.String(), "\x1b[31m")
 }

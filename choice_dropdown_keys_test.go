@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/internal/trie"
 	"io"
 	"os"
@@ -26,7 +27,7 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	d.Ctx = ctx
-	tio := &termIO{in: in, out: &bytes.Buffer{}}
+	tio := &term.IO{In: in, Out: &bytes.Buffer{}}
 	finished := make(chan error, 1)
 	go func() {
 		_, err := d.pressKey(d.Ctx, tio, &bytes.Buffer{}, 1, 1)
@@ -44,14 +45,14 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("cancelled dropdown did not return")
 	}
-	_, err = pw.Write([]byte{'x', keyEnter})
+	_, err = pw.Write([]byte{'x', term.KeyEnter})
 	assert.NoError(t, err)
 	next := newInput(t.Context(), "next")
 	next.Ctx, cancel = context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	next.In, next.Out = in, &bytes.Buffer{}
-	next.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
+	next.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+		return &term.IO{In: in, Out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
 	}
 	got, err := next.run(t.Context())
 	assert.NoError(t, err)
@@ -69,7 +70,7 @@ func TestDropdownPressKeyRuneAndRenderMore(t *testing.T) {
 
 	tio := newTestTermIO(20, 6)
 
-	assert.Equal(t, 0, d.pressKeyRune(tio, keyEnter, len(d.displayed), 4))
+	assert.Equal(t, 0, d.pressKeyRune(tio, term.KeyEnter, len(d.displayed), 4))
 
 	d.selected = 1
 	d.pressKeyRune(tio, '↑', len(d.displayed), 4)
@@ -116,7 +117,7 @@ func TestDropdownClearFrame(t *testing.T) {
 	io := newTestTermIO(10, 4)
 	frame := &bytes.Buffer{}
 	assert.NoError(t, d.clearFrame(io, frame, 2))
-	buf, ok := io.out.(*bytes.Buffer)
+	buf, ok := io.Out.(*bytes.Buffer)
 	assert.True(t, ok)
 	assert.True(t, buf.Len() > 0)
 }
@@ -141,7 +142,7 @@ func TestDropdownPressKeyRuneEnter(t *testing.T) {
 		events = append(events, ev)
 	}
 	io := newTestTermIO(10, 4)
-	assert.Equal(t, 1, d.pressKeyRune(io, keyEnter, len(d.displayed), 4))
+	assert.Equal(t, 1, d.pressKeyRune(io, term.KeyEnter, len(d.displayed), 4))
 	assert.Equal(t, 1, len(events))
 	confirmed, ok := events[0].(dropdownConfirmed)
 	assert.True(t, ok)

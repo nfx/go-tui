@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"bytes"
@@ -13,12 +13,12 @@ import (
 func TestTuiViewAndPrepend(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := newUnstartedIO(ctx, 10, 2, 0)
-	tui := &Tui{ctx: ctx, termIO: &termIO{out: cio}}
-	if tui.view() != cio.head {
+	cio := NewUnstartedIO(ctx, 10, 2, 0)
+	tui := &Tui{Ctx: ctx, IO: &IO{Out: cio}}
+	if tui.view() != cio.Head {
 		t.Fatalf("expected head viewport")
 	}
-	top := tui.prependView(1)
+	top := tui.PrependView(1)
 	if tui.view() != top {
 		t.Fatalf("expected prepended viewport")
 	}
@@ -55,9 +55,9 @@ func TestNewTUIWithTTY(t *testing.T) {
 }
 
 func TestNewTUIWithStubSize(t *testing.T) {
-	orig := termGetSize
-	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
-	t.Cleanup(func() { termGetSize = orig })
+	orig := GetSize
+	GetSize = func(int) (int, int, error) { return 80, 24, nil }
+	t.Cleanup(func() { GetSize = orig })
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	_, err := NewTUI(ctx)
@@ -69,7 +69,7 @@ func TestNewTUIWithStubSize(t *testing.T) {
 func TestTuiViewReturnsNilWithoutChanIO(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	tui := &Tui{ctx: ctx, termIO: &termIO{out: &bytes.Buffer{}}}
+	tui := &Tui{Ctx: ctx, IO: &IO{Out: &bytes.Buffer{}}}
 	if tui.view() != nil {
 		t.Fatalf("expected nil viewport")
 	}

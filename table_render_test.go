@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
@@ -59,7 +60,7 @@ func TestThemedTableRoles(t *testing.T) {
 	themedTable(t, th, "FORCE_COLOR=3")
 	buf := &bytes.Buffer{}
 	assert.NoError(t, TableAuto(buf, themedRows))
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).Roles
+	roles := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), buf, nil).Roles
 	assert.True(t, len(roles.Foreground) > 0)
 	out := buf.String()
 	assert.Contains(t, out, ansi.Bold+string(roles.Foreground)+"NAME"+color.FgDefault+ansi.Reset)
@@ -123,7 +124,7 @@ func TestThemedTableSignedPercent(t *testing.T) {
 	themedTable(t, theme.New(), "FORCE_COLOR=3")
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Table(buf, "", data, WithFloat64AsPercentPositiveColored()))
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).Roles
+	roles := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), buf, nil).Roles
 	lines := strings.Split(buf.String(), "\n")
 	assert.Contains(t, lines[1], string(roles.Success)+"5.87%"+color.FgDefault)
 	assert.Contains(t, lines[2], string(roles.Failure)+"-99%"+color.FgDefault)
@@ -159,7 +160,7 @@ func TestThemedTableScaleBuckets(t *testing.T) {
 			}
 			buf := &bytes.Buffer{}
 			assert.NoError(t, TableAuto(buf, data, o))
-			look := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil)
+			look := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), buf, nil)
 			scale := look.Diverging()
 			lines := strings.Split(buf.String(), "\n")
 			for i, bucket := range want {
@@ -279,7 +280,7 @@ func TestThemedTableRowTemplateHelpersBindToWriter(t *testing.T) {
 	withEnv(t, "FORCE_COLOR=3")
 	buf.Reset()
 	assert.NoError(t, Table(buf, tmpl, themedRows[:1]))
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).Roles
+	roles := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), buf, nil).Roles
 	assert.Contains(t, buf.String(), ansi.Underline+"alpha")
 	assert.Contains(t, buf.String(), string(roles.Success)+"alpha")
 	assert.Contains(t, buf.String(), "\x1b[38;2;255;0;0malpha")
@@ -335,7 +336,7 @@ func TestThemedTableIterMatchesTable(t *testing.T) {
 		// widths lock after the first batch, decoration not counted
 		assert.Equal(t, "a m…   12345… muc…  ", stripSGR(lines(iterated.String())[12]))
 	}
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), &bytes.Buffer{}, nil).Roles
+	roles := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), &bytes.Buffer{}, nil).Roles
 	buf := &bytes.Buffer{}
 	assert.NoError(t, TableIter(buf, "", iterate(data[:1])))
 	fg := func(s string) string { return string(roles.Foreground) + s + color.FgDefault }
@@ -376,7 +377,7 @@ func TestThemedTableIterKeepsOneSnapshot(t *testing.T) {
 			switch i {
 			case 0:
 				// the theme is captured before the first row
-				assert.NoError(t, defaultIO.installTheme(other))
+				assert.NoError(t, term.Default.InstallTheme(other))
 			case 10:
 				// the first batch is out, and later batches keep the
 				// writer's capabilities
@@ -426,7 +427,7 @@ func TestThemedTableIterScaleRanksSeenSoFar(t *testing.T) {
 		}
 	}
 	assert.NoError(t, TableIter(buf, "", watched, WithColumnGreenRedScale("Value")))
-	look := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil)
+	look := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), buf, nil)
 	scale := look.Diverging()
 	out := lines(buf.String())
 	assert.Equal(t, len(data)+1, len(out))

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
@@ -56,8 +57,8 @@ func newPipeMultichoice(ctx context.Context, in io.Reader) *multichoice {
 	m.Items = []any{"one", "two", "three"}
 	m.in = in
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{in: in, out: out, Width: 40, Height: 8, Restore: func() error { return nil }}, nil
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+		return &term.IO{In: in, Out: out, Width: 40, Height: 8, Restore: func() error { return nil }}, nil
 	}
 	return m
 }
@@ -93,7 +94,7 @@ func TestMultichoiceStateAndGeometry(t *testing.T) {
 	m.handleKey(' ')
 	m.filter("zz")
 	m.handleKey(' ')
-	if m.focused() != -1 || m.count != 1 || !m.handleKey(keyEnter) {
+	if m.focused() != -1 || m.count != 1 || !m.handleKey(term.KeyEnter) {
 		t.Fatal("empty filter must preserve hidden checked items")
 	}
 	m.filter("")
@@ -171,7 +172,7 @@ func TestMultichoicePreparationAndCapabilities(t *testing.T) {
 	invalid.in = strings.NewReader("\r")
 	invalid.out = &out
 	acquired := false
-	invalid.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { acquired = true; return nil, ErrNoTTY }
+	invalid.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) { acquired = true; return nil, ErrNoTTY }
 	for _, one := range []option.Opt{WithTemplate("{{"), WithTemplate(".Missing")} {
 		// syntax fails preparation; templates run when the theme binds
 		err := invalid.prepare([]option.Opt{one})
@@ -236,10 +237,10 @@ func TestMultichoiceLifecycleFailures(t *testing.T) {
 			m.in = strings.NewReader(tc.keys)
 			m.out = tc.writer
 			restores := 0
-			m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-				return &termIO{
-					in:      in,
-					out:     out,
+			m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+				return &term.IO{
+					In:      in,
+					Out:     out,
 					Width:   40,
 					Height:  tc.height,
 					Restore: func() error { restores++; return tc.restore },
@@ -313,9 +314,9 @@ func TestMultichoiceNoReadAfterEnterOrConsumedReplay(t *testing.T) {
 	if !errors.Is(err, io.EOF) || got != nil {
 		t.Fatal("consumed keys replayed", got, err)
 	}
-	inputStates.Lock()
-	_, retained := inputStates.states[in]
-	inputStates.Unlock()
+	term.InputStates.Lock()
+	_, retained := term.InputStates.States[in]
+	term.InputStates.Unlock()
 	if retained {
 		t.Fatal("EOF retained reader")
 	}
@@ -333,11 +334,11 @@ func TestMultichoiceEnterDecodedBeforeExhaustionCannotConfirm(t *testing.T) {
 	if err := m.finishLoading(); err != nil {
 		t.Fatal(err)
 	}
-	done, err := m.acceptEvent(&termIO{}, keyEvent{key: keyEnter, readOrder: m.readyOrder - 1})
+	done, err := m.acceptEvent(&term.IO{}, term.KeyEvent{Key: term.KeyEnter, ReadOrder: m.readyOrder - 1})
 	if done || err != nil {
 		t.Fatal(done, err)
 	}
-	done, err = m.acceptEvent(&termIO{}, keyEvent{key: keyEnter, readOrder: m.readyOrder})
+	done, err = m.acceptEvent(&term.IO{}, term.KeyEvent{Key: term.KeyEnter, ReadOrder: m.readyOrder})
 	if !done || err != nil {
 		t.Fatal(done, err)
 	}
@@ -428,23 +429,23 @@ func TestMultichoiceManagedCleanupAndOutputFailure(t *testing.T) {
 		t.Run(strconv.FormatBool(short), func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			cio := newUnstartedIO(ctx, 40, 8, 0)
+			cio := term.NewUnstartedIO(ctx, 40, 8, 0)
 			sentinel := errors.New("terminal failed")
-			go cio.handleViewports(ctx)
-			go cio.forwardTo(ctx, choiceFailWriter{err: sentinel, short: short})
+			go cio.HandleViewports(ctx)
+			go cio.ForwardTo(ctx, choiceFailWriter{err: sentinel, short: short})
 			m := newMultichoice(t.Context())
 			m.Items = []any{"one"}
 			m.in = strings.NewReader("\r")
 			m.out = cio
-			var vp *viewport
-			m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+			var vp *term.Viewport
+			m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 				var err error
-				vp, err = cio.pushViewport()
+				vp, err = cio.PushViewport()
 				if err != nil {
 					return nil, err
 				}
-				return withRestore(
-					&termIO{in: in, out: out, Width: 40, Height: 8, cio: cio, vp: vp},
+				return term.WithRestore(
+					&term.IO{In: in, Out: out, Width: 40, Height: 8, Cio: cio, Vp: vp},
 					func() error { return nil },
 				), nil
 			}
@@ -456,19 +457,19 @@ func TestMultichoiceManagedCleanupAndOutputFailure(t *testing.T) {
 			if !errors.Is(err, want) {
 				t.Fatal(err)
 			}
-			cio.chainMu.Lock()
+			cio.ChainMu.Lock()
 			released := true
-			for current := cio.head; current != nil; current = current.next {
+			for current := cio.Head; current != nil; current = current.Next {
 				if current == vp {
 					released = false
 				}
 			}
-			cio.chainMu.Unlock()
+			cio.ChainMu.Unlock()
 			if !released {
 				t.Fatal("viewport not released")
 			}
 			cancel()
-			<-cio.done
+			<-cio.Done
 		})
 	}
 }
@@ -501,7 +502,7 @@ func (s *completionChecklistIO) Read(p []byte) (int, error) {
 	if s.keys != nil {
 		return s.keys.Read(p)
 	}
-	p[0] = keyEnter
+	p[0] = term.KeyEnter
 	return 1, nil
 }
 
@@ -600,41 +601,41 @@ func TestMultichoiceBufferedEnterRetainsArrival(t *testing.T) {
 				t.Fatal(err)
 			}
 			in := &chunkReader{chunks: [][]byte{[]byte("\t\r"), []byte("\r")}}
-			old := &termIO{in: in, splitKeys: tc.split}
-			read, accept := old.startRead(t.Context())
-			<-read.done
+			old := &term.IO{In: in, SplitKeys: tc.split}
+			read, accept := old.StartRead(t.Context())
+			<-read.Done
 			accept()
-			if read.event.readOrder == 0 {
+			if read.Event.ReadOrder == 0 {
 				t.Fatal("source read has no arrival order")
 			}
 			if err := m.finishLoading(); err != nil {
 				t.Fatal(err)
 			}
 			if !tc.split {
-				if done, err := m.acceptEvent(old, read.event); done || err != nil {
+				if done, err := m.acceptEvent(old, read.Event); done || err != nil {
 					t.Fatal(done, err)
 				}
 			}
 			// A fresh termIO must preserve both pending and replayed arrival orders.
-			next := &termIO{in: in, splitKeys: true, bracketedPaste: true}
+			next := &term.IO{In: in, SplitKeys: true, BracketedPaste: true}
 			for range tc.buffered {
-				buffered, consume := next.startRead(t.Context())
-				<-buffered.done
+				buffered, consume := next.StartRead(t.Context())
+				<-buffered.Done
 				consume()
-				if buffered.event.readOrder != read.event.readOrder {
+				if buffered.Event.ReadOrder != read.Event.ReadOrder {
 					t.Fatal("buffered bytes lost their source-read order")
 				}
-				if done, err := m.acceptEvent(next, buffered.event); done || err != nil {
+				if done, err := m.acceptEvent(next, buffered.Event); done || err != nil {
 					t.Fatalf("old Enter confirmed after loading: %v, %v", done, err)
 				}
 			}
-			fresh, consume := next.startRead(t.Context())
-			<-fresh.done
+			fresh, consume := next.StartRead(t.Context())
+			<-fresh.Done
 			consume()
-			if fresh.event.readOrder <= m.readyOrder {
+			if fresh.Event.ReadOrder <= m.readyOrder {
 				t.Fatal("fresh Enter retained an old arrival order")
 			}
-			if done, err := m.acceptEvent(next, fresh.event); !done || err != nil {
+			if done, err := m.acceptEvent(next, fresh.Event); !done || err != nil {
 				t.Fatalf("fresh Enter did not confirm: %v, %v", done, err)
 			}
 		})
@@ -646,28 +647,28 @@ func TestTermIOPasteTailRetainsFreshArrival(t *testing.T) {
 	defer func() { assert.NoError(t, pipe.Close()) }()
 	defer func() { assert.NoError(t, typing.Close()) }()
 	in := newPromptReadNotifier(pipe)
-	old := &termIO{in: in, splitKeys: true, bracketedPaste: true}
-	read, accept := old.startRead(t.Context())
+	old := &term.IO{In: in, SplitKeys: true, BracketedPaste: true}
+	read, accept := old.StartRead(t.Context())
 	waitPromptRead(t, in)
 	if _, err := typing.Write([]byte("\x1b[200~one")); err != nil {
 		t.Fatal(err)
 	}
 	// The decoder has observed the opening frame and is waiting for its end.
 	waitPromptRead(t, in)
-	readyOrder := nextInputOrder()
+	readyOrder := term.NextInputOrder()
 	if _, err := typing.Write([]byte("\x1b[201~\r")); err != nil {
 		t.Fatal(err)
 	}
-	<-read.done
+	<-read.Done
 	accept()
-	if !read.event.bracketed || read.event.readOrder >= readyOrder {
+	if !read.Event.Bracketed || read.Event.ReadOrder >= readyOrder {
 		t.Fatal("paste lost the arrival order of its opening frame")
 	}
-	next := &termIO{in: in, splitKeys: true, bracketedPaste: true}
-	tail, consume := next.startRead(t.Context())
-	<-tail.done
+	next := &term.IO{In: in, SplitKeys: true, BracketedPaste: true}
+	tail, consume := next.StartRead(t.Context())
+	<-tail.Done
 	consume()
-	if tail.event.key != keyEnter || tail.event.readOrder <= readyOrder {
+	if tail.Event.Key != term.KeyEnter || tail.Event.ReadOrder <= readyOrder {
 		t.Fatal("Enter after the closing frame retained the paste's old arrival order")
 	}
 }
@@ -677,7 +678,7 @@ func acquireDefaultMultichoice(t *testing.T) *multichoice {
 	t.Helper()
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one"}
-	m.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { return nil, ErrNoTTY }
+	m.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) { return nil, ErrNoTTY }
 	assert.ErrorIs(t, m.run(m.Ctx), ErrNoTTY)
 	return m
 }
@@ -685,10 +686,10 @@ func acquireDefaultMultichoice(t *testing.T) *multichoice {
 func TestMultichoiceDefaultStreams(t *testing.T) {
 	for _, tty := range []bool{false, true} {
 		t.Run(strconv.FormatBool(tty), func(t *testing.T) {
-			prevIn, prevOut := defaultIO.input(), defaultIO.rawOutput()
-			prevTTY, prevSize := terminalWriterChecker, termGetSize
+			prevIn, prevOut := term.Default.Input(), term.Default.RawOutput()
+			prevTTY, prevSize := term.WriterChecker, term.GetSize
 			t.Cleanup(func() {
-				terminalWriterChecker, termGetSize = prevTTY, prevSize
+				term.WriterChecker, term.GetSize = prevTTY, prevSize
 				SetDefaultIO(prevIn, prevOut)
 			})
 			in := bytes.NewBufferString("in")
@@ -696,14 +697,14 @@ func TestMultichoiceDefaultStreams(t *testing.T) {
 			if tty {
 				out = &mockDescriptor{Writer: &bytes.Buffer{}, fd: 7}
 			}
-			terminalWriterChecker = func(int) bool { return tty }
-			termGetSize = func(int) (int, int, error) { return 80, 24, nil }
+			term.WriterChecker = func(int) bool { return tty }
+			term.GetSize = func(int) (int, int, error) { return 80, 24, nil }
 			SetDefaultIO(in, out)
 			wantOut := out
 			if tty {
 				_ = Stderr()
-				_, wantOut = defaultStreams(t.Context())
-				cio, ok := wantOut.(*chanIO)
+				_, wantOut = term.DefaultStreams(t.Context())
+				cio, ok := wantOut.(*term.ChanIO)
 				assert.True(t, ok)
 				assert.NotNil(t, cio)
 			}

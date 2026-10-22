@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/internal/trie"
 	"io"
 	"slices"
@@ -57,7 +58,7 @@ func (d *dropdown) setItem(i int, item any) error {
 	return nil
 }
 
-func (d *dropdown) loadItem(io *termIO, frame *bytes.Buffer, it itPair, more bool, space int) error {
+func (d *dropdown) loadItem(io *term.IO, frame *bytes.Buffer, it itPair, more bool, space int) error {
 	if !more {
 		d.iterDone = true
 		d.itItems = nil
@@ -65,7 +66,7 @@ func (d *dropdown) loadItem(io *termIO, frame *bytes.Buffer, it itPair, more boo
 	}
 	if it.err != nil {
 		errs := []error{it.err}
-		err := io.clear(space, frame)
+		err := io.Clear(space, frame)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("clear: %w", err))
 		}
@@ -80,7 +81,7 @@ func (d *dropdown) loadItem(io *termIO, frame *bytes.Buffer, it itPair, more boo
 		return err
 	}
 	var errs []error
-	err = io.clear(space, frame)
+	err = io.Clear(space, frame)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("clear: %w", err))
 	}
@@ -144,7 +145,7 @@ func (d *dropdown) matching(prefix string) []int {
 }
 
 // pressKeyRune updates dropdown state for an already-read key.
-func (d *dropdown) pressKeyRune(io *termIO, key rune, displayed, space int) int {
+func (d *dropdown) pressKeyRune(io *term.IO, key rune, displayed, space int) int {
 	switch key {
 	case '↑':
 		d.pressUp(displayed)
@@ -152,14 +153,14 @@ func (d *dropdown) pressKeyRune(io *termIO, key rune, displayed, space int) int 
 	case '↓':
 		d.pressDown(displayed)
 		return -1
-	case keyEscape, keyIgnored:
+	case term.KeyEscape, term.KeyIgnored:
 		return -1
 	}
 	ev := d.decodeInputEvent(key)
 	return d.applyInputEvent(io, ev, displayed, space)
 }
 
-func (d *dropdown) applyInputEvent(io *termIO, ev dropdownInputEvent, displayed, space int) int {
+func (d *dropdown) applyInputEvent(io *term.IO, ev dropdownInputEvent, displayed, space int) int {
 	prev := d.snapshotState()
 	switch typed := ev.(type) {
 	case dropdownInputConfirmed:
@@ -194,7 +195,7 @@ func (d *dropdown) applyInputEvent(io *termIO, ev dropdownInputEvent, displayed,
 }
 
 // pressKeyFromInput reads the next event from the pre-supplied input channel and applies it.
-func (d *dropdown) pressKeyFromInput(tio *termIO, frame *bytes.Buffer, space, displayed int) (int, error) {
+func (d *dropdown) pressKeyFromInput(tio *term.IO, frame *bytes.Buffer, space, displayed int) (int, error) {
 	var ev dropdownInputEvent
 	select {
 	case e, ok := <-d.input:
@@ -202,10 +203,10 @@ func (d *dropdown) pressKeyFromInput(tio *termIO, frame *bytes.Buffer, space, di
 			return -1, io.EOF
 		}
 		ev = e
-	case <-tio.onResize:
-		return -1, tio.clear(space, frame)
+	case <-tio.OnResize:
+		return -1, tio.Clear(space, frame)
 	}
-	err := tio.clear(space, frame)
+	err := tio.Clear(space, frame)
 	if err != nil {
 		return -1, err
 	}
@@ -223,7 +224,7 @@ func (d *dropdown) pressKeyFromInput(tio *termIO, frame *bytes.Buffer, space, di
 // redraws with the new geometry.
 func (d *dropdown) pressKey(
 	ctx context.Context,
-	tio *termIO,
+	tio *term.IO,
 	frame *bytes.Buffer,
 	space, displayed int,
 ) (i int, err error) {
@@ -232,29 +233,29 @@ func (d *dropdown) pressKey(
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	keys := tio.readEvents(ctx, nil)
-	var ev keyEvent
+	keys := tio.ReadEvents(ctx, nil)
+	var ev term.KeyEvent
 	select {
 	case e, ok := <-keys:
-		tio.awaitReader()
+		tio.AwaitReader()
 		if !ok {
 			return -1, d.Ctx.Err()
 		}
 		ev = e
-	case <-tio.onResize:
+	case <-tio.OnResize:
 		cancel()
 		// an unreceived key stays with the input for the next read
-		tio.awaitReader()
-		return -1, tio.clear(space, frame)
+		tio.AwaitReader()
+		return -1, tio.Clear(space, frame)
 	}
-	if ev.err != nil {
-		return -1, ev.err
+	if ev.Err != nil {
+		return -1, ev.Err
 	}
-	err = tio.clear(space, frame)
+	err = tio.Clear(space, frame)
 	if err != nil {
 		return -1, err
 	}
-	i = d.pressKeyRune(tio, ev.key, displayed, space)
+	i = d.pressKeyRune(tio, ev.Key, displayed, space)
 	if i >= 0 {
 		// the caller clears the frame once, see pressKeyFromInput
 		frame.Reset()
@@ -264,18 +265,18 @@ func (d *dropdown) pressKey(
 }
 
 // clearFrame removes the last render without drawing a new frame.
-func (d *dropdown) clearFrame(io *termIO, frame *bytes.Buffer, space int) error {
+func (d *dropdown) clearFrame(io *term.IO, frame *bytes.Buffer, space int) error {
 	if space < 1 {
 		return nil
 	}
-	if io.vp != nil && io.vp.fixedHeight {
-		err := io.clear(space, io)
+	if io.Vp != nil && io.Vp.FixedHeight {
+		err := io.Clear(space, io)
 		if err != nil {
 			return fmt.Errorf("clear: %w", err)
 		}
 		return nil
 	}
-	err := io.clear(space, frame)
+	err := io.Clear(space, frame)
 	if err != nil {
 		return fmt.Errorf("clear: %w", err)
 	}
@@ -306,7 +307,7 @@ func (d *dropdown) pressDown(displayed int) {
 	}
 }
 
-func (d *dropdown) pressBackspace(io *termIO) {
+func (d *dropdown) pressBackspace(io *term.IO) {
 	if len(d.typed) == 0 {
 		return
 	}

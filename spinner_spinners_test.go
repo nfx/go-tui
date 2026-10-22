@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"log/slog"
@@ -21,11 +22,11 @@ import (
 	"github.com/nfx/go-tui/internal/assert"
 )
 
-func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*chanIO, func(), option.Opt) {
+func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*term.ChanIO, func(), option.Opt) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
-	cio := &chanIO{
-		ctx: ctx,
+	cio := &term.ChanIO{
+		Ctx: ctx,
 		In:  make(chan string),
 		Out: make(chan string),
 	}
@@ -48,10 +49,10 @@ func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*chanI
 			WithOutput(cio),
 			option.OpT(func(s *Spinners) error {
 				s.ticks = ticks
-				s.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-					return &termIO{
-						in:      in,
-						out:     out,
+				s.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+					return &term.IO{
+						In:      in,
+						Out:     out,
 						Width:   width,
 						Height:  height,
 						Restore: func() error { return nil },
@@ -63,10 +64,10 @@ func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*chanI
 		)...)
 }
 
-func spinnersForTest(t *testing.T) (*Spinners, *chanIO, func()) {
+func spinnersForTest(t *testing.T) (*Spinners, *term.ChanIO, func()) {
 	t.Helper()
 	cio, tick, opts := testIOforSpinners(t, 12, 4)
-	s, err := NewSpinners(cio.ctx, opts)
+	s, err := NewSpinners(cio.Ctx, opts)
 	assert.NoError(t, err)
 	return s, cio, tick
 }
@@ -161,7 +162,7 @@ func TestSpinnersOpt(t *testing.T) {
 		return nil
 	})
 
-	s := &Spinners{theme: defaultIO.currentTheme()}
+	s := &Spinners{theme: term.Default.CurrentTheme()}
 	err := opt(s)
 	assert.NoError(t, err)
 	assert.Equal(t, true, called)
@@ -400,7 +401,7 @@ func TestSpinnersLogFallbackKeepsTerminalRendering(t *testing.T) {
 
 func TestSpinnersLogFallbackRejectsOtherErrors(t *testing.T) {
 	_, err := NewSpinners(t.Context(), option.OpT(func(s *Spinners) error {
-		s.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
+		s.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) {
 			return nil, io.ErrClosedPipe
 		}
 		return nil
@@ -431,15 +432,15 @@ func themedSpinners(
 	restored := &atomic.Bool{}
 	frames := make(frameWriter)
 	cio, tick, options := testIOforSpinners(t, width, 10, append([]option.Opt{option.OpT(func(s *Spinners) error {
-		s.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
-			return &termIO{in: in, out: frames, Width: width, Height: 10, Restore: func() error {
+		s.makeTermIO = func(in io.Reader, _ io.Writer) (*term.IO, error) {
+			return &term.IO{In: in, Out: frames, Width: width, Height: 10, Restore: func() error {
 				restored.Store(true)
 				return nil
 			}}, nil
 		}
 		return nil
 	})}, o...)...)
-	s, err := NewSpinners(cio.ctx, options)
+	s, err := NewSpinners(cio.Ctx, options)
 	assert.NoError(t, err)
 	t.Cleanup(func() {
 		go func() {

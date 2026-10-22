@@ -8,6 +8,7 @@ import (
 	"context"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"testing"
 	"time"
@@ -18,8 +19,8 @@ import (
 func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := &chanIO{
-		ctx: ctx,
+	cio := &term.ChanIO{
+		Ctx: ctx,
 		In:  make(chan string),
 		Out: make(chan string, 4),
 	}
@@ -34,10 +35,10 @@ func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 			pb.redrawAt = start
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-				return &termIO{
-					in:      in,
-					out:     out,
+			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+				return &term.IO{
+					In:      in,
+					Out:     out,
 					Width:   80,
 					Height:  1,
 					Restore: func() error { return nil },
@@ -75,8 +76,8 @@ func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 func TestProgressbarTickOnResizeExitsWhenDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := &chanIO{
-		ctx: ctx,
+	cio := &term.ChanIO{
+		Ctx: ctx,
 		In:  make(chan string),
 		Out: make(chan string, 4),
 	}
@@ -87,14 +88,14 @@ func TestProgressbarTickOnResizeExitsWhenDone(t *testing.T) {
 		option.OpT(func(pb *Progressbar) error {
 			pb.ticks = make(chan time.Time)
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-				return &termIO{
-					in:       in,
-					out:      out,
+			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+				return &term.IO{
+					In:       in,
+					Out:      out,
 					Width:    80,
 					Height:   1,
 					Restore:  func() error { return nil },
-					onResize: resizeCh,
+					OnResize: resizeCh,
 				}, nil
 			}
 			return nil
@@ -138,8 +139,8 @@ func TestProgressbarTickTinyWidth(t *testing.T) {
 					startedAt:  time.Now().Add(-time.Second),
 				},
 				label: ansi.Text("test"),
-				io: &termIO{
-					out:     &bytes.Buffer{},
+				io: &term.IO{
+					Out:     &bytes.Buffer{},
 					Width:   tt.width,
 					Height:  1,
 					Restore: func() error { return nil },
@@ -162,8 +163,8 @@ func TestProgressbarLabelTruncation(t *testing.T) {
 			startedAt:  time.Now().Add(-time.Second),
 		},
 		label: ansi.Text("this is a very long label that exceeds terminal width"),
-		io: &termIO{
-			out:     &bytes.Buffer{},
+		io: &term.IO{
+			Out:     &bytes.Buffer{},
 			Width:   15,
 			Height:  1,
 			Restore: func() error { return nil },
@@ -173,7 +174,7 @@ func TestProgressbarLabelTruncation(t *testing.T) {
 	frame := &bytes.Buffer{}
 	p.tick(frame)
 	// output must not exceed width - 1 = 14
-	out, ok := p.io.out.(*bytes.Buffer)
+	out, ok := p.io.Out.(*bytes.Buffer)
 	assert.True(t, ok)
 	lines := bytes.Split(out.Bytes(), []byte("\n"))
 	for _, line := range lines {

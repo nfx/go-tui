@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"bytes"
@@ -16,8 +16,8 @@ import (
 // routeControl hands a reply to the oldest query waiting for its code.
 // Unclaimed replies are dropped: they are answers to queries that gave up.
 func (s *inputState) routeControl(reply controlReply) {
-	inputStates.Lock()
-	defer inputStates.Unlock()
+	InputStates.Lock()
+	defer InputStates.Unlock()
 	i := slices.IndexFunc(s.queries, func(q *controlQuery) bool { return q.code == reply.code })
 	if i < 0 {
 		return
@@ -58,9 +58,9 @@ type controlFrame struct {
 // scanControlFrame classifies the OSC reply at the start of buf. A reply has the
 // form ESC ] Ps ; Pt terminated by BEL or ST (ESC \). Input that does not start
 // with ESC ] is never a reply.
-func (t *termIO) scanControlFrame(buf []byte) controlFrame {
+func (t *IO) scanControlFrame(buf []byte) controlFrame {
 	const header = 2 // ESC ]
-	if len(buf) < header || buf[0] != keyEscape || buf[1] != ']' {
+	if len(buf) < header || buf[0] != KeyEscape || buf[1] != ']' {
 		return controlFrame{isInvalid: true}
 	}
 	i, code := header, 0
@@ -88,7 +88,7 @@ func (t *termIO) scanControlFrame(buf []byte) controlFrame {
 				isComplete: true,
 				reply:      controlReply{code: code, data: string(buf[start:i])},
 			}
-		case b == keyEscape:
+		case b == KeyEscape:
 			if i+1 == len(buf) {
 				return controlFrame{size: len(buf), isIncomplete: true}
 			}
@@ -109,12 +109,12 @@ func (t *termIO) scanControlFrame(buf []byte) controlFrame {
 
 // isControlHeader reports whether buf is an OSC reply prefix that cannot be a
 // key press: it has the numeric code and the separator.
-func (t *termIO) isControlHeader(buf []byte) bool {
+func (t *IO) isControlHeader(buf []byte) bool {
 	return !t.scanControlFrame(buf).isInvalid && bytes.IndexByte(buf, ';') > 0
 }
 
 // readBracketedPayload consumes a complete frame and preserves bytes after its closing marker.
-func (t *termIO) readBracketedPayload() ([]byte, error) {
+func (t *IO) readBracketedPayload() ([]byte, error) {
 	end := []byte("\x1b[201~")
 	var payload []byte
 	var next [1024]byte
@@ -138,10 +138,10 @@ func (t *termIO) readBracketedPayload() ([]byte, error) {
 
 // abandonPaste discards a frame whose opening bytes arrived before cancellation.
 // A still-blocked read remains available for fresh paste in the next prompt.
-func (t *termIO) abandonPaste(read *inputRead) {
-	inputStates.Lock()
-	defer inputStates.Unlock()
-	read.discardBefore = nextInputOrder()
+func (t *IO) abandonPaste(read *inputRead) {
+	InputStates.Lock()
+	defer InputStates.Unlock()
+	read.discardBefore = NextInputOrder()
 }
 
 // controlQuery waits for the terminal's reply to one control request.
@@ -154,19 +154,19 @@ type controlQuery struct {
 // cancel stops waiting. A reply that arrives later is still read from the
 // terminal and discarded, so it can never be mistaken for typed text.
 func (q *controlQuery) cancel() {
-	inputStates.Lock()
-	defer inputStates.Unlock()
+	InputStates.Lock()
+	defer InputStates.Unlock()
 	q.state.queries = slices.DeleteFunc(q.state.queries, func(o *controlQuery) bool { return o == q })
 }
 
 // expectControl registers interest in the reply with the given OSC code before
 // the request is written, so a fast reply cannot be missed. Replies are routed
 // from the input reader that owns pending bytes, see [inputState.routeControl].
-func (t *termIO) expectControl(code int) *controlQuery {
+func (t *IO) expectControl(code int) *controlQuery {
 	state := t.inputState()
 	q := &controlQuery{state: state, code: code, reply: make(chan controlReply, 1)}
-	inputStates.Lock()
-	defer inputStates.Unlock()
+	InputStates.Lock()
+	defer InputStates.Unlock()
 	state.queries = append(state.queries, q)
 	return q
 }
@@ -174,12 +174,12 @@ func (t *termIO) expectControl(code int) *controlQuery {
 // writeControl sends a terminal request such as an OSC query. It is not frame
 // content: it bypasses viewports, so a redraw cannot replay it, and the
 // append-only line buffer, so it is not held back until a newline.
-func (t *termIO) writeControl(ctx context.Context, p []byte) error {
+func (t *IO) writeControl(ctx context.Context, p []byte) error {
 	switch {
-	case t.cio != nil:
-		return t.cio.writeControl(ctx, p)
-	case t.fd > 0:
-		_, err := t.out.Write(p)
+	case t.Cio != nil:
+		return t.Cio.writeControl(ctx, p)
+	case t.Fd > 0:
+		_, err := t.Out.Write(p)
 		return err
 	}
 	return fmt.Errorf("control: %w", errs.ErrNoTTY)

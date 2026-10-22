@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"os"
 	"strings"
@@ -43,13 +44,13 @@ func TestChanIO_Forward(t *testing.T) {
 	tick := func() {
 		go func() {
 			select {
-			case <-cio.ctx.Done():
+			case <-cio.Ctx.Done():
 			case ticks <- time.Now():
 			}
 		}()
 	}
 
-	s, err := NewSpinners(cio.ctx,
+	s, err := NewSpinners(cio.Ctx,
 		WithOutput(cio),
 		option.OpT(func(s *Spinners) error { //nolint:unparam // ..
 			s.ticks = ticks
@@ -89,19 +90,19 @@ func TestSharedInputState_CancelledClosedReaderReleased(t *testing.T) {
 	defer pr.Close() //nolint:errcheck // test cleanup
 	defer pw.Close() //nolint:errcheck // test cleanup
 	in := &notifyingReader{File: pr, started: make(chan struct{})}
-	tio := &termIO{in: in}
+	tio := &term.IO{In: in}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	tio.readEvents(ctx, nil)
+	tio.ReadEvents(ctx, nil)
 	<-in.started
 	cancel()
-	tio.awaitReader()
+	tio.AwaitReader()
 	assert.NoError(t, pr.Close())
-	<-tio.input.read.done
-	assert.Error(t, tio.input.read.event.err)
-	inputStates.Lock()
-	_, retained := inputStates.states[in]
-	inputStates.Unlock()
+	<-tio.Input.Read.Done
+	assert.Error(t, tio.Input.Read.Event.Err)
+	term.InputStates.Lock()
+	_, retained := term.InputStates.States[in]
+	term.InputStates.Unlock()
 	if retained {
 		t.Fatal("closed input retained after its cancelled read finished")
 	}
@@ -137,14 +138,14 @@ func TestDropdownPressKeyReadsSharedPendingEnter(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			in := &mockDescriptor{Reader: bytes.NewBufferString("\x1b[A\r"), fd: 0}
-			first := &termIO{in: in, out: &bytes.Buffer{}}
-			ev := <-first.readEvents(t.Context(), nil)
-			first.awaitReader()
-			assert.NoError(t, ev.err)
-			assert.Equal(t, '↑', ev.key)
+			first := &term.IO{In: in, Out: &bytes.Buffer{}}
+			ev := <-first.ReadEvents(t.Context(), nil)
+			first.AwaitReader()
+			assert.NoError(t, ev.Err)
+			assert.Equal(t, '↑', ev.Key)
 			second := first
 			if fresh {
-				second = &termIO{in: in, out: &bytes.Buffer{}}
+				second = &term.IO{In: in, Out: &bytes.Buffer{}}
 			}
 			d := newDropdown(t.Context())
 			d.Items = []any{"one", "two"}
@@ -152,9 +153,9 @@ func TestDropdownPressKeyReadsSharedPendingEnter(t *testing.T) {
 			i, err := d.pressKey(d.Ctx, second, &bytes.Buffer{}, 1, 2)
 			assert.NoError(t, err)
 			assert.Equal(t, 0, i)
-			ev = <-second.readEvents(t.Context(), nil)
-			second.awaitReader()
-			assert.ErrorIs(t, ev.err, io.EOF)
+			ev = <-second.ReadEvents(t.Context(), nil)
+			second.AwaitReader()
+			assert.ErrorIs(t, ev.Err, io.EOF)
 		})
 	}
 }

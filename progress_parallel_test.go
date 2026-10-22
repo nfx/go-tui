@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
@@ -68,7 +69,7 @@ func TestNewParallelProgressBarRunsConcurrently(t *testing.T) {
 				atomic.AddInt64(&active, -1)
 				return nil
 			}, WithWorkers(tt.workers), option.OpT(func(pb *Progressbar) error {
-				pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+				pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 					return nil, ErrNoTTY
 				}
 				return nil
@@ -98,7 +99,7 @@ func TestNewParallelProgressBarStopsOnParentCancel(t *testing.T) {
 		}
 		return nil
 	}, WithWorkers(2), option.OpT(func(p *Progressbar) error {
-		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		p.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 			return nil, ErrNoTTY
 		}
 		return nil
@@ -141,7 +142,7 @@ func TestNewParallelProgressBarUsesDefaultNumCPU(t *testing.T) {
 		atomic.AddInt64(&active, -1)
 		return nil
 	}, option.OpT(func(pb *Progressbar) error {
-		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 			return nil, ErrNoTTY
 		}
 		return nil
@@ -165,7 +166,7 @@ func TestNewParallelProgressBarFailFastOnFirstError(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 		return nil
 	}, WithWorkers(4), option.OpT(func(pb *Progressbar) error {
-		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 			return nil, ErrNoTTY
 		}
 		return nil
@@ -181,7 +182,7 @@ func TestNewParallelProgressBarRecoversPanicsAsBug(t *testing.T) {
 		}
 		return nil
 	}, WithWorkers(2), option.OpT(func(pb *Progressbar) error {
-		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 			return nil, ErrNoTTY
 		}
 		return nil
@@ -201,10 +202,10 @@ func TestNewParallelProgressBarPropagatesCloseError(t *testing.T) {
 		pb.err = closeErr
 		pb.ticks = make(chan time.Time)
 		pb.ticker = time.NewTicker(time.Hour)
-		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-			return &termIO{
-				in:      in,
-				out:     &bytes.Buffer{},
+		pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+			return &term.IO{
+				In:      in,
+				Out:     &bytes.Buffer{},
 				Width:   40,
 				Height:  1,
 				Restore: func() error { return nil },
@@ -263,7 +264,7 @@ func TestThemedParallelProgressSharesOneRow(t *testing.T) {
 	// a theme installed while the workers run does not reach the bar
 	later := asciiTheme(false)
 	later.Symbols.BarEmpty = "."
-	assert.NoError(t, defaultIO.installTheme(later))
+	assert.NoError(t, term.Default.InstallTheme(later))
 	r.tick(time.Second)
 	// three workers, one bar in the theme captured at the start
 	assert.Equal(t, frameOf("build  0%   "+strings.Repeat("_", 27), "0 / 6 items | 0.00 items/s"), <-r.frames)

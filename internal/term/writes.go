@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"context"
@@ -56,19 +56,19 @@ type controlWrite struct {
 	reply chan error
 }
 
-func newWriteC(ctx context.Context) *writeC {
-	return &writeC{
+func NewWriteC(ctx context.Context) *WriteC {
+	return &WriteC{
 		Context: ctx,
 		C:       make(chan string, 128),
 	}
 }
 
-type writeC struct {
+type WriteC struct {
 	context.Context
 	C chan string
 }
 
-func (x *writeC) Write(p []byte) (n int, err error) {
+func (x *WriteC) Write(p []byte) (n int, err error) {
 	select {
 	case <-x.Done():
 		return 0, io.EOF

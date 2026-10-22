@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"strings"
 	"unicode"
@@ -18,7 +19,7 @@ import (
 // handleKey changes state only; returning true confirms the checked collection.
 func (m *multichoice) handleKey(key rune) bool {
 	switch key {
-	case keyEnter:
+	case term.KeyEnter:
 		return !m.loading
 	case '↑', '↓':
 		m.manualFocus = true
@@ -49,7 +50,7 @@ func (m *multichoice) handleKey(key rune) bool {
 			runes := []rune(m.typed)
 			m.filter(string(runes[:clusters[len(clusters)-1].Start]))
 		}
-	case keyEscape:
+	case term.KeyEscape:
 		if m.typed != "" {
 			m.filter("")
 		}
@@ -112,7 +113,7 @@ func (m *multichoice) finishLoading() error {
 	if err != nil {
 		return err
 	}
-	m.readyOrder = nextInputOrder()
+	m.readyOrder = term.NextInputOrder()
 	return nil
 }
 
@@ -122,7 +123,7 @@ func (m *multichoice) run(ctx context.Context, o ...option.Opt) error {
 		return err
 	}
 	if m.in == nil || m.out == nil {
-		in, out := defaultStreams(ctx)
+		in, out := term.DefaultStreams(ctx)
 		if m.in == nil {
 			m.in = in
 		}
@@ -130,7 +131,7 @@ func (m *multichoice) run(ctx context.Context, o ...option.Opt) error {
 			m.out = out
 		}
 	}
-	if !outputIsTerminal(m.out) {
+	if !term.OutputIsTerminal(m.out) {
 		return m.answerFromDefault(ctx) // an automatic answer prints nothing
 	}
 	if err := m.interact(ctx); err != nil {
@@ -147,7 +148,7 @@ func (m *multichoice) interact(parent context.Context) (resultErr error) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	if m.in == nil || m.out == nil {
-		in, out := defaultStreams(parent)
+		in, out := term.DefaultStreams(parent)
 		if m.in == nil {
 			m.in = in
 		}
@@ -159,13 +160,13 @@ func (m *multichoice) interact(parent context.Context) (resultErr error) {
 	if err != nil {
 		return fmt.Errorf("raw term: %w", err)
 	}
-	tio.splitKeys = true
-	tio.bracketedPaste = true
+	tio.SplitKeys = true
+	tio.BracketedPaste = true
 	space := 0
 	pasteMode := false
 	defer func() {
 		cancel()
-		tio.awaitReader()
+		tio.AwaitReader()
 		if err := m.clearMultichoiceFrame(tio, space); err != nil {
 			resultErr = errors.Join(resultErr, fmt.Errorf("clear: %w", err))
 		}
@@ -200,14 +201,14 @@ func (m *multichoice) interact(parent context.Context) (resultErr error) {
 }
 
 // readLoop is the sole owner of item, focus, and checked state.
-func (m *multichoice) readLoop(ctx context.Context, tio *termIO, frame *bytes.Buffer, space *int) error {
+func (m *multichoice) readLoop(ctx context.Context, tio *term.IO, frame *bytes.Buffer, space *int) error {
 	arrivals := m.startProducer(ctx)
-	keys := tio.readEvents(ctx, nil)
+	keys := tio.ReadEvents(ctx, nil)
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-tio.onResize:
+		case <-tio.OnResize:
 		case pair, ok := <-arrivals:
 			if !ok {
 				arrivals = nil
@@ -233,7 +234,7 @@ func (m *multichoice) readLoop(ctx context.Context, tio *termIO, frame *bytes.Bu
 			if err != nil || done {
 				return err
 			}
-			keys = tio.readEvents(ctx, nil)
+			keys = tio.ReadEvents(ctx, nil)
 		}
 		if err := ctx.Err(); err != nil {
 			return err
@@ -245,27 +246,27 @@ func (m *multichoice) readLoop(ctx context.Context, tio *termIO, frame *bytes.Bu
 }
 
 // acceptEvent separates paste from keys and ignores Enter received before loading finished.
-func (m *multichoice) acceptEvent(tio *termIO, ev keyEvent) (bool, error) {
+func (m *multichoice) acceptEvent(tio *term.IO, ev term.KeyEvent) (bool, error) {
 	switch {
-	case ev.bracketed:
-		m.paste(ev.paste)
-	case isPasteText(ev.err):
-		tio.replayKeys(ev)
-	case ev.err != nil:
-		return false, fmt.Errorf("input: %w", ev.err)
-	case ev.key == keyEnter && m.readyOrder != 0 && ev.readOrder < m.readyOrder:
+	case ev.Bracketed:
+		m.paste(ev.Paste)
+	case term.IsPasteText(ev.Err):
+		tio.ReplayKeys(ev)
+	case ev.Err != nil:
+		return false, fmt.Errorf("input: %w", ev.Err)
+	case ev.Key == term.KeyEnter && m.readyOrder != 0 && ev.ReadOrder < m.readyOrder:
 		return false, nil
 	default:
-		return m.handleKey(ev.key), nil
+		return m.handleKey(ev.Key), nil
 	}
 	return false, nil
 }
 
 // redraw replaces the prior frame and tracks its new height for cleanup.
-func (m *multichoice) redraw(tio *termIO, frame *bytes.Buffer, space *int) error {
+func (m *multichoice) redraw(tio *term.IO, frame *bytes.Buffer, space *int) error {
 	frame.Reset()
 	if *space > 0 {
-		if err := tio.clear(*space, frame); err != nil {
+		if err := tio.Clear(*space, frame); err != nil {
 			return fmt.Errorf("clear: %w", err)
 		}
 	}
@@ -281,23 +282,23 @@ func (m *multichoice) redraw(tio *termIO, frame *bytes.Buffer, space *int) error
 }
 
 // interactiveInput limits terminal paste-mode changes to interactive readers.
-func (m *multichoice) interactiveInput(t *termIO) bool {
-	in, ok := t.in.(descriptor)
-	return ok && terminalInputChecker(int(in.Fd()))
+func (m *multichoice) interactiveInput(t *term.IO) bool {
+	in, ok := t.In.(term.Descriptor)
+	return ok && term.InputChecker(int(in.Fd()))
 }
 
 // setPasteMode flushes terminal mode changes before reading or restoring.
-func (m *multichoice) setPasteMode(t *termIO, enabled bool) error {
+func (m *multichoice) setPasteMode(t *term.IO, enabled bool) error {
 	mode := "\x1b[?2004l"
 	if enabled {
 		mode = "\x1b[?2004h"
 	}
-	n, err := io.WriteString(t.out, mode)
+	n, err := io.WriteString(t.Out, mode)
 	if err == nil && n != len(mode) {
 		err = io.ErrShortWrite
 	}
-	if err == nil && t.cio != nil {
-		err = t.cio.Flush()
+	if err == nil && t.Cio != nil {
+		err = t.Cio.Flush()
 	}
 	return err
 }

@@ -3,7 +3,7 @@
 
 //go:build windows
 
-package tui
+package term
 
 import (
 	"context"
@@ -42,8 +42,8 @@ func peekNamedPipe(h windows.Handle) (avail uint32, err error) {
 }
 
 // waitForReadableInput polls concrete files until input is ready or ctx is cancelled.
-// Other readers may buffer data independently of their descriptor and are not polled.
-func (t *termIO) waitForReadableInput(ctx context.Context, in io.Reader) error {
+// Other readers may buffer data independently of their Descriptor and are not polled.
+func (t *IO) waitForReadableInput(ctx context.Context, in io.Reader) error {
 	// only a real file is backed by its fd; a wrapper exposing Fd() may buffer data the fd never sees
 	d, ok := in.(*os.File)
 	if !ok {
@@ -134,7 +134,7 @@ func consoleHasChar(h windows.Handle) (bool, error) {
 	return skip < n, nil
 }
 
-func (t *termIO) waitForConsoleReadable(ctx context.Context, h windows.Handle) error {
+func (t *IO) waitForConsoleReadable(ctx context.Context, h windows.Handle) error {
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -162,14 +162,14 @@ var (
 	vtState = map[uintptr]bool{}
 )
 
-func init() { consoleVT = enableConsoleVT }
+func init() { ConsoleVT = enableConsoleVT }
 
 // enableConsoleVT adds ENABLE_VIRTUAL_TERMINAL_PROCESSING to a console output
 // handle and reports whether it is on. The mode stays set for the console's
 // lifetime, as Go offers no exit hook. Never called for pipes: callers check
 // for a terminal first.
 func enableConsoleVT(w io.Writer) bool {
-	fdw, ok := w.(descriptor)
+	fdw, ok := w.(Descriptor)
 	if !ok {
 		return false
 	}

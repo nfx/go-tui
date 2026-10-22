@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
@@ -25,7 +26,7 @@ func TestRenderNormal(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	io := &termIO{out: &out}
+	io := &term.IO{Out: &out}
 	bindInput(t, i, io)
 
 	frame := &bytes.Buffer{}
@@ -45,7 +46,7 @@ func TestRenderCursorAtStart(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	io := &termIO{out: &out}
+	io := &term.IO{Out: &out}
 	bindInput(t, i, io)
 
 	frame := &bytes.Buffer{}
@@ -66,7 +67,7 @@ func TestRenderWriteError(t *testing.T) {
 
 	// Mock a failing writer
 	failingWriter := &failingBuffer{}
-	tio := &termIO{out: failingWriter}
+	tio := &term.IO{Out: failingWriter}
 	bindInput(t, i, tio)
 
 	frame := &bytes.Buffer{}
@@ -90,7 +91,7 @@ func TestInputRendersPastedControlsSafely(t *testing.T) {
 		cursor: 1,
 	}
 	var out bytes.Buffer
-	tt := &termIO{out: &out}
+	tt := &term.IO{Out: &out}
 	bindInput(t, i, tt)
 	err := i.render(tt, &bytes.Buffer{})
 	assert.NoError(t, err)
@@ -102,7 +103,7 @@ func renderInput(t *testing.T, i *input, termWidth int) string {
 	t.Helper()
 	literalInputs(t)
 	var out bytes.Buffer
-	tt := &termIO{out: &out}
+	tt := &term.IO{Out: &out}
 	if termWidth > 0 { // zero is an unknown width
 		tt.Width = termWidth + 1
 	}
@@ -191,7 +192,7 @@ func TestInputFeedbackTemplateIsPlain(t *testing.T) {
 func useTheme(t *testing.T, th theme.Theme) {
 	t.Helper()
 	keepTheme(t)
-	assert.NoError(t, defaultIO.installTheme(th))
+	assert.NoError(t, term.Default.InstallTheme(th))
 }
 
 // asciiTheme is the preset theme with ASCII symbols, Guided or Inline.
@@ -219,9 +220,9 @@ func themedInput(
 	}
 	out, restored = &bytes.Buffer{}, new(bool)
 	i.In, i.Out = &chunkReader{chunks: chunks}, out
-	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 		restore := func() error { *restored = true; return nil }
-		return &termIO{in: in, out: out, Width: width, Height: height, Restore: restore}, nil
+		return &term.IO{In: in, Out: out, Width: width, Height: height, Restore: restore}, nil
 	}
 	return i, out, restored
 }
@@ -306,7 +307,7 @@ func TestThemedInputClearsRejectionRowsOnError(t *testing.T) {
 func renderThemedInput(t *testing.T, i *input, width, height int) (string, error) {
 	t.Helper()
 	var out bytes.Buffer
-	tt := &termIO{out: &out, Width: width, Height: height}
+	tt := &term.IO{Out: &out, Width: width, Height: height}
 	assert.NoError(t, i.bind(t.Context(), tt))
 	err := i.render(tt, &bytes.Buffer{})
 	return out.String(), err
@@ -321,7 +322,7 @@ func TestThemedInputRejectionTruncatesAndRefitsOnResize(t *testing.T) {
 	// the same prompt after a resize: the rejection is clipped to the row
 	i.rows, i.caretRow = 0, 0
 	var out bytes.Buffer
-	assert.NoError(t, i.render(&termIO{out: &out, Width: 10, Height: 5}, &bytes.Buffer{}))
+	assert.NoError(t, i.render(&term.IO{Out: &out, Width: 10, Height: 5}, &bytes.Buffer{}))
 	assert.Equal(t, "\r? Label\x1b[K\n\r| abc\x1b[K\n\r| ! much\u2026\x1b[K\x1b[1A\x1b[6G", out.String())
 }
 
@@ -362,7 +363,7 @@ func TestThemedInputShrinkKeepsValueOnScreen(t *testing.T) {
 	assert.Equal(t, "\r? Label\x1b[K\n\r| a\x1b[K", got)
 	// one row left: the label goes, and no newline scrolls the value away
 	var out bytes.Buffer
-	assert.NoError(t, i.render(&termIO{out: &out, Width: 20, Height: 1}, &bytes.Buffer{}))
+	assert.NoError(t, i.render(&term.IO{Out: &out, Width: 20, Height: 1}, &bytes.Buffer{}))
 	assert.Equal(t, "\x1b[1A\r| a\x1b[K", out.String())
 	assert.Equal(t, 1, i.rows)
 	assert.Equal(t, 0, i.caretRow)
@@ -416,7 +417,7 @@ func TestThemedInputFamilySlots(t *testing.T) {
 	useTheme(t, th)
 	label := func(i *input) string {
 		t.Helper()
-		assert.NoError(t, i.bind(t.Context(), &termIO{out: &bytes.Buffer{}}))
+		assert.NoError(t, i.bind(t.Context(), &term.IO{Out: &bytes.Buffer{}}))
 		return i.label.String()
 	}
 	assert.Equal(t, "input", label(newInput(t.Context(), "x")))
@@ -467,7 +468,7 @@ func TestThemedInputDefaultWithoutTerminal(t *testing.T) {
 	i := newInput(t.Context(), "Label")
 	var out bytes.Buffer
 	i.Out = &out
-	i.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
+	i.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) {
 		t.Fatal("acquired a terminal")
 		return nil, ErrNoTTY
 	}
@@ -512,7 +513,7 @@ func TestThemedInputSymbolsFollowEnvironment(t *testing.T) {
 
 func TestThemedInputCapturesThemeAtConstruction(t *testing.T) {
 	i, out, _ := themedInput(t, asciiTheme(false), 20, 5, "a", "\r")
-	assert.NoError(t, defaultIO.installTheme(asciiTheme(true)))
+	assert.NoError(t, term.Default.InstallTheme(asciiTheme(true)))
 	_, err := i.read(t.Context())
 	assert.NoError(t, err)
 	assert.Contains(t, out.String(), "\r? Label\x1b[K\n\r| a\x1b[K")

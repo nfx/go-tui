@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"strconv"
@@ -92,19 +93,19 @@ func themedMultichoiceOpt(
 }
 
 // boundMultichoice prepares a themed prompt for frame tests at the given terminal height.
-func boundMultichoice(t *testing.T, th theme.Theme, height int, items []any, o ...option.Opt) (*multichoice, *termIO) {
+func boundMultichoice(t *testing.T, th theme.Theme, height int, items []any, o ...option.Opt) (*multichoice, *term.IO) {
 	t.Helper()
 	useTheme(t, th)
 	m := newMultichoice(t.Context())
 	m.Label, m.Items = "Fruit", items
 	assert.NoError(t, m.prepare(o))
-	tt := &termIO{out: &bytes.Buffer{}, Width: 60, Height: height}
+	tt := &term.IO{Out: &bytes.Buffer{}, Width: 60, Height: height}
 	assert.NoError(t, m.bindRun(t.Context(), tt))
 	return m, tt
 }
 
 // mframe draws one frame of m on tt.
-func mframe(t *testing.T, m *multichoice, tt *termIO) string {
+func mframe(t *testing.T, m *multichoice, tt *term.IO) string {
 	t.Helper()
 	var buf bytes.Buffer
 	assert.NoError(t, m.render(tt, &buf))
@@ -186,7 +187,7 @@ func TestThemedMultichoiceLoadingShowsNoEmptyState(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.loading, m.Label = true, "Fruit"
 	assert.NoError(t, m.prepare(nil))
-	tt := &termIO{out: &bytes.Buffer{}, Width: 60, Height: 10}
+	tt := &term.IO{Out: &bytes.Buffer{}, Width: 60, Height: 10}
 	assert.NoError(t, m.bindRun(t.Context(), tt))
 	// nothing has arrived yet, which is not an empty match
 	assert.Equal(t, "\r? Fruit\n\r"+multichoiceHelp, mframe(t, m, tt))
@@ -456,7 +457,7 @@ func TestThemedMultichoicePasteFiltersAndCancellationRestores(t *testing.T) {
 	acquired := make(chan struct{})
 	signal := option.OpT(func(m *multichoice) error {
 		next := m.makeTermIO
-		m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 			defer close(acquired)
 			return next(in, out)
 		}
@@ -515,7 +516,7 @@ func TestThemedMultichoiceFullHeightFrameKeepsLabelOnScreen(t *testing.T) {
 	o, out, _ := themedMultichoiceOpt(t, asciiTheme(false), "\x1b[B", "\x1b[B", " ", "\x1b[A", "\x1b[B", "\r")
 	six := option.OpT(func(m *multichoice) error {
 		next := m.makeTermIO
-		m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 			tt, err := next(in, out)
 			tt.Height = 6
 			return tt, err

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"math"
 	"slices"
@@ -294,7 +295,7 @@ type progressLook struct {
 // bindLook binds the captured theme to the output of the bar. Output
 // only: without a lease, it never probes the terminal.
 func (p *Progressbar) bindLook(ctx context.Context) (err error) {
-	p.look, err = p.bind(defaultIO.bindTheme(ctx, p.theme, p.Out, nil))
+	p.look, err = p.bind(term.Default.BindTheme(ctx, p.theme, p.Out, nil))
 	return err
 }
 

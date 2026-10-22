@@ -136,7 +136,7 @@ func NewFileProgressReader(ctx context.Context, r io.Reader, label string, o ...
 	if err != nil {
 		return nil, fmt.Errorf("make io: %w", err)
 	}
-	err = p.io.restoreMode()
+	err = p.io.RestoreMode()
 	if err != nil {
 		return nil, fmt.Errorf("restore: %w", err)
 	}

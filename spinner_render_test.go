@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"log/slog"
 	"strings"
@@ -60,7 +61,7 @@ func TestThemedSpinnerFramesAndGroupTheme(t *testing.T) {
 	later := asciiTheme(false)
 	later.Symbols.Spinner = []string{"x"}
 	later.Templates.Spinner.Running = `changed`
-	assert.NoError(t, defaultIO.installTheme(later))
+	assert.NoError(t, term.Default.InstallTheme(later))
 	added, err := s.Add(t.Context())
 	assert.NoError(t, err)
 	added.Update("later")
@@ -111,7 +112,7 @@ func TestThemedSpinnerRoles(t *testing.T) {
 	failed.Fail(errors.New("no"))
 	tick()
 	out := <-frames
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), s.Out, nil).Roles
+	roles := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), s.Out, nil).Roles
 	assert.True(t, len(roles.Accent) > 0 && len(roles.Muted) > 0 && len(roles.Failure) > 0)
 	assert.Contains(t, out, string(roles.Accent)+"*")
 	assert.Contains(t, out, string(roles.Muted)+"-")
@@ -148,8 +149,8 @@ func TestThemedSpinnerWriteErrorEndsGroup(t *testing.T) {
 	gone := errors.New("terminal gone")
 	var released atomic.Bool
 	s, frames, tick, _ := themedSpinners(t, asciiTheme(false), 40, option.OpT(func(s *Spinners) error {
-		s.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
-			return &termIO{in: in, out: failingWriter{gone}, Width: 40, Height: 10, Restore: func() error {
+		s.makeTermIO = func(in io.Reader, _ io.Writer) (*term.IO, error) {
+			return &term.IO{In: in, Out: failingWriter{gone}, Width: 40, Height: 10, Restore: func() error {
 				released.Store(true)
 				return nil
 			}}, nil

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"iter"
 )
@@ -93,13 +94,13 @@ func (d *dropdown) startLazyProducer(ctx context.Context, itemFn iter.Seq2[any, 
 }
 
 // runLazy renders the dropdown while items are streamed in.
-func (d *dropdown) runLazy(ctx context.Context, tio *termIO, frame *bytes.Buffer) (int, error) {
+func (d *dropdown) runLazy(ctx context.Context, tio *term.IO, frame *bytes.Buffer) (int, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	keys := tio.readEvents(ctx, nil)
+	keys := tio.ReadEvents(ctx, nil)
 	defer func() {
 		cancel()
 		// wait without draining, so an unreceived key stays for the next prompt
-		tio.awaitReader()
+		tio.AwaitReader()
 	}()
 	space := 0
 	displayed := 0
@@ -118,7 +119,7 @@ func (d *dropdown) runLazy(ctx context.Context, tio *termIO, frame *bytes.Buffer
 			return res.index, nil
 		}
 		if res.readNextKey {
-			keys = tio.readEvents(ctx, nil)
+			keys = tio.ReadEvents(ctx, nil)
 		}
 		needsRender = res.needsRender
 	}
@@ -126,7 +127,7 @@ func (d *dropdown) runLazy(ctx context.Context, tio *termIO, frame *bytes.Buffer
 
 // ensureLazyRender draws the dropdown only when it needs a refresh.
 func (d *dropdown) ensureLazyRender(
-	tio *termIO,
+	tio *term.IO,
 	frame *bytes.Buffer,
 	needsRender *bool,
 	space *int,
@@ -145,11 +146,11 @@ func (d *dropdown) ensureLazyRender(
 
 // nextLazyAction waits for item, key, or context updates.
 func (d *dropdown) nextLazyAction(
-	tio *termIO,
+	tio *term.IO,
 	frame *bytes.Buffer,
 	space int,
 	displayed int,
-	keys <-chan keyEvent,
+	keys <-chan term.KeyEvent,
 ) (lazyResult, error) {
 	select {
 	case it, more := <-d.itItems:
@@ -172,17 +173,17 @@ func (d *dropdown) nextLazyAction(
 			return lazyResult{}, err
 		}
 		return lazyResult{}, d.Ctx.Err()
-	case <-tio.onResize:
+	case <-tio.OnResize:
 		return lazyResult{needsRender: true}, nil
 	}
 }
 
 func (d *dropdown) nextLazyKeyResult(
-	tio *termIO,
+	tio *term.IO,
 	frame *bytes.Buffer,
 	space int,
 	displayed int,
-	ev keyEvent,
+	ev term.KeyEvent,
 	ok bool,
 ) (lazyResult, error) {
 	i, nextRender, err := d.handleLazyKey(tio, frame, space, displayed, ev, ok)
@@ -198,9 +199,9 @@ func (d *dropdown) nextLazyKeyResult(
 }
 
 // renderLazyFrame clears the previous output and renders the dropdown.
-func (d *dropdown) renderLazyFrame(tio *termIO, frame *bytes.Buffer, space *int, displayed *int) error {
+func (d *dropdown) renderLazyFrame(tio *term.IO, frame *bytes.Buffer, space *int, displayed *int) error {
 	if *space > 0 {
-		err := tio.clear(*space, frame)
+		err := tio.Clear(*space, frame)
 		if err != nil {
 			return fmt.Errorf("clear: %w", err)
 		}
@@ -218,7 +219,7 @@ func (d *dropdown) renderLazyFrame(tio *termIO, frame *bytes.Buffer, space *int,
 	return nil
 }
 
-func (d *dropdown) finishLazyItems(tio *termIO, frame *bytes.Buffer, space int) (int, bool, error) {
+func (d *dropdown) finishLazyItems(tio *term.IO, frame *bytes.Buffer, space int) (int, bool, error) {
 	d.iterDone = true
 	d.itItems = nil
 	if len(d.Items) == 0 {
@@ -267,7 +268,7 @@ func (d *dropdown) validateLazySeed() error {
 
 // handleLazyItem updates the dropdown for a streamed item.
 func (d *dropdown) handleLazyItem(
-	tio *termIO,
+	tio *term.IO,
 	frame *bytes.Buffer,
 	space int,
 	it itPair,
@@ -296,7 +297,7 @@ func (d *dropdown) handleLazyItem(
 
 // handleLazyInput updates the dropdown from a semantic input event.
 func (d *dropdown) handleLazyInput(
-	tio *termIO,
+	tio *term.IO,
 	frame *bytes.Buffer,
 	space int,
 	displayed int,
@@ -323,11 +324,11 @@ func (d *dropdown) handleLazyInput(
 
 // handleLazyKey updates the dropdown for a key event.
 func (d *dropdown) handleLazyKey(
-	tio *termIO,
+	tio *term.IO,
 	frame *bytes.Buffer,
 	space int,
 	displayed int,
-	ev keyEvent,
+	ev term.KeyEvent,
 	ok bool,
 ) (int, bool, error) {
 	if !ok {
@@ -337,18 +338,18 @@ func (d *dropdown) handleLazyKey(
 		}
 		return -1, false, io.EOF
 	}
-	if ev.err != nil {
-		if isPasteText(ev.err) {
+	if ev.Err != nil {
+		if term.IsPasteText(ev.Err) {
 			return -1, false, nil
 		}
-		readErr := fmt.Errorf("read: %w", ev.err)
+		readErr := fmt.Errorf("read: %w", ev.Err)
 		clearErr := d.clearFrame(tio, frame, space)
 		if clearErr != nil {
 			return -1, false, errors.Join(readErr, clearErr)
 		}
 		return -1, false, readErr
 	}
-	i := d.pressKeyRune(tio, ev.key, displayed, space)
+	i := d.pressKeyRune(tio, ev.Key, displayed, space)
 	if i >= 0 {
 		err := d.clearFrame(tio, frame, space)
 		if err != nil {

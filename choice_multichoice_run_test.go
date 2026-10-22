@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"os"
 	"reflect"
@@ -22,10 +23,10 @@ func TestMultichoiceRunNoSpace(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one"}
 	m.out = io.Discard
-	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{
-			in:      in,
-			out:     out,
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+		return &term.IO{
+			In:      in,
+			Out:     out,
 			Width:   10,
 			Height:  2,
 			Restore: func() error { return nil },
@@ -43,16 +44,16 @@ func TestMultichoiceRunHandlesKeys(t *testing.T) {
 		{'o'},
 		{0x7f},
 		{0x1b, 0x5b, 0x41},
-		{keyEnter},
+		{term.KeyEnter},
 	}}
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two", "three"}
 	m.in = reader
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{
-			in:      in,
-			out:     out,
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+		return &term.IO{
+			In:      in,
+			Out:     out,
 			Width:   40,
 			Height:  6,
 			Restore: func() error { return nil },
@@ -67,16 +68,16 @@ func TestMultichoiceRunIgnoresSpecialKeys(t *testing.T) {
 		[]byte("\x1bx"),
 		{0x1b, 0x1b, 0x5b, 0x42}, // Esc, then down
 		{' '},
-		{keyEnter},
+		{term.KeyEnter},
 	}}
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two", "three"}
 	m.in = reader
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{
-			in:      in,
-			out:     out,
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+		return &term.IO{
+			In:      in,
+			Out:     out,
 			Width:   40,
 			Height:  6,
 			Restore: func() error { return nil },
@@ -91,12 +92,12 @@ func TestMultichoiceRunContextDone(t *testing.T) {
 	cancel()
 	m := newMultichoice(ctx)
 	m.Items = []any{"one"}
-	m.in = &chunkReader{chunks: [][]byte{{byte(keyEnter)}}}
+	m.in = &chunkReader{chunks: [][]byte{{byte(term.KeyEnter)}}}
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{
-			in:      in,
-			out:     out,
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+		return &term.IO{
+			In:      in,
+			Out:     out,
 			Width:   40,
 			Height:  6,
 			Restore: func() error { return nil },
@@ -109,12 +110,12 @@ func TestMultichoiceRunContextDone(t *testing.T) {
 func TestMultichoiceRunCoalescedKeys(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one"}
-	m.in = &chunkReader{chunks: [][]byte{{'a', 'b'}, {byte(keyEnter)}}}
+	m.in = &chunkReader{chunks: [][]byte{{'a', 'b'}, {byte(term.KeyEnter)}}}
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{
-			in:      in,
-			out:     out,
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+		return &term.IO{
+			In:      in,
+			Out:     out,
 			Width:   40,
 			Height:  6,
 			Restore: func() error { return nil },
@@ -128,10 +129,10 @@ func TestMultichoiceRunReadError(t *testing.T) {
 	m.Items = []any{"one"}
 	m.in = bytes.NewBuffer(nil)
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{
-			in:      in,
-			out:     out,
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+		return &term.IO{
+			In:      in,
+			Out:     out,
 			Width:   40,
 			Height:  6,
 			Restore: func() error { return nil },
@@ -146,19 +147,19 @@ func TestMultichoiceRunRerendersOnResize(t *testing.T) {
 	t.Cleanup(func() { _ = typing.Close() }) //nolint:errcheck // test cleanup
 	resized := make(chan struct{})
 	out := &syncBuffer{}
-	var tio *termIO
+	var tio *term.IO
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two", "three", "four", "five", "six"}
 	m.in = keys
 	m.out = out
-	m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-		tio = &termIO{
-			in:       in,
-			out:      out,
+	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+		tio = &term.IO{
+			In:       in,
+			Out:      out,
 			Width:    40,
 			Height:   8,
 			Restore:  func() error { return nil },
-			onResize: resized,
+			OnResize: resized,
 		}
 		return tio, nil
 	}
@@ -175,7 +176,7 @@ func TestMultichoiceRunRerendersOnResize(t *testing.T) {
 	}
 	waitBufferContains(t, out, "4 more")
 
-	_, err := typing.Write([]byte{keyEnter})
+	_, err := typing.Write([]byte{term.KeyEnter})
 	assert.NoError(t, err)
 	select {
 	case err := <-done:
@@ -228,17 +229,17 @@ func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 		t.Fatal("cancelled multichoice did not return")
 	}
 	// the blocked read completes only now, after its prompt is gone
-	_, err = pw.Write([]byte{'x', keyEnter})
+	_, err = pw.Write([]byte{'x', term.KeyEnter})
 	assert.NoError(t, err)
 	next := newInput(t.Context(), "next")
 	next.Ctx, cancel = context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	next.In, next.Out = in, &bytes.Buffer{}
-	next.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-		return &termIO{
-			in:      in,
-			out:     out,
-			input:   sharedInputState(in),
+	next.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+		return &term.IO{
+			In:      in,
+			Out:     out,
+			Input:   term.SharedInputState(in),
 			Width:   20,
 			Height:  2,
 			Restore: func() error { return nil },
@@ -273,9 +274,9 @@ func TestMultichoiceBracketedPasteSplitsAndHandoff(t *testing.T) {
 	// A legacy event produced by a cancelled old decoder must replay ordinary
 	// keys, including the bytes after confirmation, through the shared decoder.
 	in := strings.NewReader(" \r \r")
-	old := &termIO{in: in, input: sharedInputState(in)}
-	read, _ := old.startRead(t.Context())
-	<-read.done
+	old := &term.IO{In: in, Input: term.SharedInputState(in)}
+	read, _ := old.StartRead(t.Context())
+	<-read.Done
 	first, err := Multichoice(t.Context(), "First", []string{"one"}, WithInput(in), WithOutput(io.Discard))
 	if err != nil || len(first) != 1 {
 		t.Fatal(first, err)
@@ -376,7 +377,7 @@ func TestMultichoiceLazyDefaultState(t *testing.T) {
 				m.handleKey(' ')
 			}
 			m.filter("zzz")
-			if m.handleKey(keyEnter) {
+			if m.handleKey(term.KeyEnter) {
 				t.Fatal("loading confirmed")
 			}
 			err := m.finishLoading()
@@ -553,9 +554,9 @@ func TestMultichoiceProducerStopsBlockedPublication(t *testing.T) {
 }
 
 func TestMultichoicePasteModeLifetime(t *testing.T) {
-	original := terminalInputChecker
-	terminalInputChecker = func(int) bool { return true }
-	t.Cleanup(func() { terminalInputChecker = original })
+	original := term.InputChecker
+	term.InputChecker = func(int) bool { return true }
+	t.Cleanup(func() { term.InputChecker = original })
 	for _, keys := range []string{"\r", "\x03"} {
 		var out strings.Builder
 		in := &mockDescriptor{Reader: strings.NewReader(keys), fd: 1}
@@ -564,10 +565,10 @@ func TestMultichoicePasteModeLifetime(t *testing.T) {
 		m.in = in
 		m.out = &out
 		restores := 0
-		m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
-			return &termIO{
-				in:      in,
-				out:     out,
+		m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
+			return &term.IO{
+				In:      in,
+				Out:     out,
 				Width:   40,
 				Height:  8,
 				Restore: func() error { restores++; return nil },

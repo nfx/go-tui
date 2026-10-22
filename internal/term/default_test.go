@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"bytes"
@@ -14,20 +14,20 @@ import (
 )
 
 func TestTioCloseFlushesOutput(t *testing.T) {
-	prevTTY := terminalWriterChecker
-	prevSize := termGetSize
+	prevTTY := WriterChecker
+	prevSize := GetSize
 	t.Cleanup(func() {
-		terminalWriterChecker = prevTTY
-		termGetSize = prevSize
+		WriterChecker = prevTTY
+		GetSize = prevSize
 	})
 
 	var out bytes.Buffer
 	outW := &mockDescriptor{Writer: &out, fd: 42}
-	terminalWriterChecker = func(int) bool { return true }
-	termGetSize = func(int) (int, int, error) { return 80, 24, nil }
+	WriterChecker = func(int) bool { return true }
+	GetSize = func(int) (int, int, error) { return 80, 24, nil }
 
-	tioInst := &tio{reader: bytes.NewBufferString(""), writer: outW}
-	w := tioInst.stderrWriter()
+	tioInst := &Terminal{Reader: bytes.NewBufferString(""), Writer: outW}
+	w := tioInst.StderrWriter()
 
 	_, err := w.Write([]byte("pending output\n"))
 	assert.NoError(t, err)
@@ -77,7 +77,7 @@ func TestProfileFor(t *testing.T) {
 			if tc.tty {
 				w = ttyWriter(t)
 			}
-			assert.Equal(t, tc.want, defaultIO.profileFor(w))
+			assert.Equal(t, tc.want, Default.ProfileFor(w))
 		})
 	}
 }
@@ -85,26 +85,26 @@ func TestProfileFor(t *testing.T) {
 func TestProfileConsoleWithoutVTIsPlain(t *testing.T) {
 	withEnv(t, "COLORTERM=truecolor")
 	tty := ttyWriter(t)
-	consoleVT = func(io.Writer) bool { return false }
-	assert.Equal(t, color.ProfilePlain, defaultIO.profileFor(tty))
+	ConsoleVT = func(io.Writer) bool { return false }
+	assert.Equal(t, color.ProfilePlain, Default.ProfileFor(tty))
 }
 
 func TestProfileConsoleVTNotCalledForPipe(t *testing.T) {
 	withEnv(t, "FORCE_COLOR=3")
-	prev := consoleVT
-	consoleVT = func(io.Writer) bool {
+	prev := ConsoleVT
+	ConsoleVT = func(io.Writer) bool {
 		t.Fatal("pipe must not reach SetConsoleMode")
 		return false
 	}
-	t.Cleanup(func() { consoleVT = prev })
-	assert.Equal(t, color.ProfileTrueColor, defaultIO.profileFor(&bytes.Buffer{}))
+	t.Cleanup(func() { ConsoleVT = prev })
+	assert.Equal(t, color.ProfileTrueColor, Default.ProfileFor(&bytes.Buffer{}))
 }
 
 func TestProfileForManagedWriterUsesRawOutput(t *testing.T) {
 	withEnv(t, "COLORTERM=truecolor")
 	tty := ttyWriter(t)
-	managed := &tio{writer: tty, env: defaultIO.env}
-	assert.Equal(t, color.ProfileTrueColor, managed.profileFor(&chanIO{}))
-	piped := &tio{writer: &bytes.Buffer{}, env: defaultIO.env}
-	assert.Equal(t, color.ProfilePlain, piped.profileFor(&chanIO{}))
+	managed := &Terminal{Writer: tty, Env: Default.Env}
+	assert.Equal(t, color.ProfileTrueColor, managed.ProfileFor(&ChanIO{}))
+	piped := &Terminal{Writer: &bytes.Buffer{}, Env: Default.Env}
+	assert.Equal(t, color.ProfilePlain, piped.ProfileFor(&ChanIO{}))
 }

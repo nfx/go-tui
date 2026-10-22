@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"bytes"
@@ -19,9 +19,9 @@ import (
 )
 
 // routedTio makes tt the current route for cache tests.
-func routedTio(tt *termIO) *tio {
-	d := &tio{}
-	d.setIO(tt.in, tt.out)
+func routedTio(tt *IO) *Terminal {
+	d := &Terminal{}
+	d.SetIO(tt.In, tt.Out)
 	return d
 }
 
@@ -57,10 +57,10 @@ func TestDetectBackground_MalformedReplyIsNotDark(t *testing.T) {
 func TestDetectBackground_SkipsQuery(t *testing.T) {
 	for name, disable := range map[string]func(t *testing.T){
 		"no terminal input": func(*testing.T) {
-			terminalInputChecker = func(int) bool { return false }
+			InputChecker = func(int) bool { return false }
 		},
 		"unsupported platform": func(*testing.T) {
-			backgroundProbeSupported = false // probeTermIO restores the previous value
+			ProbeSupported = false // probeTermIO restores the previous value
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -77,8 +77,8 @@ func TestDetectBackground_ReplacedOutputRouteProbesAgain(t *testing.T) {
 	d := routedTio(tt)
 	d.background(t.Context(), tt, color.Background{})
 	next := &replyingTerminal{reply: oscReply, in: term.in}
-	d.setIO(nil, next)
-	tt.out = next
+	d.SetIO(nil, next)
+	tt.Out = next
 	d.background(t.Context(), tt, color.Background{})
 	assert.Equal(t, 1, next.count())
 }
@@ -86,7 +86,7 @@ func TestDetectBackground_ReplacedOutputRouteProbesAgain(t *testing.T) {
 func TestDetectBackground_KeyTypedDuringProbeIsKept(t *testing.T) {
 	tt, _ := probeTermIO(t, oscReply+"a")
 	assert.True(t, tt.detectBackground(t.Context(), color.Background{}).Measured)
-	assert.Equal(t, 'a', nextEvent(t, tt).key)
+	assert.Equal(t, 'a', nextEvent(t, tt).Key)
 }
 
 func TestDetectBackground_KeyBeforeReplyIsKept(t *testing.T) {
@@ -95,45 +95,45 @@ func TestDetectBackground_KeyBeforeReplyIsKept(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	assert.True(t, tt.detectBackground(t.Context(), color.Background{}).Measured)
 	go term.in.Write([]byte("b")) //nolint:errcheck
-	assert.Equal(t, 'a', nextEvent(t, tt).key)
-	assert.Equal(t, 'b', nextEvent(t, tt).key)
+	assert.Equal(t, 'a', nextEvent(t, tt).Key)
+	assert.Equal(t, 'b', nextEvent(t, tt).Key)
 }
 
 func TestDetectBackground_InputBeforeReplyIsKept(t *testing.T) {
 	for name, tc := range map[string]struct {
 		typed     string
 		bracketed bool
-		check     func(t *testing.T, ev keyEvent)
+		check     func(t *testing.T, ev KeyEvent)
 	}{
-		"coalesced text": {typed: "hello", check: func(t *testing.T, ev keyEvent) {
+		"coalesced text": {typed: "hello", check: func(t *testing.T, ev KeyEvent) {
 			t.Helper()
-			var more *pasteTextError
-			assert.True(t, errors.As(ev.err, &more))
-			assert.Equal(t, "hello", string(ev.paste))
+			var more *PasteTextError
+			assert.True(t, errors.As(ev.Err, &more))
+			assert.Equal(t, "hello", string(ev.Paste))
 		}},
-		"bracketed paste": {typed: "\x1b[200~hi\x1b[201~", bracketed: true, check: func(t *testing.T, ev keyEvent) {
+		"bracketed paste": {typed: "\x1b[200~hi\x1b[201~", bracketed: true, check: func(t *testing.T, ev KeyEvent) {
 			t.Helper()
-			assert.NoError(t, ev.err)
-			assert.Equal(t, "hi", string(ev.paste))
+			assert.NoError(t, ev.Err)
+			assert.Equal(t, "hi", string(ev.Paste))
 		}},
-		"legacy bracketed paste": {typed: "\x1b[200~hi\x1b[201~", check: func(t *testing.T, ev keyEvent) {
+		"legacy bracketed paste": {typed: "\x1b[200~hi\x1b[201~", check: func(t *testing.T, ev KeyEvent) {
 			t.Helper()
-			var more *pasteTextError
-			assert.True(t, errors.As(ev.err, &more))
-			assert.Equal(t, "hi", string(ev.paste))
+			var more *PasteTextError
+			assert.True(t, errors.As(ev.Err, &more))
+			assert.Equal(t, "hi", string(ev.Paste))
 		}},
-		"ctrl-c": {typed: "\x03", check: func(t *testing.T, ev keyEvent) {
+		"ctrl-c": {typed: "\x03", check: func(t *testing.T, ev KeyEvent) {
 			t.Helper()
-			assert.ErrorIs(t, ev.err, io.EOF)
+			assert.ErrorIs(t, ev.Err, io.EOF)
 		}},
-		"ctrl-d": {typed: "\x04", check: func(t *testing.T, ev keyEvent) {
+		"ctrl-d": {typed: "\x04", check: func(t *testing.T, ev KeyEvent) {
 			t.Helper()
-			assert.ErrorIs(t, ev.err, io.EOF)
+			assert.ErrorIs(t, ev.Err, io.EOF)
 		}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tt, term := probeTermIO(t, oscReply)
-			tt.bracketedPaste = tc.bracketed
+			tt.BracketedPaste = tc.bracketed
 			go term.in.Write([]byte(tc.typed)) //nolint:errcheck
 			time.Sleep(20 * time.Millisecond)
 			tt.detectBackground(t.Context(), color.Background{})
@@ -145,19 +145,19 @@ func TestDetectBackground_InputBeforeReplyIsKept(t *testing.T) {
 func TestDetectBackground_RestoredEventsKeepBoundaries(t *testing.T) {
 	tt, term := probeTermIO(t, "")
 	// A standalone Escape decoded before 'a' arrived must not replay as Alt+a.
-	tt.restoreKeys([]keyEvent{{key: keyEscape, readOrder: 1}, {key: 'a', readOrder: 2}})
+	tt.restoreKeys([]KeyEvent{{Key: KeyEscape, ReadOrder: 1}, {Key: 'a', ReadOrder: 2}})
 	go term.in.Write([]byte("b")) //nolint:errcheck
-	for _, want := range []keyEvent{{key: keyEscape, readOrder: 1}, {key: 'a', readOrder: 2}} {
+	for _, want := range []KeyEvent{{Key: KeyEscape, ReadOrder: 1}, {Key: 'a', ReadOrder: 2}} {
 		assert.Equal(t, want, nextEvent(t, tt))
 	}
-	assert.Equal(t, 'b', nextEvent(t, tt).key)
+	assert.Equal(t, 'b', nextEvent(t, tt).Key)
 }
 
 func TestDetectBackground_StaleTerminalDoesNotUseCache(t *testing.T) {
 	tt, _ := probeTermIO(t, oscReply)
 	d := routedTio(tt)
 	// Stale terminals must not populate the new route's cache.
-	d.setIO(nil, &replyingTerminal{})
+	d.SetIO(nil, &replyingTerminal{})
 	assert.True(t, d.background(t.Context(), tt, color.Background{}).Measured)
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -173,7 +173,7 @@ func TestParseOSCColor(t *testing.T) {
 		"rgb:ff/80/00":       {255, 128, 0},
 		"rgb:fff/800/000":    {255, 128, 0},
 	} {
-		got, ok := new(termIO).parseOSCColor(in)
+		got, ok := new(IO).parseOSCColor(in)
 		assert.True(t, ok)
 		assert.Equal(t, want, got)
 	}
@@ -181,20 +181,20 @@ func TestParseOSCColor(t *testing.T) {
 		"", "?", "rgb:", "rgb:0/0", "rgb:0/0/0/0", "rgb:00000/0/0", "rgb://", "rgb:g/0/0",
 		"rgba:0/0/0/0", "#112233", "rgb:-1/0/0", " rgb:0/0/0",
 	} {
-		_, ok := new(termIO).parseOSCColor(in)
+		_, ok := new(IO).parseOSCColor(in)
 		assert.Equal(t, false, ok)
 	}
 }
 
 func TestParseColorFGBG(t *testing.T) {
-	rgb, ok := new(termIO).parseColorFGBG("15;0")
+	rgb, ok := new(IO).parseColorFGBG("15;0")
 	assert.True(t, ok)
 	assert.Equal(t, color.SRGB{0, 0, 0}, rgb)
-	rgb, ok = new(termIO).parseColorFGBG("0;default;15")
+	rgb, ok = new(IO).parseColorFGBG("0;default;15")
 	assert.True(t, ok)
 	assert.Equal(t, color.SRGB{255, 255, 255}, rgb)
 	for _, in := range []string{"", "15", "15;default", "15;", "15;256", "15;-1", "a;b", "1;2;3;4"} {
-		_, ok := new(termIO).parseColorFGBG(in)
+		_, ok := new(IO).parseColorFGBG(in)
 		assert.Equal(t, false, ok)
 	}
 }
@@ -203,14 +203,14 @@ func TestBackgroundFromEnv(t *testing.T) {
 	env := func(v string) func(string) (string, bool) {
 		return func(k string) (string, bool) { return v, k == "COLORFGBG" }
 	}
-	b := new(termIO).backgroundFromEnv(env("0;15"))
+	b := new(IO).backgroundFromEnv(env("0;15"))
 	assert.True(t, b.Light)
 	assert.Equal(t, false, b.Measured)
 	// Blue is dark; mid gray is light despite its low palette index.
-	assert.Equal(t, false, new(termIO).backgroundFromEnv(env("15;4")).Light)
-	assert.True(t, new(termIO).backgroundFromEnv(env("15;8")).Light)
-	assert.Equal(t, color.Background{}, new(termIO).backgroundFromEnv(env("default;default")))
-	assert.Equal(t, color.Background{}, new(termIO).backgroundFromEnv(nil))
+	assert.Equal(t, false, new(IO).backgroundFromEnv(env("15;4")).Light)
+	assert.True(t, new(IO).backgroundFromEnv(env("15;8")).Light)
+	assert.Equal(t, color.Background{}, new(IO).backgroundFromEnv(env("default;default")))
+	assert.Equal(t, color.Background{}, new(IO).backgroundFromEnv(nil))
 }
 
 func TestDetectBackground_ConcurrentCallersQueryOnce(t *testing.T) {
@@ -231,24 +231,24 @@ func TestDetectBackground_ConcurrentCallersQueryOnce(t *testing.T) {
 func TestInstalledThemeFallsBackToASCIISymbols(t *testing.T) {
 	th := theme.New()
 	th.Symbols.Focus = "→"
-	d := &tio{writer: &bytes.Buffer{}}
-	d.env = readOutputEnv(func(k string) (string, bool) {
+	d := &Terminal{Writer: &bytes.Buffer{}}
+	d.Env = ReadOutputEnv(func(k string) (string, bool) {
 		if k == "TERM" {
 			return "linux", true
 		}
 		return "", false
 	})
-	assert.NoError(t, d.installTheme(th))
-	sym := d.currentTheme().Source.Symbols
+	assert.NoError(t, d.InstallTheme(th))
+	sym := d.CurrentTheme().Source.Symbols
 	assert.Equal(t, "?", sym.Prompt)
 	assert.Equal(t, "|", sym.Guide)
 	assert.Equal(t, "→", sym.Focus) // chosen by the theme
 	assert.Equal(t, theme.New().Symbols.ASCII().Spinner, sym.Spinner)
 	assert.Equal(t, "◆", th.Symbols.Prompt) // the caller's copy is unchanged
 
-	d.env = readOutputEnv(func(string) (string, bool) { return "", false })
-	assert.NoError(t, d.installTheme(th))
-	assert.Equal(t, "◆", d.currentTheme().Source.Symbols.Prompt)
+	d.Env = ReadOutputEnv(func(string) (string, bool) { return "", false })
+	assert.NoError(t, d.InstallTheme(th))
+	assert.Equal(t, "◆", d.CurrentTheme().Source.Symbols.Prompt)
 }
 
 func TestBindThemeDetectsOnlyWhenColorsDependOnIt(t *testing.T) {
@@ -268,13 +268,13 @@ func TestBindThemeDetectsOnlyWhenColorsDependOnIt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tt, term := probeTermIO(t, "\x1b]11;rgb:fafa/fafa/fafa\x1b\\")
 			d := routedTio(tt)
-			d.env = readOutputEnv(func(k string) (string, bool) {
+			d.Env = ReadOutputEnv(func(k string) (string, bool) {
 				name, v, _ := strings.Cut(tc.env, "=")
 				return v, k == name
 			})
 			c, err := render.Compile(tc.theme)
 			assert.NoError(t, err)
-			d.bindTheme(t.Context(), c, tt.out, tt)
+			d.BindTheme(t.Context(), c, tt.Out, tt)
 			assert.Equal(t, tc.queries, term.count())
 		})
 	}
@@ -285,16 +285,16 @@ func TestBindThemeUsesMeasuredOrEstimatedBackground(t *testing.T) {
 	assert.NoError(t, err)
 	tt, _ := probeTermIO(t, "\x1b]11;rgb:fafa/fafa/fafa\x1b\\")
 	d := routedTio(tt)
-	d.env = readOutputEnv(func(k string) (string, bool) { return "3", k == "FORCE_COLOR" })
-	measured := d.bindTheme(t.Context(), c, tt.out, tt)
+	d.Env = ReadOutputEnv(func(k string) (string, bool) { return "3", k == "FORCE_COLOR" })
+	measured := d.BindTheme(t.Context(), c, tt.Out, tt)
 	want := c.Roles(color.ProfileTrueColor, c.Palette.Resolve(false, color.SRGB{250, 250, 250}, true))
 	assert.Equal(t, want, measured.Roles)
 
 	// without a terminal lease, the environment estimates a light background
-	d.env = readOutputEnv(func(k string) (string, bool) {
+	d.Env = ReadOutputEnv(func(k string) (string, bool) {
 		return map[string]string{"FORCE_COLOR": "3", "COLORFGBG": "0;15"}[k], k == "FORCE_COLOR" || k == "COLORFGBG"
 	})
-	estimated := d.bindTheme(t.Context(), c, &bytes.Buffer{}, nil)
+	estimated := d.BindTheme(t.Context(), c, &bytes.Buffer{}, nil)
 	want = c.Roles(color.ProfileTrueColor, c.Palette.Resolve(true, color.SRGB{}, false))
 	assert.Equal(t, want, estimated.Roles)
 	assert.True(t, estimated.Roles.Foreground == nil) // estimated, not measured
@@ -305,25 +305,25 @@ func TestBindThemeReusesRouteDetectionWithoutWaiting(t *testing.T) {
 	assert.NoError(t, err)
 	tt, term := probeTermIO(t, "\x1b]11;rgb:fafa/fafa/fafa\x1b\\")
 	d := routedTio(tt)
-	d.env = readOutputEnv(func(k string) (string, bool) { return "3", k == "FORCE_COLOR" })
-	estimated := d.bindTheme(t.Context(), c, tt.out, nil) // nothing detected yet
-	measured := d.bindTheme(t.Context(), c, tt.out, tt)
+	d.Env = ReadOutputEnv(func(k string) (string, bool) { return "3", k == "FORCE_COLOR" })
+	estimated := d.BindTheme(t.Context(), c, tt.Out, nil) // nothing detected yet
+	measured := d.BindTheme(t.Context(), c, tt.Out, tt)
 	assert.True(t, estimated.Roles.Foreground == nil)
 	assert.True(t, measured.Roles.Foreground != nil)
 
 	// output-only work drawing on the route reuses its detection
-	for _, out := range []io.Writer{tt.out, &terminalStderr{parent: d}} {
-		assert.Equal(t, measured.Roles, d.bindTheme(t.Context(), c, out, nil).Roles)
+	for _, out := range []io.Writer{tt.Out, &TerminalStderr{Parent: d}} {
+		assert.Equal(t, measured.Roles, d.BindTheme(t.Context(), c, out, nil).Roles)
 	}
 	assert.Equal(t, 1, term.count())
 	// other destinations estimate, and so does another tio's Stderr
-	assert.Equal(t, estimated.Roles, d.bindTheme(t.Context(), c, &bytes.Buffer{}, nil).Roles)
-	assert.Equal(t, estimated.Roles, d.bindTheme(t.Context(), c, &terminalStderr{parent: &tio{}}, nil).Roles)
+	assert.Equal(t, estimated.Roles, d.BindTheme(t.Context(), c, &bytes.Buffer{}, nil).Roles)
+	assert.Equal(t, estimated.Roles, d.BindTheme(t.Context(), c, &TerminalStderr{Parent: &Terminal{}}, nil).Roles)
 
 	// a probe in progress does not hold up output-only work
 	d.bgMu.Lock()
 	bound := make(chan render.Binding)
-	go func() { bound <- d.bindTheme(t.Context(), c, tt.out, nil) }()
+	go func() { bound <- d.BindTheme(t.Context(), c, tt.Out, nil) }()
 	select {
 	case b := <-bound:
 		assert.Equal(t, measured.Roles, b.Roles)
@@ -333,6 +333,6 @@ func TestBindThemeReusesRouteDetectionWithoutWaiting(t *testing.T) {
 	d.bgMu.Unlock()
 
 	// replacing the route forgets the detection
-	d.setIO(tt.in, tt.out)
-	assert.Equal(t, estimated.Roles, d.bindTheme(t.Context(), c, tt.out, nil).Roles)
+	d.SetIO(tt.In, tt.Out)
+	assert.Equal(t, estimated.Roles, d.BindTheme(t.Context(), c, tt.Out, nil).Roles)
 }

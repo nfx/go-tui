@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 )
 
 var longRunningNewSpinners = NewSpinners
@@ -41,7 +42,7 @@ func NewSpinners(ctx context.Context, opt ...option.Opt) (*Spinners, error) {
 		return nil, err
 	}
 	// output only: no lease, so no probe
-	look := defaultIO.bindTheme(ctx, s.theme, s.Out, nil)
+	look := term.Default.BindTheme(ctx, s.theme, s.Out, nil)
 	s.rows, err = bindSpinnerSlots(s.theme.Templates.Spinner, look.Funcs)
 	if err != nil {
 		return nil, err
@@ -54,7 +55,7 @@ func NewSpinners(ctx context.Context, opt ...option.Opt) (*Spinners, error) {
 		s.io = nil
 		s.ticker.Stop()
 		s.ticks = nil // stage changes need no animation ticks
-	} else if err = s.io.restoreMode(); err != nil {
+	} else if err = s.io.RestoreMode(); err != nil {
 		return nil, fmt.Errorf("restore: %w", err)
 	}
 	s.emit(spinnerGroupInit{})

@@ -9,6 +9,7 @@ import (
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/internal/trie"
 	"github.com/nfx/go-tui/theme"
 	"io"
@@ -67,7 +68,7 @@ type multichoice struct {
 	producer   iter.Seq2[any, error]
 	in         io.Reader
 	out        io.Writer
-	makeTermIO func(io.Reader, io.Writer) (*termIO, error)
+	makeTermIO func(io.Reader, io.Writer) (*term.IO, error)
 }
 
 // newMultichoice installs defaults without acquiring terminal resources.
@@ -75,8 +76,8 @@ func newMultichoice(ctx context.Context) *multichoice {
 	return &multichoice{
 		Ctx:        ctx,
 		Label:      "Select items",
-		makeTermIO: makePromptIO,
-		theme:      defaultIO.currentTheme(),
+		makeTermIO: term.MakePromptIO,
+		theme:      term.Default.CurrentTheme(),
 	}
 }
 
@@ -85,8 +86,8 @@ func (m *multichoice) SetReader(r io.Reader) { m.in = r }
 
 // SetWriter unwraps Tui output so prompts share its managed renderer.
 func (m *multichoice) SetWriter(w io.Writer) {
-	if t, ok := w.(*Tui); ok {
-		w = t.out
+	if t, ok := w.(*term.Tui); ok {
+		w = t.Out
 	}
 	m.out = w
 }
@@ -255,7 +256,7 @@ func (m *multichoice) answerFromDefault(ctx context.Context) error {
 		return option.NoDefault(m.Label)
 	}
 	// without a terminal only the projection runs, for the hint to match
-	err = m.bind(defaultIO.bindTheme(ctx, m.theme, m.out, nil))
+	err = m.bind(term.Default.BindTheme(ctx, m.theme, m.out, nil))
 	if err != nil {
 		return err
 	}
@@ -368,7 +369,7 @@ func (m *multichoice) writeAnswer(line []byte) error {
 	if err != nil {
 		return fmt.Errorf("answer write: %w", err)
 	}
-	if cio, ok := m.out.(*chanIO); ok {
+	if cio, ok := m.out.(*term.ChanIO); ok {
 		if err := cio.Flush(); err != nil {
 			return fmt.Errorf("answer write: %w", err)
 		}

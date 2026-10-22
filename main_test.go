@@ -4,21 +4,22 @@
 package tui
 
 import (
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
 	"testing"
 
-	"golang.org/x/term"
+	xterm "golang.org/x/term"
 )
 
 // strictOutput restores production terminal classification for a test, where
 // writers without terminal capabilities are not terminals.
 func strictOutput(t *testing.T) {
 	t.Helper()
-	prev := outputIsTerminal
-	outputIsTerminal = hostsTerminal
-	t.Cleanup(func() { outputIsTerminal = prev })
+	prev := term.OutputIsTerminal
+	term.OutputIsTerminal = term.HostsTerminal
+	t.Cleanup(func() { term.OutputIsTerminal = prev })
 }
 
 // Most tests drive interactive widgets through in-memory writers, so the test
@@ -26,13 +27,13 @@ func strictOutput(t *testing.T) {
 // [strictOutput]. Environment fixtures read the same on every platform, and
 // the suite drives terminals the same in a CI job.
 func TestMain(m *testing.M) {
-	legacyConsoles = false
-	defaultIO.env.ci = false
-	outputIsTerminal = func(w io.Writer) bool {
-		if hostsTerminal(w) {
+	term.LegacyConsoles = false
+	term.Default.Env.Ci = false
+	term.OutputIsTerminal = func(w io.Writer) bool {
+		if term.HostsTerminal(w) {
 			return true
 		}
-		_, isFD := w.(descriptor)
+		_, isFD := w.(term.Descriptor)
 		return !isFD
 	}
 	os.Exit(m.Run())
@@ -60,14 +61,14 @@ func WithEnv(t *testing.T, pairs ...string) {
 // queries, without changing any terminal mode.
 func ProbingKeyboard(t *testing.T, fd uintptr) {
 	t.Helper()
-	prevInput, prevSupported := terminalInputChecker, backgroundProbeSupported
-	prevRaw, prevRestore := termMakeRaw, termRestore
-	terminalInputChecker = func(f int) bool { return f == int(fd) || prevInput(f) }
-	backgroundProbeSupported = true
-	termMakeRaw = func(int) (*term.State, error) { return &term.State{}, nil }
-	termRestore = func(int, *term.State) error { return nil }
+	prevInput, prevSupported := term.InputChecker, term.ProbeSupported
+	prevRaw, prevRestore := term.MakeRaw, term.Restore
+	term.InputChecker = func(f int) bool { return f == int(fd) || prevInput(f) }
+	term.ProbeSupported = true
+	term.MakeRaw = func(int) (*xterm.State, error) { return &xterm.State{}, nil }
+	term.Restore = func(int, *xterm.State) error { return nil }
 	t.Cleanup(func() {
-		terminalInputChecker, backgroundProbeSupported = prevInput, prevSupported
-		termMakeRaw, termRestore = prevRaw, prevRestore
+		term.InputChecker, term.ProbeSupported = prevInput, prevSupported
+		term.MakeRaw, term.Restore = prevRaw, prevRestore
 	})
 }

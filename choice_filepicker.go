@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -160,7 +161,7 @@ type fileView struct {
 // answer retains the chosen path once, after every directory dropdown has
 // cleared. Without a terminal nothing is retained.
 func (f *filePicker) answer(d *dropdown, title, path string) error {
-	if !outputIsTerminal(d.out) {
+	if !term.OutputIsTerminal(d.out) {
 		return nil
 	}
 	err := d.retain(title, path)
@@ -200,7 +201,7 @@ func (f *filePicker) choose(
 	entries []os.DirEntry,
 	items []any,
 ) (int, error) {
-	if !outputIsTerminal(d.out) {
+	if !term.OutputIsTerminal(d.out) {
 		return f.answerFromDefault(ctx, d, title, entries, items)
 	}
 	// the path is retained once, by answer

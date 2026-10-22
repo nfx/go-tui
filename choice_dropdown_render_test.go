@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"strconv"
@@ -20,7 +21,7 @@ import (
 func TestDropdownRenderInitAndItems(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"alpha", "beta", "gamma"}
-	d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+	d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 		return newTestTermIO(20, 6), nil
 	}
 	io := newTestTermIO(20, 6)
@@ -62,9 +63,9 @@ func bindDropdown(t *testing.T, d *dropdown) {
 	if d.out == nil {
 		d.out = &bytes.Buffer{}
 	}
-	tt := &termIO{out: d.out, Width: 40, Height: 10}
+	tt := &term.IO{Out: d.out, Width: 40, Height: 10}
 	assert.NoError(t, d.parseTemplates())
-	assert.NoError(t, d.bind(defaultIO.bindTheme(t.Context(), d.theme, d.out, tt)))
+	assert.NoError(t, d.bind(term.Default.BindTheme(t.Context(), d.theme, d.out, tt)))
 	assert.NoError(t, d.renderChrome())
 }
 
@@ -106,21 +107,27 @@ func themedDropdownOpt(
 
 // boundDropdown is a themed dropdown over items, parsed and bound to a
 // terminal of the given size, which render draws a frame on.
-func boundDropdown(t *testing.T, th theme.Theme, width, height int, items []any, o ...option.Opt) (*dropdown, *termIO) {
+func boundDropdown(
+	t *testing.T,
+	th theme.Theme,
+	width, height int,
+	items []any,
+	o ...option.Opt,
+) (*dropdown, *term.IO) {
 	t.Helper()
 	useTheme(t, th)
 	d := newDropdown(t.Context())
 	d.Label, d.Items = "Fruit", items
 	assert.NoError(t, option.Opts(o).Apply(d))
 	assert.NoError(t, d.parseTemplates())
-	tt := &termIO{out: &bytes.Buffer{}, Width: width, Height: height}
-	assert.NoError(t, d.bind(defaultIO.bindTheme(t.Context(), d.theme, d.out, tt)))
+	tt := &term.IO{Out: &bytes.Buffer{}, Width: width, Height: height}
+	assert.NoError(t, d.bind(term.Default.BindTheme(t.Context(), d.theme, d.out, tt)))
 	assert.NoError(t, d.renderChrome())
 	return d, tt
 }
 
 // frame draws one frame of d on tt.
-func frame(t *testing.T, d *dropdown, tt *termIO) string {
+func frame(t *testing.T, d *dropdown, tt *term.IO) string {
 	t.Helper()
 	var buf bytes.Buffer
 	assert.NoError(t, d.render(tt, &buf))
@@ -368,7 +375,7 @@ func TestThemedDropdownFullHeightFrameKeepsLabelOnScreen(t *testing.T) {
 	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 60, "\x1b[B", "\x1b[B", "\x1b[A", "\x1b[B", "\r")
 	six := option.OpT(func(d *dropdown) error {
 		next := d.makeTermIO
-		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
+		d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 			tt, err := next(in, out)
 			tt.Height = 6
 			return tt, err

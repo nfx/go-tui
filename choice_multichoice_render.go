@@ -9,10 +9,11 @@ import (
 	"errors"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
 )
 
 // render builds a width-bounded frame from cached content and current selection state.
-func (m *multichoice) render(tio *termIO, buf *bytes.Buffer) error {
+func (m *multichoice) render(tio *term.IO, buf *bytes.Buffer) error {
 	return m.renderThemed(tio, buf)
 }
 
@@ -62,12 +63,12 @@ func (m *multichoice) bind(look render.Binding) error {
 }
 
 // bindRun prepares terminal presentation and resolves defaults once projected items are available.
-func (m *multichoice) bindRun(ctx context.Context, tio *termIO) error {
-	tio.refreshSize()
+func (m *multichoice) bindRun(ctx context.Context, tio *term.IO) error {
+	tio.RefreshSize()
 	if tio.Width < 1 || tio.Height < 3 {
 		return ErrNoSpace
 	}
-	err := m.bind(defaultIO.bindTheme(ctx, m.theme, m.out, tio))
+	err := m.bind(term.Default.BindTheme(ctx, m.theme, m.out, tio))
 	if err != nil {
 		return err
 	}
@@ -131,8 +132,8 @@ func (m *multichoice) themedRow(i int, active bool) (ansi.Text, error) {
 }
 
 // renderThemed fits themed rows to the terminal, ending each with a newline for frame clearing.
-func (m *multichoice) renderThemed(tio *termIO, buf *bytes.Buffer) error {
-	tio.refreshSize()
+func (m *multichoice) renderThemed(tio *term.IO, buf *bytes.Buffer) error {
+	tio.RefreshSize()
 	if tio.Width < 1 || tio.Height < 3 {
 		return ErrNoSpace
 	}
@@ -201,34 +202,34 @@ func (m *multichoice) themedAnswer() error {
 
 // writeMultichoiceFrame waits for managed output to reach the terminal, so
 // asynchronous writer failures are reported by the prompt that produced it.
-func (m *multichoice) writeMultichoiceFrame(tio *termIO, frame *bytes.Buffer) error {
-	if tio.vp != nil && tio.cio != nil {
-		if err := tio.vp.writeAndWait(frame.Bytes(), tio.Width); err != nil {
+func (m *multichoice) writeMultichoiceFrame(tio *term.IO, frame *bytes.Buffer) error {
+	if tio.Vp != nil && tio.Cio != nil {
+		if err := tio.Vp.WriteAndWait(frame.Bytes(), tio.Width); err != nil {
 			return err
 		}
-		return tio.cio.Flush()
+		return tio.Cio.Flush()
 	}
 	_, err := frame.WriteTo(tio)
 	return err
 }
 
 // clearMultichoiceFrame removes the prompt and waits for managed cleanup to reach the terminal.
-func (m *multichoice) clearMultichoiceFrame(tio *termIO, space int) error {
-	if tio.vp != nil {
-		if tio.cio != nil {
-			if err := tio.vp.writeAndWait(nil); err != nil {
+func (m *multichoice) clearMultichoiceFrame(tio *term.IO, space int) error {
+	if tio.Vp != nil {
+		if tio.Cio != nil {
+			if err := tio.Vp.WriteAndWait(nil); err != nil {
 				return err
 			}
-			return tio.cio.Flush()
+			return tio.Cio.Flush()
 		}
-		_, err := tio.vp.Write(nil)
+		_, err := tio.Vp.Write(nil)
 		return err
 	}
 	if space == 0 {
 		return nil
 	}
 	var frame bytes.Buffer
-	if err := tio.clear(space, &frame); err != nil {
+	if err := tio.Clear(space, &frame); err != nil {
 		return err
 	}
 	_, err := frame.WriteTo(tio)

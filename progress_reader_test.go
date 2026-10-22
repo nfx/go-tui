@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"log/slog"
@@ -47,7 +48,7 @@ func TestWrapReaderCloseCallsUnderlying(t *testing.T) {
 
 func TestWrapReaderCloseProgressError(t *testing.T) {
 	cr := &closeReader{}
-	p := &Progressbar{io: &termIO{}, cancel: func(error) {}, err: io.EOF}
+	p := &Progressbar{io: &term.IO{}, cancel: func(error) {}, err: io.EOF}
 	w := &wrapReader{r: cr, p: p}
 	err := w.Close()
 	if !errors.Is(err, io.EOF) {

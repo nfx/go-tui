@@ -3,7 +3,7 @@
 
 //go:build !unix && !windows
 
-package tui
+package term
 
 import (
 	"context"
@@ -18,6 +18,6 @@ func resizeNotify() <-chan struct{} {
 
 // Fallback for platforms without a readiness-polling implementation:
 // keep existing behavior without fd readiness polling.
-func (*termIO) waitForReadableInput(context.Context, io.Reader) error {
+func (*IO) waitForReadableInput(context.Context, io.Reader) error {
 	return nil
 }

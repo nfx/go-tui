@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package term
 
 import (
 	"fmt"
@@ -14,11 +14,11 @@ import (
 
 func TestOutputEnvEstimatesBackgroundAtStartup(t *testing.T) {
 	vars := map[string]string{"COLORFGBG": "0;15"}
-	e := readOutputEnv(func(k string) (string, bool) { v, ok := vars[k]; return v, ok })
+	e := ReadOutputEnv(func(k string) (string, bool) { v, ok := vars[k]; return v, ok })
 	assert.Equal(t, color.Background{Light: true}, e.bgHint)
 	vars["COLORFGBG"] = "15;0" // later changes are not seen
 	assert.Equal(t, color.Background{Light: true}, e.bgHint)
-	assert.Equal(t, color.Background{}, readOutputEnv(func(string) (string, bool) { return "", false }).bgHint)
+	assert.Equal(t, color.Background{}, ReadOutputEnv(func(string) (string, bool) { return "", false }).bgHint)
 }
 
 func TestOutputEnvDetectsUnicode(t *testing.T) {
@@ -44,14 +44,14 @@ func TestOutputEnvDetectsUnicode(t *testing.T) {
 		{"CI=false", true, false},
 	} {
 		t.Run(fmt.Sprintf("%s legacy=%v", tc.env, tc.legacy), func(t *testing.T) {
-			prev := legacyConsoles
-			legacyConsoles = tc.legacy
-			t.Cleanup(func() { legacyConsoles = prev })
+			prev := LegacyConsoles
+			LegacyConsoles = tc.legacy
+			t.Cleanup(func() { LegacyConsoles = prev })
 			vars := map[string]string{}
 			if name, v, ok := strings.Cut(tc.env, "="); ok {
 				vars[name] = v
 			}
-			e := readOutputEnv(func(k string) (string, bool) { v, ok := vars[k]; return v, ok })
+			e := ReadOutputEnv(func(k string) (string, bool) { v, ok := vars[k]; return v, ok })
 			assert.Equal(t, tc.unicode, e.hasUnicode())
 		})
 	}
