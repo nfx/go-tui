@@ -4,58 +4,16 @@
 package tui
 
 import (
-	"slices"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
 
-func TestRGBParse(t *testing.T) {
-	for _, tc := range []struct {
-		in   RGB
-		want sRGB
-	}{
-		{"#00ADD8", sRGB{0x00, 0xAD, 0xD8}},
-		{"#00add8", sRGB{0x00, 0xAD, 0xD8}},
-		{"#0AD", sRGB{0x00, 0xAA, 0xDD}},
-		{"#0ad", sRGB{0x00, 0xAA, 0xDD}},
-		{"#000000", sRGB{}},
-		{"#FFF", sRGB{255, 255, 255}},
-	} {
-		t.Run(string(tc.in), func(t *testing.T) {
-			got, err := tc.in.parse()
-			assert.NoError(t, err)
-			assert.Equal(t, tc.want, got)
-			assert.NoError(t, tc.in.Validate())
-		})
-	}
-}
-
-func TestRGBEmptyIsUnset(t *testing.T) {
-	got, err := RGB("").parse()
-	assert.NoError(t, err)
-	assert.Equal(t, sRGB{}, got)
-	assert.NoError(t, RGB("").Validate())
-}
-
-func TestRGBRejects(t *testing.T) {
-	for _, in := range []RGB{
-		"00ADD8", "#00ADD", "#00ADD8FF", "#0ADF", "#", "#GG0000", "#00ADDG",
-		" #00ADD8", "#00ADD8 ", "teal", "rgb(0,173,216)", "hsl(0,0%,0%)", "#00AD D8", "#ÄÄÄ",
-	} {
-		t.Run(string(in), func(t *testing.T) {
-			err := in.Validate()
-			assert.Error(t, err)
-			assert.Contains(t, err.Error(), `want "#RRGGBB" or "#RGB"`)
-		})
-	}
-}
-
 func TestSRGBHexIsCanonical(t *testing.T) {
-	for _, in := range []RGB{"#0ad", "#00aadd", "#00AADD"} {
-		c, err := in.parse()
+	for _, in := range []string{"#0ad", "#00aadd", "#00AADD"} {
+		c, err := parseHex(in)
 		assert.NoError(t, err)
-		assert.Equal(t, RGB("#00AADD"), c.hex())
+		assert.Equal(t, "#00AADD", c.hex())
 	}
 }
 
@@ -95,7 +53,7 @@ func TestNearestIndexGrayscaleAndCubeEdges(t *testing.T) {
 
 func TestBasicIndexKeepsGraysAndHuesApart(t *testing.T) {
 	for _, tc := range []struct {
-		in   RGB
+		in   string
 		want int
 	}{
 		{"#00ADD8", 6},  // the accent: teal, though gray is nearer
@@ -105,24 +63,9 @@ func TestBasicIndexKeepsGraysAndHuesApart(t *testing.T) {
 		{"#8B4513", 1},  // saddle brown
 		{"#FAFAFA", 15}, // near white
 	} {
-		c, err := tc.in.parse()
+		c, err := parseHex(tc.in)
 		assert.NoError(t, err)
 		assert.Equal(t, tc.want, c.basicIndex())
-	}
-}
-
-func TestSixteenColorRolesKeepTheirMeaning(t *testing.T) {
-	c, err := NewTheme().compile()
-	assert.NoError(t, err)
-	for _, bg := range []sRGB{{0, 0, 0}, {30, 30, 30}, {255, 255, 255}} {
-		r := c.bind(profileANSI16, background{rgb: bg, light: bg.isLight(), measured: true}).roles
-		for _, gray := range []text{r.foreground, r.muted, r.guide} {
-			assert.True(
-				t,
-				slices.Contains([]string{"\x1b[30m", "\x1b[37m", "\x1b[90m", "\x1b[97m", "\x1b[2m"}, string(gray)),
-			)
-		}
-		assert.True(t, slices.Contains([]string{"\x1b[36m", "\x1b[96m"}, string(r.accent)))
 	}
 }
 
@@ -159,4 +102,12 @@ func TestDirectSixteenBeatsCascading(t *testing.T) {
 	}
 	// At least one color where cascading picks a worse entry.
 	assert.True(t, differs)
+}
+
+func TestParseHexRejectsMalformed(t *testing.T) {
+	for _, in := range []string{"", "00ADD8", "#00ADD", "#GG0000", "#ÄÄÄ"} {
+		_, err := parseHex(in)
+		assert.Error(t, err)
+	}
+	assert.Equal(t, sRGB{0, 0xAA, 0xDD}, mustHex("#0aD"))
 }

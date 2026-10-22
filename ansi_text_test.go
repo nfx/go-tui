@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/fuzzseeds"
 )
 
 func TestTextWrite(t *testing.T) {
@@ -305,14 +306,8 @@ func TestWidthEmoji(t *testing.T) {
 }
 
 // fuzz seeds that cover every kind of segment.
-var fuzzSeeds = []string{
-	"", "plain", "\x1b[31mred\x1b[0m text", "\u754c\u9762 wide", "e\u0301 combining", "👨\u200d👩\u200d👧 family",
-	"🇺🇦 flag", "❤\ufe0f", "1\ufe0f\u20e3", "\x1b]8;;http://a\x07link\x1b]8;;\x07", "\x1b]0;title\x1b\\",
-	"\x1b[", "\x1b", "\xff\xfe", "\xe4\xb8", "a\tb\rc\nd", "\x1b(B", "\u1100\u1161\u11a8", "\x9b31m",
-}
-
 func FuzzScan(f *testing.F) {
-	for _, seed := range fuzzSeeds {
+	for _, seed := range fuzzseeds.Text {
 		f.Add([]byte(seed))
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -350,7 +345,7 @@ func FuzzScan(f *testing.F) {
 }
 
 func FuzzTruncateVisible(f *testing.F) {
-	for _, seed := range fuzzSeeds {
+	for _, seed := range fuzzseeds.Text {
 		f.Add([]byte(seed), uint8(4), false)
 		f.Add([]byte(seed), uint8(1), true)
 		f.Add([]byte(seed), uint8(20), false)
@@ -374,33 +369,6 @@ func FuzzTruncateVisible(f *testing.F) {
 		}
 		if bytes.ContainsAny(out, "\r") || (!newline && bytes.Contains(out[:max(len(out)-1, 0)], []byte{'\n'})) {
 			t.Fatalf("line break in %q from %q", out, data)
-		}
-	})
-}
-
-func FuzzViewportWrap(f *testing.F) {
-	for _, seed := range fuzzSeeds {
-		f.Add([]byte(seed), []byte("tail"), uint8(5))
-		f.Add([]byte(seed), []byte("\x1b[0m\u0301"), uint8(2))
-	}
-	f.Fuzz(func(t *testing.T, first, second []byte, cols uint8) {
-		v := &viewport{width: int(cols%40) + 2, height: 100}
-		for _, chunk := range [][]byte{first, second} {
-			v.appendToLinebuffer(v.joinPartial(chunk))
-		}
-		for _, line := range v.lines {
-			if !bytes.HasSuffix(line, []byte{'\n'}) {
-				t.Fatalf("line %q has no line break", line)
-			}
-			body := text(line[:len(line)-1])
-			if w := body.width(); w > v.width && !oneCluster(body) {
-				t.Fatalf("width %d exceeds %d: %q", w, v.width, body)
-			}
-			for seg := range body.segments() {
-				if seg.isIncomplete || seg.isBroken {
-					t.Fatalf("split sequence %q in %q", seg.text, body)
-				}
-			}
 		}
 	})
 }

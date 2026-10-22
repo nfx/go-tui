@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/fuzzseeds"
 )
 
 func TestViewport(t *testing.T) {
@@ -366,4 +367,43 @@ func TestCursorRowsUp(t *testing.T) {
 	assert.Equal(t, 0, new(viewport).cursorRowsUp([][]byte{[]byte("plain\n")}))
 	assert.Equal(t, 1, new(viewport).cursorRowsUp([][]byte{[]byte("msg\x1b[1A\x1b[12G\n")}))
 	assert.Equal(t, 2, new(viewport).cursorRowsUp([][]byte{[]byte("msg\x1b[2A")}))
+}
+
+func FuzzViewportWrap(f *testing.F) {
+	for _, seed := range fuzzseeds.Text {
+		f.Add([]byte(seed), []byte("tail"), uint8(5))
+		f.Add([]byte(seed), []byte("\x1b[0m\u0301"), uint8(2))
+	}
+	f.Fuzz(func(t *testing.T, first, second []byte, cols uint8) {
+		v := &viewport{width: int(cols%40) + 2, height: 100}
+		for _, chunk := range [][]byte{first, second} {
+			v.appendToLinebuffer(v.joinPartial(chunk))
+		}
+		for _, line := range v.lines {
+			if !bytes.HasSuffix(line, []byte{'\n'}) {
+				t.Fatalf("line %q has no line break", line)
+			}
+			body := text(line[:len(line)-1])
+			if w := body.width(); w > v.width && !oneCluster(body) {
+				t.Fatalf("width %d exceeds %d: %q", w, v.width, body)
+			}
+			for seg := range body.segments() {
+				if seg.isIncomplete || seg.isBroken {
+					t.Fatalf("split sequence %q in %q", seg.text, body)
+				}
+			}
+		}
+	})
+}
+
+// oneCluster reports whether line holds a single visible segment,
+// which is wider than the viewport and cannot be wrapped.
+func oneCluster(line text) bool {
+	visible := 0
+	for seg := range line.segments() {
+		if seg.width > 0 {
+			visible++
+		}
+	}
+	return visible <= 1
 }

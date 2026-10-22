@@ -76,3 +76,44 @@ func TestThemeRoundTripKeepsTemplateSources(t *testing.T) {
 		t.Fatal("inherited slot became explicit")
 	}
 }
+
+func TestRGBParse(t *testing.T) {
+	for _, tc := range []struct {
+		in   RGB
+		want sRGB
+	}{
+		{"#00ADD8", sRGB{0x00, 0xAD, 0xD8}},
+		{"#00add8", sRGB{0x00, 0xAD, 0xD8}},
+		{"#0AD", sRGB{0x00, 0xAA, 0xDD}},
+		{"#0ad", sRGB{0x00, 0xAA, 0xDD}},
+		{"#000000", sRGB{}},
+		{"#FFF", sRGB{255, 255, 255}},
+	} {
+		t.Run(string(tc.in), func(t *testing.T) {
+			got, err := tc.in.parse()
+			assert.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+			assert.NoError(t, tc.in.Validate())
+		})
+	}
+}
+
+func TestRGBEmptyIsUnset(t *testing.T) {
+	got, err := RGB("").parse()
+	assert.NoError(t, err)
+	assert.Equal(t, sRGB{}, got)
+	assert.NoError(t, RGB("").Validate())
+}
+
+func TestRGBRejects(t *testing.T) {
+	for _, in := range []RGB{
+		"00ADD8", "#00ADD", "#00ADD8FF", "#0ADF", "#", "#GG0000", "#00ADDG",
+		" #00ADD8", "#00ADD8 ", "teal", "rgb(0,173,216)", "hsl(0,0%,0%)", "#00AD D8", "#ÄÄÄ",
+	} {
+		t.Run(string(in), func(t *testing.T) {
+			err := in.Validate()
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), `want "#RRGGBB" or "#RGB"`)
+		})
+	}
+}

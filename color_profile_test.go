@@ -72,7 +72,7 @@ func TestShownByProfile(t *testing.T) {
 
 func TestReadableRechecksQuantizedContrast(t *testing.T) {
 	white := sRGB{255, 255, 255}
-	seed := RGB("#00ADD8").must()
+	seed := mustHex("#00ADD8")
 	for _, p := range []colorProfile{profileANSI16, profileANSI256, profileTrueColor} {
 		got, ok := p.readable(seed, white, contrastText)
 		if ok {
@@ -92,7 +92,7 @@ func TestReadableGivesUp(t *testing.T) {
 }
 
 func TestDistinctCollapsesByEncoding(t *testing.T) {
-	shades, err := RGB("#2D9B55").must().ramp(sRGB{0x12, 0x12, 0x12}, 5)
+	shades, err := mustHex("#2D9B55").ramp(sRGB{0x12, 0x12, 0x12}, 5)
 	assert.NoError(t, err)
 	assert.Equal(t, 5, len(profileTrueColor.distinct(shades)))
 	assert.True(t, len(profileANSI16.distinct(shades)) < 5)

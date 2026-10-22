@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/fuzzseeds"
 )
 
 func (p *input) pressKey(tio *termIO) (string, error) {
@@ -236,7 +237,7 @@ func TestInputBackspaceByCluster(t *testing.T) {
 }
 
 func FuzzInputWindow(f *testing.F) {
-	for _, seed := range fuzzSeeds {
+	for _, seed := range fuzzseeds.Text {
 		f.Add(seed, uint8(3), uint8(5))
 		f.Add(seed, uint8(0), uint8(2))
 	}

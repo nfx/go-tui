@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
@@ -240,4 +241,19 @@ func TestDivergingScale(t *testing.T) {
 	assert.NoError(t, err)
 	mid := dark.bind(profileTrueColor, background{}).diverging()[2]
 	assert.Equal(t, 0, len(mid))
+}
+
+func TestSixteenColorRolesKeepTheirMeaning(t *testing.T) {
+	c, err := NewTheme().compile()
+	assert.NoError(t, err)
+	for _, bg := range []sRGB{{0, 0, 0}, {30, 30, 30}, {255, 255, 255}} {
+		r := c.bind(profileANSI16, background{rgb: bg, light: bg.isLight(), measured: true}).roles
+		for _, gray := range []text{r.foreground, r.muted, r.guide} {
+			assert.True(
+				t,
+				slices.Contains([]string{"\x1b[30m", "\x1b[37m", "\x1b[90m", "\x1b[97m", "\x1b[2m"}, string(gray)),
+			)
+		}
+		assert.True(t, slices.Contains([]string{"\x1b[36m", "\x1b[96m"}, string(r.accent)))
+	}
 }

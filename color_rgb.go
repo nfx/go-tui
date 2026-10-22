@@ -14,8 +14,48 @@ import (
 type sRGB [3]uint8
 
 // hex returns the canonical uppercase "#RRGGBB" form.
-func (c sRGB) hex() RGB {
-	return RGB(fmt.Sprintf("#%02X%02X%02X", c[0], c[1], c[2]))
+func (c sRGB) hex() string {
+	return fmt.Sprintf("#%02X%02X%02X", c[0], c[1], c[2])
+}
+
+// parseHex parses "#RRGGBB" or "#RGB", with case-insensitive digits.
+func parseHex(s string) (rgb sRGB, err error) {
+	bad := fmt.Errorf("%q: want \"#RRGGBB\" or \"#RGB\"", s)
+	if s == "" || s[0] != '#' {
+		return rgb, bad
+	}
+	digits := s[1:]
+	switch len(digits) {
+	case 3:
+		for i := range 3 {
+			v, ok := hexDigit(digits[i])
+			if !ok {
+				return rgb, bad
+			}
+			rgb[i] = v<<4 | v
+		}
+	case 6:
+		for i := range 3 {
+			hi, ok1 := hexDigit(digits[2*i])
+			lo, ok2 := hexDigit(digits[2*i+1])
+			if !ok1 || !ok2 {
+				return rgb, bad
+			}
+			rgb[i] = hi<<4 | lo
+		}
+	default:
+		return rgb, bad
+	}
+	return rgb, nil
+}
+
+// mustHex parses a constant color and panics when it is malformed.
+func mustHex(s string) sRGB {
+	rgb, err := parseHex(s)
+	if err != nil {
+		panic(err)
+	}
+	return rgb
 }
 
 // base is the extended-color SGR parameter: 38 for foreground, 48 for background.
@@ -90,4 +130,16 @@ func (c sRGB) ansi16Escape(background bool) string {
 		code = 90 + i - 8
 	}
 	return "\x1b[" + strconv.Itoa(code) + "m"
+}
+
+func hexDigit(b byte) (uint8, bool) {
+	switch {
+	case b >= '0' && b <= '9':
+		return b - '0', true
+	case b >= 'a' && b <= 'f':
+		return b - 'a' + 10, true
+	case b >= 'A' && b <= 'F':
+		return b - 'A' + 10, true
+	}
+	return 0, false
 }

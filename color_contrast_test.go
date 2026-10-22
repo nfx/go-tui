@@ -62,7 +62,7 @@ func TestGamutMappingKeepsHueAndFits(t *testing.T) {
 }
 
 func TestSeedKeptWhenReadable(t *testing.T) {
-	accent := RGB("#00ADD8").must()
+	accent := mustHex("#00ADD8")
 	// Bright cyan is readable on a dark background: rendered literally.
 	assert.Equal(t, accent, accent.atLeast(sRGB{0x12, 0x12, 0x12}, contrastText))
 	// But not on white.
@@ -74,24 +74,24 @@ func TestSeedKeptWhenReadable(t *testing.T) {
 
 func TestAtLeastIsSmallestStep(t *testing.T) {
 	white := sRGB{255, 255, 255}
-	got := RGB("#00ADD8").must().atLeast(white, contrastText)
+	got := mustHex("#00ADD8").atLeast(white, contrastText)
 	assert.True(t, got.contrast(white) < contrastText+0.15)
 }
 
 func TestAtLeastPicksNearerDirection(t *testing.T) {
 	// on a mid-gray background, a dark seed is closer to passing by darkening
-	seed, bg := RGB("#303030").must(), RGB("#606060").must()
+	seed, bg := mustHex("#303030"), mustHex("#606060")
 	got := seed.atLeast(bg, contrastMark)
 	assert.True(t, got.contrast(bg) >= contrastMark)
 	assert.True(t, got.luminance() < bg.luminance())
 	assert.True(t, math.Abs(got.oklab().L-seed.oklab().L) < 0.2)
 	// and a light seed is closer by lightening
-	light := RGB("#C0C0C0").must().atLeast(bg, contrastMark)
+	light := mustHex("#C0C0C0").atLeast(bg, contrastMark)
 	assert.True(t, light.luminance() > bg.luminance())
 }
 
 func TestAtLeastKeepsHue(t *testing.T) {
-	seed := RGB("#C83741").must()
+	seed := mustHex("#C83741")
 	got := seed.atLeast(sRGB{0, 0, 0}, 9)
 	d := got.oklab().lch().H - seed.oklab().lch().H
 	assert.True(t, d < 0.15 && d > -0.15)
@@ -106,7 +106,7 @@ func TestAtLeastUnreachableReturnsExtreme(t *testing.T) {
 
 func TestRampAscendingContrastSameHue(t *testing.T) {
 	for _, bg := range []sRGB{{255, 255, 255}, {0x12, 0x12, 0x12}} {
-		shades, err := RGB("#2D9B55").must().ramp(bg, 5)
+		shades, err := mustHex("#2D9B55").ramp(bg, 5)
 		assert.NoError(t, err)
 		assert.Equal(t, 5, len(shades))
 		prev := 0.0
@@ -114,7 +114,7 @@ func TestRampAscendingContrastSameHue(t *testing.T) {
 			c := s.contrast(bg)
 			assert.True(t, c > prev)
 			prev = c
-			d := s.oklab().lch().H - RGB("#2D9B55").must().oklab().lch().H
+			d := s.oklab().lch().H - mustHex("#2D9B55").oklab().lch().H
 			assert.True(t, d < 0.2 && d > -0.2)
 		}
 	}
@@ -134,7 +134,7 @@ func TestRampBounds(t *testing.T) {
 }
 
 func TestQuieterKeepsTarget(t *testing.T) {
-	bg, fg := sRGB{255, 255, 255}, RGB("#232830").must()
+	bg, fg := sRGB{255, 255, 255}, mustHex("#232830")
 	m := fg.quieter(bg, contrastText)
 	assert.True(t, m.contrast(bg) >= contrastText)
 	assert.True(t, m.contrast(bg) < contrastText+0.2)
