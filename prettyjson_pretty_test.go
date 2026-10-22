@@ -16,27 +16,6 @@ import (
 	"github.com/nfx/go-tui/internal/assert"
 )
 
-func TestJSONIndentFormats(t *testing.T) {
-	type data struct {
-		Name string `json:"name"`
-		Age  int    `json:"age"`
-	}
-	buf, err := jsonIndent(data{Name: "Alice", Age: 30}, jsonStyle)
-	if err != nil {
-		t.Fatalf("jsonIndent failed: %v", err)
-	}
-	if !bytes.Contains(buf.Bytes(), []byte(`"name": "Alice"`)) {
-		t.Fatalf("expected name field")
-	}
-}
-
-func TestJSONIndentInvalidJSON(t *testing.T) {
-	_, err := jsonIndent("{", jsonStyle)
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
 func TestPrettyJSONColor(t *testing.T) {
 	withEnv(t, "FORCE_COLOR=2")
 
@@ -202,29 +181,6 @@ func TestPrettyJSONRolesFollowPalette(t *testing.T) {
 	assert.Contains(t, out, bold+"{")
 }
 
-func TestJSONStyleDerivesFromResolvedRoles(t *testing.T) {
-	look := func(p Palette) jsonLook {
-		th := NewTheme()
-		th.Palette = p
-		return newJSONLook(jsonBound(t, th, profileTrueColor, measuredBG(sRGB{0x12, 0x12, 0x12})))
-	}
-	base := look(Palette{})
-	accent := look(Palette{Accent: "#2D9B55"})
-	assert.Equal(t, 5, len(base.keys))
-	assert.True(t, !bytes.Equal(base.keys[0], accent.keys[0]))
-	assert.Equal(t, string(base.value), string(accent.value))
-	assert.Equal(t, string(base.punct), string(accent.punct))
-
-	fg := look(Palette{Dark: PaletteVariant{Foreground: "#FFE0A0"}})
-	assert.True(t, !bytes.Equal(base.value, fg.value))
-	assert.Equal(t, string(base.keys[0]), string(fg.keys[0]))
-	assert.True(t, !bytes.Equal(base.punct, fg.punct)) // muted derives from foreground
-
-	muted := look(Palette{Dark: PaletteVariant{Muted: "#888888"}})
-	assert.True(t, !bytes.Equal(base.punct, muted.punct))
-	assert.Equal(t, string(base.value), string(muted.value))
-}
-
 // displayed decodes the foreground that a destination of profile p shows for sgr.
 func displayed(t *testing.T, p colorProfile, sgr text) sRGB {
 	t.Helper()
@@ -245,37 +201,6 @@ func displayed(t *testing.T, p colorProfile, sgr text) sRGB {
 			return ansiPalette()[n-90+8]
 		}
 		return ansiPalette()[n-30]
-	}
-}
-
-func TestJSONKeyShadesDimMonotonicallyOnEveryProfile(t *testing.T) {
-	pal := legacyJSONPalette()
-	for _, p := range []colorProfile{profileANSI16, profileANSI256, profileTrueColor} {
-		keys := newJSONLook(presetJSONTheme().bind(p, background{})).keys
-		assert.True(t, len(keys) > 0)
-		prev := 22.0
-		for _, k := range keys {
-			c := displayed(t, p, k).contrast(pal.Background)
-			assert.True(t, c < prev)          // strictly dimmer, so also distinct
-			assert.True(t, c >= contrastText) // keys are words
-			prev = c
-		}
-	}
-	// the truecolor ramp has every level
-	assert.Equal(t, jsonLevels, len(testJSONLook().keys))
-}
-
-func TestJSONKeysAcrossLightAndDarkBackgrounds(t *testing.T) {
-	for _, bg := range []sRGB{{0, 0, 0}, {0x12, 0x12, 0x12}, {0x77, 0x77, 0x77}, {0xEE, 0xEE, 0xEE}, {255, 255, 255}} {
-		for _, p := range []colorProfile{profileANSI16, profileANSI256, profileTrueColor} {
-			prev := 22.0
-			for _, k := range newJSONLook(jsonBound(t, NewTheme(), p, measuredBG(bg))).keys {
-				c := displayed(t, p, k).contrast(bg)
-				assert.True(t, c < prev)
-				assert.True(t, c >= contrastText)
-				prev = c
-			}
-		}
 	}
 }
 
@@ -325,62 +250,6 @@ func TestPrettyJSONMalformedWritesNothing(t *testing.T) {
 	var out bytes.Buffer
 	assert.Error(t, PrettyJSON(&out, `{"a":`))
 	assert.Equal(t, 0, out.Len())
-}
-
-func TestJSONStyleWithoutColor(t *testing.T) {
-	st := newJSONLook(presetJSONTheme().bind(profileAttrs, background{}))
-	assert.Equal(t, text(bold), st.punct)
-	assert.Equal(t, 0, len(st.keys))
-	assert.Equal(t, 0, len(st.value))
-}
-
-func TestJSONStyleWithKnownBackgroundColorsNeutrals(t *testing.T) {
-	look := jsonBound(t, NewTheme(), profileTrueColor, measuredBG(sRGB{0xFF, 0xFF, 0xFF}))
-	st := newJSONLook(look)
-	assert.True(t, len(look.roles.foreground) > 0)
-	assert.Equal(t, string(look.roles.foreground), string(st.value))
-	assert.Equal(t, string(look.roles.muted), string(st.punct))
-}
-
-func TestJSONStyleValidation(t *testing.T) {
-	c, err := Theme{}.compile()
-	assert.NoError(t, err)
-	assert.Equal(t, jsonStyle, c.source.JSON)
-	for _, style := range []JSONStyle{
-		{Indent: "\t"},
-		{Indent: " \t "},
-		{Indent: strings.Repeat(" ", maxJSONIndent)},
-		{Compact: true},
-	} {
-		th := NewTheme()
-		th.JSON = style
-		c, err := th.compile()
-		assert.NoError(t, err)
-		assert.Equal(t, style.Compact, c.source.JSON.Compact)
-		if style.Indent != "" {
-			assert.Equal(t, style.Indent, c.source.JSON.Indent)
-		} else {
-			assert.Equal(t, jsonStyle.Indent, c.source.JSON.Indent)
-		}
-	}
-	for _, style := range []JSONStyle{
-		{Indent: "x"},
-		{Indent: " \n"},
-		{Indent: " "},
-		{Indent: "//"},
-		{Indent: strings.Repeat(" ", maxJSONIndent+1)},
-		{Indent: "-", Compact: true}, // validated even when unused
-	} {
-		th := NewTheme()
-		th.JSON = style
-		_, err := th.compile()
-		assert.Error(t, err)
-		assert.Contains(
-			t,
-			err.Error(),
-			fmt.Sprintf("theme.JSON.Indent: %q: want at most 16 spaces or tabs", style.Indent),
-		)
-	}
 }
 
 // themedJSON renders src through th, installed with the theme gate on, to a

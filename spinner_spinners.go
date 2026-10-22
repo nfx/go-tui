@@ -6,91 +6,13 @@ package tui
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"sync"
-	"text/template"
 	"time"
 
 	"log/slog"
 )
-
-const spinnerInterval = 100 * time.Millisecond
-
-// SpinnerStyle is the timing of spinners. The frames are [Symbols.Spinner];
-// the interval belongs to the whole [Spinners] group.
-type SpinnerStyle struct {
-	// Interval is the animation step. Zero takes 100ms.
-	Interval time.Duration
-}
-
-// normalize fills the preset and validates the interval.
-func (s SpinnerStyle) normalize() (SpinnerStyle, error) {
-	switch {
-	case s.Interval < 0:
-		return s, fmt.Errorf("theme.Spinner.Interval: %v: must not be negative", s.Interval)
-	case s.Interval == 0:
-		s.Interval = spinnerInterval
-	}
-	return s, nil
-}
-
-var longRunningNewSpinners = NewSpinners
-
-// LongRunning shows a spinner with the provided message while cb executes.
-func LongRunning(ctx context.Context, message string, cb func(context.Context) error) error {
-	spinners, err := longRunningNewSpinners(ctx)
-	if err != nil {
-		return cb(ctx)
-	}
-	defer spinners.Close()
-	spinner, err := spinners.Add(ctx)
-	if err != nil {
-		return cb(ctx)
-	}
-	spinner.Update(message)
-	return cb(ctx)
-}
-
-type spinnerEvent interface {
-	isSpinnerOutgoing()
-}
-
-type spinnerEventMarker struct{}
-
-func (spinnerEventMarker) isSpinnerOutgoing() {}
-
-type spinnerGroupInit struct {
-	spinnerEventMarker
-}
-
-type spinnerAdded struct {
-	spinnerEventMarker
-	Name  string
-	Index int
-}
-
-type spinnerUpdated struct {
-	spinnerEventMarker
-	Index   int
-	Message string
-}
-
-type spinnerFailed struct {
-	spinnerEventMarker
-	Index int
-	Error string
-}
-
-type spinnerRemoved struct {
-	spinnerEventMarker
-	Index int
-}
-
-type spinnerGroupClosed struct {
-	spinnerEventMarker
-}
 
 type Spinners struct {
 	config
@@ -138,42 +60,6 @@ func newSpinners(ctx context.Context) *Spinners {
 	}
 }
 
-func NewSpinners(ctx context.Context, opt ...opt) (*Spinners, error) {
-	s := newSpinners(ctx)
-	started := false
-	defer func() {
-		if !started {
-			s.cancel(nil)
-			s.ticker.Stop()
-		}
-	}()
-	err := opts(opt).Apply(s)
-	if err != nil {
-		return nil, err
-	}
-	// output only: no lease, so no probe
-	look := defaultIO.bindTheme(ctx, s.theme, s.out, nil)
-	s.rows, err = s.theme.templates.Spinner.bind(look.funcs)
-	if err != nil {
-		return nil, err
-	}
-	s.io, err = s.makeTermIO(s.in, s.out)
-	if err != nil {
-		if !errors.Is(err, ErrNoTTY) {
-			return nil, err
-		}
-		s.io = nil
-		s.ticker.Stop()
-		s.ticks = nil // stage changes need no animation ticks
-	} else if err = s.io.restoreMode(); err != nil {
-		return nil, fmt.Errorf("restore: %w", err)
-	}
-	s.emit(spinnerGroupInit{})
-	started = true
-	go s.start(s.ctx) //nolint:contextcheck // s.ctx derives from ctx and is canceled by Close
-	return s, nil
-}
-
 func (s *Spinners) Close() {
 	if s == nil {
 		return // NewSpinners failed
@@ -190,23 +76,6 @@ func (s *Spinners) MustAddBackground(opt ...opt) *Spinner {
 		panic(err)
 	}
 	return spinner
-}
-
-// WithPrefixf sets the text shown next to a spinner added with [Spinners.Add].
-func WithPrefixf(prefix string, args ...any) opt {
-	// TODO: decide if we expose text/template or fmt. This is a bit of a mess
-	return opT(func(cs *createSpinner) error {
-		cs.prefix = fmt.Sprintf(prefix, args...)
-		return nil
-	})
-}
-
-// WithKeep will keep the spinner displayed after it's done.
-func WithKeep() opt {
-	return opT(func(cs *createSpinner) error {
-		cs.keep = true
-		return nil
-	})
 }
 
 // Add creates a spinner that animates the frames of the theme of the group.
@@ -596,78 +465,4 @@ func (s *Spinners) logStage(level slog.Level, message string, offset int, status
 		"prefix", s.state[offset].Prefix.String(),
 		"status", status,
 	)
-}
-
-type spinnerState struct {
-	cancel  context.CancelFunc
-	tick    int
-	active  bool
-	keep    bool
-	frames  []string
-	Prefix  text
-	Message text
-	Failed  bool
-	Done    bool
-}
-
-func (ss *spinnerState) next() {
-	ss.tick = (ss.tick + 1) % len(ss.frames)
-}
-
-// spinnerView is the data of the spinner slots. Prefix and Message are
-// caller text on one line; State is running, stopped or failed, as in the
-// non-terminal logs.
-type spinnerView struct {
-	Frame   string
-	Prefix  string
-	Message string
-	State   string
-}
-
-// spinnerSlots are the spinner slots bound to the destination of a group.
-type spinnerSlots struct{ running, stopped, failed boundSlot }
-
-// bind attaches destination helpers to every spinner slot.
-func (t spinnerTemplates) bind(funcs template.FuncMap) (s spinnerSlots, _ error) {
-	var errs [3]error
-	s.running, errs[0] = t.Running.bind(funcs)
-	s.stopped, errs[1] = t.Stopped.bind(funcs)
-	s.failed, errs[2] = t.Failed.bind(funcs)
-	return s, errors.Join(errs[:]...)
-}
-
-type Spinner struct {
-	parent *Spinners
-	offset int
-}
-
-// Close will stop the spinner and remove it from display if it's not kept.
-func (s *Spinner) Close() error { // TODO: what about s.cancel?..
-	return s.parent.stopOffset(s.offset)
-}
-
-// Update will update the spinner with a new message.
-func (s *Spinner) Update(message string) {
-	s.parent.updateOffset(s.offset, message, nil)
-}
-
-// Updatef will update the spinner with a formatted message.
-func (s *Spinner) Updatef(format string, args ...any) {
-	s.parent.updateOffset(s.offset, fmt.Sprintf(format, args...), nil)
-}
-
-// Fail will stop the spinner and display an error message.
-func (s *Spinner) Fail(err error) {
-	s.parent.updateOffset(s.offset, "", err)
-}
-
-//nolint:errcheck // TODO: handle error
-func (s *Spinner) monitor(ctx context.Context) {
-	defer s.Close() // we send the stop to the parent with the offset
-	select {        // whether parent or self context is done
-	case <-s.parent.ctx.Done():
-		return // all spinners are done
-	case <-ctx.Done():
-		return // what created spinner is done
-	}
 }

@@ -5,11 +5,6 @@ package tui
 
 import (
 	"bytes"
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"strings"
 )
 
 type jsonState int
@@ -92,85 +87,6 @@ func jsonDimming(p colorProfile, top, bg sRGB) jsonShades {
 		out = append(out, p.fg(c))
 	}
 	return out
-}
-
-// JSONStyle is the layout of [PrettyJSON].
-type JSONStyle struct {
-	// Indent is one level of indentation: at most [maxJSONIndent] spaces or
-	// tabs, so that the output stays valid JSON. Empty takes two spaces.
-	Indent string
-	// Compact prints the JSON on one line, without insignificant
-	// whitespace, ignoring Indent.
-	Compact bool
-}
-
-// jsonStyle is the theme preset: the legacy two-space indentation.
-var jsonStyle = JSONStyle{Indent: "  "}
-
-// maxJSONIndent bounds the bytes of one indentation level.
-const maxJSONIndent = 16
-
-// normalize fills the preset and rejects indentation that is not whitespace.
-func (s JSONStyle) normalize() (JSONStyle, error) {
-	if s.Indent == "" {
-		s.Indent = jsonStyle.Indent
-	}
-	if len(s.Indent) > maxJSONIndent || strings.Trim(s.Indent, " \t") != "" {
-		return s, fmt.Errorf("theme.JSON.Indent: %q: want at most %d spaces or tabs", s.Indent, maxJSONIndent)
-	}
-	return s, nil
-}
-
-// PrettyJSON pretty-prints JSON data, with two-space indentation unless the
-// theme sets another [JSONStyle]. When the destination writer accepts color,
-// keys use the accent color, dimmed with nesting depth, values the
-// foreground and brackets a muted shade. Color follows the writer and the
-// NO_COLOR, FORCE_COLOR and CLICOLOR_FORCE conventions, never os.Stdout, and
-// the terminal is never queried. Without color the output is plain JSON.
-// Malformed input returns an error before anything is written.
-func PrettyJSON(w io.Writer, src any) error {
-	theme := defaultIO.currentTheme()
-	out, err := jsonIndent(src, theme.source.JSON)
-	if err != nil {
-		return err
-	}
-	if p := defaultIO.profileFor(w); p.attrs() {
-		style := newJSONLook(defaultIO.bindTheme(context.Background(), theme, w, nil))
-		colored := bytes.NewBuffer(make([]byte, 0, 2*out.Len()))
-		style.recolor(out, colored)
-		out = colored
-	}
-	out.WriteByte('\n')
-	_, err = out.WriteTo(w)
-	return err
-}
-
-// jsonIndent validates src and lays it out in style, without a trailing newline.
-func jsonIndent(src any, style JSONStyle) (*bytes.Buffer, error) {
-	identBuf := bytes.NewBuffer(nil)
-	var toIndent []byte
-	var err error
-	switch src := src.(type) {
-	case string:
-		toIndent = []byte(src)
-	case []byte:
-		toIndent = src
-	default:
-		toIndent, err = json.Marshal(src)
-		if err != nil {
-			return nil, fmt.Errorf("marshal: %w", err)
-		}
-	}
-	// standard library already indents JSON data, so we're only coloring things here.
-	if style.Compact {
-		err = json.Compact(identBuf, toIndent)
-	} else {
-		err = json.Indent(identBuf, toIndent, "", style.Indent)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("indent: %w", err)
-	}
-	return identBuf, nil
 }
 
 func (s *jsonLook) recolor(identBuf, w *bytes.Buffer) {
