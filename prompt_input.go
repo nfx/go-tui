@@ -9,13 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
 	"io"
 	"unicode/utf8"
 )
 
 type input struct {
-	Config
+	option.Config
 
 	Label    string
 	Hide     bool
@@ -34,7 +35,7 @@ type input struct {
 	// keys are the bindings beyond editing that the hint row describes.
 	keys []render.Hint
 
-	def DefaultValue
+	def option.DefaultValue
 	// rules validate the confirmed text in order; the first error rejects it.
 	rules []func(context.Context, string) error
 	// rejection is the message of the last rejected confirmation.
@@ -62,7 +63,7 @@ func (i *input) SetHide() {
 
 // implement [withPrompt] interface.
 func (i *input) SetDefault(d any) {
-	i.def = DefaultValue{set: true, raw: d}
+	i.def = option.DefaultValue{Set: true, Raw: d}
 	i.typed = fmt.Sprint(d)
 	i.cursor = utf8.RuneCountInString(i.typed)
 }
@@ -70,21 +71,21 @@ func (i *input) SetDefault(d any) {
 func newInput(ctx context.Context, label string) *input {
 	in, out := defaultStreams(ctx)
 	return &input{
-		ctx:        ctx,
-		out:        out,
-		in:         in,
+		Ctx:        ctx,
+		Out:        out,
+		In:         in,
 		Label:      label,
 		theme:      defaultIO.currentTheme(),
 		makeTermIO: makePromptIO,
 	}
 }
 
-func (i *input) read(ctx context.Context, option ...Opt) (string, error) {
-	err := Opts(option).Apply(i)
+func (i *input) read(ctx context.Context, o ...option.Opt) (string, error) {
+	err := option.Opts(o).Apply(i)
 	if err != nil {
 		return "", err
 	}
-	if !outputIsTerminal(i.out) {
+	if !outputIsTerminal(i.Out) {
 		return i.answerFromDefault(ctx)
 	}
 	out, err := i.run(ctx)
@@ -105,8 +106,8 @@ func (i *input) answerFromDefault(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !i.def.set {
-		return "", NoDefault(i.Label)
+	if !i.def.Set {
+		return "", option.NoDefault(i.Label)
 	}
 	for _, rule := range i.rules {
 		err = rule(ctx, i.typed)
@@ -115,7 +116,7 @@ func (i *input) answerFromDefault(ctx context.Context) (string, error) {
 		}
 		if err != nil {
 			// the text itself stays out of the error, it may be a secret
-			return "", BadDefault("is rejected: %w", err)
+			return "", option.BadDefault("is rejected: %w", err)
 		}
 	}
 	return i.typed, nil
@@ -130,7 +131,7 @@ func (i *input) showAnswer() error {
 	if err != nil {
 		return fmt.Errorf("answer: %w", err)
 	}
-	_, err = buf.WriteTo(i.out)
+	_, err = buf.WriteTo(i.Out)
 	if err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
@@ -139,7 +140,7 @@ func (i *input) showAnswer() error {
 
 // run renders the prompt and stops its event goroutine before restoring the terminal.
 func (p *input) run(ctx context.Context) (string, error) {
-	io, err := p.makeTermIO(p.in, p.out)
+	io, err := p.makeTermIO(p.In, p.Out)
 	if err != nil {
 		return "", err
 	}
@@ -202,12 +203,12 @@ func (p *input) handleNextEvent(
 	keys <-chan keyEvent,
 ) (done, consumed bool, err error) {
 	select {
-	case <-p.ctx.Done():
-		return false, false, errors.Join(p.ctx.Err(), p.clear(tio))
+	case <-p.Ctx.Done():
+		return false, false, errors.Join(p.Ctx.Err(), p.clear(tio))
 	case ev, ok := <-keys:
-		if !ok && p.ctx.Err() != nil {
+		if !ok && p.Ctx.Err() != nil {
 			// the reader closed keys because of the cancellation
-			return false, false, errors.Join(p.ctx.Err(), p.clear(tio))
+			return false, false, errors.Join(p.Ctx.Err(), p.clear(tio))
 		}
 		// key press handlers has to be limited to state updates, not writes to the buffer.
 		done, err := p.handleKeyEvent(ctx, ev, ok)
@@ -352,11 +353,11 @@ func (p *input) applyInputChanged(ev inputChanged) {
 // the text and shows the reason; cancellation is reported by the event loop.
 func (p *input) confirmInput() bool {
 	for _, rule := range p.rules {
-		if p.ctx.Err() != nil {
+		if p.Ctx.Err() != nil {
 			return false
 		}
-		err := rule(p.ctx, p.typed)
-		if p.ctx.Err() != nil {
+		err := rule(p.Ctx, p.typed)
+		if p.Ctx.Err() != nil {
 			return false
 		}
 		if err != nil {

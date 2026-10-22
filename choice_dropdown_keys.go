@@ -113,7 +113,7 @@ func (d *dropdown) addItem(height int, item any) error {
 		return fmt.Errorf("set item: %w", err)
 	}
 	if d.seedLazy && !d.seeded {
-		matches, err := d.target.matches(d.def.raw, []any{item})
+		matches, err := d.target.matches(d.def.Raw, []any{item})
 		d.seeded = err == nil && len(matches) == 1
 		d.seedIdx = len(d.Items) - 1
 	}

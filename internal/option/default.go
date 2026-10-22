@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package option
 
 import (
 	"fmt"
@@ -11,8 +11,8 @@ import (
 // DefaultValue is a [WithDefault] answer. Presence is tracked apart from the
 // content, as empty strings, zeros, false and nil are valid defaults.
 type DefaultValue struct {
-	set bool
-	raw any
+	Set bool
+	Raw any
 }
 
 // NoDefault explains that a prompt without terminal has no automatic answer.

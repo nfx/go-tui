@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package option
 
 import (
 	"context"
@@ -9,17 +9,17 @@ import (
 )
 
 type Config struct {
-	ctx context.Context
-	in  io.Reader
-	out io.Writer
+	Ctx context.Context
+	In  io.Reader
+	Out io.Writer
 }
 
 // implement [withIO] interface.
 func (c *Config) SetReader(r io.Reader) {
-	c.in = r
+	c.In = r
 }
 
 // implement [withIO] interface.
 func (c *Config) SetWriter(w io.Writer) {
-	c.out = w
+	c.Out = w
 }

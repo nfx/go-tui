@@ -6,6 +6,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"github.com/nfx/go-tui/internal/option"
 	"reflect"
 )
 
@@ -18,17 +19,17 @@ func Confirmf(ctx context.Context, format string, a ...any) bool {
 
 // Confirm asks to choose Yes or No and reports whether Yes was chosen. No is a
 // normal answer, retained like Yes; an error also returns false.
-func Confirm(ctx context.Context, action string, opts ...Opt) bool {
+func Confirm(ctx context.Context, action string, opts ...option.Opt) bool {
 	return confirmRunner(ctx, action, opts...)
 }
 
 // defaultConfirmRunner runs a dropdown over Yes and No through the Confirm slots.
-func defaultConfirmRunner(ctx context.Context, action string, o ...Opt) bool {
+func defaultConfirmRunner(ctx context.Context, action string, o ...option.Opt) bool {
 	d := newDropdown(ctx)
 	d.family = d.theme.Templates.Confirm
 	d.target = targetOf[string]()
 	d.normalize = confirmDefault
-	err := Opts(o).Apply(d)
+	err := option.Opts(o).Apply(d)
 	if err != nil {
 		return false
 	}

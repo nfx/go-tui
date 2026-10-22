@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
@@ -43,7 +44,7 @@ func TestInputShowAnswerVisibility(t *testing.T) {
 	i := newInput(t.Context(), "Name")
 	i.typed = "value"
 	var out bytes.Buffer
-	i.out = &out
+	i.Out = &out
 	bindInput(t, i, &termIO{out: &out})
 
 	err := i.showAnswer()
@@ -71,7 +72,7 @@ func TestInputReadOptionError(t *testing.T) {
 }
 
 func TestInputReadRunError(t *testing.T) {
-	_, err := Input(t.Context(), "Label", WithOutput(io.Discard), OpT(func(i *input) error {
+	_, err := Input(t.Context(), "Label", WithOutput(io.Discard), option.OpT(func(i *input) error {
 		i.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
 			return nil, io.EOF
 		}
@@ -83,7 +84,7 @@ func TestInputReadRunError(t *testing.T) {
 }
 
 func TestInputOptWrongType(t *testing.T) {
-	err := OpT(func(*input) error { return nil })("nope")
+	err := option.OpT(func(*input) error { return nil })("nope")
 	if !errors.Is(err, ErrWrongWidget) {
 		t.Fatalf("expected ErrWrongWidget, got %v", err)
 	}
@@ -91,14 +92,14 @@ func TestInputOptWrongType(t *testing.T) {
 
 func TestInputRunEmitsLifecycleEvents(t *testing.T) {
 	i := newInput(t.Context(), "Label")
-	i.in = &chunkReader{
+	i.In = &chunkReader{
 		chunks: [][]byte{
 			{'x'},
 			{keyEnter},
 		},
 	}
 	var out bytes.Buffer
-	i.out = &out
+	i.Out = &out
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{
 			in:      in,
@@ -112,7 +113,7 @@ func TestInputRunEmitsLifecycleEvents(t *testing.T) {
 	i.eventSink = func(ev inputOutgoing) {
 		events = append(events, ev)
 	}
-	got, err := i.run(i.ctx)
+	got, err := i.run(i.Ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
 	assert.Equal(t, 2, len(events))
@@ -129,7 +130,7 @@ func TestInputRunConsumesInputChannelEvents(t *testing.T) {
 	input <- inputConfirmed{}
 	i.input = input
 	var out bytes.Buffer
-	i.out = &out
+	i.Out = &out
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{
 			in:      bytes.NewBuffer(nil),
@@ -143,7 +144,7 @@ func TestInputRunConsumesInputChannelEvents(t *testing.T) {
 	i.eventSink = func(ev inputOutgoing) {
 		events = append(events, ev)
 	}
-	got, err := i.run(i.ctx)
+	got, err := i.run(i.Ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "remote", got)
 	assert.Equal(t, "remote", i.typed)
@@ -165,7 +166,7 @@ func TestInputRunWithNonEmptyIgnoresEmptyConfirmation(t *testing.T) {
 	i.input = input
 	assert.NoError(t, WithNonEmpty()(i))
 	var out bytes.Buffer
-	i.out = &out
+	i.Out = &out
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{
 			in:      bytes.NewBuffer(nil),
@@ -179,7 +180,7 @@ func TestInputRunWithNonEmptyIgnoresEmptyConfirmation(t *testing.T) {
 	i.eventSink = func(ev inputOutgoing) {
 		events = append(events, ev)
 	}
-	got, err := i.run(i.ctx)
+	got, err := i.run(i.Ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "remote", got)
 	assert.Equal(t, 2, len(events))
@@ -193,14 +194,14 @@ func TestInputRunWithNonEmptyIgnoresEmptyConfirmation(t *testing.T) {
 // regression: readEvents goroutine must not exit on pasteTextError
 func TestInputRunPasteFollowedByEnter(t *testing.T) {
 	i := newInput(t.Context(), "Label")
-	i.in = &chunkReader{
+	i.In = &chunkReader{
 		chunks: [][]byte{
 			{'h', 'i'},
 			{keyEnter},
 		},
 	}
 	var out bytes.Buffer
-	i.out = &out
+	i.Out = &out
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{
 			in:      in,
@@ -210,7 +211,7 @@ func TestInputRunPasteFollowedByEnter(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	got, err := i.run(i.ctx)
+	got, err := i.run(i.Ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "hi", got)
 }
@@ -218,7 +219,7 @@ func TestInputRunPasteFollowedByEnter(t *testing.T) {
 // regression: multiple paste chunks interleaved with single keys
 func TestInputRunTypeAndPaste(t *testing.T) {
 	i := newInput(t.Context(), "Label")
-	i.in = &chunkReader{
+	i.In = &chunkReader{
 		chunks: [][]byte{
 			{'h'},
 			{'e', 'l'},
@@ -227,7 +228,7 @@ func TestInputRunTypeAndPaste(t *testing.T) {
 		},
 	}
 	var out bytes.Buffer
-	i.out = &out
+	i.Out = &out
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{
 			in:      in,
@@ -237,7 +238,7 @@ func TestInputRunTypeAndPaste(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	got, err := i.run(i.ctx)
+	got, err := i.run(i.Ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "hello", got)
 }
@@ -349,7 +350,7 @@ func TestInputRunContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	i := newInput(t.Context(), "Label")
-	i.ctx = ctx
+	i.Ctx = ctx
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{
 			in:      bytes.NewBuffer(nil),
@@ -359,7 +360,7 @@ func TestInputRunContextDone(t *testing.T) {
 			Restore: func() error { return nil },
 		}, nil
 	}
-	_, err := i.run(i.ctx)
+	_, err := i.run(i.Ctx)
 	assert.Error(t, err)
 }
 
@@ -374,7 +375,7 @@ func TestInputRunCancelledReadKeepsNextKey(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	i := newInput(t.Context(), "first")
-	i.ctx, i.in, i.out, i.makeTermIO = ctx, pr, &bytes.Buffer{}, mk
+	i.Ctx, i.In, i.Out, i.makeTermIO = ctx, pr, &bytes.Buffer{}, mk
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		cancel()
@@ -382,12 +383,12 @@ func TestInputRunCancelledReadKeepsNextKey(t *testing.T) {
 		_, _ = pw.Write([]byte{'x'})      //nolint:errcheck // test cleanup
 		_, _ = pw.Write([]byte{keyEnter}) //nolint:errcheck // test cleanup
 	}()
-	_, err = i.run(i.ctx)
+	_, err = i.run(i.Ctx)
 	assert.Error(t, err)
 
 	j := newInput(t.Context(), "second")
-	j.in, j.out, j.makeTermIO = pr, &bytes.Buffer{}, mk
-	got, err := j.run(j.ctx)
+	j.In, j.Out, j.makeTermIO = pr, &bytes.Buffer{}, mk
+	got, err := j.run(j.Ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
 }
@@ -425,10 +426,10 @@ func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	first := newInput(t.Context(), "first")
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	first.ctx, first.in, first.out, first.makeTermIO = ctx, in, &bytes.Buffer{}, mk
+	first.Ctx, first.In, first.Out, first.makeTermIO = ctx, in, &bytes.Buffer{}, mk
 	finished := make(chan error, 1)
 	go func() {
-		_, err := first.run(first.ctx)
+		_, err := first.run(first.Ctx)
 		finished <- err
 	}()
 	select {
@@ -447,10 +448,10 @@ func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	_, err = pw.Write([]byte{'x', keyEnter})
 	assert.NoError(t, err)
 	second := newInput(t.Context(), "second")
-	second.ctx, cancel = context.WithTimeout(t.Context(), time.Second)
+	second.Ctx, cancel = context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	second.in, second.out, second.makeTermIO = in, &bytes.Buffer{}, mk
-	got, err := second.run(second.ctx)
+	second.In, second.Out, second.makeTermIO = in, &bytes.Buffer{}, mk
+	got, err := second.run(second.Ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
 }
@@ -465,11 +466,11 @@ func TestInputRunBufferedWrappedReader(t *testing.T) {
 	prompt := newInput(t.Context(), "buffered")
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	prompt.ctx, prompt.in, prompt.out = ctx, in, &bytes.Buffer{}
+	prompt.Ctx, prompt.In, prompt.Out = ctx, in, &bytes.Buffer{}
 	prompt.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
 	}
-	got, err := prompt.run(prompt.ctx)
+	got, err := prompt.run(prompt.Ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
 }
@@ -487,16 +488,16 @@ func TestInputHandleBufferedKeys(t *testing.T) {
 	assert.Equal(t, "xca", i.typed)
 }
 
-func runInputOn(t *testing.T, in io.Reader, option ...Opt) (string, error) {
+func runInputOn(t *testing.T, in io.Reader, option ...option.Opt) (string, error) {
 	t.Helper()
 	i := newInput(t.Context(), "Label")
-	i.in, i.out = in, &bytes.Buffer{}
+	i.In, i.Out = in, &bytes.Buffer{}
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	i.ctx = ctx
+	i.Ctx = ctx
 	return i.read(t.Context(), option...)
 }
 
@@ -529,7 +530,7 @@ func TestInputShowAnswerRendersControlsSafely(t *testing.T) {
 	var out bytes.Buffer
 	literalInputs(t)
 	i := &input{Label: "L", typed: "a\rb"}
-	i.out = &out
+	i.Out = &out
 	bindInput(t, i, &termIO{out: &out})
 	assert.NoError(t, i.showAnswer())
 	assert.Equal(t, "a␍b\n", out.String())
@@ -568,7 +569,7 @@ func TestInputRunResizeDoesNotReadAhead(t *testing.T) {
 	in := &blockingReader{started: make(chan struct{}, 4), chunks: make(chan []byte)}
 	resized := make(chan struct{})
 	i := newInput(t.Context(), "Label")
-	i.in, i.out = in, &bytes.Buffer{}
+	i.In, i.Out = in, &bytes.Buffer{}
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{
 			in:       in,
@@ -592,7 +593,7 @@ func TestInputRunResizeDoesNotReadAhead(t *testing.T) {
 	})
 	finished := make(chan error, 1)
 	go func() {
-		_, err := i.run(i.ctx)
+		_, err := i.run(i.Ctx)
 		finished <- err
 	}()
 	select {
@@ -627,12 +628,12 @@ func TestInputRejectionClearsOnEditAndKeepsText(t *testing.T) {
 
 func TestInputNeedsTwoRowsForFeedback(t *testing.T) {
 	i := newInput(t.Context(), "Label")
-	i.in = &chunkReader{chunks: [][]byte{{'a'}, {keyEnter}}}
-	i.out = &bytes.Buffer{}
+	i.In = &chunkReader{chunks: [][]byte{{'a'}, {keyEnter}}}
+	i.Out = &bytes.Buffer{}
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{in: in, out: out, Width: 20, Height: 1, Restore: func() error { return nil }}, nil
 	}
 	assert.NoError(t, WithValidation(func(context.Context, string) error { return errors.New("no") })(i))
-	_, err := i.run(i.ctx)
+	_, err := i.run(i.Ctx)
 	assert.ErrorIs(t, err, ErrNoSpace)
 }

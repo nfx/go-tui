@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
@@ -19,7 +20,7 @@ import (
 func TestConfirmfRunsWithFormattedAction(t *testing.T) {
 	orig := confirmRunner
 	defer func() { confirmRunner = orig }()
-	confirmRunner = func(ctx context.Context, action string, opts ...Opt) bool {
+	confirmRunner = func(ctx context.Context, action string, opts ...option.Opt) bool {
 		assert.Equal(t, "Proceed with task?", action)
 		return true
 	}
@@ -30,7 +31,7 @@ func TestConfirmfRunsWithFormattedAction(t *testing.T) {
 func TestDefaultConfirmRunnerReturnsTrue(t *testing.T) {
 	in := bytes.NewBuffer([]byte{keyEnter})
 	out := &bytes.Buffer{}
-	opt := OpT(func(d *dropdown) error {
+	opt := option.OpT(func(d *dropdown) error {
 		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return &termIO{
 				in:      in,
@@ -46,7 +47,7 @@ func TestDefaultConfirmRunnerReturnsTrue(t *testing.T) {
 }
 
 func TestDefaultConfirmRunnerReturnsFalseOnError(t *testing.T) {
-	opt := OpT(func(d *dropdown) error {
+	opt := option.OpT(func(d *dropdown) error {
 		d.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
 			return nil, io.EOF
 		}
@@ -102,7 +103,7 @@ func TestThemedConfirmfFormatsLabel(t *testing.T) {
 	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 40, "\r")
 	prev := confirmRunner
 	t.Cleanup(func() { confirmRunner = prev })
-	confirmRunner = func(ctx context.Context, action string, _ ...Opt) bool {
+	confirmRunner = func(ctx context.Context, action string, _ ...option.Opt) bool {
 		return defaultConfirmRunner(ctx, action, o)
 	}
 	assert.True(t, Confirmf(t.Context(), "Deploy %s?", "api"))

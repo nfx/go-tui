@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/trie"
 	"io"
 	"iter"
@@ -271,7 +272,7 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 	opts := WithOptions(
 		WithInput(in),
 		WithOutput(io.Discard),
-		OpT(func(d *dropdown) error {
+		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{
 					in:      in,
@@ -324,7 +325,7 @@ func TestDropdownLazyDoesNotStartProducerWhenContextAlreadyCanceled(t *testing.T
 	opts := WithOptions(
 		WithInput(in),
 		WithOutput(io.Discard),
-		OpT(func(d *dropdown) error {
+		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{
 					in:      in,
@@ -369,7 +370,7 @@ func TestDropdownLazyCtrlCNotLostAfterPreviousLazyExit(t *testing.T) {
 	opts := WithOptions(
 		WithInput(in),
 		WithOutput(io.Discard),
-		OpT(func(d *dropdown) error {
+		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{
 					in:      in,
@@ -420,7 +421,7 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 	opts := WithOptions(
 		WithInput(in),
 		WithOutput(io.Discard),
-		OpT(func(d *dropdown) error {
+		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{
 					in:      in,
@@ -683,9 +684,9 @@ func TestDropdownLazySeedValidatedAfterExhaustion(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			d := newDropdown(t.Context())
 			d.target = choiceTarget{}
-			d.def = DefaultValue{set: true, raw: 3}
+			d.def = option.DefaultValue{Set: true, Raw: 3}
 			if name == "duplicate" {
-				d.def.raw = 2
+				d.def.Raw = 2
 			}
 			d.seedLazy = true
 			d.Items = items

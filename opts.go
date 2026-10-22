@@ -6,6 +6,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/option"
 	"io"
 )
 
@@ -13,7 +14,7 @@ import (
 // when the widget supports it and skipped otherwise. The bundle fails with
 // [ErrWrongWidget] only when the widget supports none of its members. Any
 // other error from a member, such as an invalid value, is returned as is.
-func WithOptions(o ...Opt) Opt {
+func WithOptions(o ...option.Opt) option.Opt {
 	return func(target any) error {
 		if len(o) == 0 {
 			return nil
@@ -37,16 +38,16 @@ func WithOptions(o ...Opt) Opt {
 }
 
 // WithInput overrides the input source of an interactive widget.
-func WithInput(r io.Reader) Opt {
-	return OpT(func(x IO) error {
+func WithInput(r io.Reader) option.Opt {
+	return option.OpT(func(x option.IO) error {
 		x.SetReader(r)
 		return nil
 	})
 }
 
 // WithOutput overrides the output destination of an interactive widget.
-func WithOutput(w io.Writer) Opt {
-	return OpT(func(x IO) error {
+func WithOutput(w io.Writer) option.Opt {
+	return option.OpT(func(x option.IO) error {
 		x.SetWriter(w)
 		return nil
 	})

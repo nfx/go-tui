@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
 	"io"
 	"log/slog"
@@ -72,11 +73,11 @@ type tableColumn struct {
 	meta       *fieldMetadata
 }
 
-func newTable[T any](w io.Writer, rowTmpl string, o ...Opt) (*table, error) {
+func newTable[T any](w io.Writer, rowTmpl string, o ...option.Opt) (*table, error) {
 	return newTableFor(reflect.TypeFor[T](), w, rowTmpl, o...)
 }
 
-func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, o ...Opt) (*table, error) {
+func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, o ...option.Opt) (*table, error) {
 	metadata, err := structFieldsForType(rt)
 	if err != nil {
 		return nil, fmt.Errorf("metadata: %w", err)
@@ -95,7 +96,7 @@ func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, o ...Opt) (*table
 	if err != nil {
 		return nil, err
 	}
-	err = Opts(o).Apply(t)
+	err = option.Opts(o).Apply(t)
 	if err != nil {
 		return nil, err
 	}

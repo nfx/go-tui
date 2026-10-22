@@ -17,7 +17,7 @@ import (
 func (p *input) pressKey(tio *termIO) (string, error) {
 	ev, ok := <-tio.readEvents(context.Background(), nil)
 	tio.awaitReader()
-	done, err := p.handleKeyEvent(p.ctx, ev, ok)
+	done, err := p.handleKeyEvent(p.Ctx, ev, ok)
 	if err != nil {
 		return "", err
 	}

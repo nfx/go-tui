@@ -218,7 +218,7 @@ func themedInput(
 		chunks = append(chunks, []byte(k))
 	}
 	out, restored = &bytes.Buffer{}, new(bool)
-	i.in, i.out = &chunkReader{chunks: chunks}, out
+	i.In, i.Out = &chunkReader{chunks: chunks}, out
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		restore := func() error { *restored = true; return nil }
 		return &termIO{in: in, out: out, Width: width, Height: height, Restore: restore}, nil
@@ -466,7 +466,7 @@ func TestThemedInputDefaultWithoutTerminal(t *testing.T) {
 	useTheme(t, th)
 	i := newInput(t.Context(), "Label")
 	var out bytes.Buffer
-	i.out = &out
+	i.Out = &out
 	i.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
 		t.Fatal("acquired a terminal")
 		return nil, ErrNoTTY

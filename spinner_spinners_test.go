@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"log/slog"
@@ -20,7 +21,7 @@ import (
 	"github.com/nfx/go-tui/internal/assert"
 )
 
-func testIOforSpinners(t *testing.T, width, height int, o ...Opt) (*chanIO, func(), Opt) {
+func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*chanIO, func(), option.Opt) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	cio := &chanIO{
@@ -42,10 +43,10 @@ func testIOforSpinners(t *testing.T, width, height int, o ...Opt) (*chanIO, func
 				case ticks <- time.Now():
 				}
 			}()
-		}, WithOptions(append(Opts{
+		}, WithOptions(append(option.Opts{
 			WithInput(cio),
 			WithOutput(cio),
-			OpT(func(s *Spinners) error {
+			option.OpT(func(s *Spinners) error {
 				s.ticks = ticks
 				s.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 					return &termIO{
@@ -82,7 +83,7 @@ func mustReceiveSpinnerEvent(t *testing.T, ch <-chan spinnerEvent) spinnerEvent 
 	}
 }
 
-func testLongRunningWithNewSpinners(t *testing.T, cb func(context.Context, ...Opt) (*Spinners, error)) {
+func testLongRunningWithNewSpinners(t *testing.T, cb func(context.Context, ...option.Opt) (*Spinners, error)) {
 	t.Helper()
 	prev := longRunningNewSpinners
 	longRunningNewSpinners = cb
@@ -155,7 +156,7 @@ func TestSpinnersContextCancellation(t *testing.T) {
 
 func TestSpinnersOpt(t *testing.T) {
 	called := false
-	opt := OpT(func(s *Spinners) error {
+	opt := option.OpT(func(s *Spinners) error {
 		called = true
 		return nil
 	})
@@ -262,7 +263,7 @@ func TestSpinnersMustAddBackgroundPanics(t *testing.T) {
 
 func TestSpinnersEmitStructuredEvents(t *testing.T) {
 	events := make(chan spinnerEvent, 32)
-	_, _, opts := testIOforSpinners(t, 12, 4, OpT(func(s *Spinners) error {
+	_, _, opts := testIOforSpinners(t, 12, 4, option.OpT(func(s *Spinners) error {
 		s.eventSink = func(ev spinnerEvent) {
 			events <- ev
 		}
@@ -398,7 +399,7 @@ func TestSpinnersLogFallbackKeepsTerminalRendering(t *testing.T) {
 }
 
 func TestSpinnersLogFallbackRejectsOtherErrors(t *testing.T) {
-	_, err := NewSpinners(t.Context(), OpT(func(s *Spinners) error {
+	_, err := NewSpinners(t.Context(), option.OpT(func(s *Spinners) error {
 		s.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
 			return nil, io.ErrClosedPipe
 		}
@@ -419,12 +420,17 @@ func (w frameWriter) Write(p []byte) (int, error) {
 // themedSpinners is a spinner group rendering through th on a terminal of the
 // given width, with manual ticks. Each write is one receive from frames.
 // restored reports a released terminal.
-func themedSpinners(t *testing.T, th theme.Theme, width int, o ...Opt) (*Spinners, frameWriter, func(), *atomic.Bool) {
+func themedSpinners(
+	t *testing.T,
+	th theme.Theme,
+	width int,
+	o ...option.Opt,
+) (*Spinners, frameWriter, func(), *atomic.Bool) {
 	t.Helper()
 	useTheme(t, th)
 	restored := &atomic.Bool{}
 	frames := make(frameWriter)
-	cio, tick, options := testIOforSpinners(t, width, 10, append([]Opt{OpT(func(s *Spinners) error {
+	cio, tick, options := testIOforSpinners(t, width, 10, append([]option.Opt{option.OpT(func(s *Spinners) error {
 		s.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
 			return &termIO{in: in, out: frames, Width: width, Height: 10, Restore: func() error {
 				restored.Store(true)

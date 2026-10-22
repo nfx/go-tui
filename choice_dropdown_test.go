@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/trie"
 	"github.com/nfx/go-tui/theme"
 	"io"
@@ -125,7 +126,7 @@ func (r *blockingByteReader) Close() {
 }
 
 // testIOforDropdown provides channel-driven prompt I/O at a fixed terminal size.
-func testIOforDropdown(t *testing.T, width, height int, o ...Opt) (*chanIO, Opt) {
+func testIOforDropdown(t *testing.T, width, height int, o ...option.Opt) (*chanIO, option.Opt) {
 	t.Helper()
 	useTheme(t, asciiTheme(false))
 	ctx, cancel := context.WithCancel(t.Context())
@@ -139,10 +140,10 @@ func testIOforDropdown(t *testing.T, width, height int, o ...Opt) (*chanIO, Opt)
 		close(cio.In)
 		close(cio.Out)
 	})
-	return cio, WithOptions(append(Opts{
+	return cio, WithOptions(append(option.Opts{
 		WithInput(cio),
 		WithOutput(cio),
-		OpT(func(d *dropdown) error {
+		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{
 					in:      in,
@@ -528,7 +529,7 @@ func TestDropdownRunOneReturn(t *testing.T) {
 func TestDropdownOptionHelpers(t *testing.T) {
 	d := newDropdown(t.Context())
 
-	for _, opt := range []Opt{
+	for _, opt := range []option.Opt{
 		WithOneReturn(),
 		WithHide(),
 		WithTemplate(".Label"),
@@ -913,10 +914,10 @@ func (w itemsLoadedWriter) Write(p []byte) (int, error) {
 }
 
 // notifyItemsLoaded must be applied after WithOutput.
-func notifyItemsLoaded(minItems int) (Opt, <-chan struct{}) {
+func notifyItemsLoaded(minItems int) (option.Opt, <-chan struct{}) {
 	ready := make(chan struct{})
 	once := &sync.Once{}
-	return OpT(func(d *dropdown) error {
+	return option.OpT(func(d *dropdown) error {
 		d.out = itemsLoadedWriter{Writer: d.out, d: d, ready: ready, once: once, min: minItems}
 		return nil
 	}), ready
@@ -963,8 +964,8 @@ func assertNoWaitersFor(t *testing.T, r *blockingByteReader, d time.Duration) {
 	}
 }
 
-func fixedTermOpt() Opt {
-	return OpT(func(d *dropdown) error {
+func fixedTermOpt() option.Opt {
+	return option.OpT(func(d *dropdown) error {
 		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return &termIO{in: in, out: out, Width: 20, Height: 6, Restore: func() error { return nil }}, nil
 		}
@@ -1044,7 +1045,7 @@ func TestDropdownEagerRedrawsOnResizeWhileIdle(t *testing.T) {
 		value, _ := Dropdown(ctx, "Pick", []string{"a", "b"}, WithOptions( //nolint:errcheck // test cleanup
 			WithInput(reader),
 			WithOutput(out),
-			OpT(func(d *dropdown) error {
+			option.OpT(func(d *dropdown) error {
 				d.makeTermIO = func(in io.Reader, w io.Writer) (*termIO, error) {
 					return &termIO{
 						in: in, out: w, Width: 20, Height: 6,
@@ -1290,7 +1291,7 @@ func TestDropdownConfirmClearsFrameOnce(t *testing.T) {
 	var out bytes.Buffer
 	_, err := Dropdown(t.Context(), "Fruit", fruits, WithOutput(&out),
 		WithInput(&chunkReader{chunks: [][]byte{[]byte("\r")}}),
-		OpT(func(d *dropdown) error {
+		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{in: in, out: out, Width: 40, Height: 10, Restore: func() error { return nil }}, nil
 			}

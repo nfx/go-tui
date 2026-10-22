@@ -47,7 +47,7 @@ func (w *wrapReader) Read(p []byte) (n int, err error) {
 		w.p.Add(int64(n))
 	}
 	if errors.Is(err, io.EOF) {
-		if w.p.io == nil && w.p.ctx.Err() == nil {
+		if w.p.io == nil && w.p.Ctx.Err() == nil {
 			w.p.logProgress(0, true)
 		}
 		w.p.cancel(nil)

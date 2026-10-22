@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/option"
 	"io"
 	"iter"
 )
@@ -27,8 +28,8 @@ func (d *dropdown) answerLazyFromDefault(ctx context.Context, seq iter.Seq2[any,
 	if err != nil {
 		return -1, err
 	}
-	if !d.def.set && !d.OneReturn {
-		return -1, NoDefault(d.Label)
+	if !d.def.Set && !d.OneReturn {
+		return -1, option.NoDefault(d.Label)
 	}
 	// consume through the producer channel so that cancellation returns
 	// even while the iterator is blocked between yields
@@ -252,11 +253,11 @@ func (d *dropdown) validateLazySeed() error {
 	if !d.seedLazy {
 		return nil
 	}
-	matches, err := d.target.matches(d.def.raw, d.Items)
+	matches, err := d.target.matches(d.def.Raw, d.Items)
 	if err != nil {
 		return err
 	}
-	i, err := uniqueMatch(matches, fmt.Sprintf("%T value", d.def.raw))
+	i, err := uniqueMatch(matches, fmt.Sprintf("%T value", d.def.Raw))
 	if err != nil {
 		return err
 	}

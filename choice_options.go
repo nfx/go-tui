@@ -6,20 +6,21 @@ package tui
 import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/theme"
 )
 
-func WithOneReturn() Opt {
-	return OpT(func(d *dropdown) error {
+func WithOneReturn() option.Opt {
+	return option.OpT(func(d *dropdown) error {
 		d.OneReturn = true
 		return nil
 	})
 }
 
 // WithTemplate shares main content across choice rows and answers; details appear only on the active row.
-func WithTemplate(main string, activeDetails ...string) Opt {
-	return OpT(func(d ChoiceContent) error {
+func WithTemplate(main string, activeDetails ...string) option.Opt {
+	return option.OpT(func(d option.ChoiceContent) error {
 		d.SetContentTemplate(main, activeDetails...)
 		return nil
 	})

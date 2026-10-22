@@ -6,6 +6,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"github.com/nfx/go-tui/internal/option"
 	"iter"
 	"reflect"
 	"slices"
@@ -15,12 +16,18 @@ import (
 // Multichoice returns checked items in input order. Enter confirms without
 // checking the focused item; a successful empty selection is a non-nil slice.
 // Items are shallowly copied. Use one active prompt per shared input reader.
-func Multichoice[T any](ctx context.Context, label string, items []T, o ...Opt) ([]T, error) {
+func Multichoice[T any](ctx context.Context, label string, items []T, o ...option.Opt) ([]T, error) {
 	return pickMultichoice(ctx, label, items, targetOf[T](), o)
 }
 
 // pickMultichoice runs a multichoice whose typed defaults have the type of target.
-func pickMultichoice[T any](ctx context.Context, label string, items []T, target choiceTarget, o []Opt) ([]T, error) {
+func pickMultichoice[T any](
+	ctx context.Context,
+	label string,
+	items []T,
+	target choiceTarget,
+	o []option.Opt,
+) ([]T, error) {
 	if len(items) == 0 {
 		return nil, ErrNoItems
 	}
@@ -45,7 +52,12 @@ func pickMultichoice[T any](ctx context.Context, label string, items []T, target
 // MultichoiceKVK snapshots entries sorted by fmt.Sprint(key) and returns keys.
 // Equal formatted keys have unspecified relative order. Templates receive
 // entries with Key and Value, including every element of the answer collection.
-func MultichoiceKVK[K comparable, V any](ctx context.Context, label string, items map[K]V, o ...Opt) ([]K, error) {
+func MultichoiceKVK[K comparable, V any](
+	ctx context.Context,
+	label string,
+	items map[K]V,
+	o ...option.Opt,
+) ([]K, error) {
 	target := choiceTarget{
 		typ:  reflect.TypeFor[K](),
 		proj: mapKey[K, V],
@@ -63,7 +75,12 @@ func MultichoiceKVK[K comparable, V any](ctx context.Context, label string, item
 
 // MultichoiceKVV returns values in the same entry order as MultichoiceKVK.
 // Duplicate and non-comparable values remain independently selectable.
-func MultichoiceKVV[K comparable, V any](ctx context.Context, label string, items map[K]V, o ...Opt) ([]V, error) {
+func MultichoiceKVV[K comparable, V any](
+	ctx context.Context,
+	label string,
+	items map[K]V,
+	o ...option.Opt,
+) ([]V, error) {
 	target := choiceTarget{
 		typ:  reflect.TypeFor[V](),
 		proj: mapValue[K, V],
@@ -85,7 +102,7 @@ func multichoiceMap[K comparable, V any](
 	label string,
 	items map[K]V,
 	target choiceTarget,
-	o []Opt,
+	o []option.Opt,
 ) ([]mapKV[K, V], error) {
 	entries := make([]mapKV[K, V], 0, len(items))
 	for key, value := range items {
@@ -93,14 +110,19 @@ func multichoiceMap[K comparable, V any](
 	}
 	sort.SliceStable(entries, func(i, j int) bool { return fmt.Sprint(entries[i].Key) < fmt.Sprint(entries[j].Key) })
 	// the theme presents the entries, projected to their keys
-	return pickMultichoice(ctx, label, entries, target, append([]Opt{WithTemplate("(label .Key)")}, o...))
+	return pickMultichoice(ctx, label, entries, target, append([]option.Opt{WithTemplate("(label .Key)")}, o...))
 }
 
 // MultichoiceLazy displays a finite sequence progressively and enables Enter
 // only after successful exhaustion. Results keep producer arrival order.
 // Publication stops on cancellation; iterator work blocked outside yield must
 // observe a context supplied by its caller to be interruptible.
-func MultichoiceLazy[T any](ctx context.Context, label string, items iter.Seq2[T, error], o ...Opt) ([]T, error) {
+func MultichoiceLazy[T any](
+	ctx context.Context,
+	label string,
+	items iter.Seq2[T, error],
+	o ...option.Opt,
+) ([]T, error) {
 	if items == nil {
 		return nil, fmt.Errorf("%w: MultichoiceLazy sequence is nil", ErrInvalidOption)
 	}

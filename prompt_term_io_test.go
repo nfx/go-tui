@@ -18,7 +18,7 @@ func TestThemedInputProbesBeforeReadingKeys(t *testing.T) {
 	tt, term := probeTermIO(t, oscReply+"a\r")
 	tt.Restore = func() error { return nil }
 	i := newInput(t.Context(), "Label")
-	i.in, i.out = tt.in, tt.out
+	i.In, i.Out = tt.in, tt.out
 	i.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { return tt, nil }
 	got, err := i.read(t.Context())
 	assert.NoError(t, err)

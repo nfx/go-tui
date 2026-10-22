@@ -6,6 +6,7 @@ package tui
 import (
 	"bytes"
 	"errors"
+	"github.com/nfx/go-tui/internal/option"
 	"io"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 )
 
 type optsDummy struct {
-	Config
+	option.Config
 }
 
 func TestWithIOOptions(t *testing.T) {
@@ -27,10 +28,10 @@ func TestWithIOOptions(t *testing.T) {
 	if err := WithOutput(writer)(d); err != nil {
 		t.Fatalf("WithOutput failed: %v", err)
 	}
-	if d.in != reader {
+	if d.In != reader {
 		t.Fatalf("reader not set")
 	}
-	if d.out != writer {
+	if d.Out != writer {
 		t.Fatalf("writer not set")
 	}
 }
@@ -38,7 +39,7 @@ func TestWithIOOptions(t *testing.T) {
 func TestOptTRejectsWrongWidget(t *testing.T) {
 	err := WithOutput(&bytes.Buffer{})("nope")
 	assert.ErrorIs(t, err, ErrWrongWidget)
-	assert.Contains(t, err.Error(), "need tui.IO, got string")
+	assert.Contains(t, err.Error(), "need option.IO, got string")
 }
 
 func TestWithOptionsSkipsUnsupportedMembers(t *testing.T) {
@@ -46,7 +47,7 @@ func TestWithOptionsSkipsUnsupportedMembers(t *testing.T) {
 	d := &optsDummy{}
 	err := WithOptions(WithHide(), WithOutput(writer), WithWorkers(2))(d)
 	assert.NoError(t, err)
-	assert.Equal(t, io.Writer(writer), d.out)
+	assert.Equal(t, io.Writer(writer), d.Out)
 }
 
 func TestWithOptionsFailsWhenNoMemberApplies(t *testing.T) {

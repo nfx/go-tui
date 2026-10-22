@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
 	"io"
 	"iter"
@@ -112,7 +113,7 @@ func (r failReader) Read([]byte) (int, error) {
 
 // quiet configures a prompt without terminal: no input may be read, and the
 // buffer must stay empty.
-func quiet(t *testing.T) Opt {
+func quiet(t *testing.T) option.Opt {
 	t.Helper()
 	strictOutput(t)
 	out := &bytes.Buffer{}

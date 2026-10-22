@@ -6,16 +6,17 @@ package tui
 import (
 	"context"
 	"fmt"
+	"github.com/nfx/go-tui/internal/option"
 	"os"
 )
 
 type Tui struct {
-	Opts
+	option.Opts
 	*termIO // exposes io.ReadWriter
 	ctx     context.Context
 }
 
-func NewTUI(ctx context.Context, opts ...Opt) (*Tui, error) {
+func NewTUI(ctx context.Context, opts ...option.Opt) (*Tui, error) {
 	cio, err := NewIO(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("io: %w", err)

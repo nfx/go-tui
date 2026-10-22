@@ -6,6 +6,7 @@ package tui
 import (
 	"bytes"
 	"fmt"
+	"github.com/nfx/go-tui/internal/option"
 	"strings"
 	"testing"
 	"time"
@@ -98,7 +99,7 @@ func TestColumnOptionsUnknownColumn(t *testing.T) {
 	}
 	tests := []struct {
 		name string
-		opt  Opt
+		opt  option.Opt
 	}{
 		{
 			name: "name format",

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/theme"
 	"io"
@@ -72,7 +73,7 @@ func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
 	p, err := newStartedProgressBar(t.Context(), "download", 20,
 		WithInput(cio),
 		WithOutput(cio),
-		OpT(func(pb *Progressbar) error {
+		option.OpT(func(pb *Progressbar) error {
 			pb.now = func() time.Time { return now }
 			pb.redrawAt = start
 			pb.ticks = ticks
@@ -141,7 +142,7 @@ func TestProgressbarTickRenders(t *testing.T) {
 	p, err := newStartedProgressBar(t.Context(), "download", 20,
 		WithInput(cio),
 		WithOutput(cio),
-		OpT(func(pb *Progressbar) error {
+		option.OpT(func(pb *Progressbar) error {
 			pb.now = func() time.Time { return now }
 			pb.redrawAt = start
 			pb.ticks = ticks
@@ -221,7 +222,7 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 	p, err := newStartedProgressBar(t.Context(), "download", 20,
 		WithInput(cio),
 		WithOutput(cio),
-		OpT(func(pb *Progressbar) error {
+		option.OpT(func(pb *Progressbar) error {
 			pb.eventSink = func(ev progressEvent) {
 				events <- ev
 			}
@@ -289,7 +290,7 @@ func TestProgressbarDoneEmitsClosed(t *testing.T) {
 	p, err := newStartedProgressBar(t.Context(), "sync", 2,
 		WithInput(cio),
 		WithOutput(cio),
-		OpT(func(pb *Progressbar) error {
+		option.OpT(func(pb *Progressbar) error {
 			pb.eventSink = func(ev progressEvent) {
 				events <- ev
 			}
@@ -346,7 +347,7 @@ func TestNewMaxProgressBar(t *testing.T) {
 }
 
 func TestNewMaxProgressBarAppliesOptions(t *testing.T) {
-	_, err := NewMaxProgressBar(t.Context(), "max", 1, OpT(func(p *Progressbar) error {
+	_, err := NewMaxProgressBar(t.Context(), "max", 1, option.OpT(func(p *Progressbar) error {
 		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, errors.New("boom")
 		}
@@ -400,7 +401,7 @@ func TestNewFileProgressReader(t *testing.T) {
 	r, err := NewFileProgressReader(t.Context(), &statReader{data: []byte("hello world")}, "file",
 		WithInput(cio),
 		WithOutput(cio),
-		OpT(func(pb *Progressbar) error {
+		option.OpT(func(pb *Progressbar) error {
 			applied = true
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
@@ -496,7 +497,7 @@ func TestFileProgressReaderLogsWithoutTTY(t *testing.T) {
 			_, err = r.Read(buf)
 			assert.ErrorIs(t, err, io.EOF)
 			assert.NoError(t, r.Close())
-			assert.ErrorIs(t, r.p.ctx.Err(), context.Canceled)
+			assert.ErrorIs(t, r.p.Ctx.Err(), context.Canceled)
 			assert.Equal(t, tc.data, data.String())
 			assert.Equal(t, "", out.String())
 			var percentages []int
@@ -518,7 +519,7 @@ func TestFileProgressReaderLogsWithoutTTY(t *testing.T) {
 }
 
 func TestProgressBarLogsWithoutTTY(t *testing.T) {
-	noTTY := OpT(func(p *Progressbar) error {
+	noTTY := option.OpT(func(p *Progressbar) error {
 		p.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { return nil, ErrNoTTY }
 		return nil
 	})
@@ -589,7 +590,7 @@ func TestProgressBarLogsWithoutTTY(t *testing.T) {
 
 func TestFileProgressReaderReturnsTerminalErrors(t *testing.T) {
 	_, err := NewFileProgressReader(t.Context(), strings.NewReader("data"), "Download",
-		OpT(func(p *Progressbar) error {
+		option.OpT(func(p *Progressbar) error {
 			p.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
 				return nil, io.ErrClosedPipe
 			}
@@ -625,7 +626,7 @@ func TestProgressbarCloseWithIO(t *testing.T) {
 
 func TestProgressbarCloseWaitsForBackgroundStop(t *testing.T) {
 	restoreDelay := 50 * time.Millisecond
-	p, err := newStartedProgressBar(t.Context(), "sync", 1, OpT(func(pb *Progressbar) error {
+	p, err := newStartedProgressBar(t.Context(), "sync", 1, option.OpT(func(pb *Progressbar) error {
 		pb.ticks = make(chan time.Time)
 		pb.ticker = time.NewTicker(time.Hour)
 		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -666,7 +667,7 @@ func TestProgressbarAddContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	p := &Progressbar{
-		Config:     Config{ctx: ctx},
+		Config:     option.Config{Ctx: ctx},
 		io:         &termIO{},
 		increments: nil,
 	}
@@ -781,7 +782,7 @@ func TestMetricsSnapshotZeroMax(t *testing.T) {
 func TestProgressBarWithContextCancelBound(t *testing.T) {
 	parentCtx := t.Context()
 	p, err := newStartedProgressBar(parentCtx, "test", 10,
-		OpT(func(pb *Progressbar) error {
+		option.OpT(func(pb *Progressbar) error {
 			pb.ticks = make(chan time.Time)
 			pb.ticker = time.NewTicker(time.Hour)
 			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -811,7 +812,7 @@ func TestProgressBarWithContextCancelBound(t *testing.T) {
 	}
 
 	select {
-	case <-p.ctx.Done():
+	case <-p.Ctx.Done():
 	default:
 		t.Fatal("expected p.ctx to be canceled after Close()")
 	}
@@ -821,7 +822,7 @@ func TestNewFileProgressReaderWithContextCancelBound(t *testing.T) {
 	parentCtx := t.Context()
 	r := bytes.NewReader([]byte("test data"))
 	w, err := NewFileProgressReader(parentCtx, r, "test",
-		OpT(func(pb *Progressbar) error {
+		option.OpT(func(pb *Progressbar) error {
 			pb.ticks = make(chan time.Time)
 			pb.ticker = time.NewTicker(time.Hour)
 			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
@@ -851,7 +852,7 @@ func TestNewFileProgressReaderWithContextCancelBound(t *testing.T) {
 	}
 
 	select {
-	case <-w.p.ctx.Done():
+	case <-w.p.Ctx.Done():
 	default:
 		t.Fatal("expected w.p.ctx to be canceled after Close()")
 	}
@@ -862,7 +863,7 @@ func TestProgressbarAddAfterStoppedDoesNotBlock(t *testing.T) {
 	close(stopped)
 	p := &Progressbar{
 		io:         &termIO{},
-		ctx:        t.Context(),
+		Ctx:        t.Context(),
 		stopped:    stopped,
 		increments: make(chan int64),
 	}
@@ -916,7 +917,7 @@ type fakeTerminal struct {
 	frames   frameWriter
 	tick     func(time.Duration)
 	restored *atomic.Bool
-	terminal Opt
+	terminal option.Opt
 }
 
 // newFakeTerminal is a terminal width columns wide.
@@ -926,7 +927,7 @@ func newFakeTerminal(t *testing.T, width int) fakeTerminal {
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	clock := &atomic.Int64{}
-	ft.terminal = OpT(func(pb *Progressbar) error {
+	ft.terminal = option.OpT(func(pb *Progressbar) error {
 		pb.now = func() time.Time { return start.Add(time.Duration(clock.Load())) }
 		pb.ticks = ticks
 		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
@@ -950,8 +951,8 @@ func newFakeTerminal(t *testing.T, width int) fakeTerminal {
 }
 
 // options make a bar write to the terminal.
-func (ft fakeTerminal) options() []Opt {
-	return []Opt{WithOutput(ft.frames), ft.terminal}
+func (ft fakeTerminal) options() []option.Opt {
+	return []option.Opt{WithOutput(ft.frames), ft.terminal}
 }
 
 // closeOnCleanup closes p after the test, receiving the final clear of a bar
@@ -1028,7 +1029,7 @@ type parallelRun struct {
 
 // runParallel runs yield over items with NewParallelProgressBar under the
 // installed theme and gate.
-func runParallel(ctx context.Context, t *testing.T, items []int, yield func(int) error, o ...Opt) parallelRun {
+func runParallel(ctx context.Context, t *testing.T, items []int, yield func(int) error, o ...option.Opt) parallelRun {
 	t.Helper()
 	r := parallelRun{fakeTerminal: newFakeTerminal(t, 40), done: make(chan error, 1)}
 	o = append(r.options(), o...)

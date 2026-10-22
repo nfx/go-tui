@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/internal/option"
 	"io"
 	"strings"
 	"testing"
@@ -37,7 +38,7 @@ func TestInputWithNonEmpty(t *testing.T) {
 }
 
 // runValidated drives validation with scripted keys and captures output on a 40x3 terminal.
-func runValidated(t *testing.T, password bool, keys string, o ...Opt) (string, string, error) {
+func runValidated(t *testing.T, password bool, keys string, o ...option.Opt) (string, string, error) {
 	t.Helper()
 	i := newInput(t.Context(), "Label")
 	i.Password = password
@@ -45,16 +46,16 @@ func runValidated(t *testing.T, password bool, keys string, o ...Opt) (string, s
 	for _, k := range keys {
 		chunks = append(chunks, []byte(string(k)))
 	}
-	i.in = &chunkReader{chunks: chunks}
+	i.In = &chunkReader{chunks: chunks}
 	var out bytes.Buffer
-	i.out = &out
+	i.Out = &out
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{in: in, out: out, Width: 40, Height: 3, Restore: func() error { return nil }}, nil
 	}
-	if err := Opts(o).Apply(i); err != nil {
+	if err := option.Opts(o).Apply(i); err != nil {
 		return "", "", err
 	}
-	got, err := i.run(i.ctx)
+	got, err := i.run(i.Ctx)
 	return got, out.String(), err
 }
 

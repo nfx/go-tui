@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
@@ -66,7 +67,7 @@ func TestNewParallelProgressBarRunsConcurrently(t *testing.T) {
 				}
 				atomic.AddInt64(&active, -1)
 				return nil
-			}, WithWorkers(tt.workers), OpT(func(pb *Progressbar) error {
+			}, WithWorkers(tt.workers), option.OpT(func(pb *Progressbar) error {
 				pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 					return nil, ErrNoTTY
 				}
@@ -96,7 +97,7 @@ func TestNewParallelProgressBarStopsOnParentCancel(t *testing.T) {
 		case <-time.After(time.Second):
 		}
 		return nil
-	}, WithWorkers(2), OpT(func(p *Progressbar) error {
+	}, WithWorkers(2), option.OpT(func(p *Progressbar) error {
 		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, ErrNoTTY
 		}
@@ -139,7 +140,7 @@ func TestNewParallelProgressBarUsesDefaultNumCPU(t *testing.T) {
 		}
 		atomic.AddInt64(&active, -1)
 		return nil
-	}, OpT(func(pb *Progressbar) error {
+	}, option.OpT(func(pb *Progressbar) error {
 		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, ErrNoTTY
 		}
@@ -163,7 +164,7 @@ func TestNewParallelProgressBarFailFastOnFirstError(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 		return nil
-	}, WithWorkers(4), OpT(func(pb *Progressbar) error {
+	}, WithWorkers(4), option.OpT(func(pb *Progressbar) error {
 		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, ErrNoTTY
 		}
@@ -179,7 +180,7 @@ func TestNewParallelProgressBarRecoversPanicsAsBug(t *testing.T) {
 			panic("boom")
 		}
 		return nil
-	}, WithWorkers(2), OpT(func(pb *Progressbar) error {
+	}, WithWorkers(2), option.OpT(func(pb *Progressbar) error {
 		pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, ErrNoTTY
 		}
@@ -196,7 +197,7 @@ func TestNewParallelProgressBarPropagatesCloseError(t *testing.T) {
 	closeErr := io.EOF
 	err := NewParallelProgressBar(t.Context(), "parallel", []int{1}, func(v int) error {
 		return nil
-	}, OpT(func(pb *Progressbar) error {
+	}, option.OpT(func(pb *Progressbar) error {
 		pb.err = closeErr
 		pb.ticks = make(chan time.Time)
 		pb.ticker = time.NewTicker(time.Hour)

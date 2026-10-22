@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/internal/trie"
 	"github.com/nfx/go-tui/theme"
@@ -54,7 +55,7 @@ type multichoice struct {
 	offset      int
 	count       int
 	hint        string
-	def         DefaultValue
+	def         option.DefaultValue
 	target      choiceTarget
 	typed       string
 	Hide        bool
@@ -96,7 +97,7 @@ func (m *multichoice) SetHide() { m.Hide = true }
 // SetDefault records the default; a string is also a selection hint that
 // does not pre-fill the filter.
 func (m *multichoice) SetDefault(d any) {
-	m.def = DefaultValue{set: true, raw: d}
+	m.def = option.DefaultValue{Set: true, Raw: d}
 	m.hint, _ = d.(string) //nolint:errcheck // not a string is no hint
 }
 
@@ -106,12 +107,12 @@ func (m *multichoice) SetContentTemplate(main string, details ...string) {
 }
 
 // prepare validates options and defers item projection until destination binding.
-func (m *multichoice) prepare(o []Opt) error {
+func (m *multichoice) prepare(o []option.Opt) error {
 	err := m.Ctx.Err()
 	if err != nil {
 		return err
 	}
-	err = Opts(o).Apply(m)
+	err = option.Opts(o).Apply(m)
 	if err != nil {
 		return err
 	}
@@ -211,8 +212,8 @@ func (m *multichoice) setFocus(i int) {
 func (m *multichoice) resolveDefault() error {
 	var picked []int
 	switch {
-	case m.def.set && m.hint == "":
-		if _, isHint := m.def.raw.(string); !isHint {
+	case m.def.Set && m.hint == "":
+		if _, isHint := m.def.Raw.(string); !isHint {
 			var err error
 			picked, err = m.resolveTyped()
 			if err != nil {
@@ -239,7 +240,7 @@ func (m *multichoice) resolveDefault() error {
 
 // resolveTyped resolves the default against the entries collected so far.
 func (m *multichoice) resolveTyped() ([]int, error) {
-	return m.target.resolveSelection(m.def.raw, m.Items, trie.HintFromTrie(m.trie))
+	return m.target.resolveSelection(m.def.Raw, m.Items, trie.HintFromTrie(m.trie))
 }
 
 // answerFromDefault checks the entries of the default without a terminal.
@@ -250,8 +251,8 @@ func (m *multichoice) answerFromDefault(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if !m.def.set {
-		return NoDefault(m.Label)
+	if !m.def.Set {
+		return option.NoDefault(m.Label)
 	}
 	// without a terminal only the projection runs, for the hint to match
 	err = m.bind(defaultIO.bindTheme(ctx, m.theme, m.out, nil))
@@ -429,7 +430,7 @@ func (c choiceTarget) resolveSelection(d any, items []any, hint func(string) ([]
 				return nil, err
 			}
 			if slices.Contains(picked, i) {
-				return nil, BadDefault("selection repeats an entry")
+				return nil, option.BadDefault("selection repeats an entry")
 			}
 			picked = append(picked, i)
 		}
@@ -438,7 +439,7 @@ func (c choiceTarget) resolveSelection(d any, items []any, hint func(string) ([]
 	}
 	s, ok := d.(string)
 	if !ok {
-		return nil, BadDefault("%T matches no entry", d)
+		return nil, option.BadDefault("%T matches no entry", d)
 	}
 	matches, err := hint(s)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/option"
 	"io"
 	"strings"
 	"unicode"
@@ -116,7 +117,7 @@ func (m *multichoice) finishLoading() error {
 }
 
 // run emits an answer only after successful interaction and cleanup.
-func (m *multichoice) run(ctx context.Context, o ...Opt) error {
+func (m *multichoice) run(ctx context.Context, o ...option.Opt) error {
 	if err := m.prepare(o); err != nil {
 		return err
 	}

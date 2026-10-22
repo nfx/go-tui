@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
 	"io"
 	"math"
@@ -168,9 +169,9 @@ func newNumber[T numberType](ctx context.Context, label string) *number[T] {
 }
 
 // read checks options before prompting and returns the confirmed value.
-func (n *number[T]) read(ctx context.Context, option ...Opt) (T, error) {
+func (n *number[T]) read(ctx context.Context, o ...option.Opt) (T, error) {
 	var zero T
-	if err := Opts(option).Apply(n); err != nil {
+	if err := option.Opts(o).Apply(n); err != nil {
 		return zero, err
 	}
 	if err := n.checkBounds(); err != nil {

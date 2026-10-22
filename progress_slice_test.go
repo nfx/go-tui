@@ -6,6 +6,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
@@ -33,7 +34,7 @@ func TestNewSliceProgressBar(t *testing.T) {
 	seq := NewSliceProgressBar(t.Context(), "items", items,
 		WithInput(cio),
 		WithOutput(cio),
-		OpT(func(pb *Progressbar) error {
+		option.OpT(func(pb *Progressbar) error {
 			seen = pb
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
@@ -75,7 +76,7 @@ drainedSlice:
 }
 
 func TestNewSliceProgressBarStopsOnYieldFalse(t *testing.T) {
-	seq := NewSliceProgressBar(t.Context(), "label", []int{1, 2, 3}, OpT(func(p *Progressbar) error {
+	seq := NewSliceProgressBar(t.Context(), "label", []int{1, 2, 3}, option.OpT(func(p *Progressbar) error {
 		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, ErrNoTTY
 		}
@@ -92,7 +93,7 @@ func TestNewSliceProgressBarStopsOnYieldFalse(t *testing.T) {
 }
 
 func TestNewSliceProgressBarReturnsError(t *testing.T) {
-	seq := NewSliceProgressBar(t.Context(), "label", []int{1}, OpT(func(p *Progressbar) error {
+	seq := NewSliceProgressBar(t.Context(), "label", []int{1}, option.OpT(func(p *Progressbar) error {
 		p.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return nil, errors.New("boom")
 		}
@@ -115,7 +116,7 @@ func TestThemedSliceProgress(t *testing.T) {
 	var clock atomic.Int64
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	items := []string{"a", "b", "c", "d"}
-	seq := NewSliceProgressBar(t.Context(), "items", items, OpT(func(pb *Progressbar) error {
+	seq := NewSliceProgressBar(t.Context(), "items", items, option.OpT(func(pb *Progressbar) error {
 		pb.now = func() time.Time { return start.Add(time.Duration(clock.Load())) }
 		pb.ticks = ticks
 		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
@@ -150,7 +151,7 @@ func TestThemedSliceProgressReturnsRenderError(t *testing.T) {
 	th.Templates.Progress.Hint = `{{ boom }}`
 	useTheme(t, th)
 	ticks := make(chan time.Time)
-	seq := NewSliceProgressBar(t.Context(), "items", []int{1, 2}, OpT(func(pb *Progressbar) error {
+	seq := NewSliceProgressBar(t.Context(), "items", []int{1, 2}, option.OpT(func(pb *Progressbar) error {
 		pb.ticks = ticks
 		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
 			return &termIO{in: in, out: io.Discard, Width: 30, Height: 10, Restore: func() error { return nil }}, nil

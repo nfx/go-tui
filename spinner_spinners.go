@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
 	"io"
 	"sync"
@@ -17,7 +18,7 @@ import (
 )
 
 type Spinners struct {
-	Config
+	option.Config
 	// cancel ends the group; a render failure is its cause.
 	cancel  context.CancelCauseFunc
 	io      *termIO
@@ -47,9 +48,9 @@ func newSpinners(ctx context.Context) *Spinners {
 	ticker := time.NewTicker(theme.Source.Spinner.Interval)
 	in, out := defaultStreams(ctx)
 	return &Spinners{
-		ctx:        ctx,
-		in:         in,
-		out:        out,
+		Ctx:        ctx,
+		In:         in,
+		Out:        out,
 		ticker:     ticker,
 		ticks:      ticker.C,
 		cancel:     cancel,
@@ -72,7 +73,7 @@ func (s *Spinners) Close() {
 	}
 }
 
-func (s *Spinners) MustAddBackground(opt ...Opt) *Spinner {
+func (s *Spinners) MustAddBackground(opt ...option.Opt) *Spinner {
 	spinner, err := s.Add(context.Background(), opt...)
 	if err != nil {
 		panic(err)
@@ -81,7 +82,7 @@ func (s *Spinners) MustAddBackground(opt ...Opt) *Spinner {
 }
 
 // Add creates a spinner that animates the frames of the theme of the group.
-func (s *Spinners) Add(ctx context.Context, opt ...Opt) (*Spinner, error) {
+func (s *Spinners) Add(ctx context.Context, opt ...option.Opt) (*Spinner, error) {
 	// rewrap the context, so that we can cancel the spinner when
 	// we don't want to cancel the parent context.
 	ctx, cancel := context.WithCancel(ctx)
@@ -91,14 +92,14 @@ func (s *Spinners) Add(ctx context.Context, opt ...Opt) (*Spinner, error) {
 		frames:      s.theme.Source.Symbols.Spinner,
 		replyOffset: replyOffset,
 	}
-	err := Opts(opt).Apply(&req)
+	err := option.Opts(opt).Apply(&req)
 	if err != nil {
 		cancel()
 		return nil, err
 	}
 	// when parent context is done, we can't create a spinner
 	select {
-	case <-s.ctx.Done():
+	case <-s.Ctx.Done():
 		cancel()
 		return nil, s.err()
 	case <-ctx.Done():
@@ -106,7 +107,7 @@ func (s *Spinners) Add(ctx context.Context, opt ...Opt) (*Spinner, error) {
 		return nil, ctx.Err()
 	case s.creates <- req:
 		select {
-		case <-s.ctx.Done(): // spinner group is done
+		case <-s.Ctx.Done(): // spinner group is done
 			cancel()
 			return nil, s.err()
 		case <-ctx.Done(): // what created this spinner is done
@@ -125,7 +126,7 @@ func (s *Spinners) Add(ctx context.Context, opt ...Opt) (*Spinner, error) {
 }
 
 // err is why the group ended: a render failure, or the cancellation.
-func (s *Spinners) err() error { return context.Cause(s.ctx) }
+func (s *Spinners) err() error { return context.Cause(s.Ctx) }
 
 func (s *Spinners) emit(ev spinnerEvent) {
 	if s.eventSink == nil {
@@ -209,12 +210,12 @@ func (s *Spinners) drainQueues() {
 // updateOffset is a concurrent client for [Spinners.updateSpinner].
 func (s *Spinners) updateOffset(offset int, message string, err error) {
 	select {
-	case <-s.ctx.Done():
+	case <-s.Ctx.Done():
 		return
 	default:
 	}
 	select {
-	case <-s.ctx.Done():
+	case <-s.Ctx.Done():
 		return
 	case s.updates <- updateOffset{
 		offset:  offset,
@@ -265,12 +266,12 @@ func (s *Spinners) stopOffset(offset int) error {
 	// select picks randomly among ready cases, so check ctx first to never
 	// enqueue once stopped.
 	select {
-	case <-s.ctx.Done():
+	case <-s.Ctx.Done():
 		return s.err()
 	default:
 	}
 	select {
-	case <-s.ctx.Done():
+	case <-s.Ctx.Done():
 		return s.err()
 	case s.stops <- offset:
 		return nil
@@ -451,7 +452,7 @@ func (s *Spinners) newSpinner(ns createSpinner) {
 		Index: offset,
 	})
 	select {
-	case <-s.ctx.Done():
+	case <-s.Ctx.Done():
 		return
 	case ns.replyOffset <- offset:
 	}
@@ -462,7 +463,7 @@ func (s *Spinners) logStage(level slog.Level, message string, offset int, status
 	if s.io != nil {
 		return
 	}
-	slog.Default().Log(s.ctx, level, message,
+	slog.Default().Log(s.Ctx, level, message,
 		"spinner", offset,
 		"prefix", s.state[offset].Prefix.String(),
 		"status", status,

@@ -6,6 +6,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"github.com/nfx/go-tui/internal/option"
 	"iter"
 	"reflect"
 	"sort"
@@ -28,7 +29,12 @@ func mapValue[K comparable, V any](item any) any {
 	return kv.Value
 }
 
-func DropdownKV[K comparable, V any](ctx context.Context, label string, items map[K]V, opts ...Opt) (K, V, error) {
+func DropdownKV[K comparable, V any](
+	ctx context.Context,
+	label string,
+	items map[K]V,
+	opts ...option.Opt,
+) (K, V, error) {
 	var zeroK K
 	var zeroV V
 	if len(items) == 0 {
@@ -43,7 +49,7 @@ func DropdownKV[K comparable, V any](ctx context.Context, label string, items ma
 		return fmt.Sprintf("%v", kvs[i].Key) < fmt.Sprintf("%v", kvs[j].Key)
 	})
 	// the theme presents the entries, projected to their keys
-	opts = append([]Opt{WithTemplate("(label .Key)")}, opts...)
+	opts = append([]option.Opt{WithTemplate("(label .Key)")}, opts...)
 	anyKVs := make([]any, len(kvs))
 	for i, kv := range kvs {
 		anyKVs[i] = kv
@@ -59,7 +65,7 @@ func DropdownKV[K comparable, V any](ctx context.Context, label string, items ma
 	return kvs[i].Key, kvs[i].Value, nil
 }
 
-func Dropdown[T any](ctx context.Context, label string, items []T, opts ...Opt) (T, error) {
+func Dropdown[T any](ctx context.Context, label string, items []T, opts ...option.Opt) (T, error) {
 	var zero T
 	if len(items) == 0 {
 		return zero, ErrNoItems
@@ -77,12 +83,12 @@ func Dropdown[T any](ctx context.Context, label string, items []T, opts ...Opt) 
 	return items[i], nil
 }
 
-func DropdownLazy[V any](ctx context.Context, label string, itemFn iter.Seq2[V, error], o ...Opt) (V, error) {
+func DropdownLazy[V any](ctx context.Context, label string, itemFn iter.Seq2[V, error], o ...option.Opt) (V, error) {
 	var zero V
 	d := newDropdown(ctx)
 	d.Label = label
 	d.target = targetOf[V]()
-	err := Opts(o).Apply(d)
+	err := option.Opts(o).Apply(d)
 	if err != nil {
 		return zero, err
 	}
@@ -127,15 +133,15 @@ func DropdownLazy[V any](ctx context.Context, label string, itemFn iter.Seq2[V, 
 	return valid, nil
 }
 
-func DropdownIndex(ctx context.Context, label string, items []any, o ...Opt) (int, error) {
+func DropdownIndex(ctx context.Context, label string, items []any, o ...option.Opt) (int, error) {
 	return pickIndex(ctx, label, items, choiceTarget{}, o)
 }
 
 // pickIndex runs a dropdown whose typed defaults have the type of target.
-func pickIndex(ctx context.Context, label string, items []any, target choiceTarget, o []Opt) (int, error) {
+func pickIndex(ctx context.Context, label string, items []any, target choiceTarget, o []option.Opt) (int, error) {
 	d := newDropdown(ctx)
 	d.target = target
-	err := Opts(o).Apply(d)
+	err := option.Opts(o).Apply(d)
 	if err != nil {
 		return -1, err
 	}
@@ -143,8 +149,8 @@ func pickIndex(ctx context.Context, label string, items []any, target choiceTarg
 }
 
 // WithHide skips printing the answer of a dropdown or an input.
-func WithHide() Opt {
-	return OpT(func(x Prompt) error {
+func WithHide() option.Opt {
+	return option.OpT(func(x option.Prompt) error {
 		x.SetHide()
 		return nil
 	})

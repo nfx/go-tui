@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"math"
@@ -82,7 +83,7 @@ func TestNumberNativeWidth(t *testing.T) {
 	assert.True(t, !u.signed)
 }
 
-func runNumber[T numberType](t *testing.T, keys string, option ...Opt) (T, string, error) {
+func runNumber[T numberType](t *testing.T, keys string, option ...option.Opt) (T, string, error) {
 	t.Helper()
 	var out bytes.Buffer
 	v, err := Number[T](t.Context(), "Count:", append(option,
@@ -163,7 +164,7 @@ func TestNumberOptions(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 5, v)
 
-	for _, o := range []Opt{WithNonEmpty(), WithHide(), WithValidation(func(context.Context, string) error { return nil }),
+	for _, o := range []option.Opt{WithNonEmpty(), WithHide(), WithValidation(func(context.Context, string) error { return nil }),
 		WithRegex(`[0-9]`, "one digit"), WithOneReturn(), WithOptions(WithTemplate(".Name"))} {
 		_, _, err = runNumber[int](t, "5\r", o)
 		assert.ErrorIs(t, err, ErrWrongWidget)
@@ -276,7 +277,7 @@ func themedNumber[T numberType](
 	t.Helper()
 	i, out, restored := themedInput(t, th, width, height, keys...)
 	n = newNumber[T](t.Context(), "Count")
-	n.prompt.in, n.prompt.out, n.prompt.makeTermIO = i.in, i.out, i.makeTermIO
+	n.prompt.In, n.prompt.Out, n.prompt.makeTermIO = i.In, i.Out, i.makeTermIO
 	return n, out, restored
 }
 
@@ -409,7 +410,7 @@ func TestThemedNumberStepsAndRetainsExactDraft(t *testing.T) {
 }
 
 func TestThemedNumberKeepsOptionSet(t *testing.T) {
-	for _, o := range []Opt{WithTemplate("x")} {
+	for _, o := range []option.Opt{WithTemplate("x")} {
 		n, _, restored := themedNumber[int](t, asciiTheme(false), 30, 5, "1", "\r")
 		_, err := n.read(t.Context(), o)
 		assert.ErrorIs(t, err, ErrWrongWidget)
@@ -431,7 +432,7 @@ func TestThemedNumberHintErrorRestoresTerminal(t *testing.T) {
 	// without a terminal, the default is the answer and no slot runs
 	strictOutput(t)
 	n, out, _ = themedNumber[int](t, th, 30, 5)
-	n.prompt.out = out
+	n.prompt.Out = out
 	n.prompt.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
 		t.Fatal("acquired a terminal")
 		return nil, ErrNoTTY

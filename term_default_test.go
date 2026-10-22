@@ -99,17 +99,17 @@ func TestSetDefaultIO(t *testing.T) {
 	assert.Equal(t, out, d.out)
 
 	input := newInput(t.Context(), "label")
-	assert.Equal(t, in, input.in)
-	assert.Equal(t, out, input.out)
+	assert.Equal(t, in, input.In)
+	assert.Equal(t, out, input.Out)
 
 	s := newSpinners(t.Context())
-	assert.Equal(t, in, s.in)
-	assert.Equal(t, out, s.out)
+	assert.Equal(t, in, s.In)
+	assert.Equal(t, out, s.Out)
 	s.ticker.Stop()
 
 	p := newProgressbar(t.Context())
-	assert.Equal(t, in, p.in)
-	assert.Equal(t, out, p.out)
+	assert.Equal(t, in, p.In)
+	assert.Equal(t, out, p.Out)
 	p.ticker.Stop()
 }
 
@@ -140,17 +140,17 @@ func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
 	assert.Equal(t, cio, d.out)
 
 	input := newInput(t.Context(), "label")
-	assert.Equal(t, in, input.in)
-	assert.Equal(t, cio, input.out)
+	assert.Equal(t, in, input.In)
+	assert.Equal(t, cio, input.Out)
 
 	s := newSpinners(t.Context())
-	assert.Equal(t, in, s.in)
-	assert.Equal(t, cio, s.out)
+	assert.Equal(t, in, s.In)
+	assert.Equal(t, cio, s.Out)
 	s.ticker.Stop()
 
 	p := newProgressbar(t.Context())
-	assert.Equal(t, in, p.in)
-	assert.Equal(t, cio, p.out)
+	assert.Equal(t, in, p.In)
+	assert.Equal(t, cio, p.Out)
 	p.ticker.Stop()
 }
 

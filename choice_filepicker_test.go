@@ -5,6 +5,7 @@ package tui
 
 import (
 	"errors"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
@@ -212,7 +213,7 @@ func TestThemedFilePickerKeepsOneThemeAcrossDirectories(t *testing.T) {
 	other.Templates.Prompt.Label = `other {{ .Label }}`
 	other.Templates.Prompt.Answer = `other {{ .Value }}`
 	terminals := 0
-	install := OpT(func(d *dropdown) error {
+	install := option.OpT(func(d *dropdown) error {
 		next := d.makeTermIO
 		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			terminals++

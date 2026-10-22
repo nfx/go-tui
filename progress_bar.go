@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
 	"io"
 	"log/slog"
@@ -22,9 +23,9 @@ func newProgressbar(ctx context.Context) *Progressbar {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	in, out := defaultStreams(ctx)
 	return &Progressbar{
-		ctx:        ctx,
-		in:         in,
-		out:        out,
+		Ctx:        ctx,
+		In:         in,
+		Out:        out,
 		theme:      defaultIO.currentTheme(),
 		ticker:     ticker,
 		ticks:      ticker.C,
@@ -38,10 +39,10 @@ func newProgressbar(ctx context.Context) *Progressbar {
 }
 
 // newStartedProgressBar starts a bar, rendering through the captured theme.
-func newStartedProgressBar(ctx context.Context, label string, size int64, o ...Opt) (*Progressbar, error) {
+func newStartedProgressBar(ctx context.Context, label string, size int64, o ...option.Opt) (*Progressbar, error) {
 	var err error
 	p := newProgressbar(ctx)
-	err = Opts(o).Apply(p)
+	err = option.Opts(o).Apply(p)
 	if err != nil {
 		p.cancel(err)
 		return nil, fmt.Errorf("apply option: %w", err)
@@ -56,7 +57,7 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, o ...O
 	p.showEstimate = true
 	p.maxNum = size
 	p.label = ansi.Text(label)
-	p.io, err = p.makeTermIO(p.in, p.out)
+	p.io, err = p.makeTermIO(p.In, p.Out)
 	if errors.Is(err, ErrNoTTY) {
 		return p, nil // logs milestones instead, see [Progressbar.logProgress]
 	} else if err != nil {
@@ -74,12 +75,12 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, o ...O
 		Label: p.label.String(),
 		Max:   p.maxNum,
 	})
-	go p.start(p.ctx) //nolint:contextcheck // p.ctx derives from ctx and is canceled by Close
+	go p.start(p.Ctx) //nolint:contextcheck // p.ctx derives from ctx and is canceled by Close
 	return p, nil
 }
 
 type Progressbar struct {
-	Config
+	option.Config
 	progressState
 	label      ansi.Text
 	increments chan int64
@@ -110,13 +111,13 @@ type Progressbar struct {
 
 func (p *Progressbar) Add(num int64) {
 	if p.io == nil {
-		if p.ctx.Err() == nil {
+		if p.Ctx.Err() == nil {
 			p.logProgress(num, false)
 		}
 		return
 	}
 	select {
-	case <-p.ctx.Done():
+	case <-p.Ctx.Done():
 		return
 	case <-p.stopped: // renderer exited, nobody receives increments anymore
 		return
@@ -126,7 +127,7 @@ func (p *Progressbar) Add(num int64) {
 
 func (p *Progressbar) Close() error {
 	if p.io == nil {
-		if p.ctx != nil && p.ctx.Err() == nil {
+		if p.Ctx != nil && p.Ctx.Err() == nil {
 			p.logProgress(0, true)
 		}
 		if p.cancel != nil {
@@ -162,7 +163,7 @@ func (p *Progressbar) logProgress(n int64, end bool) {
 	}
 	p.loggedPercent = percent
 	if p.bytes {
-		slog.Default().InfoContext(p.ctx, "file progress",
+		slog.Default().InfoContext(p.Ctx, "file progress",
 			"label", p.label.String(),
 			"percent", percent,
 			"read", p.logged,
@@ -170,7 +171,7 @@ func (p *Progressbar) logProgress(n int64, end bool) {
 		)
 		return
 	}
-	slog.Default().InfoContext(p.ctx, "progress",
+	slog.Default().InfoContext(p.Ctx, "progress",
 		"label", p.label.String(),
 		"percent", percent,
 		"done", p.logged,

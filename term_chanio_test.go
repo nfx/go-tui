@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/nfx/go-tui/internal/option"
 	"io"
 	"strings"
 	"sync"
@@ -64,7 +65,7 @@ func TestChanIO_Forward(t *testing.T) {
 
 	s, err := NewSpinners(cio.ctx,
 		WithOutput(cio),
-		OpT(func(s *Spinners) error { //nolint:unparam // ..
+		option.OpT(func(s *Spinners) error { //nolint:unparam // ..
 			s.ticks = ticks
 			return nil
 		}),

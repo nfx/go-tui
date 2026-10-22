@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
 	"log/slog"
 	"os"
@@ -65,15 +66,15 @@ func (f *filePicker) skip(e os.DirEntry) bool {
 
 // newFilePicker applies o to the picker and to the dropdown that shows the
 // first directory. Every option must be supported by at least one of them.
-func newFilePicker(ctx context.Context, o ...Opt) (*filePicker, *dropdown, error) {
+func newFilePicker(ctx context.Context, o ...option.Opt) (*filePicker, *dropdown, error) {
 	f := &filePicker{
 		extensions: map[string]bool{},
 	}
 	d := newDropdown(ctx)
 	f.theme = d.theme
 	f.adopt(d)
-	for _, option := range o {
-		err := ApplyToAny(option, f, d)
+	for _, one := range o {
+		err := option.ApplyToAny(one, f, d)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -114,7 +115,7 @@ func (f *filePicker) step(
 // nextDropdown configures the dropdown of the next directory. Options were
 // validated by newFilePicker, so the bundle may only skip the ones that
 // configure the picker itself.
-func (f *filePicker) nextDropdown(ctx context.Context, o []Opt) (*dropdown, error) {
+func (f *filePicker) nextDropdown(ctx context.Context, o []option.Opt) (*dropdown, error) {
 	d := newDropdown(ctx)
 	f.adopt(d)
 	err := WithOptions(o...)(d)
@@ -170,7 +171,7 @@ func (f *filePicker) answer(d *dropdown, title, path string) error {
 }
 
 // canAnswer reports whether a default or the single-entry shortcut is set.
-func (d *dropdown) canAnswer() bool { return d.def.set || d.OneReturn }
+func (d *dropdown) canAnswer() bool { return d.def.Set || d.OneReturn }
 
 // joinStack is the path of the directory on top of the stack.
 func joinStack(stack []os.DirEntry) string {
@@ -245,11 +246,11 @@ func (f *filePicker) answerFromDefault(
 	if i, ok := f.soleEntry(entries); ok && d.OneReturn {
 		return i, nil
 	}
-	if !d.def.set {
-		return -1, NoDefault(title)
+	if !d.def.Set {
+		return -1, option.NoDefault(title)
 	}
 	var matches []int
-	switch want := d.def.raw.(type) {
+	switch want := d.def.Raw.(type) {
 	case os.DirEntry:
 		for i, e := range entries {
 			if e.Name() == want.Name() && e.IsDir() == want.IsDir() {
@@ -279,5 +280,5 @@ func (f *filePicker) answerFromDefault(
 		}
 		return i, ctx.Err()
 	}
-	return -1, BadDefault("%T is neither a name nor an os.DirEntry", d.def.raw)
+	return -1, option.BadDefault("%T is neither a name nor an os.DirEntry", d.def.Raw)
 }

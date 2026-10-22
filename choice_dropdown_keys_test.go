@@ -47,9 +47,9 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 	_, err = pw.Write([]byte{'x', keyEnter})
 	assert.NoError(t, err)
 	next := newInput(t.Context(), "next")
-	next.ctx, cancel = context.WithTimeout(t.Context(), time.Second)
+	next.Ctx, cancel = context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	next.in, next.out = in, &bytes.Buffer{}
+	next.In, next.Out = in, &bytes.Buffer{}
 	next.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{in: in, out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
 	}

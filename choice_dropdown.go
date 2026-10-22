@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/internal/trie"
 	"io"
@@ -69,7 +70,7 @@ type dropdown struct {
 	typed    []rune
 	oneMatch string // see [WithDefault]
 	// def is the raw default; target types it; normalize adapts it first.
-	def       DefaultValue
+	def       option.DefaultValue
 	target    choiceTarget
 	normalize func(any) any
 	// seedIdx is the entry a typed default selects when seeded is set.
@@ -153,33 +154,33 @@ func (d *dropdown) resolveAutomatic(items []any) (int, error) {
 	if d.OneReturn && len(items) == 1 {
 		return 0, nil
 	}
-	if !d.def.set {
-		return -1, NoDefault(d.Label)
+	if !d.def.Set {
+		return -1, option.NoDefault(d.Label)
 	}
-	return d.target.resolveSingle(d.def.raw, items, d.hintMatches(items))
+	return d.target.resolveSingle(d.def.Raw, items, d.hintMatches(items))
 }
 
 // seedDefault makes a typed default the first and selected row of an
 // interactive dropdown. String hints keep their own ranking.
 func (d *dropdown) seedDefault() error {
-	if !d.def.set {
+	if !d.def.Set {
 		return nil
 	}
-	if _, isHint := d.def.raw.(string); isHint {
+	if _, isHint := d.def.Raw.(string); isHint {
 		return nil
 	}
-	if !d.target.accepts(d.def.raw) {
-		return BadDefault("%T has the wrong type", d.def.raw)
+	if !d.target.accepts(d.def.Raw) {
+		return option.BadDefault("%T has the wrong type", d.def.Raw)
 	}
 	if d.itItems != nil {
 		d.seedLazy = true // the entry may arrive later
 		return nil
 	}
-	matches, err := d.target.matches(d.def.raw, d.Items)
+	matches, err := d.target.matches(d.def.Raw, d.Items)
 	if err != nil {
 		return err
 	}
-	i, err := uniqueMatch(matches, fmt.Sprintf("%T value", d.def.raw))
+	i, err := uniqueMatch(matches, fmt.Sprintf("%T value", d.def.Raw))
 	if err != nil {
 		return err
 	}
@@ -225,7 +226,7 @@ func (d *dropdown) SetDefault(v any) {
 	if d.normalize != nil {
 		v = d.normalize(v)
 	}
-	d.def = DefaultValue{set: true, raw: v}
+	d.def = option.DefaultValue{Set: true, Raw: v}
 	hint, _ := v.(string) //nolint:errcheck // not a string is no hint
 	d.oneMatch = hint
 	d.rankHint = hint
