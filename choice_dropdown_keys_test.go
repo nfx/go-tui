@@ -15,6 +15,7 @@ import (
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
+	"io"
 )
 
 func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
@@ -222,4 +223,34 @@ func TestDropdownPressKeyRuneOneReturn(t *testing.T) {
 	confirmed, ok := events[1].(dropdownConfirmed)
 	assert.True(t, ok)
 	assert.Equal(t, 0, confirmed.Selected)
+}
+
+func TestDropdownPressKeyReadsSharedPendingEnter(t *testing.T) {
+	for _, fresh := range []bool{false, true} {
+		name := "same terminal"
+		if fresh {
+			name = "fresh terminal"
+		}
+		t.Run(name, func(t *testing.T) {
+			in := &terst.MockDescriptor{Reader: bytes.NewBufferString("\x1b[A\r"), FD: 0}
+			first := &term.IO{In: in, Out: &bytes.Buffer{}}
+			ev := <-first.ReadEvents(t.Context(), nil)
+			first.AwaitReader()
+			assert.NoError(t, ev.Err)
+			assert.Equal(t, '↑', ev.Key)
+			second := first
+			if fresh {
+				second = &term.IO{In: in, Out: &bytes.Buffer{}}
+			}
+			d := newDropdown(t.Context())
+			d.Items = []any{"one", "two"}
+			d.relevant = []int{0, 1}
+			i, err := d.pressKey(d.Ctx, second, &bytes.Buffer{}, 1, 2)
+			assert.NoError(t, err)
+			assert.Equal(t, 0, i)
+			ev = <-second.ReadEvents(t.Context(), nil)
+			second.AwaitReader()
+			assert.ErrorIs(t, ev.Err, io.EOF)
+		})
+	}
 }

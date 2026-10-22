@@ -84,16 +84,3 @@ func TestEntryPointsRejectOptionsOfOtherWidgets(t *testing.T) {
 	_, err = FilePicker(t.Context(), "Pick", WithWorkers(2))
 	assert.ErrorIs(t, err, ErrWrongWidget)
 }
-
-func TestFilePickerSplitsOptionsBetweenParts(t *testing.T) {
-	writer := &bytes.Buffer{}
-	f, d, err := newFilePicker(t.Context(),
-		WithStartDir(t.TempDir()),
-		WithOutput(writer),
-		WithOptions(WithShowHidden(), WithHide()),
-	)
-	assert.NoError(t, err)
-	assert.True(t, f.showHidden)
-	assert.True(t, d.Hide)
-	assert.Equal(t, io.Writer(writer), d.out)
-}

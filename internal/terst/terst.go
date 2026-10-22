@@ -22,6 +22,7 @@ import (
 	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
+	"sync/atomic"
 )
 
 // SyncBuffer is a bytes.Buffer safe for one writer goroutine and concurrent readers.
@@ -275,6 +276,50 @@ func ProbingKeyboard(t *testing.T, fd uintptr) {
 
 // ASCIISymbols replace the presets on terminals without the Unicode glyphs.
 var ASCIISymbols = theme.New().Symbols.ASCII()
+
+// BlockingByteReader feeds scripted chunks to a blocking Read.
+type BlockingByteReader struct {
+	ch      chan []byte
+	waiters atomic.Int32
+}
+
+// NewBlockingByteReader returns a reader whose Read blocks until a chunk is
+// sent; buffer is the number of chunks that can be sent without a reader.
+func NewBlockingByteReader(buffer int) *BlockingByteReader {
+	return &BlockingByteReader{ch: make(chan []byte, buffer)}
+}
+
+func (r *BlockingByteReader) Read(p []byte) (int, error) {
+	r.waiters.Add(1)
+	chunk, ok := <-r.ch
+	r.waiters.Add(-1)
+	if !ok {
+		return 0, io.EOF
+	}
+	if len(chunk) == 0 || len(p) == 0 {
+		return 0, nil
+	}
+	n := copy(p, chunk)
+	return n, nil
+}
+
+func (r *BlockingByteReader) SendByte(b byte) {
+	r.SendBytes([]byte{b})
+}
+
+func (r *BlockingByteReader) SendBytes(bs []byte) {
+	cp := make([]byte, len(bs))
+	copy(cp, bs)
+	r.ch <- cp
+}
+
+func (r *BlockingByteReader) Waiters() int {
+	return int(r.waiters.Load())
+}
+
+func (r *BlockingByteReader) Close() {
+	close(r.ch)
+}
 
 // ASCIITheme is the preset theme with ASCII symbols, Guided or Inline.
 func ASCIITheme(inline bool) theme.Theme {

@@ -15,7 +15,6 @@ import (
 	"io"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -82,49 +81,6 @@ type dropdownTextLabelItem struct {
 
 type dropdownSubjectLabelItem struct {
 	Subject string
-}
-
-type blockingByteReader struct {
-	ch      chan []byte
-	waiters atomic.Int32
-}
-
-func newBlockingByteReader() *blockingByteReader {
-	return &blockingByteReader{
-		ch: make(chan []byte),
-	}
-}
-
-func (r *blockingByteReader) Read(p []byte) (int, error) {
-	r.waiters.Add(1)
-	chunk, ok := <-r.ch
-	r.waiters.Add(-1)
-	if !ok {
-		return 0, io.EOF
-	}
-	if len(chunk) == 0 || len(p) == 0 {
-		return 0, nil
-	}
-	n := copy(p, chunk)
-	return n, nil
-}
-
-func (r *blockingByteReader) SendByte(b byte) {
-	r.SendBytes([]byte{b})
-}
-
-func (r *blockingByteReader) SendBytes(bs []byte) {
-	cp := make([]byte, len(bs))
-	copy(cp, bs)
-	r.ch <- cp
-}
-
-func (r *blockingByteReader) Waiters() int {
-	return int(r.waiters.Load())
-}
-
-func (r *blockingByteReader) Close() {
-	close(r.ch)
 }
 
 // testIOforDropdown provides channel-driven prompt I/O at a fixed terminal size.
@@ -955,7 +911,7 @@ func waitForOutputContaining(t *testing.T, out <-chan string, substr string, tim
 	}
 }
 
-func assertNoWaitersFor(t *testing.T, r *blockingByteReader, d time.Duration) {
+func assertNoWaitersFor(t *testing.T, r *terst.BlockingByteReader, d time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(d)
 	for time.Now().Before(deadline) {
@@ -1269,7 +1225,7 @@ func scripted(t *testing.T, th theme.Theme, width int, keys ...string) *scripted
 	terst.UseTheme(t, th)
 	s := &scriptedTerminal{out: &bytes.Buffer{}, restored: new(bool), width: width}
 	if len(keys) == 0 {
-		blocking := newBlockingByteReader()
+		blocking := terst.NewBlockingByteReader(0)
 		t.Cleanup(blocking.Close)
 		s.in = blocking
 		return s
@@ -1304,4 +1260,17 @@ func TestDropdownConfirmClearsFrameOnce(t *testing.T) {
 		"\r? Fruit\n\r| > apple\n\r|   banana\n\r|   cherry\n\r| ^v move · type filter\n\r"+
 		"\x1b[5A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[4A\r"+
 		"+ Fruit · apple\n", out.String())
+}
+
+func TestNewDropdownUsesDefaultIO(t *testing.T) {
+	prevIn := term.Default.Input()
+	prevOut := term.Default.RawOutput()
+	t.Cleanup(func() { term.Default.SetIO(prevIn, prevOut) })
+	in := bytes.NewBufferString("in")
+	out := &bytes.Buffer{}
+	term.Default.SetIO(in, out)
+
+	d := newDropdown(t.Context())
+	assert.Equal(t, in, d.in)
+	assert.Equal(t, out, d.out)
 }

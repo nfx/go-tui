@@ -264,7 +264,7 @@ func TestDropdownLazySelectsItem(t *testing.T) {
 }
 
 func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
-	in := newBlockingByteReader()
+	in := terst.NewBlockingByteReader(0)
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(func() {
 		cancel()
@@ -315,7 +315,7 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 }
 
 func TestDropdownLazyDoesNotStartProducerWhenContextAlreadyCanceled(t *testing.T) {
-	in := newBlockingByteReader()
+	in := terst.NewBlockingByteReader(0)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	t.Cleanup(in.Close)

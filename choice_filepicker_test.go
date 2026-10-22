@@ -16,6 +16,7 @@ import (
 	"testing"
 	"text/template"
 
+	"bytes"
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
 )
@@ -361,4 +362,17 @@ func TestThemedFilePickerHelperErrorRestoresTerminal(t *testing.T) {
 	assert.ErrorIs(t, err, boom)
 	assert.True(t, *restored)
 	assert.True(t, !strings.Contains(out.String(), "+ File"))
+}
+
+func TestFilePickerSplitsOptionsBetweenParts(t *testing.T) {
+	writer := &bytes.Buffer{}
+	f, d, err := newFilePicker(t.Context(),
+		WithStartDir(t.TempDir()),
+		WithOutput(writer),
+		WithOptions(WithShowHidden(), WithHide()),
+	)
+	assert.NoError(t, err)
+	assert.True(t, f.showHidden)
+	assert.True(t, d.Hide)
+	assert.Equal(t, io.Writer(writer), d.out)
 }

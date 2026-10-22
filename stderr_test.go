@@ -122,7 +122,7 @@ func TestInputAndStderrShareDefaultTerminal(t *testing.T) {
 		SetDefaultIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 60, 8)
-	reader := &blockingByteReader{ch: make(chan []byte, 3)}
+	reader := terst.NewBlockingByteReader(3)
 	t.Cleanup(reader.Close)
 	input := &terst.MockDescriptor{Reader: reader, FD: 0}
 	SetDefaultIO(input, cio)

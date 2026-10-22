@@ -24,7 +24,7 @@ func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
 		SetDefaultIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 60, 8)
-	reader := &blockingByteReader{ch: make(chan []byte, 8)}
+	reader := terst.NewBlockingByteReader(8)
 	t.Cleanup(reader.Close)
 	input := &terst.MockDescriptor{Reader: reader, FD: 0}
 	SetDefaultIO(input, cio)
@@ -81,10 +81,6 @@ func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
 	assert.True(t, ok)
 	assert.NotNil(t, cio)
 
-	d := newDropdown(t.Context())
-	assert.Equal(t, in, d.in)
-	assert.Equal(t, cio, d.out)
-
 	s := newSpinners(t.Context())
 	assert.Equal(t, in, s.In)
 	assert.Equal(t, cio, s.Out)
@@ -105,10 +101,6 @@ func TestSetDefaultIO(t *testing.T) {
 	in := bytes.NewBufferString("in")
 	out := &bytes.Buffer{}
 	SetDefaultIO(in, out)
-
-	d := newDropdown(t.Context())
-	assert.Equal(t, in, d.in)
-	assert.Equal(t, out, d.out)
 
 	s := newSpinners(t.Context())
 	assert.Equal(t, in, s.In)
@@ -133,7 +125,7 @@ func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
 		SetDefaultIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 60, 8)
-	reader := &blockingByteReader{ch: make(chan []byte, 32)}
+	reader := terst.NewBlockingByteReader(32)
 	t.Cleanup(reader.Close)
 	input := &terst.MockDescriptor{Reader: reader, FD: 0}
 	SetDefaultIO(input, cio)
@@ -309,7 +301,7 @@ func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {
 		SetDefaultIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 40, 6)
-	reader := &blockingByteReader{ch: make(chan []byte, 2)}
+	reader := terst.NewBlockingByteReader(2)
 	t.Cleanup(reader.Close)
 	input := &terst.MockDescriptor{
 		Reader: reader,
