@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
@@ -22,10 +23,10 @@ func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
 	t.Cleanup(func() {
 		SetDefaultIO(prevIn, prevOut)
 	})
-	cio, stdout := chainIOforTest(t, 60, 8)
+	cio, stdout := terst.ChainIOForTest(t, 60, 8)
 	reader := &blockingByteReader{ch: make(chan []byte, 8)}
 	t.Cleanup(reader.Close)
-	input := &mockDescriptor{Reader: reader, fd: 0}
+	input := &terst.MockDescriptor{Reader: reader, FD: 0}
 	SetDefaultIO(input, cio)
 
 	result := make(chan string, 1)
@@ -39,11 +40,11 @@ func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
 		result <- value
 	}()
 
-	waitOutputContains(t, stdout.C, "PROMPT")
+	terst.WaitOutputContains(t, stdout.C, "PROMPT")
 	reader.SendByte('a')
 	reader.SendByte('b')
 	reader.SendByte('c')
-	waitOutputContains(t, stdout.C, "PROMPT", "abc")
+	terst.WaitOutputContains(t, stdout.C, "PROMPT", "abc")
 	reader.SendByte(0x1b)
 	reader.SendByte(0x5b)
 	reader.SendByte(0x44)
@@ -69,7 +70,7 @@ func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
 		SetDefaultIO(prevIn, prevOut)
 	})
 	in := bytes.NewBufferString("in")
-	out := &mockDescriptor{Writer: &bytes.Buffer{}, fd: 7}
+	out := &terst.MockDescriptor{Writer: &bytes.Buffer{}, FD: 7}
 	term.WriterChecker = func(int) bool { return true }
 	term.GetSize = func(int) (int, int, error) { return 80, 24, nil }
 	SetDefaultIO(in, out)
@@ -139,10 +140,10 @@ func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
 	t.Cleanup(func() {
 		SetDefaultIO(prevIn, prevOut)
 	})
-	cio, stdout := chainIOforTest(t, 60, 8)
+	cio, stdout := terst.ChainIOForTest(t, 60, 8)
 	reader := &blockingByteReader{ch: make(chan []byte, 32)}
 	t.Cleanup(reader.Close)
-	input := &mockDescriptor{Reader: reader, fd: 0}
+	input := &terst.MockDescriptor{Reader: reader, FD: 0}
 	SetDefaultIO(input, cio)
 
 	result := make(chan string, 1)
@@ -156,7 +157,7 @@ func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
 		result <- value
 	}()
 
-	waitOutputContains(t, stdout.C, "PROMPT", "apple")
+	terst.WaitOutputContains(t, stdout.C, "PROMPT", "apple")
 	reader.SendByte(0x1b)
 	reader.SendByte(0x5b)
 	reader.SendByte(0x44)
@@ -165,7 +166,7 @@ func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
 	reader.SendByte(0x44)
 	_, err := Stderr().Write([]byte("INF background\n"))
 	assert.NoError(t, err)
-	waitOutputContains(t, stdout.C, "INF background", "PROMPT", "apple")
+	terst.WaitOutputContains(t, stdout.C, "INF background", "PROMPT", "apple")
 	reader.SendByte(0x1b)
 	reader.SendByte(0x5b)
 	reader.SendByte(0x44)
@@ -210,14 +211,14 @@ func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
 	t.Cleanup(func() {
 		SetDefaultIO(prevIn, prevOut)
 	})
-	cio, stdout := chainIOforTest(t, 40, 6)
-	input := &mockDescriptor{
-		Reader: &chunkReader{chunks: [][]byte{
+	cio, stdout := terst.ChainIOForTest(t, 40, 6)
+	input := &terst.MockDescriptor{
+		Reader: &terst.ChunkReader{Chunks: [][]byte{
 			{'h'},
 			{'i'},
 			{term.KeyEnter},
 		}},
-		fd: 0,
+		FD: 0,
 	}
 	SetDefaultIO(input, cio)
 
@@ -315,12 +316,12 @@ func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {
 	t.Cleanup(func() {
 		SetDefaultIO(prevIn, prevOut)
 	})
-	cio, stdout := chainIOforTest(t, 40, 6)
+	cio, stdout := terst.ChainIOForTest(t, 40, 6)
 	reader := &blockingByteReader{ch: make(chan []byte, 2)}
 	t.Cleanup(reader.Close)
-	input := &mockDescriptor{
+	input := &terst.MockDescriptor{
 		Reader: reader,
-		fd:     0,
+		FD:     0,
 	}
 	SetDefaultIO(input, cio)
 
@@ -329,9 +330,9 @@ func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {
 		result <- Confirm(t.Context(), "Are you sure?")
 	}()
 
-	initial := waitOutputContains(t, stdout.C, "Are you sure?", "Yes", "No")
+	initial := terst.WaitOutputContains(t, stdout.C, "Are you sure?", "Yes", "No")
 	reader.SendBytes([]byte{0x1b, 0x5b, 0x42})
-	updated := waitOutputContains(t, stdout.C, "Are you sure?", "Yes", "No")
+	updated := terst.WaitOutputContains(t, stdout.C, "Are you sure?", "Yes", "No")
 	assert.True(t, initial != updated)
 	reader.SendByte(term.KeyEnter)
 	assert.True(t, !<-result)

@@ -16,6 +16,7 @@ import (
 	"text/template"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestInstallAtomicAndIsolation(t *testing.T) {
@@ -67,7 +68,7 @@ func TestConcurrentInstall(t *testing.T) {
 }
 
 func TestWithFnRegistersForFutureOperations(t *testing.T) {
-	before := keepTheme(t)
+	before := terst.KeepTheme(t)
 	WithFn("shout", func(s string) string { return strings.ToUpper(s) + "!" })
 
 	assert.Equal(t, "HI!", execute(t, installedFuncs(), `{{ shout "hi" }}`))
@@ -81,7 +82,7 @@ func TestWithFnRegistersForFutureOperations(t *testing.T) {
 }
 
 func TestWithFnReachesWidgetTemplates(t *testing.T) {
-	keepTheme(t)
+	terst.KeepTheme(t)
 	WithFn("shout", strings.ToUpper)
 	funcs := installedFuncs()
 	assert.Equal(t, "A", execute(t, funcs, `{{ shout "a" }}`))
@@ -89,7 +90,7 @@ func TestWithFnReachesWidgetTemplates(t *testing.T) {
 }
 
 func TestWithFnPanicsAndKeepsInstalled(t *testing.T) {
-	keepTheme(t)
+	terst.KeepTheme(t)
 	for name, fn := range map[string]any{
 		"bold":                   strings.ToUpper,
 		"fg":                     strings.ToUpper,
@@ -127,7 +128,7 @@ func TestWithFnPanicsAndKeepsInstalled(t *testing.T) {
 }
 
 func TestWithFnAcceptsErrorResult(t *testing.T) {
-	keepTheme(t)
+	terst.KeepTheme(t)
 	boom := errors.New("boom")
 	WithFn("fails", func() (string, error) { return "", boom })
 	tmpl, err := template.New("t").Funcs(installedFuncs()).Parse(`{{ fails }}`)
@@ -136,7 +137,7 @@ func TestWithFnAcceptsErrorResult(t *testing.T) {
 }
 
 func TestConcurrentWithFnLosesNothing(t *testing.T) {
-	keepTheme(t)
+	terst.KeepTheme(t)
 	var wg sync.WaitGroup
 	for i := range 16 {
 		wg.Go(func() { WithFn(fmt.Sprintf("fn%d", i), strings.ToUpper) })
@@ -150,7 +151,7 @@ func TestConcurrentWithFnLosesNothing(t *testing.T) {
 }
 
 func TestInstallReplacesFuncs(t *testing.T) {
-	keepTheme(t)
+	terst.KeepTheme(t)
 	WithFn("forgotten", strings.ToUpper)
 	th := theme.New()
 	th.Funcs = template.FuncMap{"kept": strings.ToLower}
@@ -162,7 +163,7 @@ func TestInstallReplacesFuncs(t *testing.T) {
 }
 
 func TestSetDefaultThemePublishesAndKeepsPreviousOnError(t *testing.T) {
-	keepTheme(t)
+	terst.KeepTheme(t)
 	WithFn("shout", strings.ToUpper)
 	th := DefaultTheme()
 	// unset colors stay unset, so they keep adapting
@@ -196,7 +197,7 @@ func TestRemovedColorNamesFailWithTemplatePath(t *testing.T) {
 }
 
 func TestThemeFuncsAreCopied(t *testing.T) {
-	keepTheme(t)
+	terst.KeepTheme(t)
 	th := theme.New()
 	th.Funcs = template.FuncMap{"h": strings.ToUpper}
 	assert.NoError(t, term.Default.InstallTheme(th))
@@ -210,7 +211,7 @@ func TestThemeFuncsAreCopied(t *testing.T) {
 }
 
 func TestSpinnerFramesAreCopied(t *testing.T) {
-	keepTheme(t)
+	terst.KeepTheme(t)
 	th := theme.New()
 	th.Symbols.Spinner = []string{"a", "b"}
 	assert.NoError(t, term.Default.InstallTheme(th))

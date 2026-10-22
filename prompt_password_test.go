@@ -16,19 +16,20 @@ import (
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestPasswordReadsFromPipe(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := startChanIO(ctx, 40, 6)
+	cio := terst.StartChanIO(ctx, 40, 6)
 	r, w, err := os.Pipe()
 	assert.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, r.Close()) })
 	_, err = w.WriteString("secret\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Password(t.Context(), "Label", WithInput(&fdByteReader{f: r}), WithOutput(cio))
+	got, err := Password(t.Context(), "Label", WithInput(&terst.FDByteReader{F: r}), WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "secret", got)
 }
@@ -48,7 +49,7 @@ func TestPasswordRejectionStaysMasked(t *testing.T) {
 }
 
 func TestPasswordDefaultKeepsSecretOut(t *testing.T) {
-	io := quiet(t)
+	io := terst.Quiet(t)
 	got, err := Password(t.Context(), "Secret", io, WithDefault("hunter2"))
 	assert.NoError(t, err)
 	assert.Equal(t, "hunter2", got)
@@ -96,7 +97,7 @@ func TestThemedPasswordMultiRuneMaskKeepsRuneEditing(t *testing.T) {
 func TestThemedPasswordMaskClipsToWindow(t *testing.T) {
 	th := asciiTheme(true)
 	th.Symbols.Mask = "#"
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	i := newInput(t.Context(), "Label")
 	i.Password = true
 	i.typed, i.cursor = "secret", 6

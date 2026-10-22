@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestThemedProgressRowDropsMetricsToFit(t *testing.T) {
@@ -411,7 +412,7 @@ func TestThemedProgressRenderErrorEndsBar(t *testing.T) {
 }
 
 func TestThemedProgressWriteErrorEndsBar(t *testing.T) {
-	useTheme(t, theme.New())
+	terst.UseTheme(t, theme.New())
 	restored := false
 	p, err := NewMaxProgressBar(t.Context(), "build", 10, option.OpT(func(pb *Progressbar) error {
 		pb.ticks = time.After(0)
@@ -436,7 +437,7 @@ func TestThemedProgressWithoutTerminal(t *testing.T) {
 	th.Templates.Progress.Label = `{{ boom }}`
 	th.Templates.Progress.Metrics = `{{ boom }}`
 	th.Templates.Progress.Frame = `{{ boom }}{{ .Bar }}`
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	noTTY := option.OpT(func(pb *Progressbar) error {
 		pb.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) { return nil, ErrNoTTY }
 		return nil

@@ -16,6 +16,7 @@ import (
 	"text/template"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestConfirmfRunsWithFormattedAction(t *testing.T) {
@@ -59,7 +60,7 @@ func TestDefaultConfirmRunnerReturnsFalseOnError(t *testing.T) {
 }
 
 func TestConfirmDefaults(t *testing.T) {
-	io := quiet(t)
+	io := terst.Quiet(t)
 	ctx := t.Context()
 	assert.True(t, Confirm(ctx, "Go?", io, WithDefault(true)))
 	assert.True(t, !Confirm(ctx, "Go?", io, WithDefault(false)))
@@ -145,8 +146,8 @@ func TestThemedConfirmDefaultsWithoutTerminal(t *testing.T) {
 	th.Templates.Confirm.Active = `{{ fails .Value }}`
 	th.Templates.Confirm.Inactive = `{{ fails .Value }}`
 	th.Templates.Confirm.Answer = `{{ fails .Value }}`
-	useTheme(t, th)
-	io := quiet(t)
+	terst.UseTheme(t, th)
+	io := terst.Quiet(t)
 	ctx := t.Context()
 	assert.True(t, Confirm(ctx, "Go?", io, WithDefault(true)))
 	assert.True(t, !Confirm(ctx, "Go?", io, WithDefault(false)))
@@ -158,7 +159,7 @@ func TestThemedConfirmDefaultsWithoutTerminal(t *testing.T) {
 
 	// a Confirm projection is what hints match; an exact boolean still wins
 	th.Templates.Confirm.Value = `{{ if eq . "Yes" }}sure{{ else }}never{{ end }}`
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	assert.True(t, Confirm(ctx, "Go?", io, WithDefault("s")))
 	assert.True(t, !Confirm(ctx, "Go?", io, WithDefault("never")))
 	assert.True(t, Confirm(ctx, "Go?", io, WithDefault(true)))
@@ -182,7 +183,7 @@ func TestThemedConfirmHelperErrorIsFalseAndRestoresTerminal(t *testing.T) {
 }
 
 func TestThemedConfirmRolesMarkYesAndNoAsCompleted(t *testing.T) {
-	withEnv(t, "FORCE_COLOR=3")
+	terst.WithEnv(t, "FORCE_COLOR=3")
 	th := asciiTheme(false)
 	th.Light = true
 	for _, keys := range [][]string{{"\r"}, {"\x1b[B", "\r"}} {

@@ -18,6 +18,7 @@ import (
 
 	tui "github.com/nfx/go-tui"
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 // themedProfiles are the five output profiles, from the environment.
@@ -126,7 +127,7 @@ func (l themedLayout) theme() theme.Theme {
 	th := theme.New()
 	th.Inline = l.inline
 	if l.ascii {
-		th.Symbols = tui.ASCIISymbols
+		th.Symbols = terst.ASCIISymbols
 	}
 	th.Symbols.Spinner = []string{"~"} // one frame, so every redraw looks alike
 	return th
@@ -141,9 +142,9 @@ func TestThemedWidgetsShareTerminal(t *testing.T) {
 	for _, l := range themedLayouts {
 		for _, profile := range themedProfiles {
 			t.Run(l.String()+"/"+profile.name, func(t *testing.T) {
-				tui.WithEnv(t, profile.env)
+				terst.WithEnv(t, profile.env)
 				term := newTerminal(t, 30)
-				tui.UseTheme(t, l.theme())
+				terst.UseTheme(t, l.theme())
 				themedSession(t, term, l)
 				checkProfile(t, profile.name, term.received())
 			})
@@ -258,10 +259,10 @@ func textColor(out, text string) string {
 }
 
 func TestThemedRouteSharesDetection(t *testing.T) {
-	tui.WithEnv(t, "FORCE_COLOR=3")
-	tui.ProbingKeyboard(t, keyboardFd)
+	terst.WithEnv(t, "FORCE_COLOR=3")
+	terst.ProbingKeyboard(t, keyboardFd)
 	term := newTerminal(t, 20)
-	tui.UseTheme(t, l0.theme())
+	terst.UseTheme(t, l0.theme())
 
 	// activity started before the first prompt estimates the background
 	early, err := tui.NewSpinners(t.Context())
@@ -322,12 +323,12 @@ func TestThemedRouteSharesDetection(t *testing.T) {
 }
 
 func TestThemedExplicitAppearanceNeverProbes(t *testing.T) {
-	tui.WithEnv(t, "FORCE_COLOR=3")
-	tui.ProbingKeyboard(t, keyboardFd)
+	terst.WithEnv(t, "FORCE_COLOR=3")
+	terst.ProbingKeyboard(t, keyboardFd)
 	term := newTerminal(t, 20)
 	th := l0.theme()
 	th.Light = true
-	tui.UseTheme(t, th)
+	terst.UseTheme(t, th)
 	res := prompt(func() (string, error) { return tui.Input(t.Context(), "Name") })
 	term.press(t, "x") // the first read is a key, not a reply
 	term.press(t, keyEnter)
@@ -349,10 +350,10 @@ var l0 = themedLayouts[0]
 // drawing while the prompts read.
 func probingSession(t *testing.T) (*terminal, *tui.Spinners) {
 	t.Helper()
-	tui.WithEnv(t, "FORCE_COLOR=3")
-	tui.ProbingKeyboard(t, keyboardFd)
+	terst.WithEnv(t, "FORCE_COLOR=3")
+	terst.ProbingKeyboard(t, keyboardFd)
 	term := newTerminal(t, 20)
-	tui.UseTheme(t, l0.theme())
+	terst.UseTheme(t, l0.theme())
 	group, err := tui.NewSpinners(t.Context())
 	assert.NoError(t, err)
 	t.Cleanup(group.Close)
@@ -426,7 +427,7 @@ var errRejected = errors.New("rejected")
 func (failingWriter) Write([]byte) (int, error) { return 0, errRejected }
 
 func TestThemedFailuresStayWithTheirOwner(t *testing.T) {
-	tui.WithEnv(t, "FORCE_COLOR=1")
+	terst.WithEnv(t, "FORCE_COLOR=1")
 	term := newTerminal(t, 20)
 	th := l0.theme()
 	errBoom := errors.New("boom")
@@ -440,7 +441,7 @@ func TestThemedFailuresStayWithTheirOwner(t *testing.T) {
 	th.Templates.Prompt.Label = `{{ accent (symbol "Prompt") }} {{ bold (text (check .Label)) }}`
 	th.Templates.Spinner.Running = `{{ accent .Frame }} {{ text (check .Message) }}`
 	th.Templates.Table.Cell = `{{ text (check .Value) }}`
-	tui.UseTheme(t, th)
+	terst.UseTheme(t, th)
 
 	group, err := tui.NewSpinners(t.Context())
 	assert.NoError(t, err)
@@ -498,10 +499,10 @@ func TestThemedFailuresStayWithTheirOwner(t *testing.T) {
 }
 
 func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
-	tui.WithEnv(t, "FORCE_COLOR=0")
+	terst.WithEnv(t, "FORCE_COLOR=0")
 	term := newTerminal(t, 20)
 	old := themedLayouts[1].theme() // Guided ASCII
-	tui.UseTheme(t, old)
+	terst.UseTheme(t, old)
 	group, err := tui.NewSpinners(t.Context())
 	assert.NoError(t, err)
 	defer group.Close()
@@ -549,7 +550,7 @@ func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
 }
 
 func TestThemedConcurrentInstallationAndRendering(t *testing.T) {
-	tui.WithEnv(t, "FORCE_COLOR=0")
+	terst.WithEnv(t, "FORCE_COLOR=0")
 	term := newTerminal(t, 20)
 	themes := map[string]theme.Theme{}
 	for name, gap := range map[string]int{"A": 2, "B": 5} {
@@ -568,7 +569,7 @@ func TestThemedConcurrentInstallationAndRendering(t *testing.T) {
 	}
 	want := map[string]bool{}
 	for _, name := range []string{"B", "A"} {
-		tui.UseTheme(t, themes[name])
+		terst.UseTheme(t, themes[name])
 		want[table()] = true
 	}
 	assert.Equal(t, 2, len(want))

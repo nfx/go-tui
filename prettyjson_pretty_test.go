@@ -18,10 +18,11 @@ import (
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestPrettyJSONColor(t *testing.T) {
-	withEnv(t, "FORCE_COLOR=2")
+	terst.WithEnv(t, "FORCE_COLOR=2")
 
 	var out bytes.Buffer
 	err := PrettyJSON(&out, `{"hello":["world", "again"], "path":"a\\b"}`)
@@ -34,7 +35,7 @@ func TestPrettyJSONColor(t *testing.T) {
 }
 
 func TestPrettyJSONNoColor(t *testing.T) {
-	withEnv(t)
+	terst.WithEnv(t)
 
 	var out bytes.Buffer
 	err := PrettyJSON(&out, `{"flat":true}`)
@@ -146,7 +147,7 @@ const jsonSample = `{"a":{"b":[1,"x\"y",null,true,{"c":"\\"}]},"k{":"v}"}`
 // FORCE_COLOR=3.
 func renderJSON(t *testing.T, env string, src any) string {
 	t.Helper()
-	withEnv(t, strings.Fields(env)...)
+	terst.WithEnv(t, strings.Fields(env)...)
 	var out bytes.Buffer
 	assert.NoError(t, PrettyJSON(&out, src))
 	return out.String()
@@ -157,7 +158,7 @@ func TestPrettyJSONStrippedColorIsEquivalent(t *testing.T) {
 	for _, env := range []string{"FORCE_COLOR=1", "FORCE_COLOR=2", "FORCE_COLOR=3", "CLICOLOR_FORCE=1"} {
 		colored := renderJSON(t, env, jsonSample)
 		assert.True(t, colored != plain)
-		assert.Equal(t, plain, regexpSGR.ReplaceAllString(colored, ""))
+		assert.Equal(t, plain, terst.RegexpSGR.ReplaceAllString(colored, ""))
 	}
 	assert.True(t, json.Valid([]byte(plain)))
 }
@@ -231,13 +232,13 @@ func TestPrettyJSONScalarsAtRootAndInArrays(t *testing.T) {
 	for _, in := range []string{`42`, `true`, `"s"`, `[1,false,"x",[null]]`} {
 		out := renderJSON(t, "FORCE_COLOR=3", in)
 		assert.True(t, strings.HasSuffix(out, ansi.Reset+"\n"))
-		assert.Equal(t, renderJSON(t, "FORCE_COLOR=0", in), regexpSGR.ReplaceAllString(out, ""))
+		assert.Equal(t, renderJSON(t, "FORCE_COLOR=0", in), terst.RegexpSGR.ReplaceAllString(out, ""))
 	}
 }
 
 func TestPrettyJSONAttrsOnlyHasNoColor(t *testing.T) {
-	withEnv(t, "NO_COLOR=1")
-	w := ttyWriter(t)
+	terst.WithEnv(t, "NO_COLOR=1")
+	w := terst.TTYWriter(t)
 	assert.NoError(t, PrettyJSON(w, `{"a":1}`))
 	out := w.Writer.(*bytes.Buffer).String() //nolint:errcheck,forcetypeassert // test writer
 	assert.Contains(t, out, ansi.Bold)
@@ -250,7 +251,7 @@ func TestPrettyJSONPlainOnUnforcedBuffer(t *testing.T) {
 }
 
 func TestPrettyJSONMalformedWritesNothing(t *testing.T) {
-	withEnv(t, "FORCE_COLOR=3")
+	terst.WithEnv(t, "FORCE_COLOR=3")
 	var out bytes.Buffer
 	assert.Error(t, PrettyJSON(&out, `{"a":`))
 	assert.Equal(t, 0, out.Len())
@@ -260,7 +261,7 @@ func TestPrettyJSONMalformedWritesNothing(t *testing.T) {
 // buffer in the color environment env.
 func themedJSON(t *testing.T, th theme.Theme, env string, src any) string {
 	t.Helper()
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	return renderJSON(t, env, src)
 }
 
@@ -284,7 +285,7 @@ func TestThemedPrettyJSONIndentation(t *testing.T) {
 		for _, env := range []string{"FORCE_COLOR=1", "FORCE_COLOR=3"} {
 			colored := themedJSON(t, th, env, src)
 			assert.True(t, colored != plain)
-			assert.Equal(t, plain, regexpSGR.ReplaceAllString(colored, ""))
+			assert.Equal(t, plain, terst.RegexpSGR.ReplaceAllString(colored, ""))
 		}
 		assert.True(t, json.Valid([]byte(plain)))
 	}
@@ -382,11 +383,11 @@ func TestThemedPrettyJSONNeutralPolicy(t *testing.T) {
 func TestThemedPrettyJSONDestinations(t *testing.T) {
 	th := theme.New()
 	th.JSON.Indent = "\t"
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 
 	// attributes only on a NO_COLOR terminal
-	withEnv(t, "NO_COLOR=1")
-	w := ttyWriter(t)
+	terst.WithEnv(t, "NO_COLOR=1")
+	w := terst.TTYWriter(t)
 	assert.NoError(t, PrettyJSON(w, `{"a":1}`))
 	out := w.Writer.(*bytes.Buffer).String() //nolint:errcheck,forcetypeassert // test writer
 	assert.Equal(
@@ -396,7 +397,7 @@ func TestThemedPrettyJSONDestinations(t *testing.T) {
 	)
 
 	// write errors are returned
-	withEnv(t, "FORCE_COLOR=3")
+	terst.WithEnv(t, "FORCE_COLOR=3")
 	assert.ErrorIs(t, PrettyJSON(errWriterTable{}, `{"a":1}`), io.EOF)
 
 	// malformed input and marshal errors write nothing

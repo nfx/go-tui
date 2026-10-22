@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*term.ChanIO, func(), option.Opt) {
@@ -428,7 +429,7 @@ func themedSpinners(
 	o ...option.Opt,
 ) (*Spinners, frameWriter, func(), *atomic.Bool) {
 	t.Helper()
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	restored := &atomic.Bool{}
 	frames := make(frameWriter)
 	cio, tick, options := testIOforSpinners(t, width, 10, append([]option.Opt{option.OpT(func(s *Spinners) error {

@@ -19,6 +19,7 @@ import (
 
 	tui "github.com/nfx/go-tui"
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 	"golang.org/x/term"
 )
 
@@ -67,7 +68,7 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 	items := []service{{"api", "eu"}, {"worker", "us"}}
 	th := theme.New()
 	th.Templates.Multichoice.Answer = `ANSWER {{ .Count }}{{ range .Values }} {{ . }}{{ else }} none{{ end }}`
-	tui.UseTheme(t, th)
+	terst.UseTheme(t, th)
 	var out bytes.Buffer
 	got, err := tui.Multichoice(t.Context(), "Services", items,
 		tui.WithInput(strings.NewReader("\r")), tui.WithOutput(&out),
@@ -83,7 +84,7 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 		t.Fatal("result aliases source slice")
 	}
 	t.Run("generated collection answer", func(t *testing.T) {
-		tui.UseTheme(t, theme.New())
+		terst.UseTheme(t, theme.New())
 		out.Reset()
 		_, err := tui.Multichoice(
 			t.Context(),
@@ -146,7 +147,7 @@ func TestMultichoiceMapProjections(t *testing.T) {
 	values := map[string][]int{"beta": {1}, "alpha": {1}, "gamma": {3}}
 	th := theme.New()
 	th.Templates.Multichoice.Answer = `ANSWER {{ .Count }}{{ range .Values }} {{ . }}{{ end }}`
-	tui.UseTheme(t, th)
+	terst.UseTheme(t, th)
 	var out bytes.Buffer
 	keys, err := tui.MultichoiceKVK(
 		t.Context(),

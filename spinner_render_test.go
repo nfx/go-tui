@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestThemedSpinnerStates(t *testing.T) {
@@ -96,7 +97,7 @@ func TestThemedSpinnerClipsBeforeLastColumn(t *testing.T) {
 }
 
 func TestThemedSpinnerRoles(t *testing.T) {
-	withEnv(t, "FORCE_COLOR=3")
+	terst.WithEnv(t, "FORCE_COLOR=3")
 	th := asciiTheme(false)
 	th.Light = true
 	th.Symbols.Spinner = []string{"*"}
@@ -150,10 +151,16 @@ func TestThemedSpinnerWriteErrorEndsGroup(t *testing.T) {
 	var released atomic.Bool
 	s, frames, tick, _ := themedSpinners(t, asciiTheme(false), 40, option.OpT(func(s *Spinners) error {
 		s.makeTermIO = func(in io.Reader, _ io.Writer) (*term.IO, error) {
-			return &term.IO{In: in, Out: failingWriter{gone}, Width: 40, Height: 10, Restore: func() error {
-				released.Store(true)
-				return nil
-			}}, nil
+			return &term.IO{
+				In:     in,
+				Out:    terst.FailingWriter{Err: gone},
+				Width:  40,
+				Height: 10,
+				Restore: func() error {
+					released.Store(true)
+					return nil
+				},
+			}, nil
 		}
 		return nil
 	}))
@@ -200,7 +207,7 @@ func TestThemedSpinnerLogsWithoutTerminal(t *testing.T) {
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
 	th.Templates.Spinner.Running = `{{ boom }}`
 	th.Templates.Spinner.Failed = `{{ boom }}`
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	var logs bytes.Buffer
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{

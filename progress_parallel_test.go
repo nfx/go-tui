@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestWithWorkersRejectsNonPositive(t *testing.T) {
@@ -217,7 +218,7 @@ func TestNewParallelProgressBarPropagatesCloseError(t *testing.T) {
 }
 
 func TestThemedParallelProgressCompletes(t *testing.T) {
-	useTheme(t, asciiTheme(false))
+	terst.UseTheme(t, asciiTheme(false))
 	started := make(chan int, 4)
 	gates := []chan struct{}{make(chan struct{}), make(chan struct{}), make(chan struct{}), make(chan struct{})}
 	r := runParallel(t.Context(), t, []int{0, 1, 2, 3}, func(v int) error {
@@ -244,7 +245,7 @@ func TestThemedParallelProgressCompletes(t *testing.T) {
 func TestThemedParallelProgressSharesOneRow(t *testing.T) {
 	th := asciiTheme(false)
 	th.Symbols.BarEmpty = "_"
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	var active, maxActive atomic.Int64
 	all := make(chan struct{})
 	gate := make(chan struct{})
@@ -276,7 +277,7 @@ func TestThemedParallelProgressSharesOneRow(t *testing.T) {
 }
 
 func TestThemedParallelProgressFirstFailure(t *testing.T) {
-	useTheme(t, asciiTheme(false))
+	terst.UseTheme(t, asciiTheme(false))
 	fail := errors.New("fail")
 	started := make(chan int, 3)
 	gate0, gate1 := make(chan struct{}), make(chan struct{})
@@ -308,7 +309,7 @@ func TestThemedParallelProgressFirstFailure(t *testing.T) {
 }
 
 func TestThemedParallelProgressCancel(t *testing.T) {
-	useTheme(t, asciiTheme(false))
+	terst.UseTheme(t, asciiTheme(false))
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	started := make(chan int, 2)
@@ -332,7 +333,7 @@ func TestThemedParallelProgressRenderError(t *testing.T) {
 	th := theme.New()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
 	th.Templates.Progress.Label = `{{ if eq .Current 1 }}{{ boom }}{{ end }}{{ .Label }}`
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	items := make([]int, 64)
 	for i := range items {
 		items[i] = i

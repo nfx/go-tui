@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestNewSliceProgressBar(t *testing.T) {
@@ -111,7 +112,7 @@ func TestNewSliceProgressBarReturnsError(t *testing.T) {
 }
 
 func TestThemedSliceProgress(t *testing.T) {
-	useTheme(t, asciiTheme(false))
+	terst.UseTheme(t, asciiTheme(false))
 	frames := make(frameWriter, 16)
 	ticks := make(chan time.Time)
 	var clock atomic.Int64
@@ -150,7 +151,7 @@ func TestThemedSliceProgressReturnsRenderError(t *testing.T) {
 	th := theme.New()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
 	th.Templates.Progress.Hint = `{{ boom }}`
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	ticks := make(chan time.Time)
 	seq := NewSliceProgressBar(t.Context(), "items", []int{1, 2}, option.OpT(func(pb *Progressbar) error {
 		pb.ticks = ticks

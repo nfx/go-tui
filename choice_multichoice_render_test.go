@@ -18,12 +18,13 @@ import (
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestMultichoiceRenderInitializes(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two"}
-	io := newTestTermIO(20, 6)
+	io := terst.NewTermIO(20, 6)
 
 	frame := &bytes.Buffer{}
 	assert.NoError(t, m.prepare(nil))
@@ -36,7 +37,7 @@ func TestMultichoiceRenderMoreItems(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"short", "veryverylong", "mid", "tail"}
 	m.active = 0
-	io := newTestTermIO(5, 4)
+	io := terst.NewTermIO(5, 4)
 	frame := &bytes.Buffer{}
 	assert.NoError(t, m.prepare(nil))
 	assert.NoError(t, m.bindRun(t.Context(), io))
@@ -95,7 +96,7 @@ func themedMultichoiceOpt(
 // boundMultichoice prepares a themed prompt for frame tests at the given terminal height.
 func boundMultichoice(t *testing.T, th theme.Theme, height int, items []any, o ...option.Opt) (*multichoice, *term.IO) {
 	t.Helper()
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	m := newMultichoice(t.Context())
 	m.Label, m.Items = "Fruit", items
 	assert.NoError(t, m.prepare(o))
@@ -183,7 +184,7 @@ func TestThemedMultichoiceEmptyState(t *testing.T) {
 }
 
 func TestThemedMultichoiceLoadingShowsNoEmptyState(t *testing.T) {
-	useTheme(t, asciiTheme(false))
+	terst.UseTheme(t, asciiTheme(false))
 	m := newMultichoice(t.Context())
 	m.loading, m.Label = true, "Fruit"
 	assert.NoError(t, m.prepare(nil))
@@ -335,7 +336,7 @@ func TestThemedMultichoiceHintMatchesProjection(t *testing.T) {
 }
 
 func TestThemedMultichoiceAutomaticAnswerRunsOnlyProjection(t *testing.T) {
-	strictOutput(t)
+	terst.StrictOutput(t)
 	boom := errors.New("boom")
 	th := asciiTheme(false)
 	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
@@ -346,7 +347,7 @@ func TestThemedMultichoiceAutomaticAnswerRunsOnlyProjection(t *testing.T) {
 	th.Templates.Multichoice.Row = `{{ fails .Value }}`
 	th.Templates.Multichoice.AnswerValue = `{{ range .Values }}{{ fails . }}{{ end }}`
 	th.Templates.Choice.Value = `{{ printf "z%s" . }}`
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	var out bytes.Buffer
 	got, err := Multichoice(t.Context(), "Fruit", fruits, WithOutput(&out), WithDefault("zb"))
 	assert.NoError(t, err)
@@ -403,7 +404,7 @@ func TestThemedMultichoiceProjectsOnceAndDrawsLazily(t *testing.T) {
 }
 
 func TestThemedMultichoiceLazyConfirmsAfterExhaustion(t *testing.T) {
-	useTheme(t, asciiTheme(false))
+	terst.UseTheme(t, asciiTheme(false))
 	stream := &completionChecklistIO{ready: make(chan struct{}), marker: "x banana"}
 	got, err := MultichoiceLazy(t.Context(), "Fruit", lazySeq("apple", "banana"),
 		WithDefault("banana"), WithInput(stream), WithOutput(stream))
@@ -481,7 +482,7 @@ func TestThemedMultichoicePasteFiltersAndCancellationRestores(t *testing.T) {
 }
 
 func TestThemedMultichoiceRolesStyleMarks(t *testing.T) {
-	withEnv(t, "FORCE_COLOR=3")
+	terst.WithEnv(t, "FORCE_COLOR=3")
 	th := asciiTheme(false)
 	th.Light = true
 	m, tt := boundMultichoice(t, th, 10, []any{"a", "b"})

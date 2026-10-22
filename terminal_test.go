@@ -13,6 +13,7 @@ import (
 
 	tui "github.com/nfx/go-tui"
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 // ttyWriter is the terminal output: it is a real terminal to check and to
@@ -72,8 +73,8 @@ func newASCIITerminal(t *testing.T) *terminal {
 func asciiTheme(t *testing.T) {
 	t.Helper()
 	th := theme.New()
-	th.Symbols = tui.ASCIISymbols
-	tui.UseTheme(t, th)
+	th.Symbols = terst.ASCIISymbols
+	terst.UseTheme(t, th)
 }
 
 // waitQueries waits until the terminal has received n background queries.

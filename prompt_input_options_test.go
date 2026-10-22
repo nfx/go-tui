@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestInputWithDefault(t *testing.T) {
@@ -47,7 +48,7 @@ func runValidated(t *testing.T, password bool, keys string, o ...option.Opt) (st
 	for _, k := range keys {
 		chunks = append(chunks, []byte(string(k)))
 	}
-	i.In = &chunkReader{chunks: chunks}
+	i.In = &terst.ChunkReader{Chunks: chunks}
 	var out bytes.Buffer
 	i.Out = &out
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
@@ -154,7 +155,7 @@ func TestInputRegexMalformedOrBlankMessage(t *testing.T) {
 }
 
 func TestInputDefaults(t *testing.T) {
-	io := quiet(t)
+	io := terst.Quiet(t)
 	ctx := t.Context()
 
 	got, err := Input(ctx, "Name", io, WithDefault("bob"))
@@ -182,7 +183,7 @@ func TestInputDefaults(t *testing.T) {
 }
 
 func TestInputDefaultValidation(t *testing.T) {
-	io := quiet(t)
+	io := terst.Quiet(t)
 	ctx := t.Context()
 
 	_, err := Input(ctx, "Name", io, WithNonEmpty(), WithDefault(""))

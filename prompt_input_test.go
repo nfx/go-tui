@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 // bindInput prepares a literal input as run does: the installed theme bound to tt.
@@ -32,12 +33,12 @@ func bindInput(t *testing.T, i *input, tt *term.IO) {
 // plain writers, like the inputs before themes.
 func literalInputs(t *testing.T) {
 	t.Helper()
-	withEnv(t)
+	terst.WithEnv(t)
 	th := theme.New()
 	th.Inline = true
 	th.Templates.Input.Label = `{{ .Label }}`
 	th.Templates.Input.Answer = `{{ .Value }}`
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 }
 
 func TestInputShowAnswerVisibility(t *testing.T) {
@@ -93,8 +94,8 @@ func TestInputOptWrongType(t *testing.T) {
 
 func TestInputRunEmitsLifecycleEvents(t *testing.T) {
 	i := newInput(t.Context(), "Label")
-	i.In = &chunkReader{
-		chunks: [][]byte{
+	i.In = &terst.ChunkReader{
+		Chunks: [][]byte{
 			{'x'},
 			{term.KeyEnter},
 		},
@@ -195,8 +196,8 @@ func TestInputRunWithNonEmptyIgnoresEmptyConfirmation(t *testing.T) {
 // regression: readEvents goroutine must not exit on pasteTextError
 func TestInputRunPasteFollowedByEnter(t *testing.T) {
 	i := newInput(t.Context(), "Label")
-	i.In = &chunkReader{
-		chunks: [][]byte{
+	i.In = &terst.ChunkReader{
+		Chunks: [][]byte{
 			{'h', 'i'},
 			{term.KeyEnter},
 		},
@@ -220,8 +221,8 @@ func TestInputRunPasteFollowedByEnter(t *testing.T) {
 // regression: multiple paste chunks interleaved with single keys
 func TestInputRunTypeAndPaste(t *testing.T) {
 	i := newInput(t.Context(), "Label")
-	i.In = &chunkReader{
-		chunks: [][]byte{
+	i.In = &terst.ChunkReader{
+		Chunks: [][]byte{
 			{'h'},
 			{'e', 'l'},
 			{'l', 'o'},
@@ -255,7 +256,7 @@ func TestInputClearError(t *testing.T) {
 func TestInputTypesMultiByteFromPipe(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := startChanIO(ctx, 40, 6)
+	cio := terst.StartChanIO(ctx, 40, 6)
 	r, w, err := os.Pipe()
 	assert.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, r.Close()) })
@@ -263,7 +264,7 @@ func TestInputTypesMultiByteFromPipe(t *testing.T) {
 	_, err = w.WriteString("héllo\x1b[D\x1b[D\x1b[D\x7fж\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Input(t.Context(), "Label", WithInput(&fdByteReader{f: r}), WithOutput(cio))
+	got, err := Input(t.Context(), "Label", WithInput(&terst.FDByteReader{F: r}), WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "hжllo", got)
 }
@@ -271,14 +272,14 @@ func TestInputTypesMultiByteFromPipe(t *testing.T) {
 func TestInputReadsFromPipe(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := startChanIO(ctx, 40, 6)
+	cio := terst.StartChanIO(ctx, 40, 6)
 	r, w, err := os.Pipe()
 	assert.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, r.Close()) })
 	_, err = w.WriteString("hi\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Input(t.Context(), "Label", WithInput(&fdByteReader{f: r}), WithOutput(cio))
+	got, err := Input(t.Context(), "Label", WithInput(&terst.FDByteReader{F: r}), WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "hi", got)
 }
@@ -286,7 +287,7 @@ func TestInputReadsFromPipe(t *testing.T) {
 func TestInputReadsMultipleLeftArrowsFromPipe(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := startChanIO(ctx, 40, 6)
+	cio := terst.StartChanIO(ctx, 40, 6)
 	r, w, err := os.Pipe()
 	assert.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, r.Close()) })
@@ -298,7 +299,13 @@ func TestInputReadsMultipleLeftArrowsFromPipe(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Input(t.Context(), "Label", WithDefault("apple"), WithInput(&fdByteReader{f: r}), WithOutput(cio))
+	got, err := Input(
+		t.Context(),
+		"Label",
+		WithDefault("apple"),
+		WithInput(&terst.FDByteReader{F: r}),
+		WithOutput(cio),
+	)
 	assert.NoError(t, err)
 	assert.Equal(t, "apqqqple", got)
 }
@@ -306,14 +313,14 @@ func TestInputReadsMultipleLeftArrowsFromPipe(t *testing.T) {
 func TestInputIgnoresSpecialKeysFromPipe(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := startChanIO(ctx, 40, 6)
+	cio := terst.StartChanIO(ctx, 40, 6)
 	r, w, err := os.Pipe()
 	assert.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, r.Close()) })
 	_, err = w.WriteString("a\x1b[3~b\x1b[Hc\x1bxd\x1b\x1bOPe\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Input(t.Context(), "Label", WithInput(&fdByteReader{f: r}), WithOutput(cio))
+	got, err := Input(t.Context(), "Label", WithInput(&terst.FDByteReader{F: r}), WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "abcde", got)
 }
@@ -321,7 +328,7 @@ func TestInputIgnoresSpecialKeysFromPipe(t *testing.T) {
 func TestInputThenPasswordWithPasteDoesNotLoseBytes(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio := startChanIO(ctx, 200, 8)
+	cio := terst.StartChanIO(ctx, 200, 8)
 	r, w, err := os.Pipe()
 	assert.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, r.Close()) })
@@ -463,7 +470,7 @@ func TestInputRunBufferedWrappedReader(t *testing.T) {
 	assert.NoError(t, err)
 	defer pr.Close() //nolint:errcheck // test cleanup
 	defer pw.Close() //nolint:errcheck // test cleanup
-	in := &mockDescriptor{Reader: bytes.NewBufferString("x\r"), fd: pr.Fd()}
+	in := &terst.MockDescriptor{Reader: bytes.NewBufferString("x\r"), FD: pr.Fd()}
 	prompt := newInput(t.Context(), "buffered")
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
@@ -504,13 +511,13 @@ func runInputOn(t *testing.T, in io.Reader, option ...option.Opt) (string, error
 
 // regression: a, b, Backspace and Enter typed together must submit "a"
 func TestInputRunBufferedKeystrokes(t *testing.T) {
-	got, err := runInputOn(t, &chunkReader{chunks: [][]byte{[]byte("ab\x7f\r")}})
+	got, err := runInputOn(t, &terst.ChunkReader{Chunks: [][]byte{[]byte("ab\x7f\r")}})
 	assert.NoError(t, err)
 	assert.Equal(t, "a", got)
 }
 
 func TestInputRunBufferedKeysInTheMiddle(t *testing.T) {
-	in := &chunkReader{chunks: [][]byte{[]byte("\x1b[Da\x1b[Cé\x1b[D\x1b[D"), []byte("é\r")}}
+	in := &terst.ChunkReader{Chunks: [][]byte{[]byte("\x1b[Da\x1b[Cé\x1b[D\x1b[D"), []byte("é\r")}}
 	got, err := runInputOn(t, in, WithDefault("\u65e5\u672c"))
 	assert.NoError(t, err)
 	assert.Equal(t, "\u65e5aé\u672cé", got)
@@ -518,7 +525,7 @@ func TestInputRunBufferedKeysInTheMiddle(t *testing.T) {
 
 // regression: keys after a confirming Enter stay for the next prompt
 func TestInputRunKeepsKeysAfterEnter(t *testing.T) {
-	in := &chunkReader{chunks: [][]byte{[]byte("a\rbc\r")}}
+	in := &terst.ChunkReader{Chunks: [][]byte{[]byte("a\rbc\r")}}
 	got, err := runInputOn(t, in)
 	assert.NoError(t, err)
 	assert.Equal(t, "a", got)
@@ -629,7 +636,7 @@ func TestInputRejectionClearsOnEditAndKeepsText(t *testing.T) {
 
 func TestInputNeedsTwoRowsForFeedback(t *testing.T) {
 	i := newInput(t.Context(), "Label")
-	i.In = &chunkReader{chunks: [][]byte{{'a'}, {term.KeyEnter}}}
+	i.In = &terst.ChunkReader{Chunks: [][]byte{{'a'}, {term.KeyEnter}}}
 	i.Out = &bytes.Buffer{}
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 		return &term.IO{In: in, Out: out, Width: 20, Height: 1, Restore: func() error { return nil }}, nil

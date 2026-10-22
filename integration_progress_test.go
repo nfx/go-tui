@@ -13,6 +13,7 @@ import (
 
 	tui "github.com/nfx/go-tui"
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestProgressbarUpdatesAfterCompletion(t *testing.T) {
@@ -79,7 +80,7 @@ func TestSpinnerUpdatesAfterCompletion(t *testing.T) {
 	term := newTerminal(t, 6)
 	th := theme.New()
 	th.Symbols.Spinner = []string{"-"}
-	tui.UseTheme(t, th)
+	terst.UseTheme(t, th)
 	s, err := tui.NewSpinners(t.Context())
 	assert.NoError(t, err)
 	t.Cleanup(s.Close)

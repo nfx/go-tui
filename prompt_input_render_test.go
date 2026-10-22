@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestRenderNormal(t *testing.T) {
@@ -168,7 +169,7 @@ func TestInputFeedbackSanitizesMessage(t *testing.T) {
 func TestInputFeedbackClippedToOneRow(t *testing.T) {
 	th := theme.New()
 	th.Templates.Input.Feedback = `{{ .Message }}`
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	_, out, err := runValidated(t, false, "a\r",
 		WithValidation(func(context.Context, string) error { return errors.New(strings.Repeat("é", 60)) }))
 	assert.ErrorIs(t, err, io.EOF)
@@ -180,19 +181,12 @@ func TestInputFeedbackClippedToOneRow(t *testing.T) {
 func TestInputFeedbackTemplateIsPlain(t *testing.T) {
 	th := theme.New()
 	th.Templates.Input.Feedback = `!! {{ .Message }}`
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	_, out, err := runValidated(t, false, "a\r",
 		WithValidation(func(context.Context, string) error { return errors.New("bad") }))
 	assert.ErrorIs(t, err, io.EOF)
 	assert.Contains(t, out, "!! bad")
 	assert.True(t, !strings.Contains(out, "\x1b[31m"))
-}
-
-// useTheme installs th and routes migrated widgets through it for the test.
-func useTheme(t *testing.T, th theme.Theme) {
-	t.Helper()
-	keepTheme(t)
-	assert.NoError(t, term.Default.InstallTheme(th))
 }
 
 // asciiTheme is the preset theme with ASCII symbols, Guided or Inline.
@@ -212,14 +206,14 @@ func themedInput(
 	keys ...string,
 ) (i *input, out *bytes.Buffer, restored *bool) {
 	t.Helper()
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	i = newInput(t.Context(), "Label")
 	var chunks [][]byte
 	for _, k := range keys {
 		chunks = append(chunks, []byte(k))
 	}
 	out, restored = &bytes.Buffer{}, new(bool)
-	i.In, i.Out = &chunkReader{chunks: chunks}, out
+	i.In, i.Out = &terst.ChunkReader{Chunks: chunks}, out
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 		restore := func() error { *restored = true; return nil }
 		return &term.IO{In: in, Out: out, Width: width, Height: height, Restore: restore}, nil
@@ -414,7 +408,7 @@ func TestThemedInputFamilySlots(t *testing.T) {
 	th := asciiTheme(false)
 	th.Templates.Input.Label = `input`
 	th.Templates.Number.Label = `number`
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	label := func(i *input) string {
 		t.Helper()
 		assert.NoError(t, i.bind(t.Context(), &term.IO{Out: &bytes.Buffer{}}))
@@ -460,11 +454,11 @@ func TestThemedInputHelperErrorsRestoreTerminal(t *testing.T) {
 }
 
 func TestThemedInputDefaultWithoutTerminal(t *testing.T) {
-	strictOutput(t)
+	terst.StrictOutput(t)
 	th := asciiTheme(false)
 	th.Templates.Input.Label = `{{ fails .Label }}`
 	th.Funcs = map[string]any{"fails": func(string) (string, error) { return "", errors.New("boom") }}
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	i := newInput(t.Context(), "Label")
 	var out bytes.Buffer
 	i.Out = &out
@@ -479,7 +473,7 @@ func TestThemedInputDefaultWithoutTerminal(t *testing.T) {
 }
 
 func TestThemedInputColorsFollowDestination(t *testing.T) {
-	withEnv(t, "FORCE_COLOR=3")
+	terst.WithEnv(t, "FORCE_COLOR=3")
 	i, out, _ := themedInput(t, asciiTheme(false), 20, 5, "a", "\r")
 	_, err := i.read(t.Context())
 	assert.NoError(t, err)
@@ -489,7 +483,7 @@ func TestThemedInputColorsFollowDestination(t *testing.T) {
 	// the background is unknown, so the value keeps the default and the guide is faint
 	assert.Contains(t, out.String(), "\n\r\x1b[2m|\x1b[22m a\x1b[K")
 
-	withEnv(t)
+	terst.WithEnv(t)
 	i, out, _ = themedInput(t, asciiTheme(false), 20, 5, "a", "\r")
 	_, err = i.read(t.Context())
 	assert.NoError(t, err)
@@ -498,13 +492,13 @@ func TestThemedInputColorsFollowDestination(t *testing.T) {
 }
 
 func TestThemedInputSymbolsFollowEnvironment(t *testing.T) {
-	withEnv(t, "TERM=linux")
+	terst.WithEnv(t, "TERM=linux")
 	i, out, _ := themedInput(t, theme.New(), 20, 5, "a", "\r")
 	_, err := i.read(t.Context())
 	assert.NoError(t, err)
 	assert.Contains(t, out.String(), "\r? Label\x1b[K\n\r| a\x1b[K")
 
-	withEnv(t)
+	terst.WithEnv(t)
 	i, out, _ = themedInput(t, theme.New(), 20, 5, "a", "\r")
 	_, err = i.read(t.Context())
 	assert.NoError(t, err)

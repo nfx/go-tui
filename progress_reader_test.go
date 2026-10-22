@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestWrapReaderSizeFallback(t *testing.T) {
@@ -248,7 +249,7 @@ func TestThemedFileProgressLogsWithoutTerminal(t *testing.T) {
 	th.Templates.Progress.Label = `{{ boom }}`
 	th.Templates.Progress.Metrics = `{{ boom }}`
 	th.Templates.Progress.Frame = `{{ boom }}{{ .Bar }}`
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	var logs, out bytes.Buffer
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestTableHeadersFollowProfile(t *testing.T) {
@@ -21,7 +22,7 @@ func TestTableHeadersFollowProfile(t *testing.T) {
 		env  []string
 		bold bool
 	}{{nil, false}, {[]string{"FORCE_COLOR=1"}, true}} {
-		withEnv(t, tc.env...)
+		terst.WithEnv(t, tc.env...)
 		var out bytes.Buffer
 		assert.NoError(t, TableAuto(&out, []row{{"a"}}))
 		assert.Equal(t, tc.bold, strings.Contains(out.String(), "\x1b[1m"))
@@ -30,11 +31,11 @@ func TestTableHeadersFollowProfile(t *testing.T) {
 
 func TestFactsFollowProfile(t *testing.T) {
 	type row struct{ Name string }
-	withEnv(t)
+	terst.WithEnv(t)
 	var out bytes.Buffer
 	assert.NoError(t, Facts(&out, row{"a"}))
 	assert.NotContains(t, out.String(), "\x1b[")
-	withEnv(t, "FORCE_COLOR=1")
+	terst.WithEnv(t, "FORCE_COLOR=1")
 	out.Reset()
 	assert.NoError(t, Facts(&out, row{"a"}))
 	assert.Contains(t, out.String(), "\x1b[1m")
@@ -48,7 +49,7 @@ func TestPrettyJSONLevels(t *testing.T) {
 	assert.NotContains(t, attrs, "38;5;")
 	assert.Contains(t, render("FORCE_COLOR=2"), "38;5;")
 	assert.Contains(t, render("FORCE_COLOR=3"), "38;2;")
-	stripped := regexpSGR.ReplaceAllString(render("FORCE_COLOR=1"), "")
+	stripped := terst.RegexpSGR.ReplaceAllString(render("FORCE_COLOR=1"), "")
 	assert.Equal(t, "{\n  \"a\": {\n    \"b\": \"c\"\n  }\n}\n", stripped)
 }
 

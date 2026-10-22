@@ -17,6 +17,7 @@ import (
 	"text/template"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestFactsBasicRender(t *testing.T) {
@@ -253,7 +254,7 @@ func TestThemedFactsMatchesLegacyOnPlainWriter(t *testing.T) {
 		}
 		return outs
 	}
-	withEnv(t)
+	terst.WithEnv(t)
 	legacy := render()
 	themedTable(t, theme.New())
 	themed := render()
@@ -279,7 +280,7 @@ func TestThemedFactsRoles(t *testing.T) {
 		assert.NotContains(t, out, string(role))
 	}
 	plain := &bytes.Buffer{}
-	withEnv(t)
+	terst.WithEnv(t)
 	assert.NoError(t, Facts(plain, factsData))
 	assert.Equal(t, plain.String(), stripSGR(out))
 }

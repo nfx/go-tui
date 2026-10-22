@@ -17,11 +17,12 @@ import (
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestChanIO_Forward(t *testing.T) {
 	t.SkipNow()
-	cio, stdout := chainIOforTest(t, 12, 3)
+	cio, stdout := terst.ChainIOForTest(t, 12, 3)
 
 	// write 5 lines
 	_, err := fmt.Fprint(cio, "a\nb\nc\nd\ne\n")
@@ -137,7 +138,7 @@ func TestDropdownPressKeyReadsSharedPendingEnter(t *testing.T) {
 			name = "fresh terminal"
 		}
 		t.Run(name, func(t *testing.T) {
-			in := &mockDescriptor{Reader: bytes.NewBufferString("\x1b[A\r"), fd: 0}
+			in := &terst.MockDescriptor{Reader: bytes.NewBufferString("\x1b[A\r"), FD: 0}
 			first := &term.IO{In: in, Out: &bytes.Buffer{}}
 			ev := <-first.ReadEvents(t.Context(), nil)
 			first.AwaitReader()
@@ -161,7 +162,7 @@ func TestDropdownPressKeyReadsSharedPendingEnter(t *testing.T) {
 }
 
 func TestRoutingWrapperInputBufferOutput(t *testing.T) {
-	strictOutput(t)
+	terst.StrictOutput(t)
 	var out bytes.Buffer
 	got, err := Input(t.Context(), "Name",
 		WithInput(strings.NewReader("typed\r")), WithOutput(&out), WithDefault("dflt"))
@@ -181,8 +182,8 @@ func TestRoutingWrapperInputBufferOutput(t *testing.T) {
 
 func TestInteractiveStillWorksOnManagedOutput(t *testing.T) {
 	// production classification: a managed terminal with scripted input
-	strictOutput(t)
-	cio := startChanIO(t.Context(), 80, 24)
+	terst.StrictOutput(t)
+	cio := terst.StartChanIO(t.Context(), 80, 24)
 	got, err := Input(t.Context(), "Name", WithInput(strings.NewReader("bob\r")), WithOutput(cio))
 	if errors.Is(err, ErrNoTTY) {
 		t.Fatal("managed terminal must stay interactive")

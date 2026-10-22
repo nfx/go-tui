@@ -1,0 +1,309 @@
+// Copyright 2026 Serge Smertin
+// SPDX-License-Identifier: MIT
+
+package terst
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"os"
+	"regexp"
+	"strings"
+	"sync"
+	"testing"
+
+	"time"
+
+	xterm "golang.org/x/term"
+
+	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
+)
+
+// SyncBuffer is a bytes.Buffer safe for one writer goroutine and concurrent readers.
+type SyncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *SyncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *SyncBuffer) Len() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Len()
+}
+
+func (b *SyncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+type FDByteReader struct {
+	F *os.File
+}
+
+// Read returns single bytes so ReadRune sees one key at a time.
+func (r *FDByteReader) Read(p []byte) (int, error) {
+	buf := make([]byte, 1)
+	n, err := r.F.Read(buf)
+	if n > 0 {
+		p[0] = buf[0]
+		return 1, nil
+	}
+	return n, err
+}
+
+func (r *FDByteReader) Fd() uintptr {
+	return r.F.Fd()
+}
+
+func StartChanIO(ctx context.Context, width, height int) *term.ChanIO {
+	return startChanIOTo(ctx, io.Discard, width, height)
+}
+
+func NewTermIO(width, height int) *term.IO {
+	return &term.IO{
+		In:      bytes.NewBuffer(nil),
+		Out:     &bytes.Buffer{},
+		Width:   width,
+		Height:  height,
+		Restore: func() error { return nil },
+	}
+}
+
+type ChunkReader struct {
+	Chunks [][]byte
+	idx    int
+}
+
+// Read returns the next chunk to simulate multi-byte key sequences.
+func (r *ChunkReader) Read(p []byte) (int, error) {
+	if r.idx >= len(r.Chunks) {
+		return 0, io.EOF
+	}
+	chunk := r.Chunks[r.idx]
+	r.idx++
+	n := copy(p, chunk)
+	return n, nil
+}
+
+// FailReader fails the test when a prompt reads from it.
+type FailReader struct{ t *testing.T }
+
+func (r FailReader) Read([]byte) (int, error) {
+	r.t.Helper()
+	r.t.Error("automatic answer must not read input")
+	return 0, io.EOF
+}
+
+// Quiet configures a prompt without terminal: no input may be read, and the
+// buffer must stay empty.
+func Quiet(t *testing.T) option.Opt {
+	t.Helper()
+	StrictOutput(t)
+	out := &bytes.Buffer{}
+	t.Cleanup(func() { assert.Equal(t, "", out.String()) })
+	return option.WithOptions(option.WithInput(FailReader{t}), option.WithOutput(out))
+}
+
+// KeepTheme restores the installed theme after a test.
+func KeepTheme(t *testing.T) *render.Compiled {
+	t.Helper()
+	prev := term.Default.CurrentTheme()
+	t.Cleanup(func() { term.Default.Theme.Store(prev) })
+	return prev
+}
+
+// WithEnv installs an output environment fixture built from KEY=VALUE pairs.
+func WithEnv(t *testing.T, pairs ...string) {
+	t.Helper()
+	vars := map[string]string{}
+	for _, p := range pairs {
+		k, v, _ := strings.Cut(p, "=")
+		vars[k] = v
+	}
+	prev := term.Default.Env
+	term.Default.Env = term.ReadOutputEnv(func(k string) (string, bool) { v, ok := vars[k]; return v, ok })
+	t.Cleanup(func() { term.Default.Env = prev })
+}
+
+func TTYWriter(t *testing.T) *MockDescriptor {
+	t.Helper()
+	prev := term.WriterChecker
+	term.WriterChecker = func(int) bool { return true }
+	prevVT := term.ConsoleVT
+	term.ConsoleVT = func(io.Writer) bool { return true }
+	t.Cleanup(func() {
+		term.WriterChecker = prev
+		term.ConsoleVT = prevVT
+	})
+	return &MockDescriptor{Reader: &bytes.Buffer{}, Writer: &bytes.Buffer{}, FD: 7}
+}
+
+func WaitOutputContains(t *testing.T, out <-chan string, parts ...string) string {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case got := <-out:
+			matched := true
+			for _, part := range parts {
+				if !strings.Contains(got, part) {
+					matched = false
+					break
+				}
+			}
+			if matched {
+				return got
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for output containing %q", parts)
+		}
+	}
+}
+
+var RegexpSGR = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func ChainIOForTest(t *testing.T, width, height int) (*term.ChanIO, *term.WriteC) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	realOut := term.NewWriteC(ctx)
+	cio := term.NewUnstartedIO(ctx, width, height, 0)
+	go cio.HandleViewports(ctx)
+	go cio.ForwardTo(ctx, realOut)
+	t.Cleanup(func() {
+		cancel()
+		close(cio.In)
+		close(cio.Out)
+	})
+	return cio, realOut
+}
+
+type FailingWriter struct{ Err error }
+
+func (w FailingWriter) Write([]byte) (int, error) { return 0, w.Err }
+
+type MockDescriptor struct {
+	io.Reader
+	io.Writer
+	FD uintptr
+}
+
+func (m *MockDescriptor) Fd() uintptr {
+	return m.FD
+}
+
+// OSCReply is what a terminal sends for an OSC 11 query.
+const OSCReply = "\x1b]11;rgb:1e1e/1e1e/2e2e\x07"
+
+// ReplyingTerminal answers OSC 11 queries through the input pipe.
+type ReplyingTerminal struct {
+	mu      sync.Mutex
+	queries int
+	reply   string
+	in      *io.PipeWriter
+}
+
+// Write counts queries and injects the configured reply.
+func (r *ReplyingTerminal) Write(p []byte) (int, error) {
+	if string(p) != "\x1b]11;?\x07" {
+		return len(p), nil
+	}
+	r.mu.Lock()
+	r.queries++
+	r.mu.Unlock()
+	if r.reply != "" {
+		go r.in.Write([]byte(r.reply)) //nolint:errcheck
+	}
+	return len(p), nil
+}
+
+// Count returns the synchronized query Count.
+func (r *ReplyingTerminal) Count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.queries
+}
+
+// ProbeTermIO creates a simulated terminal with automatic cleanup.
+func ProbeTermIO(t *testing.T, reply string) (*term.IO, *ReplyingTerminal) {
+	t.Helper()
+	prev, prevSupported := term.InputChecker, term.ProbeSupported
+	term.InputChecker = func(int) bool { return true }
+	term.ProbeSupported = true // the simulated terminal accepts VT input on every platform
+	t.Cleanup(func() { term.InputChecker, term.ProbeSupported = prev, prevSupported })
+	pr, pw := io.Pipe()
+	t.Cleanup(func() { assert.NoError(t, pw.Close()) })
+	rt := &ReplyingTerminal{reply: reply, in: pw}
+	return &term.IO{In: &MockDescriptor{Reader: pr, FD: 7}, Out: rt, Fd: 2}, rt
+}
+
+// StrictOutput restores production terminal classification for a test, where
+// writers without terminal capabilities are not terminals.
+func StrictOutput(t *testing.T) {
+	t.Helper()
+	prev := term.OutputIsTerminal
+	term.OutputIsTerminal = term.HostsTerminal
+	t.Cleanup(func() { term.OutputIsTerminal = prev })
+}
+
+// ProbingKeyboard makes input on fd a terminal that answers background
+// queries, without changing any terminal mode.
+func ProbingKeyboard(t *testing.T, fd uintptr) {
+	t.Helper()
+	prevInput, prevSupported := term.InputChecker, term.ProbeSupported
+	prevRaw, prevRestore := term.MakeRaw, term.Restore
+	term.InputChecker = func(f int) bool { return f == int(fd) || prevInput(f) }
+	term.ProbeSupported = true
+	term.MakeRaw = func(int) (*xterm.State, error) { return &xterm.State{}, nil }
+	term.Restore = func(int, *xterm.State) error { return nil }
+	t.Cleanup(func() {
+		term.InputChecker, term.ProbeSupported = prevInput, prevSupported
+		term.MakeRaw, term.Restore = prevRaw, prevRestore
+	})
+}
+
+// ASCIISymbols replace the presets on terminals without the Unicode glyphs.
+var ASCIISymbols = theme.New().Symbols.ASCII()
+
+// UseTheme installs th and routes migrated widgets through it for the test.
+func UseTheme(t *testing.T, th theme.Theme) {
+	t.Helper()
+	KeepTheme(t)
+	assert.NoError(t, term.Default.InstallTheme(th))
+}
+
+func startChanIOTo(ctx context.Context, out io.Writer, width, height int) *term.ChanIO {
+	cio := term.NewUnstartedIO(ctx, width, height, 0)
+	go cio.HandleViewports(ctx)
+	go cio.ForwardTo(ctx, out)
+	return cio
+}
+
+// Main patches the terminal seams for a package test binary, then runs the
+// tests. Most tests drive interactive widgets through in-memory writers, so
+// the binary treats them as a terminal. Tests of the production routing call
+// [StrictOutput]. Environment fixtures read the same on every platform, and
+// the suite drives terminals the same in a CI job.
+func Main(m *testing.M) {
+	term.LegacyConsoles = false
+	term.Default.Env.Ci = false
+	term.OutputIsTerminal = func(w io.Writer) bool {
+		if term.HostsTerminal(w) {
+			return true
+		}
+		_, isFD := w.(term.Descriptor)
+		return !isFD
+	}
+	os.Exit(m.Run())
+}

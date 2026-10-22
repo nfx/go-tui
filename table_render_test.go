@@ -17,14 +17,15 @@ import (
 	"text/template"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 // themedTable turns the theme gate on with th installed and clears the color
 // environment, then adds pairs such as FORCE_COLOR=3.
 func themedTable(t *testing.T, th theme.Theme, env ...string) {
 	t.Helper()
-	withEnv(t, env...)
-	useTheme(t, th)
+	terst.WithEnv(t, env...)
+	terst.UseTheme(t, th)
 }
 
 func TestThemedTableMatchesLegacyOnPlainWriter(t *testing.T) {
@@ -44,7 +45,7 @@ func TestThemedTableMatchesLegacyOnPlainWriter(t *testing.T) {
 		}
 		return outs
 	}
-	withEnv(t)
+	terst.WithEnv(t)
 	legacy := render()
 	themedTable(t, theme.New())
 	themed := render()
@@ -134,7 +135,7 @@ func TestThemedTableSignedPercent(t *testing.T) {
 	assert.NotContains(t, buf.String(), "\x1b[32m")
 	assert.NotContains(t, buf.String(), "\x1b[31m")
 
-	withEnv(t)
+	terst.WithEnv(t)
 	buf.Reset()
 	assert.NoError(t, Table(buf, "", data, WithFloat64AsPercentPositiveColored()))
 	assert.Equal(t, "NAME    RATE  AMOUNT \nA      5.87%       0 \nB       -99%       0 \nC         0%       0 \n",
@@ -186,7 +187,7 @@ func TestThemedTableExtraCellsAreDropped(t *testing.T) {
 		assert.NoError(t, TableAuto(buf, themedRows[:1], WithColumnTemplate("Note", "{{.Note}}\textra")))
 		return buf.String()
 	}
-	withEnv(t)
+	terst.WithEnv(t)
 	legacy := render()
 	themedTable(t, theme.New())
 	assert.Equal(t, legacy, render())
@@ -252,7 +253,7 @@ func TestThemedTableWidthLockAfterFirstBatch(t *testing.T) {
 	assert.Equal(t, "a m…   12345… muc…  ", lines[12])
 
 	// decoration does not count toward widths
-	withEnv(t, "FORCE_COLOR=3")
+	terst.WithEnv(t, "FORCE_COLOR=3")
 	colored := &bytes.Buffer{}
 	assert.NoError(t, TableAuto(colored, data))
 	assert.True(t, colored.String() != plain.String())
@@ -277,7 +278,7 @@ func TestThemedTableRowTemplateHelpersBindToWriter(t *testing.T) {
 	assert.NoError(t, Table(buf, tmpl, themedRows[:1]))
 	assert.NotContains(t, buf.String(), "\x1b")
 
-	withEnv(t, "FORCE_COLOR=3")
+	terst.WithEnv(t, "FORCE_COLOR=3")
 	buf.Reset()
 	assert.NoError(t, Table(buf, tmpl, themedRows[:1]))
 	roles := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), buf, nil).Roles
@@ -382,7 +383,7 @@ func TestThemedTableIterKeepsOneSnapshot(t *testing.T) {
 				// the first batch is out, and later batches keep the
 				// writer's capabilities
 				firstBatch = buf.String()
-				withEnv(t)
+				terst.WithEnv(t)
 			}
 			if !yield(v, nil) {
 				return

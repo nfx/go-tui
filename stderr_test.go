@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestStderrReturnsRawWriterWithoutTTY(t *testing.T) {
@@ -45,7 +46,7 @@ func TestStderrReturnsCoordinatedWriterOnTTY(t *testing.T) {
 		SetDefaultIO(prevIn, prevOut)
 	})
 	in := bytes.NewBufferString("in")
-	out := &mockDescriptor{Writer: &bytes.Buffer{}, fd: 42}
+	out := &terst.MockDescriptor{Writer: &bytes.Buffer{}, FD: 42}
 	term.WriterChecker = func(int) bool { return true }
 	term.GetSize = func(int) (int, int, error) { return 80, 24, nil }
 	SetDefaultIO(in, out)
@@ -72,8 +73,8 @@ func TestStderrReturnsRawWriterOnTTYInCI(t *testing.T) {
 		term.GetSize = prevSize
 		SetDefaultIO(prevIn, prevOut)
 	})
-	withEnv(t, "CI=true")
-	out := ttyWriter(t)
+	terst.WithEnv(t, "CI=true")
+	out := terst.TTYWriter(t)
 	term.GetSize = func(int) (int, int, error) { return 80, 24, nil }
 	SetDefaultIO(bytes.NewBufferString("in"), out)
 
@@ -89,28 +90,28 @@ func TestConfirmAndStderrShareDefaultTerminal(t *testing.T) {
 	t.Cleanup(func() {
 		SetDefaultIO(prevIn, prevOut)
 	})
-	cio, stdout := chainIOforTest(t, 40, 6)
+	cio, stdout := terst.ChainIOForTest(t, 40, 6)
 	inputR, inputW, err := os.Pipe()
 	assert.NoError(t, err)
 	t.Cleanup(func() {
 		assert.NoError(t, inputR.Close())
 		assert.NoError(t, inputW.Close())
 	})
-	SetDefaultIO(&fdByteReader{f: inputR}, cio)
+	SetDefaultIO(&terst.FDByteReader{F: inputR}, cio)
 
 	result := make(chan bool, 1)
 	go func() {
 		result <- Confirm(t.Context(), "Are you sure?")
 	}()
 
-	waitOutputContains(t, stdout.C, "Are you sure?")
+	terst.WaitOutputContains(t, stdout.C, "Are you sure?")
 	_, err = Stderr().Write([]byte("INF foo bar=baz\n"))
 	assert.NoError(t, err)
-	waitOutputContains(t, stdout.C, "INF foo bar=baz", "Are you sure?")
+	terst.WaitOutputContains(t, stdout.C, "INF foo bar=baz", "Are you sure?")
 	_, err = inputW.Write([]byte{term.KeyEnter})
 	assert.NoError(t, err)
 	assert.True(t, <-result)
-	answer := waitOutputContains(t, stdout.C, "✔", "Are you sure?")
+	answer := terst.WaitOutputContains(t, stdout.C, "✔", "Are you sure?")
 	assert.Equal(t, 0, strings.Count(answer, "→"))
 }
 
@@ -120,10 +121,10 @@ func TestInputAndStderrShareDefaultTerminal(t *testing.T) {
 	t.Cleanup(func() {
 		SetDefaultIO(prevIn, prevOut)
 	})
-	cio, stdout := chainIOforTest(t, 60, 8)
+	cio, stdout := terst.ChainIOForTest(t, 60, 8)
 	reader := &blockingByteReader{ch: make(chan []byte, 3)}
 	t.Cleanup(reader.Close)
-	input := &mockDescriptor{Reader: reader, fd: 0}
+	input := &terst.MockDescriptor{Reader: reader, FD: 0}
 	SetDefaultIO(input, cio)
 
 	result := make(chan string, 1)
@@ -137,14 +138,14 @@ func TestInputAndStderrShareDefaultTerminal(t *testing.T) {
 		result <- value
 	}()
 
-	waitOutputContains(t, stdout.C, "PROMPT")
+	terst.WaitOutputContains(t, stdout.C, "PROMPT")
 	_, err := Stderr().Write([]byte("INF background\n"))
 	assert.NoError(t, err)
-	logged := waitOutputContains(t, stdout.C, "PROMPT", "INF background")
+	logged := terst.WaitOutputContains(t, stdout.C, "PROMPT", "INF background")
 	assert.Equal(t, 1, strings.Count(logged, "PROMPT"))
 	reader.SendByte('a')
 	reader.SendByte('b')
-	updated := waitOutputContains(t, stdout.C, "PROMPT", "ab")
+	updated := terst.WaitOutputContains(t, stdout.C, "PROMPT", "ab")
 	assert.Equal(t, 1, strings.Count(updated, "PROMPT"))
 	reader.SendByte(term.KeyEnter)
 	select {
@@ -161,29 +162,29 @@ func TestStderrWritesUseNativeHistoryWhilePromptActive(t *testing.T) {
 	t.Cleanup(func() {
 		SetDefaultIO(prevIn, prevOut)
 	})
-	cio, stdout := chainIOforTest(t, 60, 8)
+	cio, stdout := terst.ChainIOForTest(t, 60, 8)
 	inputR, inputW, err := os.Pipe()
 	assert.NoError(t, err)
 	t.Cleanup(func() {
 		assert.NoError(t, inputR.Close())
 		assert.NoError(t, inputW.Close())
 	})
-	SetDefaultIO(&fdByteReader{f: inputR}, cio)
+	SetDefaultIO(&terst.FDByteReader{F: inputR}, cio)
 
 	done := make(chan bool, 1)
 	go func() {
 		done <- Confirm(t.Context(), "scrollback")
 	}()
 
-	waitOutputContains(t, stdout.C, "scrollback")
+	terst.WaitOutputContains(t, stdout.C, "scrollback")
 	_, err = Stderr().Write([]byte("INF first\n"))
 	assert.NoError(t, err)
-	first := waitOutputContains(t, stdout.C, "INF first", "scrollback")
+	first := terst.WaitOutputContains(t, stdout.C, "INF first", "scrollback")
 	assert.Equal(t, 1, strings.Count(first, "INF first"))
 
 	_, err = Stderr().Write([]byte("INF second\n"))
 	assert.NoError(t, err)
-	second := waitOutputContains(t, stdout.C, "INF second", "scrollback")
+	second := terst.WaitOutputContains(t, stdout.C, "INF second", "scrollback")
 	assert.Equal(t, 0, strings.Count(second, "INF first"))
 	assert.Equal(t, 1, strings.Count(second, "INF second"))
 
@@ -198,7 +199,7 @@ func TestStderrNormalizesLoneLFWithoutOverlay(t *testing.T) {
 	t.Cleanup(func() {
 		SetDefaultIO(prevIn, prevOut)
 	})
-	cio, stdout := chainIOforTest(t, 60, 8)
+	cio, stdout := terst.ChainIOForTest(t, 60, 8)
 	SetDefaultIO(prevIn, cio)
 
 	_, err := Stderr().Write([]byte("one\ntwo\n"))
@@ -212,7 +213,7 @@ func TestStderrPreservesCRLFAcrossChunkBoundary(t *testing.T) {
 	t.Cleanup(func() {
 		SetDefaultIO(prevIn, prevOut)
 	})
-	cio, stdout := chainIOforTest(t, 60, 8)
+	cio, stdout := terst.ChainIOForTest(t, 60, 8)
 	SetDefaultIO(prevIn, cio)
 
 	_, err := Stderr().Write([]byte("one\r"))
@@ -233,7 +234,7 @@ func TestTerminalStderrImplementsCloser(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	outW := &mockDescriptor{Writer: &out, fd: 7}
+	outW := &terst.MockDescriptor{Writer: &out, FD: 7}
 	term.WriterChecker = func(int) bool { return true }
 	term.GetSize = func(int) (int, int, error) { return 80, 24, nil }
 
@@ -259,7 +260,7 @@ func TestTerminalStderrSyncFlushesWithoutClosing(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	outW := &mockDescriptor{Writer: &out, fd: 7}
+	outW := &terst.MockDescriptor{Writer: &out, FD: 7}
 	term.WriterChecker = func(int) bool { return true }
 	term.GetSize = func(int) (int, int, error) { return 80, 24, nil }
 

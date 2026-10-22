@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestMultichoiceClampRowsKeepsActiveItemVisible(t *testing.T) {
@@ -40,7 +41,7 @@ func TestMultichoiceClampRowsKeepsActiveItemVisible(t *testing.T) {
 	}
 }
 
-func waitBufferContains(t *testing.T, out *syncBuffer, part string) {
+func waitBufferContains(t *testing.T, out *terst.SyncBuffer, part string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for !strings.Contains(out.String(), part) {
@@ -72,7 +73,7 @@ func preparedMultichoice(t *testing.T, items []any, o ...option.Opt) *multichoic
 		t.Fatal(err)
 	}
 	// binding projects the items and resolves the default, as run does
-	if err := m.bindRun(t.Context(), newTestTermIO(60, 10)); err != nil {
+	if err := m.bindRun(t.Context(), terst.NewTermIO(60, 10)); err != nil {
 		t.Fatal(err)
 	}
 	return m
@@ -119,7 +120,7 @@ func TestMultichoiceStateAndGeometry(t *testing.T) {
 			[]any{"\u6f22\u5b57", "👨‍👩‍👧 family", "e\u0301", "\x1b[31mred\x1b[0m", "first\nsecond"},
 		)
 		m.Label = "very long label"
-		tio := newTestTermIO(width, 6)
+		tio := terst.NewTermIO(width, 6)
 		var frame bytes.Buffer
 		err := m.render(tio, &frame)
 		if width <= 2 && errors.Is(err, ErrNoSpace) {
@@ -136,10 +137,10 @@ func TestMultichoiceStateAndGeometry(t *testing.T) {
 	}
 	m = preparedMultichoice(t, []any{"one"})
 	var frame bytes.Buffer
-	if err := m.render(newTestTermIO(0, 4), &frame); !errors.Is(err, ErrNoSpace) {
+	if err := m.render(terst.NewTermIO(0, 4), &frame); !errors.Is(err, ErrNoSpace) {
 		t.Fatal(err)
 	}
-	if err := m.render(newTestTermIO(20, 2), &frame); !errors.Is(err, ErrNoSpace) {
+	if err := m.render(terst.NewTermIO(20, 2), &frame); !errors.Is(err, ErrNoSpace) {
 		t.Fatal(err)
 	}
 }
@@ -177,7 +178,7 @@ func TestMultichoicePreparationAndCapabilities(t *testing.T) {
 		// syntax fails preparation; templates run when the theme binds
 		err := invalid.prepare([]option.Opt{one})
 		if err == nil {
-			err = invalid.bindRun(t.Context(), newTestTermIO(60, 10))
+			err = invalid.bindRun(t.Context(), terst.NewTermIO(60, 10))
 		}
 		if err == nil {
 			t.Fatal("invalid preparation passed")
@@ -231,7 +232,7 @@ func TestMultichoiceLifecycleFailures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			th := theme.New()
 			th.Templates.Multichoice.Answer = `ANSWER {{ .Count }}`
-			useTheme(t, th)
+			terst.UseTheme(t, th)
 			m := newMultichoice(t.Context())
 			m.Items = []any{"one"}
 			m.in = strings.NewReader(tc.keys)
@@ -351,7 +352,7 @@ func TestMultichoiceIndependentReaders(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	first := newPipeMultichoice(ctx, firstInput)
-	out := &syncBuffer{}
+	out := &terst.SyncBuffer{}
 	first.out = out
 	done := make(chan error, 1)
 	go func() { done <- first.run(first.Ctx) }()
@@ -600,7 +601,7 @@ func TestMultichoiceBufferedEnterRetainsArrival(t *testing.T) {
 			if err := m.addItem("one"); err != nil {
 				t.Fatal(err)
 			}
-			in := &chunkReader{chunks: [][]byte{[]byte("\t\r"), []byte("\r")}}
+			in := &terst.ChunkReader{Chunks: [][]byte{[]byte("\t\r"), []byte("\r")}}
 			old := &term.IO{In: in, SplitKeys: tc.split}
 			read, accept := old.StartRead(t.Context())
 			<-read.Done
@@ -695,7 +696,7 @@ func TestMultichoiceDefaultStreams(t *testing.T) {
 			in := bytes.NewBufferString("in")
 			var out io.Writer = &bytes.Buffer{}
 			if tty {
-				out = &mockDescriptor{Writer: &bytes.Buffer{}, fd: 7}
+				out = &terst.MockDescriptor{Writer: &bytes.Buffer{}, FD: 7}
 			}
 			term.WriterChecker = func(int) bool { return tty }
 			term.GetSize = func(int) (int, int, error) { return 80, 24, nil }
@@ -716,7 +717,7 @@ func TestMultichoiceDefaultStreams(t *testing.T) {
 }
 
 func TestMultichoiceDefaults(t *testing.T) {
-	io := quiet(t)
+	io := terst.Quiet(t)
 	ctx := t.Context()
 	items := []string{"a", "b", "c", "d"}
 
@@ -767,7 +768,7 @@ func TestMultichoiceDefaults(t *testing.T) {
 }
 
 func TestMultichoiceMapDefaults(t *testing.T) {
-	io := quiet(t)
+	io := terst.Quiet(t)
 	ctx := t.Context()
 	items := map[string]int{"one": 1, "two": 2, "three": 3}
 

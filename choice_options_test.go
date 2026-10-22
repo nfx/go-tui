@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestWithTemplateSetsTemplates(t *testing.T) {
@@ -40,7 +41,7 @@ func TestWithOneMatch_singlePrefixMatchReturnsIndex(t *testing.T) {
 	err := WithDefault("beta")(d)
 	assert.NoError(t, err)
 	bindDropdown(t, d)
-	_, err = d.renderInit(newTestTermIO(20, 6))
+	_, err = d.renderInit(terst.NewTermIO(20, 6))
 	var oneMatch oneHatch
 	ok := errors.As(err, &oneMatch)
 	assert.True(t, ok)
@@ -59,7 +60,7 @@ func TestWithOneMatch_noMatchKeepsDropdown(t *testing.T) {
 	err := WithDefault("gamma")(d)
 	assert.NoError(t, err)
 	assert.NoError(t, d.parseTemplates())
-	_, err = d.renderInit(newTestTermIO(20, 6))
+	_, err = d.renderInit(terst.NewTermIO(20, 6))
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(d.Items))
 	assert.Equal(t, "", d.oneMatch)
@@ -75,7 +76,7 @@ func TestWithOneMatch_sortsByLevensteinDistance(t *testing.T) {
 	err := WithDefault("alpa")(d)
 	assert.NoError(t, err)
 	bindDropdown(t, d)
-	_, err = d.renderInit(newTestTermIO(20, 6))
+	_, err = d.renderInit(terst.NewTermIO(20, 6))
 	assert.NoError(t, err)
 	assert.Equal(t, []int{1, 0, 2}, d.relevant)
 	assert.Equal(t, []int{1, 0, 2}, d.displayed)
@@ -91,7 +92,7 @@ func TestWithOneMatch_multipleMatchesKeepDropdown(t *testing.T) {
 	err := WithDefault("same")(d)
 	assert.NoError(t, err)
 	assert.NoError(t, d.parseTemplates())
-	_, err = d.renderInit(newTestTermIO(20, 6))
+	_, err = d.renderInit(terst.NewTermIO(20, 6))
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(d.Items))
 	assert.Equal(t, "", d.oneMatch)

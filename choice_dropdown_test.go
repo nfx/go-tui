@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func waitForDropdownOutput(t *testing.T, out <-chan string, want string) string {
@@ -129,7 +130,7 @@ func (r *blockingByteReader) Close() {
 // testIOforDropdown provides channel-driven prompt I/O at a fixed terminal size.
 func testIOforDropdown(t *testing.T, width, height int, o ...option.Opt) (*term.ChanIO, option.Opt) {
 	t.Helper()
-	useTheme(t, asciiTheme(false))
+	terst.UseTheme(t, asciiTheme(false))
 	ctx, cancel := context.WithCancel(t.Context())
 	cio := &term.ChanIO{
 		Ctx: ctx,
@@ -433,7 +434,7 @@ func TestDropdownKVMultipleItems(t *testing.T) {
 }
 
 func TestDropdownRunSelectsWithArrow(t *testing.T) {
-	reader := &chunkReader{chunks: [][]byte{
+	reader := &terst.ChunkReader{Chunks: [][]byte{
 		{0x1b, 0x5b, 0x42},
 		{byte(term.KeyEnter)},
 	}}
@@ -456,7 +457,7 @@ func TestDropdownRunSelectsWithArrow(t *testing.T) {
 }
 
 func TestDropdownRunIgnoresSpecialKeys(t *testing.T) {
-	reader := &chunkReader{chunks: [][]byte{
+	reader := &terst.ChunkReader{Chunks: [][]byte{
 		[]byte("\x1b[3~"),
 		[]byte("\x1bx"),
 		{0x1b, 0x1b, 0x5b, 0x42}, // Esc, then down
@@ -505,7 +506,7 @@ func TestDropdownRunConsumesInputEvents(t *testing.T) {
 }
 
 func TestDropdownRunOneReturn(t *testing.T) {
-	reader := &chunkReader{chunks: [][]byte{
+	reader := &terst.ChunkReader{Chunks: [][]byte{
 		{'b'},
 	}}
 	d := newDropdown(t.Context())
@@ -687,7 +688,7 @@ func TestDropdownRunMainConsumesInputChannel(t *testing.T) {
 	input := make(chan dropdownInputEvent, 1)
 	input <- dropdownInputConfirmed{Index: 0}
 	d.input = input
-	io := newTestTermIO(10, 4)
+	io := terst.NewTermIO(10, 4)
 	frame := bytes.NewBuffer(nil)
 	i, err := d.runMain(d.Ctx, io, frame, 1, 1)
 	assert.NoError(t, err)
@@ -702,7 +703,7 @@ func TestDropdownRunMainRejectsInvalidConfirmedIndex(t *testing.T) {
 	input := make(chan dropdownInputEvent, 1)
 	input <- dropdownInputConfirmed{Index: 5}
 	d.input = input
-	io := newTestTermIO(10, 4)
+	io := terst.NewTermIO(10, 4)
 	frame := bytes.NewBuffer(nil)
 	i, err := d.runMain(d.Ctx, io, frame, 1, 1)
 	assert.NoError(t, err)
@@ -725,7 +726,7 @@ func TestDropdownRunRenderLoadsItem(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"seed"}
 	bindDropdown(t, d)
-	tio := newTestTermIO(20, 6)
+	tio := terst.NewTermIO(20, 6)
 	frame := bytes.NewBuffer(nil)
 	ch := make(chan itPair, 1)
 	ch <- itPair{item: "next"}
@@ -737,7 +738,7 @@ func TestDropdownRunRenderLoadsItem(t *testing.T) {
 
 func TestDropdownLoadItemDone(t *testing.T) {
 	d := newDropdown(t.Context())
-	tio := newTestTermIO(20, 6)
+	tio := terst.NewTermIO(20, 6)
 	frame := bytes.NewBuffer(nil)
 	d.itItems = make(chan itPair)
 	err := d.loadItem(tio, frame, itPair{}, false, 1)
@@ -750,7 +751,7 @@ func TestDropdownAddItemEmitsAppendEvent(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"seed"}
 	bindDropdown(t, d)
-	tio := newTestTermIO(20, 2)
+	tio := terst.NewTermIO(20, 2)
 	_, err := d.renderInit(tio)
 	assert.NoError(t, err)
 	var events []dropdownOutputEvent
@@ -769,7 +770,7 @@ func TestDropdownAddItemEmitsAppendEvent(t *testing.T) {
 
 func TestDropdownLoadItemError(t *testing.T) {
 	d := newDropdown(t.Context())
-	tio := newTestTermIO(20, 6)
+	tio := terst.NewTermIO(20, 6)
 	frame := bytes.NewBuffer(nil)
 	err := d.loadItem(tio, frame, itPair{err: io.EOF}, true, 1)
 	assert.ErrorIs(t, err, io.EOF)
@@ -779,7 +780,7 @@ func TestDropdownLoadItemWriteError(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"seed"}
 	assert.NoError(t, d.parseTemplates())
-	initIO := newTestTermIO(20, 6)
+	initIO := terst.NewTermIO(20, 6)
 	_, err := d.renderInit(initIO)
 	assert.NoError(t, err)
 	tio := &term.IO{
@@ -877,7 +878,7 @@ func TestDropdownRunRenderContextDone(t *testing.T) {
 func TestDropdownAddItemDeduplicatesLazyRelevantIndexes(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, d.parseTemplates())
-	tio := newTestTermIO(20, 6)
+	tio := terst.NewTermIO(20, 6)
 	_, err := d.renderInit(tio)
 	assert.NoError(t, err)
 	err = d.addItem(tio.Height, "alpha beta")
@@ -992,7 +993,7 @@ func TestDropdownFilterEventsIgnoreRankingOrder(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, WithDefault("ap")(d))
 	bindDropdown(t, d)
-	tio := newTestTermIO(20, 6)
+	tio := terst.NewTermIO(20, 6)
 	frame := &bytes.Buffer{}
 	for _, item := range []string{"banana", "apricot", "apple"} {
 		_, _, err := d.handleLazyItem(tio, frame, 0, itPair{item: item}, true)
@@ -1090,7 +1091,7 @@ func waitUntil(t *testing.T, cond func() bool) {
 }
 
 func TestDropdownTypedDefaults(t *testing.T) {
-	io := quiet(t)
+	io := terst.Quiet(t)
 	ctx := t.Context()
 
 	servers := []server{{"alpha", 1}, {"beta", 2}}
@@ -1158,7 +1159,7 @@ func TestDropdownTypedDefaults(t *testing.T) {
 }
 
 func TestDropdownStringDefaults(t *testing.T) {
-	io := quiet(t)
+	io := terst.Quiet(t)
 	ctx := t.Context()
 
 	got, err := Dropdown(ctx, "Pick", []string{"ab", "a"}, io, WithDefault("a"))
@@ -1190,7 +1191,7 @@ func TestDropdownStringDefaults(t *testing.T) {
 }
 
 func TestDropdownKVDefault(t *testing.T) {
-	io := quiet(t)
+	io := terst.Quiet(t)
 	items := map[string]int{"one": 1, "two": 2}
 	k, v, err := DropdownKV(t.Context(), "Pick", items, io, WithDefault("two"))
 	assert.NoError(t, err)
@@ -1207,7 +1208,7 @@ func TestDropdownKVDefault(t *testing.T) {
 }
 
 func TestDropdownOneReturn(t *testing.T) {
-	io := quiet(t)
+	io := terst.Quiet(t)
 	ctx := t.Context()
 	got, err := Dropdown(ctx, "Pick", []string{"only"}, io, WithOneReturn())
 	assert.NoError(t, err)
@@ -1265,7 +1266,7 @@ type scriptedTerminal struct {
 // scripted installs th for the test and scripts a terminal for one prompt.
 func scripted(t *testing.T, th theme.Theme, width int, keys ...string) *scriptedTerminal {
 	t.Helper()
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	s := &scriptedTerminal{out: &bytes.Buffer{}, restored: new(bool), width: width}
 	if len(keys) == 0 {
 		blocking := newBlockingByteReader()
@@ -1277,7 +1278,7 @@ func scripted(t *testing.T, th theme.Theme, width int, keys ...string) *scripted
 	for _, k := range keys {
 		chunks = append(chunks, []byte(k))
 	}
-	s.in = &chunkReader{chunks: chunks}
+	s.in = &terst.ChunkReader{Chunks: chunks}
 	return s
 }
 
@@ -1288,10 +1289,10 @@ func (s *scriptedTerminal) makeTermIO(in io.Reader, out io.Writer) (*term.IO, er
 }
 
 func TestDropdownConfirmClearsFrameOnce(t *testing.T) {
-	useTheme(t, asciiTheme(false))
+	terst.UseTheme(t, asciiTheme(false))
 	var out bytes.Buffer
 	_, err := Dropdown(t.Context(), "Fruit", fruits, WithOutput(&out),
-		WithInput(&chunkReader{chunks: [][]byte{[]byte("\r")}}),
+		WithInput(&terst.ChunkReader{Chunks: [][]byte{[]byte("\r")}}),
 		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 				return &term.IO{In: in, Out: out, Width: 40, Height: 10, Restore: func() error { return nil }}, nil

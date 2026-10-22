@@ -16,15 +16,16 @@ import (
 	"text/template"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestDropdownRenderInitAndItems(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"alpha", "beta", "gamma"}
 	d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return newTestTermIO(20, 6), nil
+		return terst.NewTermIO(20, 6), nil
 	}
-	io := newTestTermIO(20, 6)
+	io := terst.NewTermIO(20, 6)
 
 	assert.NoError(t, d.parseTemplates())
 	longest, err := d.renderInit(io)
@@ -39,7 +40,7 @@ func TestDropdownRenderInitEmitsEvents(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"alpha", "beta"}
 	assert.NoError(t, d.parseTemplates())
-	io := newTestTermIO(20, 6)
+	io := terst.NewTermIO(20, 6)
 	var events []dropdownOutputEvent
 	d.eventSink = func(ev dropdownOutputEvent) {
 		events = append(events, ev)
@@ -59,7 +60,7 @@ func TestDropdownRenderInitEmitsEvents(t *testing.T) {
 // bindDropdown binds templates and prompt chrome for tests that bypass run.
 func bindDropdown(t *testing.T, d *dropdown) {
 	t.Helper()
-	withEnv(t)
+	terst.WithEnv(t)
 	if d.out == nil {
 		d.out = &bytes.Buffer{}
 	}
@@ -73,7 +74,7 @@ func TestDropdownRenderRemembersLongestWidth(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"short", "a considerably longer item"}
 	bindDropdown(t, d)
-	tio := newTestTermIO(40, 6)
+	tio := terst.NewTermIO(40, 6)
 	first, err := d.renderInit(tio)
 	assert.NoError(t, err)
 	second, err := d.renderInit(tio)
@@ -115,7 +116,7 @@ func boundDropdown(
 	o ...option.Opt,
 ) (*dropdown, *term.IO) {
 	t.Helper()
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	d := newDropdown(t.Context())
 	d.Label, d.Items = "Fruit", items
 	assert.NoError(t, option.Opts(o).Apply(d))
@@ -285,7 +286,7 @@ func TestThemedDropdownOneReturnAnswersWithoutFrame(t *testing.T) {
 }
 
 func TestThemedDropdownAutomaticAnswerMatchesProjection(t *testing.T) {
-	strictOutput(t)
+	terst.StrictOutput(t)
 	boom := errors.New("boom")
 	th := asciiTheme(false)
 	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
@@ -293,7 +294,7 @@ func TestThemedDropdownAutomaticAnswerMatchesProjection(t *testing.T) {
 	th.Templates.Prompt.Label = `{{ fails .Label }}`
 	th.Templates.Choice.Active = `{{ fails .Value }}`
 	th.Templates.Choice.Value = `{{ printf "z%s" . }}`
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	var out bytes.Buffer
 	got, err := Dropdown(t.Context(), "Fruit", fruits, WithOutput(&out), WithDefault("zb"))
 	assert.NoError(t, err)
@@ -358,7 +359,7 @@ func TestThemedDropdownHelperErrorRestoresTerminal(t *testing.T) {
 }
 
 func TestThemedDropdownRolesStyleFocusAndRows(t *testing.T) {
-	withEnv(t, "FORCE_COLOR=3")
+	terst.WithEnv(t, "FORCE_COLOR=3")
 	th := asciiTheme(false)
 	th.Light = true
 	d, tt := boundDropdown(t, th, 40, 10, []any{"a", "b"})

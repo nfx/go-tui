@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
@@ -68,7 +69,7 @@ func TestDropdownPressKeyRuneAndRenderMore(t *testing.T) {
 	d.trie.Add(ansi.Text("alpha"), 0)
 	d.trie.Add(ansi.Text("beta"), 1)
 
-	tio := newTestTermIO(20, 6)
+	tio := terst.NewTermIO(20, 6)
 
 	assert.Equal(t, 0, d.pressKeyRune(tio, term.KeyEnter, len(d.displayed), 4))
 
@@ -107,14 +108,14 @@ func TestDropdownPressKeys(t *testing.T) {
 	d.trie = trie.NewTrie()
 	d.relevant = []int{0}
 	d.displayed = d.relevant
-	d.pressBackspace(newTestTermIO(10, 4))
+	d.pressBackspace(terst.NewTermIO(10, 4))
 	assert.Equal(t, "", string(d.typed))
 	assert.True(t, !d.pressAny('z', len(d.displayed), 4))
 }
 
 func TestDropdownClearFrame(t *testing.T) {
 	d := newDropdown(t.Context())
-	io := newTestTermIO(10, 4)
+	io := terst.NewTermIO(10, 4)
 	frame := &bytes.Buffer{}
 	assert.NoError(t, d.clearFrame(io, frame, 2))
 	buf, ok := io.Out.(*bytes.Buffer)
@@ -141,7 +142,7 @@ func TestDropdownPressKeyRuneEnter(t *testing.T) {
 	d.eventSink = func(ev dropdownOutputEvent) {
 		events = append(events, ev)
 	}
-	io := newTestTermIO(10, 4)
+	io := terst.NewTermIO(10, 4)
 	assert.Equal(t, 1, d.pressKeyRune(io, term.KeyEnter, len(d.displayed), 4))
 	assert.Equal(t, 1, len(events))
 	confirmed, ok := events[0].(dropdownConfirmed)
@@ -157,7 +158,7 @@ func TestDropdownPressKeyRuneBackspace(t *testing.T) {
 	d.displayed = []int{0}
 	d.Items = []any{"a"}
 	d.typed = []rune("a")
-	io := newTestTermIO(10, 4)
+	io := terst.NewTermIO(10, 4)
 	d.pressKeyRune(io, 0x7f, len(d.displayed), 4)
 	assert.Equal(t, 0, len(d.typed))
 }
@@ -167,7 +168,7 @@ func TestDropdownPressKeyRuneArrows(t *testing.T) {
 	d.relevant = []int{0, 1}
 	d.displayed = []int{0, 1}
 	d.selected = 0
-	io := newTestTermIO(10, 4)
+	io := terst.NewTermIO(10, 4)
 	d.pressKeyRune(io, '↓', len(d.displayed), 4)
 	assert.Equal(t, 1, d.selected)
 	d.pressKeyRune(io, '↑', len(d.displayed), 4)
@@ -181,7 +182,7 @@ func TestDropdownPressKeyRuneDefault(t *testing.T) {
 	d.Items = []any{"a"}
 	d.relevant = []int{0}
 	d.displayed = []int{0}
-	io := newTestTermIO(10, 4)
+	io := terst.NewTermIO(10, 4)
 	assert.Equal(t, -1, d.pressKeyRune(io, 'a', len(d.displayed), 4))
 	assert.Equal(t, "a", string(d.typed))
 }
@@ -199,7 +200,7 @@ func TestDropdownPressKeyRuneEmitsStateEvents(t *testing.T) {
 	d.eventSink = func(ev dropdownOutputEvent) {
 		events = append(events, ev)
 	}
-	io := newTestTermIO(10, 4)
+	io := terst.NewTermIO(10, 4)
 	assert.Equal(t, -1, d.pressKeyRune(io, 'a', len(d.displayed), 4))
 	assert.Equal(t, 1, len(events))
 	filtered, ok := events[0].(dropdownFilterChanged)
@@ -223,7 +224,7 @@ func TestDropdownPressKeyRuneOneReturn(t *testing.T) {
 	d.eventSink = func(ev dropdownOutputEvent) {
 		events = append(events, ev)
 	}
-	io := newTestTermIO(10, 4)
+	io := terst.NewTermIO(10, 4)
 	assert.Equal(t, 0, d.pressKeyRune(io, 'a', len(d.displayed), 4))
 	assert.Equal(t, 2, len(events))
 	_, ok := events[0].(dropdownFilterChanged)

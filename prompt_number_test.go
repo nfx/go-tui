@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 const (
@@ -218,7 +219,7 @@ func TestInputIgnoresArrows(t *testing.T) {
 type tcpPort int
 
 func TestNumberDefaults(t *testing.T) {
-	io := quiet(t)
+	io := terst.Quiet(t)
 	ctx := t.Context()
 
 	got, err := Number[int](ctx, "Port", io, WithDefault(8080))
@@ -345,7 +346,7 @@ func TestThemedNumberHintSlots(t *testing.T) {
 	// the prompt captures the theme when it is made, after installing th
 	frame := func(th theme.Theme, build func() *input) string {
 		t.Helper()
-		useTheme(t, th)
+		terst.UseTheme(t, th)
 		i := build()
 		i.typed, i.cursor = "1", 1
 		got, err := renderThemedInput(t, i, 30, 5)
@@ -431,7 +432,7 @@ func TestThemedNumberHintErrorRestoresTerminal(t *testing.T) {
 	assert.Equal(t, "", out.String())
 
 	// without a terminal, the default is the answer and no slot runs
-	strictOutput(t)
+	terst.StrictOutput(t)
 	n, out, _ = themedNumber[int](t, th, 30, 5)
 	n.prompt.Out = out
 	n.prompt.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) {

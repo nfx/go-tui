@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestSpinnerUpdate(t *testing.T) {
@@ -95,7 +96,7 @@ func TestSpinnerWithKeep(t *testing.T) {
 func TestSpinnerWithCustomFrames(t *testing.T) {
 	th := asciiTheme(false)
 	th.Symbols.Spinner = []string{"a", "b", "c", "d"}
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	s, cio, tick := spinnersForTest(t)
 	defer s.Close()
 

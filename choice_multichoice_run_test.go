@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestMultichoiceRunNoSpace(t *testing.T) {
@@ -37,7 +38,7 @@ func TestMultichoiceRunNoSpace(t *testing.T) {
 }
 
 func TestMultichoiceRunHandlesKeys(t *testing.T) {
-	reader := &chunkReader{chunks: [][]byte{
+	reader := &terst.ChunkReader{Chunks: [][]byte{
 		{0x1b, 0x5b, 0x42},
 		{' '},
 		{'z'},
@@ -63,7 +64,7 @@ func TestMultichoiceRunHandlesKeys(t *testing.T) {
 }
 
 func TestMultichoiceRunIgnoresSpecialKeys(t *testing.T) {
-	reader := &chunkReader{chunks: [][]byte{
+	reader := &terst.ChunkReader{Chunks: [][]byte{
 		[]byte("\x1b[3~"),
 		[]byte("\x1bx"),
 		{0x1b, 0x1b, 0x5b, 0x42}, // Esc, then down
@@ -92,7 +93,7 @@ func TestMultichoiceRunContextDone(t *testing.T) {
 	cancel()
 	m := newMultichoice(ctx)
 	m.Items = []any{"one"}
-	m.in = &chunkReader{chunks: [][]byte{{byte(term.KeyEnter)}}}
+	m.in = &terst.ChunkReader{Chunks: [][]byte{{byte(term.KeyEnter)}}}
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 		return &term.IO{
@@ -110,7 +111,7 @@ func TestMultichoiceRunContextDone(t *testing.T) {
 func TestMultichoiceRunCoalescedKeys(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one"}
-	m.in = &chunkReader{chunks: [][]byte{{'a', 'b'}, {byte(term.KeyEnter)}}}
+	m.in = &terst.ChunkReader{Chunks: [][]byte{{'a', 'b'}, {byte(term.KeyEnter)}}}
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 		return &term.IO{
@@ -146,7 +147,7 @@ func TestMultichoiceRunRerendersOnResize(t *testing.T) {
 	keys, typing := io.Pipe()
 	t.Cleanup(func() { _ = typing.Close() }) //nolint:errcheck // test cleanup
 	resized := make(chan struct{})
-	out := &syncBuffer{}
+	out := &terst.SyncBuffer{}
 	var tio *term.IO
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two", "three", "four", "five", "six"}
@@ -295,7 +296,7 @@ func TestMultichoiceCancelledPasteDiscardsPartialUpdate(t *testing.T) {
 	defer cancel()
 	in := newPromptReadNotifier(input)
 	m := newPipeMultichoice(ctx, in)
-	m.out = &syncBuffer{}
+	m.out = &terst.SyncBuffer{}
 	done := make(chan error, 1)
 	go func() { done <- m.run(m.Ctx) }()
 	waitPromptRead(t, in)
@@ -361,7 +362,7 @@ func TestMultichoiceLazyDefaultState(t *testing.T) {
 			if err := m.prepare(nil); err != nil {
 				t.Fatal(err)
 			}
-			if err := m.bindRun(t.Context(), newTestTermIO(60, 10)); err != nil {
+			if err := m.bindRun(t.Context(), terst.NewTermIO(60, 10)); err != nil {
 				t.Fatal(err)
 			}
 			for _, item := range tc.items {
@@ -398,7 +399,7 @@ func TestMultichoiceLazyArrivalsAndFocus(t *testing.T) {
 	if err := m.prepare(nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.bindRun(t.Context(), newTestTermIO(60, 10)); err != nil {
+	if err := m.bindRun(t.Context(), terst.NewTermIO(60, 10)); err != nil {
 		t.Fatal(err)
 	}
 	for _, item := range []string{"xxxx", "yyyy", "bat"} {
@@ -437,7 +438,7 @@ func TestMultichoiceLazyPublicLoading(t *testing.T) {
 	defer func() { assert.NoError(t, input.Close()) }()
 	defer func() { assert.NoError(t, typing.Close()) }()
 	arrivals := make(chan string)
-	out := &syncBuffer{}
+	out := &terst.SyncBuffer{}
 	seq := func(yield func(string, error) bool) {
 		for item := range arrivals {
 			if !yield(item, nil) {
@@ -559,7 +560,7 @@ func TestMultichoicePasteModeLifetime(t *testing.T) {
 	t.Cleanup(func() { term.InputChecker = original })
 	for _, keys := range []string{"\r", "\x03"} {
 		var out strings.Builder
-		in := &mockDescriptor{Reader: strings.NewReader(keys), fd: 1}
+		in := &terst.MockDescriptor{Reader: strings.NewReader(keys), FD: 1}
 		m := newMultichoice(t.Context())
 		m.Items = []any{"one"}
 		m.in = in
@@ -645,7 +646,7 @@ func TestMultichoiceLegacyHandoffPreservesPasteFraming(t *testing.T) {
 			})
 			ctx, stop := context.WithTimeout(t.Context(), time.Second)
 			defer stop()
-			out := &syncBuffer{}
+			out := &terst.SyncBuffer{}
 			done := make(chan promptChoiceResult, 1)
 			go func() {
 				items, err := Multichoice(ctx, "Next", []string{"one", "two"}, WithInput(in), WithOutput(out))
@@ -686,7 +687,7 @@ func TestMultichoiceFreshPasteAfterCancelledRead(t *testing.T) {
 	})
 	ctx, stop := context.WithTimeout(t.Context(), time.Second)
 	defer stop()
-	out := &syncBuffer{}
+	out := &terst.SyncBuffer{}
 	done := make(chan promptChoiceResult, 1)
 	go func() {
 		items, err := Multichoice(ctx, "Next", []string{"one", "two"}, WithInput(in), WithOutput(out))
@@ -703,7 +704,7 @@ func TestMultichoiceFreshPasteAfterCancelledRead(t *testing.T) {
 }
 
 func TestMultichoiceLazyDefaults(t *testing.T) {
-	io := quiet(t)
+	io := terst.Quiet(t)
 	ctx := t.Context()
 	var started bool
 

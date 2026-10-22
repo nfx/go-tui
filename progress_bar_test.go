@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestProgressbarLinesToClearShrinks(t *testing.T) {
@@ -978,7 +979,7 @@ func themedProgress(
 	size int64,
 ) (*Progressbar, frameWriter, func(time.Duration), *atomic.Bool) {
 	t.Helper()
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	ft := newFakeTerminal(t, 40)
 	p, err := NewMaxProgressBar(t.Context(), "build", size, ft.options()...)
 	assert.NoError(t, err)
@@ -1142,7 +1143,7 @@ func (r *scriptedFile) Size() int64 { return r.size }
 // 60 columns wide.
 func themedFile(t *testing.T, th theme.Theme, src io.Reader) (*wrapReader, fakeTerminal) {
 	t.Helper()
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	ft := newFakeTerminal(t, 60)
 	r, err := NewFileProgressReader(t.Context(), src, "build", ft.options()...)
 	assert.NoError(t, err)

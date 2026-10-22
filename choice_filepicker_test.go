@@ -17,6 +17,7 @@ import (
 	"text/template"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestFilePickerListFilters(t *testing.T) {
@@ -81,7 +82,7 @@ func TestFilePickerSkipRules(t *testing.T) {
 }
 
 func TestFilePickerDefaults(t *testing.T) {
-	io := quiet(t)
+	io := terst.Quiet(t)
 	ctx := t.Context()
 	root := t.TempDir()
 	assert.NoError(t, os.MkdirAll(filepath.Join(root, "sub"), 0o755))
@@ -195,7 +196,7 @@ func TestThemedFilePickerParentEntryAndFileView(t *testing.T) {
 }
 
 func TestThemedFilePickerMutesParentEntry(t *testing.T) {
-	withEnv(t, "FORCE_COLOR=3")
+	terst.WithEnv(t, "FORCE_COLOR=3")
 	th := asciiTheme(false)
 	th.Light = true
 	o, out, _ := themedDropdownOpt(t, th, 40, "\x1b[B", "\r", "\x1b[B", "\r")
@@ -235,7 +236,7 @@ func TestThemedFilePickerKeepsOneThemeAcrossDirectories(t *testing.T) {
 }
 
 func TestFilePickerNextDropdownInheritsThemeAndBinding(t *testing.T) {
-	useTheme(t, asciiTheme(false))
+	terst.UseTheme(t, asciiTheme(false))
 	f, first, err := newFilePicker(t.Context(), WithStartDir(t.TempDir()))
 	assert.NoError(t, err)
 	f.look = term.Default.BindTheme(t.Context(), f.theme, first.out, nil)
@@ -303,8 +304,8 @@ func TestThemedFilePickerDefaultsWithoutTerminal(t *testing.T) {
 	th.Templates.FilePicker.Active = `{{ fails .Value }}`
 	th.Templates.FilePicker.Inactive = `{{ fails .Value }}`
 	th.Templates.FilePicker.Answer = `{{ fails .Value }}`
-	useTheme(t, th)
-	io := quiet(t)
+	terst.UseTheme(t, th)
+	io := terst.Quiet(t)
 	ctx := t.Context()
 	root := t.TempDir()
 	assert.NoError(t, os.Mkdir(filepath.Join(root, "notes"), 0o755))
@@ -327,7 +328,7 @@ func TestThemedFilePickerDefaultsWithoutTerminal(t *testing.T) {
 
 	// hints match the FilePicker projection
 	th.Templates.FilePicker.Value = `x{{ .Name }}`
-	useTheme(t, th)
+	terst.UseTheme(t, th)
 	got, err = FilePicker(ctx, "File", io, dir, WithDefault("xma"))
 	assert.NoError(t, err)
 	assert.Equal(t, filepath.Join(root, "main.go"), got)
