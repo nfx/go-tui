@@ -41,7 +41,7 @@ func NewSpinners(ctx context.Context, opt ...opt) (*Spinners, error) {
 	}
 	// output only: no lease, so no probe
 	look := defaultIO.bindTheme(ctx, s.theme, s.out, nil)
-	s.rows, err = s.theme.templates.Spinner.bind(look.funcs)
+	s.rows, err = bindSpinnerSlots(s.theme.Templates.Spinner, look.Funcs)
 	if err != nil {
 		return nil, err
 	}

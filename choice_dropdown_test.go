@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/trie"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
 	"sync"
@@ -552,37 +553,37 @@ func TestShowAnswerWritesWhenVisible(t *testing.T) {
 func TestDropdownItemLabelUsesHeuristicField(t *testing.T) {
 	d := newDropdown(t.Context())
 	item := dropdownHeuristicLabelItem{ID: 42, Name: "alpha"}
-	assert.Equal(t, "alpha", d.itemLabel(item))
+	assert.Equal(t, "alpha", d.ItemLabel(item))
 }
 
 func TestDropdownItemLabelUsesDisplayNameHeuristic(t *testing.T) {
 	d := newDropdown(t.Context())
 	item := dropdownDisplayNameLabelItem{DisplayName: "service-a"}
-	assert.Equal(t, "service-a", d.itemLabel(item))
+	assert.Equal(t, "service-a", d.ItemLabel(item))
 }
 
 func TestDropdownItemLabelUsesFullNameHeuristic(t *testing.T) {
 	d := newDropdown(t.Context())
 	item := dropdownFullNameLabelItem{FullName: "Example Service"}
-	assert.Equal(t, "Example Service", d.itemLabel(item))
+	assert.Equal(t, "Example Service", d.ItemLabel(item))
 }
 
 func TestDropdownItemLabelUsesSummaryHeuristic(t *testing.T) {
 	d := newDropdown(t.Context())
 	item := dropdownSummaryLabelItem{Summary: "concise summary"}
-	assert.Equal(t, "concise summary", d.itemLabel(item))
+	assert.Equal(t, "concise summary", d.ItemLabel(item))
 }
 
 func TestDropdownItemLabelUsesTextHeuristic(t *testing.T) {
 	d := newDropdown(t.Context())
 	item := dropdownTextLabelItem{Text: "plaintext value"}
-	assert.Equal(t, "plaintext value", d.itemLabel(item))
+	assert.Equal(t, "plaintext value", d.ItemLabel(item))
 }
 
 func TestDropdownItemLabelUsesSubjectHeuristic(t *testing.T) {
 	d := newDropdown(t.Context())
 	item := dropdownSubjectLabelItem{Subject: "subject line"}
-	assert.Equal(t, "subject line", d.itemLabel(item))
+	assert.Equal(t, "subject line", d.ItemLabel(item))
 }
 
 func TestDropdownItemLabelUsesAnnotation(t *testing.T) {
@@ -591,19 +592,19 @@ func TestDropdownItemLabelUsesAnnotation(t *testing.T) {
 		Name:        "fallback",
 		Description: "annotated",
 	}
-	assert.Equal(t, "annotated", d.itemLabel(item))
+	assert.Equal(t, "annotated", d.ItemLabel(item))
 }
 
 func TestDropdownItemLabelFallsBackToStringer(t *testing.T) {
 	d := newDropdown(t.Context())
 	item := dropdownStringerLabelItem{ID: 7}
-	assert.Equal(t, "stringer-7", d.itemLabel(item))
+	assert.Equal(t, "stringer-7", d.ItemLabel(item))
 }
 
 func TestDropdownItemLabelFallsBackToPointerStringer(t *testing.T) {
 	d := newDropdown(t.Context())
 	item := dropdownPointerStringerLabelItem{ID: 11}
-	assert.Equal(t, "ptr-stringer-11", d.itemLabel(item))
+	assert.Equal(t, "ptr-stringer-11", d.ItemLabel(item))
 }
 
 func TestDropdownSetItemUsesResolvedLabelForTrie(t *testing.T) {
@@ -1260,7 +1261,7 @@ type scriptedTerminal struct {
 }
 
 // scripted installs th for the test and scripts a terminal for one prompt.
-func scripted(t *testing.T, th Theme, width int, keys ...string) *scriptedTerminal {
+func scripted(t *testing.T, th theme.Theme, width int, keys ...string) *scriptedTerminal {
 	t.Helper()
 	useTheme(t, th)
 	s := &scriptedTerminal{out: &bytes.Buffer{}, restored: new(bool), width: width}

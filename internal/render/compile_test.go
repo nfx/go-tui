@@ -1,12 +1,13 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package render
 
 import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/theme"
 	"strings"
 	"sync"
 	"testing"
@@ -20,7 +21,7 @@ func TestSpanHelperHandlesTypes(t *testing.T) {
 	ptr := &str
 	arr := []string{"alpha", "beta"}
 	num := 5
-	formatter := destination{}.newSpan(ansi.Reset, ansi.Text("\x1b[31m"), ansi.Text("\x1b[1m")).helper()
+	formatter := destination{}.newSpan(ansi.Reset, ansi.Text("\x1b[31m"), ansi.Text("\x1b[1m")).Helper()
 
 	got := formatter(ptr, arr, &num, "end")
 	if !strings.HasPrefix(got, "\x1b[31m\x1b[1m") {
@@ -37,48 +38,19 @@ func TestSpanHelperHandlesTypes(t *testing.T) {
 	}
 }
 
-// execute renders src with funcs and fails the test on any error.
-func execute(t *testing.T, funcs template.FuncMap, src string, data any) string {
-	t.Helper()
-	tmpl, err := template.New("t").Funcs(funcs).Parse(src)
-	assert.NoError(t, err)
-	var b strings.Builder
-	assert.NoError(t, tmpl.Execute(&b, data))
-	return b.String()
-}
-
-// installedFuncs are the helpers of the installed theme, for a plain destination.
-func installedFuncs() template.FuncMap {
-	return defaultIO.currentTheme().funcs(color.ProfilePlain, roleStyles{})
-}
-
-func TestThemeFuncsAreCopied(t *testing.T) {
-	keepTheme(t)
-	th := NewTheme()
-	th.Funcs = template.FuncMap{"h": strings.ToUpper}
-	assert.NoError(t, defaultIO.installTheme(th))
-	th.Funcs["h"] = strings.ToLower
-	th.Funcs["extra"] = strings.ToLower
-	got := defaultIO.currentTheme().editable()
-	got.Funcs["h"] = strings.ToLower
-	assert.Equal(t, "A", execute(t, installedFuncs(), `{{ h "a" }}`, nil))
-	_, ok := defaultIO.currentTheme().editable().Funcs["extra"]
-	assert.True(t, !ok)
-}
-
 func TestThemeFuncsReachSlotsAndAreValidated(t *testing.T) {
-	c, err := compileTemplates(t, func(th *Theme) {
+	c, err := compileTemplates(t, func(th *theme.Theme) {
 		th.Funcs = template.FuncMap{"shout": strings.ToUpper}
 		th.Templates.Prompt.Label = `{{ shout .Label }}`
 	})
 	assert.NoError(t, err)
-	b, err := c.templates.Input.Label.bind(c.funcs(color.ProfilePlain, roleStyles{}))
+	b, err := c.Templates.Input.Label.Bind(c.Funcs(color.ProfilePlain, Roles{}))
 	assert.NoError(t, err)
-	out, err := b.render(struct{ Label string }{"name"})
+	out, err := b.Render(struct{ Label string }{"name"})
 	assert.NoError(t, err)
 	assert.Equal(t, "NAME", out.String())
 
-	_, err = compileTemplates(t, func(th *Theme) {
+	_, err = compileTemplates(t, func(th *theme.Theme) {
 		th.Funcs = template.FuncMap{"bold": strings.ToUpper, "ok": strings.ToUpper, "bad": 1}
 	})
 	assert.Error(t, err)
@@ -91,8 +63,8 @@ func TestThemeFuncsReachSlotsAndAreValidated(t *testing.T) {
 func truecolor() template.FuncMap {
 	return destination{
 		profile: color.ProfileTrueColor,
-		roles:   roleStyles{accent: ansi.Text("\x1b[38;2;0;173;216m")},
-		symbols: unicodeSymbols,
+		roles:   Roles{Accent: ansi.Text("\x1b[38;2;0;173;216m")},
+		symbols: theme.New().Symbols,
 	}.funcs()
 }
 
@@ -186,7 +158,7 @@ func TestColorHelperRejectsMalformedAtExecution(t *testing.T) {
 }
 
 func TestSymbolHelper(t *testing.T) {
-	funcs := destination{symbols: asciiSymbols}.funcs()
+	funcs := destination{symbols: theme.New().Symbols.ASCII()}.funcs()
 	assert.Equal(t, ">", execute(t, funcs, `{{ symbol "Focus" }}`, nil))
 	tmpl, err := template.New("t").Funcs(funcs).Parse(`{{ symbol "Nope" }}`)
 	assert.NoError(t, err)
@@ -220,16 +192,16 @@ func TestConcurrentHelperExecutions(t *testing.T) {
 }
 
 func TestBuiltinHintAccentsKeys(t *testing.T) {
-	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = asciiSymbols })
+	c, err := compileTemplates(t, func(th *theme.Theme) { th.Symbols = theme.New().Symbols.ASCII() })
 	assert.NoError(t, err)
-	funcs := c.funcs(color.ProfileTrueColor, roleStyles{
-		foreground: ansi.Text("\x1b[38;5;1m"),
-		accent:     ansi.Text("\x1b[38;5;2m"),
-		guide:      ansi.Text("\x1b[38;5;3m"),
+	funcs := c.Funcs(color.ProfileTrueColor, Roles{
+		Foreground: ansi.Text("\x1b[38;5;1m"),
+		Accent:     ansi.Text("\x1b[38;5;2m"),
+		Guide:      ansi.Text("\x1b[38;5;3m"),
 	})
-	b, err := c.templates.Dropdown.Hint.bind(funcs)
+	b, err := c.Templates.Dropdown.Hint.Bind(funcs)
 	assert.NoError(t, err)
-	out, err := b.render(hintView{{ansi.Text("3"), ansi.Text("more")}, {ansi.Text("type"), ansi.Text("filter")}})
+	out, err := b.Render(HintView{{ansi.Text("3"), ansi.Text("more")}, {ansi.Text("type"), ansi.Text("filter")}})
 	assert.NoError(t, err)
 	// the left side is accented, the rest is the faintest
 	assert.Equal(t, "\x1b[38;5;2m3\x1b[39m \x1b[38;5;3mmore\x1b[39m\x1b[38;5;3m · \x1b[39m"+
@@ -237,12 +209,12 @@ func TestBuiltinHintAccentsKeys(t *testing.T) {
 }
 
 func TestBuiltinHintSidesDifferOnAssumedBackground(t *testing.T) {
-	c, err := compileTemplates(t, func(th *Theme) { th.Symbols = asciiSymbols })
+	c, err := compileTemplates(t, func(th *theme.Theme) { th.Symbols = theme.New().Symbols.ASCII() })
 	assert.NoError(t, err)
-	look := c.bind(color.ProfileTrueColor, color.Background{})
-	b, err := c.templates.Dropdown.Hint.bind(look.funcs)
+	look := c.Bind(color.ProfileTrueColor, color.Background{})
+	b, err := c.Templates.Dropdown.Hint.Bind(look.Funcs)
 	assert.NoError(t, err)
-	out, err := b.render(hintView{{ansi.Text("^v"), ansi.Text("move")}})
+	out, err := b.Render(HintView{{ansi.Text("^v"), ansi.Text("move")}})
 	assert.NoError(t, err)
 	// the neutrals keep the default color, so the right side is faint
 	assert.Equal(t, "\x1b[38;2;0;173;216m^v\x1b[39m \x1b[2mmove\x1b[22m", out.String())

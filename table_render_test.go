@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
 	"testing"
@@ -19,7 +20,7 @@ import (
 
 // themedTable turns the theme gate on with th installed and clears the color
 // environment, then adds pairs such as FORCE_COLOR=3.
-func themedTable(t *testing.T, th Theme, env ...string) {
+func themedTable(t *testing.T, th theme.Theme, env ...string) {
 	t.Helper()
 	withEnv(t, env...)
 	useTheme(t, th)
@@ -44,7 +45,7 @@ func TestThemedTableMatchesLegacyOnPlainWriter(t *testing.T) {
 	}
 	withEnv(t)
 	legacy := render()
-	themedTable(t, NewTheme())
+	themedTable(t, theme.New())
 	themed := render()
 	assert.Equal(t, legacy, themed)
 	for _, out := range themed {
@@ -53,19 +54,19 @@ func TestThemedTableMatchesLegacyOnPlainWriter(t *testing.T) {
 }
 
 func TestThemedTableRoles(t *testing.T) {
-	th := NewTheme()
+	th := theme.New()
 	th.Light = true
 	themedTable(t, th, "FORCE_COLOR=3")
 	buf := &bytes.Buffer{}
 	assert.NoError(t, TableAuto(buf, themedRows))
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
-	assert.True(t, len(roles.foreground) > 0)
+	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).Roles
+	assert.True(t, len(roles.Foreground) > 0)
 	out := buf.String()
-	assert.Contains(t, out, ansi.Bold+string(roles.foreground)+"NAME"+color.FgDefault+ansi.Reset)
-	assert.Contains(t, out, string(roles.foreground)+"alpha"+color.FgDefault)
-	assert.Contains(t, out, string(roles.foreground)+"333"+color.FgDefault)
+	assert.Contains(t, out, ansi.Bold+string(roles.Foreground)+"NAME"+color.FgDefault+ansi.Reset)
+	assert.Contains(t, out, string(roles.Foreground)+"alpha"+color.FgDefault)
+	assert.Contains(t, out, string(roles.Foreground)+"333"+color.FgDefault)
 	// ordinary data is neither an outcome nor a focus
-	for _, role := range []ansi.Text{roles.accent, roles.success, roles.failure, roles.muted} {
+	for _, role := range []ansi.Text{roles.Accent, roles.Success, roles.Failure, roles.Muted} {
 		assert.NotContains(t, out, string(role))
 	}
 	assert.Equal(t, "NAME    AMOUNT NOTE   \nalpha        1 first  \n"+
@@ -73,7 +74,7 @@ func TestThemedTableRoles(t *testing.T) {
 }
 
 func TestThemedTableSlots(t *testing.T) {
-	th := NewTheme()
+	th := theme.New()
 	th.Templates.Table.Header = `{{ .Name }}:{{ .Kind }}`
 	th.Templates.Table.Cell = `<{{ .Value }}>`
 	themedTable(t, th)
@@ -91,8 +92,8 @@ func TestThemedTableSlots(t *testing.T) {
 }
 
 func TestThemedTableHiddenHeader(t *testing.T) {
-	th := NewTheme()
-	th.Templates.Table.Header = Hidden
+	th := theme.New()
+	th.Templates.Table.Header = theme.Hidden
 	themedTable(t, th)
 	buf := &bytes.Buffer{}
 	assert.NoError(t, TableAuto(buf, themedRows[:2]))
@@ -103,7 +104,7 @@ func TestThemedTableHiddenHeader(t *testing.T) {
 }
 
 func TestThemedTableCellWrapsChosenFormat(t *testing.T) {
-	th := NewTheme()
+	th := theme.New()
 	th.Templates.Table.Cell = `[{{ .Value }}]`
 	themedTable(t, th)
 	buf := &bytes.Buffer{}
@@ -119,15 +120,15 @@ func TestThemedTableCellWrapsChosenFormat(t *testing.T) {
 
 func TestThemedTableSignedPercent(t *testing.T) {
 	data := []tableFormatRow{{"A", 0.05873242, 0}, {"B", -0.999999, 0}, {"C", 0, 0}}
-	themedTable(t, NewTheme(), "FORCE_COLOR=3")
+	themedTable(t, theme.New(), "FORCE_COLOR=3")
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Table(buf, "", data, WithFloat64AsPercentPositiveColored()))
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
+	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).Roles
 	lines := strings.Split(buf.String(), "\n")
-	assert.Contains(t, lines[1], string(roles.success)+"5.87%"+color.FgDefault)
-	assert.Contains(t, lines[2], string(roles.failure)+"-99%"+color.FgDefault)
-	assert.NotContains(t, lines[3], string(roles.success))
-	assert.NotContains(t, lines[3], string(roles.failure))
+	assert.Contains(t, lines[1], string(roles.Success)+"5.87%"+color.FgDefault)
+	assert.Contains(t, lines[2], string(roles.Failure)+"-99%"+color.FgDefault)
+	assert.NotContains(t, lines[3], string(roles.Success))
+	assert.NotContains(t, lines[3], string(roles.Failure))
 	// the fixed ANSI colors are gone
 	assert.NotContains(t, buf.String(), "\x1b[32m")
 	assert.NotContains(t, buf.String(), "\x1b[31m")
@@ -148,7 +149,7 @@ func TestThemedTableScaleBuckets(t *testing.T) {
 	// value has nothing to rank against
 	want := []int{-1, 4, 2, 3, 3, 0}
 	for _, force := range []string{"3", "2", "1"} {
-		th := NewTheme()
+		th := theme.New()
 		th.Light = true
 		themedTable(t, th, "FORCE_COLOR="+force)
 		for _, reversed := range []bool{false, true} {
@@ -159,13 +160,13 @@ func TestThemedTableScaleBuckets(t *testing.T) {
 			buf := &bytes.Buffer{}
 			assert.NoError(t, TableAuto(buf, data, o))
 			look := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil)
-			scale := look.diverging()
+			scale := look.Diverging()
 			lines := strings.Split(buf.String(), "\n")
 			for i, bucket := range want {
 				line, value := lines[i+1], strings.TrimSpace(stripSGR(lines[i+1]))
 				if bucket < 0 {
 					// only the Cell slot's foreground
-					assert.Equal(t, "   "+string(look.roles.foreground)+value+color.FgDefault+ansi.Reset+" ", line)
+					assert.Equal(t, "   "+string(look.Roles.Foreground)+value+color.FgDefault+ansi.Reset+" ", line)
 					continue
 				}
 				if reversed {
@@ -186,7 +187,7 @@ func TestThemedTableExtraCellsAreDropped(t *testing.T) {
 	}
 	withEnv(t)
 	legacy := render()
-	themedTable(t, NewTheme())
+	themedTable(t, theme.New())
 	assert.Equal(t, legacy, render())
 }
 
@@ -194,7 +195,7 @@ func TestThemedTableScaleWithoutColor(t *testing.T) {
 	type row struct {
 		Value int
 	}
-	themedTable(t, NewTheme())
+	themedTable(t, theme.New())
 	buf := &bytes.Buffer{}
 	assert.NoError(t, TableAuto(buf, []row{{1}, {2}, {3}}, WithColumnGreenRedScale("Value")))
 	assert.Equal(t, " VALUE \n     1 \n     2 \n     3 \n", buf.String())
@@ -205,7 +206,7 @@ func TestThemedTableMultilineCarriesStyles(t *testing.T) {
 		Note string
 		Name string
 	}
-	themedTable(t, NewTheme(), "FORCE_COLOR=3")
+	themedTable(t, theme.New(), "FORCE_COLOR=3")
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Table(buf, "{{ underline .Note }}\t{{ .Name }}", []row{{"one\ntwo\n\nfour", "x"}},
 		WithMultilineCells()))
@@ -219,8 +220,8 @@ func TestThemedTableMultilineCarriesStyles(t *testing.T) {
 }
 
 func TestThemedTableStyle(t *testing.T) {
-	th := NewTheme()
-	th.Table = TableStyle{ColumnGap: 4, MinColumnWidth: 3}
+	th := theme.New()
+	th.Table = theme.TableStyle{ColumnGap: 4, MinColumnWidth: 3}
 	themedTable(t, th)
 	buf := &bytes.Buffer{}
 	assert.NoError(t, TableAuto(buf, themedRows))
@@ -241,7 +242,7 @@ func TestThemedTableWidthLockAfterFirstBatch(t *testing.T) {
 		data[i] = themedRow{Name: fmt.Sprintf("n%02d", i), Amount: i}
 	}
 	data[11] = themedRow{Name: "a much longer name", Amount: 123456789, Note: "much later"}
-	th := NewTheme()
+	th := theme.New()
 	th.Light = true
 	themedTable(t, th)
 	plain := &bytes.Buffer{}
@@ -261,7 +262,7 @@ func TestThemedTableCellKeepsHyperlinksDropsControls(t *testing.T) {
 	type row struct {
 		Link string
 	}
-	themedTable(t, NewTheme())
+	themedTable(t, theme.New())
 	link := "\x1b]8;;https://example.com\x1b\\site\x1b]8;;\x1b\\"
 	buf := &bytes.Buffer{}
 	assert.NoError(t, TableAuto(buf, []row{{"a\x07b\x1b[2Jc"}, {link}}))
@@ -270,7 +271,7 @@ func TestThemedTableCellKeepsHyperlinksDropsControls(t *testing.T) {
 
 func TestThemedTableRowTemplateHelpersBindToWriter(t *testing.T) {
 	tmpl := "{{ underline .Name }}\t{{ success .Name }}\t{{ fg \"#FF0000\" .Name }}"
-	themedTable(t, NewTheme())
+	themedTable(t, theme.New())
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Table(buf, tmpl, themedRows[:1]))
 	assert.NotContains(t, buf.String(), "\x1b")
@@ -278,9 +279,9 @@ func TestThemedTableRowTemplateHelpersBindToWriter(t *testing.T) {
 	withEnv(t, "FORCE_COLOR=3")
 	buf.Reset()
 	assert.NoError(t, Table(buf, tmpl, themedRows[:1]))
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
+	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).Roles
 	assert.Contains(t, buf.String(), ansi.Underline+"alpha")
-	assert.Contains(t, buf.String(), string(roles.success)+"alpha")
+	assert.Contains(t, buf.String(), string(roles.Success)+"alpha")
 	assert.Contains(t, buf.String(), "\x1b[38;2;255;0;0malpha")
 }
 
@@ -290,20 +291,22 @@ func TestThemedTableErrors(t *testing.T) {
 		"bell": func() string { return "\a" },
 	}
 	for _, tc := range []struct {
-		edit func(*TableTemplates)
+		edit func(*theme.TableTemplates)
 		want string
 	}{
-		{func(s *TableTemplates) { s.Header = `{{ boom .Header }}` }, "table: headers: theme.Templates.Table.Header: "},
+		{func(s *theme.TableTemplates) { s.Header = `{{ boom .Header }}` }, "table: headers: theme.Templates.Table.Header: "},
 		{
-			func(s *TableTemplates) { s.Cell = `{{ if eq .Name "Amount" }}{{ boom .Value }}{{ end }}{{ .Value }}` },
+			func(s *theme.TableTemplates) {
+				s.Cell = `{{ if eq .Name "Amount" }}{{ boom .Value }}{{ end }}{{ .Value }}`
+			},
 			`row 0: append: render: column "Amount": theme.Templates.Table.Cell: `,
 		},
 		{
-			func(s *TableTemplates) { s.Cell = `{{ .Value }}{{ bell }}` },
+			func(s *theme.TableTemplates) { s.Cell = `{{ .Value }}{{ bell }}` },
 			`row 0: append: render: column "Name": theme.Templates.Table.Cell: "\a": want text, SGR and hyperlinks only`,
 		},
 	} {
-		th := NewTheme()
+		th := theme.New()
 		th.Funcs = boom
 		tc.edit(&th.Templates.Table)
 		themedTable(t, th)
@@ -314,7 +317,7 @@ func TestThemedTableErrors(t *testing.T) {
 		assert.Equal(t, "", buf.String())
 	}
 
-	themedTable(t, NewTheme())
+	themedTable(t, theme.New())
 	err := TableAuto(errWriterTable{}, themedRows)
 	assert.ErrorIs(t, err, io.EOF)
 }
@@ -322,7 +325,7 @@ func TestThemedTableErrors(t *testing.T) {
 func TestThemedTableIterMatchesTable(t *testing.T) {
 	data := streamedRows()
 	for _, env := range [][]string{nil, {"FORCE_COLOR=3"}} {
-		th := NewTheme()
+		th := theme.New()
 		th.Light = true
 		themedTable(t, th, env...)
 		iterated, whole := &bytes.Buffer{}, &bytes.Buffer{}
@@ -332,10 +335,10 @@ func TestThemedTableIterMatchesTable(t *testing.T) {
 		// widths lock after the first batch, decoration not counted
 		assert.Equal(t, "a m…   12345… muc…  ", stripSGR(lines(iterated.String())[12]))
 	}
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), &bytes.Buffer{}, nil).roles
+	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), &bytes.Buffer{}, nil).Roles
 	buf := &bytes.Buffer{}
 	assert.NoError(t, TableIter(buf, "", iterate(data[:1])))
-	fg := func(s string) string { return string(roles.foreground) + s + color.FgDefault }
+	fg := func(s string) string { return string(roles.Foreground) + s + color.FgDefault }
 	assert.Equal(
 		t,
 		ansi.Bold+fg(
@@ -356,16 +359,16 @@ func TestThemedTableIterMatchesTable(t *testing.T) {
 
 func TestThemedTableIterKeepsOneSnapshot(t *testing.T) {
 	data := streamedRows()
-	th := NewTheme()
+	th := theme.New()
 	th.Light = true
 	themedTable(t, th, "FORCE_COLOR=3")
 	want := &bytes.Buffer{}
 	assert.NoError(t, TableIter(want, "", iterate(data)))
 
-	other := NewTheme()
-	other.Templates.Table.Header = Hidden
+	other := theme.New()
+	other.Templates.Table.Header = theme.Hidden
 	other.Templates.Table.Cell = `<{{ .Value }}>`
-	other.Table = TableStyle{ColumnGap: 5}
+	other.Table = theme.TableStyle{ColumnGap: 5}
 	buf := &bytes.Buffer{}
 	var firstBatch string
 	changing := func(yield func(themedRow, error) bool) {
@@ -407,7 +410,7 @@ func TestThemedTableIterScaleRanksSeenSoFar(t *testing.T) {
 	// every value of the first batch is the largest so far; later ones rank
 	// against everything seen, and earlier rows keep their colors
 	want := []int{-1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 2, 4}
-	th := NewTheme()
+	th := theme.New()
 	th.Light = true
 	themedTable(t, th, "FORCE_COLOR=3")
 	buf := &bytes.Buffer{}
@@ -424,7 +427,7 @@ func TestThemedTableIterScaleRanksSeenSoFar(t *testing.T) {
 	}
 	assert.NoError(t, TableIter(buf, "", watched, WithColumnGreenRedScale("Value")))
 	look := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil)
-	scale := look.diverging()
+	scale := look.Diverging()
 	out := lines(buf.String())
 	assert.Equal(t, len(data)+1, len(out))
 	assert.True(t, strings.HasPrefix(buf.String(), firstBatch))
@@ -432,7 +435,7 @@ func TestThemedTableIterScaleRanksSeenSoFar(t *testing.T) {
 	for i, bucket := range want {
 		line, value := out[i+1], strings.TrimSpace(stripSGR(out[i+1]))
 		if bucket < 0 {
-			assert.Equal(t, "    "+string(look.roles.foreground)+value+color.FgDefault+ansi.Reset+" ", line)
+			assert.Equal(t, "    "+string(look.Roles.Foreground)+value+color.FgDefault+ansi.Reset+" ", line)
 			continue
 		}
 		assert.Contains(t, line, string(scale[bucket])+value)
@@ -441,7 +444,7 @@ func TestThemedTableIterScaleRanksSeenSoFar(t *testing.T) {
 
 func TestThemedTableIterErrors(t *testing.T) {
 	data := streamedRows()
-	th := NewTheme()
+	th := theme.New()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
 	th.Templates.Table.Cell = `{{ if eq .Value "n10" }}{{ boom }}{{ end }}{{ .Value }}`
 	themedTable(t, th)

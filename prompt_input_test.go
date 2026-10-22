@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
 	"sync"
@@ -30,7 +31,7 @@ func bindInput(t *testing.T, i *input, tt *termIO) {
 func literalInputs(t *testing.T) {
 	t.Helper()
 	withEnv(t)
-	th := NewTheme()
+	th := theme.New()
 	th.Inline = true
 	th.Templates.Input.Label = `{{ .Label }}`
 	th.Templates.Input.Answer = `{{ .Value }}`

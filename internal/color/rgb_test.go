@@ -109,5 +109,5 @@ func TestParseHexRejectsMalformed(t *testing.T) {
 		_, err := ParseHex(in)
 		assert.Error(t, err)
 	}
-	assert.Equal(t, SRGB{0, 0xAA, 0xDD}, mustHex("#0aD"))
+	assert.Equal(t, SRGB{0, 0xAA, 0xDD}, MustHex("#0aD"))
 }

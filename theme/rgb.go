@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package theme
 
 import (
 	"github.com/nfx/go-tui/internal/color"

@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package render
 
 import (
 	"bytes"
@@ -11,7 +11,7 @@ import (
 )
 
 // formatArgs joins helper arguments without separators.
-func (span) formatArgs(args []any) ansi.Text {
+func (Span) formatArgs(args []any) ansi.Text {
 	var result ansi.Text
 	for _, t := range args {
 		switch x := t.(type) {
@@ -32,9 +32,9 @@ func (span) formatArgs(args []any) ansi.Text {
 	return result
 }
 
-// span is the style one helper call establishes. It is immutable and keeps
+// Span is the style one helper call establishes. It is immutable and keeps
 // no state between calls, so its helpers are safe for concurrent executions.
-type span struct {
+type Span struct {
 	open     []sgrCode
 	channels ansi.SGRChannel
 	closer   string
@@ -46,14 +46,14 @@ type sgrCode struct {
 	channels ansi.SGRChannel
 }
 
-// helper adapts s to a template helper with the argument conversions.
-func (s span) helper() func(...any) string {
+// Helper adapts s to a template Helper with the argument conversions.
+func (s Span) Helper() func(...any) string {
 	return func(args ...any) string { return s.wrap(s.formatArgs(args)).String() }
 }
 
 // wrap styles body, restoring outer channels after nested resets when content follows.
 // Non-SGR escape sequences pass through unchanged.
-func (s span) wrap(body ansi.Text) ansi.Text {
+func (s Span) wrap(body ansi.Text) ansi.Text {
 	if len(s.open) == 0 {
 		return body
 	}
@@ -79,7 +79,7 @@ func (s span) wrap(body ansi.Text) ansi.Text {
 }
 
 // restore appends the opening codes of s that set any of channels, in order.
-func (s span) restore(out *ansi.Text, channels ansi.SGRChannel) {
+func (s Span) restore(out *ansi.Text, channels ansi.SGRChannel) {
 	for _, c := range s.open {
 		if c.channels&channels != 0 {
 			*out = append(*out, c.seq...)

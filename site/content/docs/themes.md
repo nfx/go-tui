@@ -9,14 +9,17 @@ and all of them change together.
 
 API:
 
-- `NewTheme() Theme` returns the built-in theme to edit.
-- `DefaultTheme() Theme` returns a copy of the installed theme.
-- `SetDefaultTheme(theme Theme) error` validates and installs a theme.
+- `theme.New() theme.Theme` returns the built-in theme to edit. The types of a
+  theme live in the `github.com/nfx/go-tui/theme` package.
+- `tui.DefaultTheme() theme.Theme` returns a copy of the installed theme.
+- `tui.SetDefaultTheme(th theme.Theme) error` validates and installs a theme.
+- `th.Normalize()` validates a theme and fills every zero field with its
+  default, and `th.Symbols.ASCII()` returns the ASCII counterpart of the symbols.
 
 ```go
-theme := tui.NewTheme()
-theme.Palette.Accent = "#00ADD8"
-if err := tui.SetDefaultTheme(theme); err != nil {
+th := theme.New()
+th.Palette.Accent = "#00ADD8"
+if err := tui.SetDefaultTheme(th); err != nil {
 	log.Fatal(err)
 }
 ```
@@ -109,12 +112,12 @@ a table.
 Slots inherit: `Templates.Prompt` applies to Input, Password, Number,
 Dropdown, Multichoice, Confirm and FilePicker, and `Templates.Choice` to every
 choice list. A family slot such as `Templates.Dropdown.Label` overrides only
-that family. An empty `Template` inherits; `tui.Hidden` hides an optional slot,
+that family. An empty `Template` inherits; `theme.Hidden` hides an optional slot,
 such as the key hint:
 
 ```go
-theme.Templates.Prompt.Hint = tui.Hidden
-theme.Templates.Multichoice.Row = `{{ if .Active }}→{{ else }} {{ end }} ` +
+th.Templates.Prompt.Hint = theme.Hidden
+th.Templates.Multichoice.Row = `{{ if .Active }}→{{ else }} {{ end }} ` +
 	`[{{ if .Selected }}x{{ else }} {{ end }}] {{ .Value }}`
 ```
 
@@ -124,7 +127,7 @@ the window leads with their count, as in `3 more · ↑↓ move · type filter`.
 A hidden hint hides the count too.
 
 ```go
-theme.Templates.Prompt.Hint = `{{ range . }}[{{ .Left }}] {{ .Right }} {{ end }}`
+th.Templates.Prompt.Hint = `{{ range . }}[{{ .Left }}] {{ .Right }} {{ end }}`
 ```
 
 Slot templates can use the role helpers `text`, `muted`, `guide` (the
@@ -138,8 +141,8 @@ are an error.
 Add helpers in `theme.Funcs`. They are validated by `SetDefaultTheme`:
 
 ```go
-theme.Funcs = template.FuncMap{"shout": strings.ToUpper}
-theme.Templates.Prompt.Label = `{{ accent (symbol "Prompt") }} {{ bold (shout .Label) }}`
+th.Funcs = template.FuncMap{"shout": strings.ToUpper}
+th.Templates.Prompt.Label = `{{ accent (symbol "Prompt") }} {{ bold (shout .Label) }}`
 ```
 
 `theme.Funcs` replaces every helper registered before, including through

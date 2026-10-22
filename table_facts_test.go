@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
 	"testing"
@@ -253,7 +254,7 @@ func TestThemedFactsMatchesLegacyOnPlainWriter(t *testing.T) {
 	}
 	withEnv(t)
 	legacy := render()
-	themedTable(t, NewTheme())
+	themedTable(t, theme.New())
 	themed := render()
 	assert.Equal(t, legacy, themed)
 	for _, out := range themed {
@@ -263,17 +264,17 @@ func TestThemedFactsMatchesLegacyOnPlainWriter(t *testing.T) {
 
 func TestThemedFactsRoles(t *testing.T) {
 	ttyWidth(t, 120)
-	th := NewTheme()
+	th := theme.New()
 	th.Light = true
 	themedTable(t, th, "FORCE_COLOR=3")
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Facts(buf, factsData))
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
-	assert.True(t, len(roles.foreground) > 0)
+	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).Roles
+	assert.True(t, len(roles.Foreground) > 0)
 	out := buf.String()
-	assert.Contains(t, out, ansi.Bold+string(roles.foreground)+"OWNER.NAME"+color.FgDefault+ansi.Reset)
-	assert.Contains(t, out, string(roles.foreground)+"Alice"+color.FgDefault)
-	for _, role := range []ansi.Text{roles.accent, roles.success, roles.failure, roles.muted} {
+	assert.Contains(t, out, ansi.Bold+string(roles.Foreground)+"OWNER.NAME"+color.FgDefault+ansi.Reset)
+	assert.Contains(t, out, string(roles.Foreground)+"Alice"+color.FgDefault)
+	for _, role := range []ansi.Text{roles.Accent, roles.Success, roles.Failure, roles.Muted} {
 		assert.NotContains(t, out, string(role))
 	}
 	plain := &bytes.Buffer{}
@@ -284,7 +285,7 @@ func TestThemedFactsRoles(t *testing.T) {
 
 func TestThemedFactsSlots(t *testing.T) {
 	ttyWidth(t, 120)
-	th := NewTheme()
+	th := theme.New()
 	th.Templates.Table.Header = `{{ .Name }}:{{ .Kind }}`
 	th.Templates.Table.Cell = `[{{ .Value }}]`
 	themedTable(t, th)
@@ -300,8 +301,8 @@ func TestThemedFactsSlots(t *testing.T) {
 
 func TestThemedFactsHiddenKey(t *testing.T) {
 	ttyWidth(t, 120)
-	th := NewTheme()
-	th.Templates.Table.Header = Hidden
+	th := theme.New()
+	th.Templates.Table.Header = theme.Hidden
 	themedTable(t, th)
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Facts(buf, factsData))
@@ -310,8 +311,8 @@ func TestThemedFactsHiddenKey(t *testing.T) {
 
 func TestThemedFactsStyle(t *testing.T) {
 	ttyWidth(t, 120)
-	th := NewTheme()
-	th.Table = TableStyle{ColumnGap: 4, MinColumnWidth: 3}
+	th := theme.New()
+	th.Table = theme.TableStyle{ColumnGap: 4, MinColumnWidth: 3}
 	themedTable(t, th)
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Facts(buf, tableFormatRow{"A", 0.5, 1}))
@@ -325,11 +326,11 @@ func TestThemedFactsStyle(t *testing.T) {
 
 func TestThemedFactsSignedPercent(t *testing.T) {
 	ttyWidth(t, 120)
-	themedTable(t, NewTheme(), "FORCE_COLOR=3")
+	themedTable(t, theme.New(), "FORCE_COLOR=3")
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Facts(buf, tableFormatRow{"A", -0.5, 1}, WithFloat64AsPercentPositiveColored()))
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
-	assert.Contains(t, buf.String(), string(roles.failure)+"-50%"+color.FgDefault)
+	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).Roles
+	assert.Contains(t, buf.String(), string(roles.Failure)+"-50%"+color.FgDefault)
 	assert.NotContains(t, buf.String(), "\x1b[31m")
 }
 
@@ -339,7 +340,7 @@ func TestThemedFactsValueLine(t *testing.T) {
 		Note string
 		Link string
 	}
-	th := NewTheme()
+	th := theme.New()
 	th.Templates.Table.Cell = `<{{ .Value }}>`
 	themedTable(t, th)
 	link := "\x1b]8;;https://example.com\x1b\\site\x1b]8;;\x1b\\"
@@ -356,26 +357,26 @@ func TestThemedFactsErrors(t *testing.T) {
 		"bell": func() string { return "\a" },
 	}
 	for _, tc := range []struct {
-		edit func(*TableTemplates)
+		edit func(*theme.TableTemplates)
 		want string
 	}{
 		{
-			func(s *TableTemplates) {
+			func(s *theme.TableTemplates) {
 				s.Header = `{{ if eq .Name "Count" }}{{ boom .Header }}{{ end }}{{ .Header }}`
 			},
 			`facts: column "Count": theme.Templates.Table.Header: `,
 		},
 		{
-			func(s *TableTemplates) { s.Header = `{{ .Header }}{{ bell }}` },
+			func(s *theme.TableTemplates) { s.Header = `{{ .Header }}{{ bell }}` },
 			`facts: column "Left": theme.Templates.Table.Header: "\a": want text and SGR only`,
 		},
-		{func(s *TableTemplates) { s.Cell = `{{ boom .Value }}` }, `facts: column "Left": theme.Templates.Table.Cell: `},
+		{func(s *theme.TableTemplates) { s.Cell = `{{ boom .Value }}` }, `facts: column "Left": theme.Templates.Table.Cell: `},
 		{
-			func(s *TableTemplates) { s.Cell = `{{ .Value }}{{ bell }}` },
+			func(s *theme.TableTemplates) { s.Cell = `{{ .Value }}{{ bell }}` },
 			`facts: column "Left": theme.Templates.Table.Cell: "\a": want text, SGR and hyperlinks only`,
 		},
 	} {
-		th := NewTheme()
+		th := theme.New()
 		th.Funcs = boom
 		tc.edit(&th.Templates.Table)
 		themedTable(t, th)
@@ -386,6 +387,6 @@ func TestThemedFactsErrors(t *testing.T) {
 		assert.Equal(t, "", buf.String())
 	}
 
-	themedTable(t, NewTheme())
+	themedTable(t, theme.New())
 	assert.ErrorIs(t, Facts(errWriterTable{}, factsData), io.EOF)
 }

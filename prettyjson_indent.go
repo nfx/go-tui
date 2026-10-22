@@ -7,10 +7,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/nfx/go-tui/theme"
 )
 
 // jsonIndent validates src and lays it out in style, without a trailing newline.
-func jsonIndent(src any, style JSONStyle) (*bytes.Buffer, error) {
+func jsonIndent(src any, style theme.JSONStyle) (*bytes.Buffer, error) {
 	identBuf := bytes.NewBuffer(nil)
 	var toIndent []byte
 	var err error

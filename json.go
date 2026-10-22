@@ -18,7 +18,7 @@ import (
 // Malformed input returns an error before anything is written.
 func PrettyJSON(w io.Writer, src any) error {
 	theme := defaultIO.currentTheme()
-	out, err := jsonIndent(src, theme.source.JSON)
+	out, err := jsonIndent(src, theme.Source.JSON)
 	if err != nil {
 		return err
 	}

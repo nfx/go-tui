@@ -9,13 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/internal/trie"
 	"io"
 	"slices"
 )
 
 type dropdown struct {
-	choiceLabels
+	render.ChoiceLabels
 	Ctx          context.Context
 	Label        string
 	Items        []any
@@ -39,13 +40,13 @@ type dropdown struct {
 	// rendered every frame with the count of hidden rows. A wrapper that
 	// runs several dropdowns hands the binding of an earlier one on as
 	// inherit, so that one invocation keeps one appearance.
-	theme   *compiledTheme
-	family  choiceFamily
-	look    binding
-	inherit binding
+	theme   *render.Compiled
+	family  render.ChoiceFamily
+	look    render.Binding
+	inherit render.Binding
 	slot    choiceSlots
 	label   ansi.Text
-	hint    boundSlot
+	hint    render.BoundSlot
 	// content is the projected main content of every item, and search the
 	// plain text of it that filtering and ranking see.
 	content []ansi.Text
@@ -210,7 +211,7 @@ func newDropdown(ctx context.Context) *dropdown {
 		IterBatchSize: 10,
 		trie:          trie.NewTrie(),
 		theme:         theme,
-		family:        theme.templates.Dropdown,
+		family:        theme.Templates.Dropdown,
 	}
 }
 

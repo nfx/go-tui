@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"math"
 	"strconv"
@@ -268,7 +269,7 @@ func TestNumberDefaults(t *testing.T) {
 // given size. Each key is one read. restored reports a released terminal.
 func themedNumber[T numberType](
 	t *testing.T,
-	th Theme,
+	th theme.Theme,
 	width, height int,
 	keys ...string,
 ) (n *number[T], out *bytes.Buffer, restored *bool) {
@@ -340,7 +341,7 @@ func TestThemedNumberShortTerminalsDropHintFirst(t *testing.T) {
 
 func TestThemedNumberHintSlots(t *testing.T) {
 	// the prompt captures the theme when it is made, after installing th
-	frame := func(th Theme, build func() *input) string {
+	frame := func(th theme.Theme, build func() *input) string {
 		t.Helper()
 		useTheme(t, th)
 		i := build()
@@ -367,7 +368,7 @@ func TestThemedNumberHintSlots(t *testing.T) {
 	th = asciiTheme(false)
 	th.Templates.Number.Hint = `number hint`
 	assert.Contains(t, frame(th, number), "\n\r| number hint\x1b[K")
-	th.Templates.Number.Hint = Hidden
+	th.Templates.Number.Hint = theme.Hidden
 	assert.Equal(t, "\r? Count\x1b[K\n\r| 1\x1b[K", frame(th, number))
 	// Number inherits an Input hint
 	th = asciiTheme(false)

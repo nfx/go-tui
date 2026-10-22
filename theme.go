@@ -5,24 +5,25 @@ package tui
 
 import (
 	"fmt"
+	"github.com/nfx/go-tui/theme"
 	"text/template"
 )
 
 // DefaultTheme returns an editable copy of the installed theme, preserving helpers and unset colors.
-func DefaultTheme() Theme { return defaultIO.currentTheme().editable() }
+func DefaultTheme() theme.Theme { return defaultIO.currentTheme().Editable() }
 
 // SetDefaultTheme validates and copies theme for operations started afterwards.
 // On error, the installed theme is unchanged; running operations keep their snapshot.
 // Funcs replaces existing helpers; start from [DefaultTheme] to retain them.
 // Helper closures must be safe for concurrent use.
-func SetDefaultTheme(theme Theme) error { return defaultIO.installTheme(theme) }
+func SetDefaultTheme(th theme.Theme) error { return defaultIO.installTheme(th) }
 
 // WithFn registers or replaces a helper for operations started afterwards.
 // Helpers must be safe for concurrent use and return a value or a value and an error.
 // Invalid or reserved names and invalid signatures panic without changing the theme.
 // Use [Theme.Funcs] with [SetDefaultTheme] to receive validation errors instead.
 func WithFn(name string, fn any) {
-	err := defaultIO.updateTheme(func(t *Theme) {
+	err := defaultIO.updateTheme(func(t *theme.Theme) {
 		if t.Funcs == nil {
 			t.Funcs = template.FuncMap{}
 		}

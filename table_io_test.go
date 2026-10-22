@@ -6,6 +6,7 @@ package tui
 import (
 	"bytes"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/render"
 	"math"
 	"regexp"
 	"strings"
@@ -79,10 +80,10 @@ func TestGeometryValueColumns(t *testing.T) {
 		{"inline wide label", true, "│", 6, ansi.Text("\u754c\u9762\u754c: "), "\u754c…", 2, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			g := geometry{inline: tc.inline, guide: tc.guide, width: tc.width, height: 1}
-			lead := g.valueLead(tc.label)
+			g := render.Geometry{Inline: tc.inline, Guide: tc.guide, Width: tc.width, Height: 1}
+			lead := g.ValueLead(tc.label)
 			assert.Equal(t, tc.wantLead, lead.String())
-			cols, err := g.valueColumns(lead)
+			cols, err := g.ValueColumns(lead)
 			if tc.wantErr {
 				assert.ErrorIs(t, err, ErrNoSpace)
 				return
@@ -106,100 +107,100 @@ func TestGeometryFit(t *testing.T) {
 		name          string
 		inline        bool
 		width, height int
-		rows          []frameRow
+		rows          []render.FrameRow
 		want          want
 		wantErr       bool
 	}{
-		{"unknown size keeps everything", false, 0, 0, []frameRow{
-			{content: ansi.Text("label")},
-			{content: ansi.Text(strings.Repeat("v", 300)), guided: true},
-			{content: ansi.Text("hint"), guided: true, drop: 1},
+		{"unknown size keeps everything", false, 0, 0, []render.FrameRow{
+			{Content: ansi.Text("label")},
+			{Content: ansi.Text(strings.Repeat("v", 300)), Guided: true},
+			{Content: ansi.Text("hint"), Guided: true, Drop: 1},
 		}, want{[]string{"label", "│ " + strings.Repeat("v", 300), "│ hint"}, []int{0, 1, 2}}, false},
-		{"height 1 keeps the required row", false, 20, 1, []frameRow{
-			{content: ansi.Text("v")},
-			{content: ansi.Text("hint"), guided: true, drop: 1},
+		{"height 1 keeps the required row", false, 20, 1, []render.FrameRow{
+			{Content: ansi.Text("v")},
+			{Content: ansi.Text("hint"), Guided: true, Drop: 1},
 		}, want{[]string{"v"}, []int{0, -1}}, false},
-		{"required rows exceed the height", false, 20, 1, []frameRow{
-			{content: ansi.Text("a")}, {content: ansi.Text("b")},
+		{"required rows exceed the height", false, 20, 1, []render.FrameRow{
+			{Content: ansi.Text("a")}, {Content: ansi.Text("b")},
 		}, want{}, true},
-		{"largest drop goes first", false, 20, 3, []frameRow{
-			{content: ansi.Text("value")},
-			{content: ansi.Text("details"), drop: 1},
-			{content: ansi.Text("more"), drop: 2},
-			{content: ansi.Text("hint"), drop: 3},
+		{"largest drop goes first", false, 20, 3, []render.FrameRow{
+			{Content: ansi.Text("value")},
+			{Content: ansi.Text("details"), Drop: 1},
+			{Content: ansi.Text("more"), Drop: 2},
+			{Content: ansi.Text("hint"), Drop: 3},
 		}, want{[]string{"value", "details", "more"}, []int{0, 1, 2, -1}}, false},
-		{"short height drops more", false, 20, 2, []frameRow{
-			{content: ansi.Text("value")},
-			{content: ansi.Text("details"), drop: 1},
-			{content: ansi.Text("more"), drop: 2},
-			{content: ansi.Text("hint"), drop: 3},
+		{"short height drops more", false, 20, 2, []render.FrameRow{
+			{Content: ansi.Text("value")},
+			{Content: ansi.Text("details"), Drop: 1},
+			{Content: ansi.Text("more"), Drop: 2},
+			{Content: ansi.Text("hint"), Drop: 3},
 		}, want{[]string{"value", "details"}, []int{0, 1, -1, -1}}, false},
-		{"equal drop removes the later row", false, 20, 2, []frameRow{
-			{content: ansi.Text("value")},
-			{content: ansi.Text("a"), drop: 1},
-			{content: ansi.Text("b"), drop: 1},
+		{"equal drop removes the later row", false, 20, 2, []render.FrameRow{
+			{Content: ansi.Text("value")},
+			{Content: ansi.Text("a"), Drop: 1},
+			{Content: ansi.Text("b"), Drop: 1},
 		}, want{[]string{"value", "a"}, []int{0, 1, -1}}, false},
-		{"empty optional rows reserve nothing", false, 10, 0, []frameRow{
-			{guided: true},
-			{drop: 1},
-			{content: ansi.Text("\x1b[2m\x1b[0m"), drop: 1},
-			{content: ansi.Text("x")},
+		{"empty optional rows reserve nothing", false, 10, 0, []render.FrameRow{
+			{Guided: true},
+			{Drop: 1},
+			{Content: ansi.Text("\x1b[2m\x1b[0m"), Drop: 1},
+			{Content: ansi.Text("x")},
 		}, want{[]string{"│ ", "x"}, []int{0, -1, -1, 1}}, false},
-		{"exact fit is unchanged and one more is clipped", false, 10, 0, []frameRow{
-			{content: ansi.Text("\x1b[1mabcdefg\x1b[0m"), guided: true},
-			{content: ansi.Text("abcdefgh"), guided: true},
+		{"exact fit is unchanged and one more is clipped", false, 10, 0, []render.FrameRow{
+			{Content: ansi.Text("\x1b[1mabcdefg\x1b[0m"), Guided: true},
+			{Content: ansi.Text("abcdefgh"), Guided: true},
 		}, want{[]string{"│ \x1b[1mabcdefg\x1b[0m", "│ abcdef…"}, []int{0, 1}}, false},
-		{"wide, combining and emoji clusters", false, 6, 0, []frameRow{
-			{content: ansi.Text("\u754c\u9762\u754c")},
-			{content: ansi.Text(strings.Repeat("e\u0301", 5))},
-			{content: ansi.Text("👍👍👍")},
+		{"wide, combining and emoji clusters", false, 6, 0, []render.FrameRow{
+			{Content: ansi.Text("\u754c\u9762\u754c")},
+			{Content: ansi.Text(strings.Repeat("e\u0301", 5))},
+			{Content: ansi.Text("👍👍👍")},
 		}, want{[]string{"\u754c\u9762…", strings.Repeat("e\u0301", 5), "👍👍…"}, []int{0, 1, 2}}, false},
-		{"inline has no guide", true, 10, 0, []frameRow{
-			{content: ansi.Text("abc"), guided: true},
+		{"inline has no guide", true, 10, 0, []render.FrameRow{
+			{Content: ansi.Text("abc"), Guided: true},
 		}, want{[]string{"abc"}, []int{0}}, false},
-		{"width 2 cannot hold the guide", false, 2, 0, []frameRow{
-			{guided: true},
+		{"width 2 cannot hold the guide", false, 2, 0, []render.FrameRow{
+			{Guided: true},
 		}, want{}, true},
-		{"width 3 keeps an empty guided row", false, 3, 0, []frameRow{
-			{guided: true},
-			{content: ansi.Text("hint"), guided: true, drop: 1},
+		{"width 3 keeps an empty guided row", false, 3, 0, []render.FrameRow{
+			{Guided: true},
+			{Content: ansi.Text("hint"), Guided: true, Drop: 1},
 		}, want{[]string{"│ "}, []int{0, -1}}, false},
-		{"width 3 cannot show guided content", false, 3, 0, []frameRow{
-			{content: ansi.Text("x"), guided: true},
+		{"width 3 cannot show guided content", false, 3, 0, []render.FrameRow{
+			{Content: ansi.Text("x"), Guided: true},
 		}, want{}, true},
-		{"width 1 cannot show content", true, 1, 0, []frameRow{
-			{content: ansi.Text("x")},
+		{"width 1 cannot show content", true, 1, 0, []render.FrameRow{
+			{Content: ansi.Text("x")},
 		}, want{}, true},
-		{"width 2 shows the ellipsis", true, 2, 0, []frameRow{
-			{content: ansi.Text("xy")},
+		{"width 2 shows the ellipsis", true, 2, 0, []render.FrameRow{
+			{Content: ansi.Text("xy")},
 		}, want{[]string{"…"}, []int{0}}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			g := geometry{inline: tc.inline, guide: "│", width: tc.width, height: tc.height}
-			got, err := g.fit(tc.rows)
+			g := render.Geometry{Inline: tc.inline, Guide: "│", Width: tc.width, Height: tc.height}
+			got, err := g.Fit(tc.rows)
 			if tc.wantErr {
 				assert.ErrorIs(t, err, ErrNoSpace)
 				return
 			}
 			assert.NoError(t, err)
 			lines := []string{}
-			for _, l := range got.lines {
+			for _, l := range got.Lines {
 				lines = append(lines, l.String())
 				if tc.width > 0 {
 					assert.True(t, l.Width() < tc.width)
 				}
 			}
 			assert.Equal(t, tc.want.lines, lines)
-			assert.Equal(t, tc.want.at, got.at)
+			assert.Equal(t, tc.want.at, got.At)
 		})
 	}
 }
 
 func TestFitDoesNotAliasRows(t *testing.T) {
 	content := ansi.Text("abc")
-	g := geometry{guide: "│", width: 10}
-	got, err := g.fit([]frameRow{{content: content, guided: true}})
+	g := render.Geometry{Guide: "│", Width: 10}
+	got, err := g.Fit([]render.FrameRow{{Content: content, Guided: true}})
 	assert.NoError(t, err)
-	got.lines[0][len(got.lines[0])-1] = 'X'
+	got.Lines[0][len(got.Lines[0])-1] = 'X'
 	assert.Equal(t, "abc", content.String())
 }

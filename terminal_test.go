@@ -4,6 +4,7 @@
 package tui_test
 
 import (
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
 	"strings"
@@ -70,7 +71,7 @@ func newASCIITerminal(t *testing.T) *terminal {
 // asciiTheme installs the ASCII preset as the default theme for the test.
 func asciiTheme(t *testing.T) {
 	t.Helper()
-	th := tui.NewTheme()
+	th := theme.New()
 	th.Symbols = tui.ASCIISymbols
 	tui.UseTheme(t, th)
 }

@@ -5,6 +5,7 @@ package tui
 
 import (
 	"errors"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
 	"path/filepath"
@@ -198,10 +199,10 @@ func TestThemedFilePickerMutesParentEntry(t *testing.T) {
 	o, out, _ := themedDropdownOpt(t, th, 40, "\x1b[B", "\r", "\x1b[B", "\r")
 	_, err := FilePicker(t.Context(), "File", WithStartDir(pickerTree(t)), o)
 	assert.NoError(t, err)
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), out, nil).roles
-	assert.True(t, len(roles.muted) > 0)
-	assert.Contains(t, out.String(), string(roles.muted)+"..")
-	assert.True(t, !strings.Contains(out.String(), string(roles.muted)+"inner.txt"))
+	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), out, nil).Roles
+	assert.True(t, len(roles.Muted) > 0)
+	assert.Contains(t, out.String(), string(roles.Muted)+"..")
+	assert.True(t, !strings.Contains(out.String(), string(roles.Muted)+"inner.txt"))
 }
 
 func TestThemedFilePickerKeepsOneThemeAcrossDirectories(t *testing.T) {
@@ -240,15 +241,15 @@ func TestFilePickerNextDropdownInheritsThemeAndBinding(t *testing.T) {
 	next, err := f.nextDropdown(t.Context(), nil)
 	assert.NoError(t, err)
 	assert.True(t, next.theme == f.theme)
-	assert.True(t, next.inherit.theme == f.theme)
-	assert.True(t, next.destination(t.Context(), nil).theme == f.theme)
-	assert.True(t, next.family.Value == f.theme.templates.FilePicker.Value)
+	assert.True(t, next.inherit.Theme == f.theme)
+	assert.True(t, next.destination(t.Context(), nil).Theme == f.theme)
+	assert.True(t, next.family.Value == f.theme.Templates.FilePicker.Value)
 }
 
 func TestThemedFilePickerSlotPrecedence(t *testing.T) {
 	dir := t.TempDir()
 	assert.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), nil, 0o600))
-	run := func(th Theme) string {
+	run := func(th theme.Theme) string {
 		t.Helper()
 		o, out, _ := themedDropdownOpt(t, th, 40, "\r")
 		_, err := FilePicker(t.Context(), "File", WithStartDir(dir), o)
@@ -268,7 +269,7 @@ func TestThemedFilePickerSlotPrecedence(t *testing.T) {
 	// the family wins locally; Hidden hides the hint
 	th.Templates.FilePicker.Value = `[{{ .Name }}]`
 	th.Templates.FilePicker.Label = `pick {{ .Label }}`
-	th.Templates.FilePicker.Hint = Hidden
+	th.Templates.FilePicker.Hint = theme.Hidden
 	got = run(th)
 	assert.True(t, strings.HasPrefix(got, "\rpick File\n\r| > [a.txt]\n\r\x1b[2A"))
 }
@@ -277,7 +278,7 @@ func TestThemedFilePickerHiddenAnswer(t *testing.T) {
 	dir := t.TempDir()
 	assert.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), nil, 0o600))
 	th := asciiTheme(false)
-	th.Templates.FilePicker.Answer = Hidden
+	th.Templates.FilePicker.Answer = theme.Hidden
 	o, out, _ := themedDropdownOpt(t, th, 40, "\r")
 	_, err := FilePicker(t.Context(), "File", WithStartDir(dir), o)
 	assert.NoError(t, err)

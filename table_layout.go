@@ -152,10 +152,10 @@ func (t *table) decorate(row []ansi.Text, colors []string) error {
 			continue
 		}
 		if i < len(colors) {
-			line = t.look.style(ansi.Text(colors[i]), line)
+			line = t.look.Style(ansi.Text(colors[i]), line)
 		}
 		meta := t.columns[i].meta
-		out, err := t.cell.execute(cellView{columnView: t.column(meta), Value: line.String()})
+		out, err := t.cell.Execute(cellView{columnView: t.column(meta), Value: line.String()})
 		if err == nil {
 			err = t.cellOutput(t.cell, out)
 		}

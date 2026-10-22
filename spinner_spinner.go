@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/render"
 	"text/template"
 )
 
@@ -38,14 +39,14 @@ type spinnerView struct {
 }
 
 // spinnerSlots are the spinner slots bound to the destination of a group.
-type spinnerSlots struct{ running, stopped, failed boundSlot }
+type spinnerSlots struct{ running, stopped, failed render.BoundSlot }
 
-// bind attaches destination helpers to every spinner slot.
-func (t spinnerTemplates) bind(funcs template.FuncMap) (s spinnerSlots, _ error) {
+// bindSpinnerSlots attaches destination helpers to every spinner slot.
+func bindSpinnerSlots(t render.SpinnerSlots, funcs template.FuncMap) (s spinnerSlots, _ error) {
 	var errs [3]error
-	s.running, errs[0] = t.Running.bind(funcs)
-	s.stopped, errs[1] = t.Stopped.bind(funcs)
-	s.failed, errs[2] = t.Failed.bind(funcs)
+	s.running, errs[0] = t.Running.Bind(funcs)
+	s.stopped, errs[1] = t.Stopped.Bind(funcs)
+	s.failed, errs[2] = t.Failed.Bind(funcs)
 	return s, errors.Join(errs[:]...)
 }
 

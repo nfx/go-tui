@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package theme
 
 // Palette holds the semantic color seeds of a theme. Foreground and the
 // background used for contrast come from the Light or Dark variant that
@@ -24,8 +24,8 @@ func (p Palette) canonical() Palette {
 		&p.Dark.Foreground, &p.Dark.ReferenceBackground, &p.Dark.Accent,
 		&p.Dark.Success, &p.Dark.Error, &p.Dark.Muted, &p.Dark.Guide,
 	} {
-		if *c != "" {
-			*c = RGB(c.must().Hex())
+		if rgb, err := c.parse(); err == nil && *c != "" {
+			*c = RGB(rgb.Hex())
 		}
 	}
 	return p

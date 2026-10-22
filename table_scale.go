@@ -22,11 +22,11 @@ func (t *table) signedPercent(v float64) string {
 	var role ansi.Text
 	switch {
 	case v > 0:
-		role = t.look.roles.success
+		role = t.look.Roles.Success
 	case v < 0:
-		role = t.look.roles.failure
+		role = t.look.Roles.Failure
 	}
-	return t.look.style(role, ansi.Text(out)).String()
+	return t.look.Style(role, ansi.Text(out)).String()
 }
 
 // percentString scales values to percentages and truncates toward zero.
@@ -123,7 +123,7 @@ func (s *columnScale) bucketIndex(rank, total int) int {
 // same on every palette.
 func (t *table) scalePalette(reversed bool) []string {
 	var palette []string
-	for _, c := range t.look.diverging() {
+	for _, c := range t.look.Diverging() {
 		palette = append(palette, c.String())
 	}
 	if reversed {

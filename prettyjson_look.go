@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/render"
 )
 
 type jsonState int
@@ -50,18 +51,18 @@ type jsonLook struct {
 // background where it could be nearly invisible, leaves values unstyled and
 // makes punctuation bold. It is computed per operation: the theme, its
 // background and the destination all decide it.
-func newJSONLook(b binding) jsonLook {
-	look := jsonLook{value: b.roles.foreground, punct: b.roles.muted}
+func newJSONLook(b render.Binding) jsonLook {
+	look := jsonLook{value: b.Roles.Foreground, punct: b.Roles.Muted}
 	if len(look.punct) == 0 {
 		look.punct = ansi.Text(ansi.Bold)
 	}
-	if b.profile < color.ProfileANSI16 {
+	if b.Profile < color.ProfileANSI16 {
 		return look
 	}
-	pal := b.palette
-	top, ok := b.theme.role(b.profile, pal, b.theme.variant(pal).accent, pal.Accent, color.ContrastText, false)
+	pal := b.Palette
+	top, ok := b.Theme.Role(b.Profile, pal, b.Theme.Variant(pal).Accent, pal.Accent, color.ContrastText, false)
 	if ok {
-		look.keys = jsonDimming(b.profile, top, pal.Background)
+		look.keys = jsonDimming(b.Profile, top, pal.Background)
 	}
 	return look
 }

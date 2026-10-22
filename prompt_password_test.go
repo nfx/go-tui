@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
 	"strings"
@@ -58,7 +59,7 @@ func TestPasswordDefaultKeepsSecretOut(t *testing.T) {
 }
 
 // themedPassword prepares a themed password prompt with simulated keys and captured output.
-func themedPassword(t *testing.T, th Theme, keys ...string) (*input, *bytes.Buffer) {
+func themedPassword(t *testing.T, th theme.Theme, keys ...string) (*input, *bytes.Buffer) {
 	t.Helper()
 	i, out, _ := themedInput(t, th, 40, 5, keys...)
 	i.Password = true

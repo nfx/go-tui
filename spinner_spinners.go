@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/render"
 	"io"
 	"sync"
 	"time"
@@ -34,7 +35,7 @@ type Spinners struct {
 	eventSink  func(spinnerEvent)
 
 	// theme is captured with the group, so a spinner added later keeps it.
-	theme *compiledTheme
+	theme *render.Compiled
 	// rows are the theme slots bound to the destination of the group.
 	rows spinnerSlots
 }
@@ -43,7 +44,7 @@ type Spinners struct {
 func newSpinners(ctx context.Context) *Spinners {
 	ctx, cancel := context.WithCancelCause(ctx)
 	theme := defaultIO.currentTheme()
-	ticker := time.NewTicker(theme.source.Spinner.Interval)
+	ticker := time.NewTicker(theme.Source.Spinner.Interval)
 	in, out := defaultStreams(ctx)
 	return &Spinners{
 		ctx:        ctx,
@@ -87,7 +88,7 @@ func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 	replyOffset := make(chan int, 1)
 	req := createSpinner{
 		cancel:      cancel,
-		frames:      s.theme.source.Symbols.Spinner,
+		frames:      s.theme.Source.Symbols.Spinner,
 		replyOffset: replyOffset,
 	}
 	err := opts(opt).Apply(&req)
@@ -359,7 +360,7 @@ func (s *Spinners) row(spinner *spinnerState) (ansi.Text, error) {
 	default:
 		spinner.next()
 	}
-	row, err := slot.render(spinnerView{
+	row, err := slot.Render(spinnerView{
 		Frame:   spinner.frames[spinner.tick],
 		Prefix:  s.oneLine(spinner.Prefix),
 		Message: s.oneLine(spinner.Message),
@@ -368,7 +369,7 @@ func (s *Spinners) row(spinner *spinnerState) (ansi.Text, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cols := s.theme.geometry(s.io.Width, 0).columns(nil); row.Width() > cols {
+	if cols := s.theme.Geometry(s.io.Width, 0).Columns(nil); row.Width() > cols {
 		row = row.TruncateColumns(cols)
 	}
 	return row, nil

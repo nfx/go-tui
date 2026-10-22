@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package theme
 
 import (
 	"fmt"
@@ -12,24 +12,24 @@ import (
 )
 
 func TestJSONStyleValidation(t *testing.T) {
-	c, err := Theme{}.compile()
+	n, err := Theme{}.Normalize()
 	assert.NoError(t, err)
-	assert.Equal(t, jsonStyle, c.source.JSON)
+	assert.Equal(t, jsonStyle, n.JSON)
 	for _, style := range []JSONStyle{
 		{Indent: "\t"},
 		{Indent: " \t "},
 		{Indent: strings.Repeat(" ", maxJSONIndent)},
 		{Compact: true},
 	} {
-		th := NewTheme()
+		th := New()
 		th.JSON = style
-		c, err := th.compile()
+		n, err := th.Normalize()
 		assert.NoError(t, err)
-		assert.Equal(t, style.Compact, c.source.JSON.Compact)
+		assert.Equal(t, style.Compact, n.JSON.Compact)
 		if style.Indent != "" {
-			assert.Equal(t, style.Indent, c.source.JSON.Indent)
+			assert.Equal(t, style.Indent, n.JSON.Indent)
 		} else {
-			assert.Equal(t, jsonStyle.Indent, c.source.JSON.Indent)
+			assert.Equal(t, jsonStyle.Indent, n.JSON.Indent)
 		}
 	}
 	for _, style := range []JSONStyle{
@@ -40,9 +40,9 @@ func TestJSONStyleValidation(t *testing.T) {
 		{Indent: strings.Repeat(" ", maxJSONIndent+1)},
 		{Indent: "-", Compact: true}, // validated even when unused
 	} {
-		th := NewTheme()
+		th := New()
 		th.JSON = style
-		_, err := th.compile()
+		_, err := th.Normalize()
 		assert.Error(t, err)
 		assert.Contains(
 			t,

@@ -8,26 +8,27 @@ import (
 	"context"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/internal/trie"
 	"slices"
 	"strings"
 )
 
 // bind installs destination-bound helpers and choice slots.
-func (d *dropdown) bind(look binding) error {
+func (d *dropdown) bind(look render.Binding) error {
 	d.look = look
-	err := d.rebind(look.funcs)
+	err := d.rebind(look.Funcs)
 	if err != nil {
 		return err
 	}
-	d.slot, err = d.family.bind(look.funcs)
+	d.slot, err = bindChoiceFamily(d.family, look.Funcs)
 	return err
 }
 
 // bindOnce binds to the destination without a terminal lease unless a run
 // already bound: for automatic answers, and the answer of a skipped prompt.
 func (d *dropdown) bindOnce() error {
-	if d.look.theme != nil {
+	if d.look.Theme != nil {
 		return nil
 	}
 	return d.bind(d.destination(d.Ctx, nil))
@@ -35,8 +36,8 @@ func (d *dropdown) bindOnce() error {
 
 // destination is the inherited binding, or binds the theme to the output,
 // probing through tio when it holds the prompt lease.
-func (d *dropdown) destination(ctx context.Context, tio *termIO) binding {
-	if d.inherit.theme != nil {
+func (d *dropdown) destination(ctx context.Context, tio *termIO) render.Binding {
+	if d.inherit.Theme != nil {
 		return d.inherit
 	}
 	return defaultIO.bindTheme(ctx, d.theme, d.out, tio)
@@ -44,7 +45,7 @@ func (d *dropdown) destination(ctx context.Context, tio *termIO) binding {
 
 // renderChrome renders the label row and binds the hint once per run.
 func (d *dropdown) renderChrome() (err error) {
-	d.label, d.hint, err = d.family.chrome(d.look.funcs, d.Label)
+	d.label, d.hint, err = chromeChoiceFamily(d.family, d.look.Funcs, d.Label)
 	return err
 }
 
@@ -70,19 +71,19 @@ func (d *dropdown) themedItem(i int, item any) (ansi.Text, error) {
 		return nil, err
 	}
 	d.content[i] = content
-	d.search[i] = d.plainText(content)
+	d.search[i] = d.PlainText(content)
 	return content, nil
 }
 
 // themedRow renders one state of an item on a single line.
-func (d *dropdown) themedRow(slot boundSlot, view choiceView) (ansi.Text, error) {
-	out, err := slot.render(view)
+func (d *dropdown) themedRow(slot render.BoundSlot, view choiceView) (ansi.Text, error) {
+	out, err := slot.Render(view)
 	if err != nil {
 		return nil, err
 	}
 	mark := ansi.Text("  ")
 	if view.Active {
-		mark = append(d.look.style(d.look.roles.accent, ansi.Text(d.theme.source.Symbols.Focus)), ' ')
+		mark = append(d.look.Style(d.look.Roles.Accent, ansi.Text(d.theme.Source.Symbols.Focus)), ' ')
 	}
 	return append(mark, out...), nil
 }
@@ -118,7 +119,7 @@ func (d *dropdown) retain(label, value string) error {
 	if err != nil {
 		return err
 	}
-	out, err := d.slot.answer.render(answerView{Label: label, Value: value, Values: []string{value}, Count: 1})
+	out, err := d.slot.answer.Render(render.AnswerView{Label: label, Value: value, Values: []string{value}, Count: 1})
 	if err != nil || out.Width() == 0 {
 		return err
 	}
@@ -210,8 +211,8 @@ func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
 	}
 	// the newline after the last row moves the cursor to a row of its own,
 	// which must stay on the screen, or the terminal scrolls the label away
-	g := d.look.geometry(io.Width, io.Height-1)
-	rows := make([]frameRow, 0, len(d.displayed)+4)
+	g := d.look.Geometry(io.Width, io.Height-1)
+	rows := make([]render.FrameRow, 0, len(d.displayed)+4)
 	// Inline, the label leads the first row and indents the others, unless
 	// the widest row does not fit after it.
 	var lead, indent ansi.Text
@@ -219,11 +220,11 @@ func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
 		// the renderer owns the spacing after the label
 		lead = append(append(ansi.Text{}, d.label...), ' ')
 	}
-	if g.inline && lead.Width()+d.longest <= g.columns(nil) {
+	if g.Inline && lead.Width()+d.longest <= g.Columns(nil) {
 		indent = ansi.Text(strings.Repeat(" ", lead.Width()))
 	} else {
 		lead = nil
-		rows = append(rows, frameRow{content: d.label, drop: 1})
+		rows = append(rows, render.FrameRow{Content: d.label, Drop: 1})
 	}
 	for k, j := range d.displayed {
 		row, prefix := d.inactive[j], indent
@@ -233,26 +234,26 @@ func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
 		if k == 0 {
 			prefix = lead
 		}
-		rows = append(rows, frameRow{content: append(append(ansi.Text{}, prefix...), row...), guided: true})
+		rows = append(rows, render.FrameRow{Content: append(append(ansi.Text{}, prefix...), row...), Guided: true})
 	}
 	// on a short terminal, the hint with the count goes first, then the label
-	rows = append(rows, frameRow{content: hint, guided: true, drop: 2})
-	fit, err := g.fit(rows)
+	rows = append(rows, render.FrameRow{Content: hint, Guided: true, Drop: 2})
+	fit, err := g.Fit(rows)
 	if err != nil {
 		return err
 	}
-	for _, line := range fit.lines {
+	for _, line := range fit.Lines {
 		buf.WriteByte('\r')
 		buf.Write(line)
 		buf.WriteByte('\n')
 	}
 	buf.WriteByte('\r')
-	d.rows = len(fit.lines)
+	d.rows = len(fit.Lines)
 	return nil
 }
 
 // themedHint renders the key hints, led by the count of the rows below the
 // visible ones, if any.
 func (d *dropdown) themedHint() (ansi.Text, error) {
-	return themedHint(d.hint, d.dropdownKeys(d.theme.source.Symbols), len(d.relevant)-d.offset-len(d.displayed))
+	return themedHint(d.hint, d.dropdownKeys(d.theme.Source.Symbols), len(d.relevant)-d.offset-len(d.displayed))
 }

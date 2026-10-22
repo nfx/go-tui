@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"regexp"
 	"strings"
@@ -84,7 +86,7 @@ func TestPrettyJsonRecolorCorpus(t *testing.T) {
 		`{"a":1}`,
 	}
 	for _, in := range corpus {
-		buf, err := jsonIndent(in, jsonStyle)
+		buf, err := jsonIndent(in, theme.New().JSON)
 		if err != nil {
 			t.Fatalf("%s: %v", in, err)
 		}
@@ -97,7 +99,7 @@ func FuzzPrettyJsonRecolor(f *testing.F) {
 	f.Add(`{"x":"a\"}}x"}`)
 	f.Add(`[1,"\\",{"a":[]}]`)
 	f.Fuzz(func(t *testing.T, in string) {
-		buf, err := jsonIndent(in, jsonStyle)
+		buf, err := jsonIndent(in, theme.New().JSON)
 		if err != nil {
 			t.Skip()
 		}
@@ -107,8 +109,8 @@ func FuzzPrettyJsonRecolor(f *testing.F) {
 }
 
 // presetJSONTheme is the compiled preset theme.
-var presetJSONTheme = sync.OnceValue(func() *compiledTheme {
-	c, err := presetTheme().compile()
+var presetJSONTheme = sync.OnceValue(func() *render.Compiled {
+	c, err := render.Compile(theme.New())
 	if err != nil {
 		panic(err) // the preset is valid
 	}
@@ -116,21 +118,21 @@ var presetJSONTheme = sync.OnceValue(func() *compiledTheme {
 })
 
 func testJSONLook() *jsonLook {
-	st := newJSONLook(presetJSONTheme().bind(color.ProfileTrueColor, color.Background{}))
+	st := newJSONLook(presetJSONTheme().Bind(color.ProfileTrueColor, color.Background{}))
 	return &st
 }
 
 // jsonBound binds th to a destination of profile p over bg, as PrettyJSON does.
-func jsonBound(t *testing.T, th Theme, p color.Profile, bg color.Background) binding {
+func jsonBound(t *testing.T, th theme.Theme, p color.Profile, bg color.Background) render.Binding {
 	t.Helper()
-	c, err := th.compile()
+	c, err := render.Compile(th)
 	assert.NoError(t, err)
-	return c.bind(p, bg)
+	return c.Bind(p, bg)
 }
 
 // legacyJSONPalette is the palette of the preset on an unknown background.
-func legacyJSONPalette() resolvedPalette {
-	return presetJSONTheme().bind(color.ProfileTrueColor, color.Background{}).palette
+func legacyJSONPalette() render.ResolvedPalette {
+	return presetJSONTheme().Bind(color.ProfileTrueColor, color.Background{}).Palette
 }
 
 // measuredBG is a measured background, so neutral roles are emitted.
@@ -256,7 +258,7 @@ func TestPrettyJSONMalformedWritesNothing(t *testing.T) {
 
 // themedJSON renders src through th, installed with the theme gate on, to a
 // buffer in the color environment env.
-func themedJSON(t *testing.T, th Theme, env string, src any) string {
+func themedJSON(t *testing.T, th theme.Theme, env string, src any) string {
 	t.Helper()
 	useTheme(t, th)
 	return renderJSON(t, env, src)
@@ -267,15 +269,15 @@ func TestThemedPrettyJSONIndentation(t *testing.T) {
 	four := &bytes.Buffer{}
 	assert.NoError(t, json.Indent(four, []byte(src), "", "    "))
 	for _, tc := range []struct {
-		style JSONStyle
+		style theme.JSONStyle
 		want  string
 	}{
-		{JSONStyle{}, "{\n  \"a\": [\n    1,\n    {\n      \"b\": \"x y\"\n    }\n  ],\n  \"c\": {},\n  \"d\": []\n}\n"},
-		{JSONStyle{Indent: "\t"}, "{\n\t\"a\": [\n\t\t1,\n\t\t{\n\t\t\t\"b\": \"x y\"\n\t\t}\n\t],\n\t\"c\": {},\n\t\"d\": []\n}\n"},
-		{JSONStyle{Indent: "    "}, four.String() + "\n"},
-		{JSONStyle{Indent: "\t", Compact: true}, `{"a":[1,{"b":"x y"}],"c":{},"d":[]}` + "\n"},
+		{theme.JSONStyle{}, "{\n  \"a\": [\n    1,\n    {\n      \"b\": \"x y\"\n    }\n  ],\n  \"c\": {},\n  \"d\": []\n}\n"},
+		{theme.JSONStyle{Indent: "\t"}, "{\n\t\"a\": [\n\t\t1,\n\t\t{\n\t\t\t\"b\": \"x y\"\n\t\t}\n\t],\n\t\"c\": {},\n\t\"d\": []\n}\n"},
+		{theme.JSONStyle{Indent: "    "}, four.String() + "\n"},
+		{theme.JSONStyle{Indent: "\t", Compact: true}, `{"a":[1,{"b":"x y"}],"c":{},"d":[]}` + "\n"},
 	} {
-		th := NewTheme()
+		th := theme.New()
 		th.JSON = tc.style
 		plain := themedJSON(t, th, "X=1", src)
 		assert.Equal(t, tc.want, plain)
@@ -287,7 +289,7 @@ func TestThemedPrettyJSONIndentation(t *testing.T) {
 		assert.True(t, json.Valid([]byte(plain)))
 	}
 	// a compact root scalar still ends its color before the newline
-	th := NewTheme()
+	th := theme.New()
 	th.JSON.Compact = true
 	assert.True(
 		t,
@@ -299,20 +301,20 @@ func TestThemedPrettyJSONIndentation(t *testing.T) {
 func TestThemedPrettyJSONPresetMatchesLegacy(t *testing.T) {
 	for _, env := range []string{"X=1", "FORCE_COLOR=1", "FORCE_COLOR=2", "FORCE_COLOR=3"} {
 		legacy := renderJSON(t, env, jsonSample)
-		assert.Equal(t, legacy, themedJSON(t, NewTheme(), env, jsonSample))
+		assert.Equal(t, legacy, themedJSON(t, theme.New(), env, jsonSample))
 	}
 }
 
 func TestThemedPrettyJSONFollowsInstalledPalette(t *testing.T) {
 	src := `{"key":{"inner":1}}`
 	var tops []string
-	for _, accent := range []RGB{"#2D9B55", "#D05AE0"} {
-		th := NewTheme()
+	for _, accent := range []theme.RGB{"#2D9B55", "#D05AE0"} {
+		th := theme.New()
 		th.Palette.Accent = accent
 		out := themedJSON(t, th, "FORCE_COLOR=3", src)
 		look := jsonBound(t, th, color.ProfileTrueColor, color.Background{})
 		keys := newJSONLook(look).keys
-		assert.Equal(t, string(look.roles.accent)+ansi.Bold, shadeBefore(t, out, `"key"`))
+		assert.Equal(t, string(look.Roles.Accent)+ansi.Bold, shadeBefore(t, out, `"key"`))
 		assert.Equal(t, string(keys[1])+ansi.Bold, shadeBefore(t, out, `"inner"`))
 		tops = append(tops, shadeBefore(t, out, `"key"`))
 	}
@@ -321,17 +323,17 @@ func TestThemedPrettyJSONFollowsInstalledPalette(t *testing.T) {
 }
 
 func TestThemedPrettyJSONExplicitAccentStaysLiteral(t *testing.T) {
-	th := NewTheme()
+	th := theme.New()
 	th.Palette.Dark.Accent = "#3A3A3A" // below the text contrast on the dark reference
 	out := themedJSON(t, th, "FORCE_COLOR=3", `{"a":{"b":1}}`)
 	assert.Equal(t, "\x1b[38;2;58;58;58m"+ansi.Bold, shadeBefore(t, out, `"a"`))
 	for _, p := range []color.Profile{color.ProfileANSI16, color.ProfileANSI256, color.ProfileTrueColor} {
 		look := jsonBound(t, th, p, color.Background{})
 		keys := newJSONLook(look).keys
-		assert.Equal(t, string(look.roles.accent), string(keys[0]))
-		prev := displayed(t, p, keys[0]).Contrast(look.palette.Background)
+		assert.Equal(t, string(look.Roles.Accent), string(keys[0]))
+		prev := displayed(t, p, keys[0]).Contrast(look.Palette.Background)
 		for _, k := range keys[1:] {
-			c := displayed(t, p, k).Contrast(look.palette.Background)
+			c := displayed(t, p, k).Contrast(look.Palette.Background)
 			assert.True(t, c < prev)
 			assert.True(t, c >= color.ContrastText)
 			prev = c
@@ -347,29 +349,29 @@ func TestThemedPrettyJSONExplicitAccentStaysLiteral(t *testing.T) {
 func TestThemedPrettyJSONNeutralPolicy(t *testing.T) {
 	src := `{"k":"v"}`
 	// unknown background: values keep the terminal default, brackets are bold
-	out := themedJSON(t, NewTheme(), "FORCE_COLOR=3", src)
+	out := themedJSON(t, theme.New(), "FORCE_COLOR=3", src)
 	assert.Contains(t, out, `: "v"`)
 	assert.Contains(t, out, ansi.Bold+"{")
 
 	// an estimate from COLORFGBG selects the light variant without measuring
-	out = themedJSON(t, NewTheme(), "FORCE_COLOR=3 COLORFGBG=0;15", src)
-	light := jsonBound(t, NewTheme(), color.ProfileTrueColor, color.Background{Light: true})
-	dark := jsonBound(t, NewTheme(), color.ProfileTrueColor, color.Background{})
-	assert.True(t, string(light.roles.accent) != string(dark.roles.accent))
-	assert.Equal(t, string(light.roles.accent)+ansi.Bold, shadeBefore(t, out, `"k"`))
+	out = themedJSON(t, theme.New(), "FORCE_COLOR=3 COLORFGBG=0;15", src)
+	light := jsonBound(t, theme.New(), color.ProfileTrueColor, color.Background{Light: true})
+	dark := jsonBound(t, theme.New(), color.ProfileTrueColor, color.Background{})
+	assert.True(t, string(light.Roles.Accent) != string(dark.Roles.Accent))
+	assert.Equal(t, string(light.Roles.Accent)+ansi.Bold, shadeBefore(t, out, `"k"`))
 	assert.Contains(t, out, `: "v"`)
 
 	// forcing the light variant opts the neutrals in
-	th := NewTheme()
+	th := theme.New()
 	th.Light = true
 	out = themedJSON(t, th, "FORCE_COLOR=3", src)
 	look := jsonBound(t, th, color.ProfileTrueColor, color.Background{})
-	assert.True(t, len(look.roles.foreground) > 0 && len(look.roles.muted) > 0)
-	assert.Contains(t, out, ": "+string(look.roles.foreground)+`"v"`)
-	assert.Contains(t, out, string(look.roles.muted)+"{")
+	assert.True(t, len(look.Roles.Foreground) > 0 && len(look.Roles.Muted) > 0)
+	assert.Contains(t, out, ": "+string(look.Roles.Foreground)+`"v"`)
+	assert.Contains(t, out, string(look.Roles.Muted)+"{")
 
 	// so do explicit neutrals, literally
-	th = NewTheme()
+	th = theme.New()
 	th.Palette.Dark.Foreground = "#FFE0A0"
 	th.Palette.Dark.Muted = "#888888"
 	out = themedJSON(t, th, "FORCE_COLOR=3", src)
@@ -378,7 +380,7 @@ func TestThemedPrettyJSONNeutralPolicy(t *testing.T) {
 }
 
 func TestThemedPrettyJSONDestinations(t *testing.T) {
-	th := NewTheme()
+	th := theme.New()
 	th.JSON.Indent = "\t"
 	useTheme(t, th)
 

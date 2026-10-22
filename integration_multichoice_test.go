@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
 	"reflect"
@@ -64,7 +65,7 @@ func TestMultichoicePublic(t *testing.T) {
 func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 	type service struct{ Name, Region string }
 	items := []service{{"api", "eu"}, {"worker", "us"}}
-	th := tui.NewTheme()
+	th := theme.New()
 	th.Templates.Multichoice.Answer = `ANSWER {{ .Count }}{{ range .Values }} {{ . }}{{ else }} none{{ end }}`
 	tui.UseTheme(t, th)
 	var out bytes.Buffer
@@ -82,7 +83,7 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 		t.Fatal("result aliases source slice")
 	}
 	t.Run("generated collection answer", func(t *testing.T) {
-		tui.UseTheme(t, tui.NewTheme())
+		tui.UseTheme(t, theme.New())
 		out.Reset()
 		_, err := tui.Multichoice(
 			t.Context(),
@@ -143,7 +144,7 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 
 func TestMultichoiceMapProjections(t *testing.T) {
 	values := map[string][]int{"beta": {1}, "alpha": {1}, "gamma": {3}}
-	th := tui.NewTheme()
+	th := theme.New()
 	th.Templates.Multichoice.Answer = `ANSWER {{ .Count }}{{ range .Values }} {{ . }}{{ end }}`
 	tui.UseTheme(t, th)
 	var out bytes.Buffer

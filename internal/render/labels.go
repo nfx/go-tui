@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package render
 
 import (
 	"bytes"
@@ -11,11 +11,11 @@ import (
 	"strings"
 )
 
-// choiceLabels owns the shared label contract without widget interaction state.
-type choiceLabels struct{}
+// ChoiceLabels owns the shared label contract without widget interaction state.
+type ChoiceLabels struct{}
 
-// itemLabel gives choice widgets a consistent label for display and search.
-func (d choiceLabels) itemLabel(item any) string {
+// ItemLabel gives choice widgets a consistent label for display and search.
+func (d ChoiceLabels) ItemLabel(item any) string {
 	label, ok := d.structLabel(item)
 	if ok {
 		return label
@@ -28,10 +28,10 @@ func (d choiceLabels) itemLabel(item any) string {
 }
 
 // rowLabel flattens item labels to fit single-line choice slots.
-func (d choiceLabels) rowLabel(item any) string { return ansi.Text(d.itemLabel(item)).OneLine() }
+func (d ChoiceLabels) rowLabel(item any) string { return ansi.Text(d.ItemLabel(item)).OneLine() }
 
-// plainText removes terminal styling and preserves word boundaries for ranking.
-func (choiceLabels) plainText(t ansi.Text) string {
+// PlainText removes terminal styling and preserves word boundaries for ranking.
+func (ChoiceLabels) PlainText(t ansi.Text) string {
 	var b strings.Builder
 	for seg := range t.Segments() {
 		if seg.IsText() {
@@ -44,7 +44,7 @@ func (choiceLabels) plainText(t ansi.Text) string {
 }
 
 // structLabel extracts a label from struct items using tags and common field names.
-func (d choiceLabels) structLabel(item any) (string, bool) {
+func (d ChoiceLabels) structLabel(item any) (string, bool) {
 	value, ok := d.indirectValue(reflect.ValueOf(item))
 	if !ok || value.Kind() != reflect.Struct {
 		return "", false
@@ -57,7 +57,7 @@ func (d choiceLabels) structLabel(item any) (string, bool) {
 }
 
 // stringerLabel returns String() output, including pointer-receiver methods on struct values.
-func (d choiceLabels) stringerLabel(item any) (string, bool) {
+func (d ChoiceLabels) stringerLabel(item any) (string, bool) {
 	x, ok := item.(fmt.Stringer)
 	if ok {
 		return x.String(), true
@@ -76,7 +76,7 @@ func (d choiceLabels) stringerLabel(item any) (string, bool) {
 }
 
 // annotatedStructLabel resolves fields explicitly marked as label.
-func (d choiceLabels) annotatedStructLabel(value reflect.Value) (string, bool) {
+func (d ChoiceLabels) annotatedStructLabel(value reflect.Value) (string, bool) {
 	rt := value.Type()
 	for i := range rt.NumField() {
 		field := rt.Field(i)
@@ -92,7 +92,7 @@ func (d choiceLabels) annotatedStructLabel(value reflect.Value) (string, bool) {
 }
 
 // heuristicStructLabel resolves labels from common field names.
-func (d choiceLabels) heuristicStructLabel(value reflect.Value) (string, bool) {
+func (d ChoiceLabels) heuristicStructLabel(value reflect.Value) (string, bool) {
 	rt := value.Type()
 	for _, want := range []string{
 		"label",
@@ -120,7 +120,7 @@ func (d choiceLabels) heuristicStructLabel(value reflect.Value) (string, bool) {
 }
 
 // valueLabel stringifies an annotated or heuristic field and skips empty values.
-func (d choiceLabels) valueLabel(value reflect.Value) (string, bool) {
+func (d ChoiceLabels) valueLabel(value reflect.Value) (string, bool) {
 	value, ok := d.indirectValue(value)
 	if !ok {
 		return "", false
@@ -158,14 +158,14 @@ func (d choiceLabels) valueLabel(value reflect.Value) (string, bool) {
 }
 
 // isLabelTag recognizes explicit label annotations shared by choice widgets.
-func (d choiceLabels) isLabelTag(tag reflect.StructTag) bool {
+func (d ChoiceLabels) isLabelTag(tag reflect.StructTag) bool {
 	return strings.EqualFold(strings.TrimSpace(tag.Get("header")), "label") ||
 		d.hasLabelOption(tag.Get("tui")) ||
 		strings.EqualFold(strings.TrimSpace(tag.Get("label")), "true")
 }
 
 // hasLabelOption checks whether a comma-separated tag contains "label".
-func (d choiceLabels) hasLabelOption(tag string) bool {
+func (d ChoiceLabels) hasLabelOption(tag string) bool {
 	for option := range strings.SplitSeq(tag, ",") {
 		if strings.EqualFold(strings.TrimSpace(option), "label") {
 			return true
@@ -175,7 +175,7 @@ func (d choiceLabels) hasLabelOption(tag string) bool {
 }
 
 // indirectValue dereferences interface/pointer wrappers and rejects nil values.
-func (d choiceLabels) indirectValue(value reflect.Value) (reflect.Value, bool) {
+func (d ChoiceLabels) indirectValue(value reflect.Value) (reflect.Value, bool) {
 	if !value.IsValid() {
 		return reflect.Value{}, false
 	}

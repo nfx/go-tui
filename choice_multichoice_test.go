@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
 	"reflect"
@@ -226,7 +227,7 @@ func TestMultichoiceLifecycleFailures(t *testing.T) {
 		{"primary and cleanup", choiceFailWriter{err: sentinel}, "\r", 8, restoreErr, sentinel},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			th := NewTheme()
+			th := theme.New()
 			th.Templates.Multichoice.Answer = `ANSWER {{ .Count }}`
 			useTheme(t, th)
 			m := newMultichoice(t.Context())

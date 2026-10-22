@@ -49,8 +49,8 @@ func ParseHex(s string) (rgb SRGB, err error) {
 	return rgb, nil
 }
 
-// mustHex parses a constant color and panics when it is malformed.
-func mustHex(s string) SRGB {
+// MustHex parses a constant color and panics when it is malformed.
+func MustHex(s string) SRGB {
 	rgb, err := ParseHex(s)
 	if err != nil {
 		panic(err)

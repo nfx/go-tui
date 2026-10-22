@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
 	"testing"
@@ -116,7 +117,7 @@ func TestThemedConfirmSlotPrecedence(t *testing.T) {
 	th.Templates.Dropdown.Active = `dropdown {{ .Value }}`
 	th.Templates.Dropdown.Label = `dropdown {{ .Label }}`
 	th.Templates.Confirm.Label = `{{ .Label }} [y/n]`
-	th.Templates.Confirm.Hint = Hidden
+	th.Templates.Confirm.Hint = theme.Hidden
 	o, out, _ := themedDropdownOpt(t, th, 40, "\x1b[B", "\r")
 	assert.True(t, !Confirm(t.Context(), "Sure?", o))
 	// shared and Confirm edits apply, Dropdown edits stay with the dropdown
@@ -127,7 +128,7 @@ func TestThemedConfirmSlotPrecedence(t *testing.T) {
 
 func TestThemedConfirmHiddenAnswer(t *testing.T) {
 	th := asciiTheme(false)
-	th.Templates.Confirm.Answer = Hidden
+	th.Templates.Confirm.Answer = theme.Hidden
 	o, out, _ := themedDropdownOpt(t, th, 40, "\r")
 	assert.True(t, Confirm(t.Context(), "Sure?", o))
 	assert.True(t, strings.HasSuffix(out.String(), "\x1b[3A\r"))
@@ -185,10 +186,10 @@ func TestThemedConfirmRolesMarkYesAndNoAsCompleted(t *testing.T) {
 	for _, keys := range [][]string{{"\r"}, {"\x1b[B", "\r"}} {
 		o, out, _ := themedDropdownOpt(t, th, 40, keys...)
 		Confirm(t.Context(), "Sure?", o)
-		roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), out, nil).roles
-		assert.True(t, len(roles.success) > 0 && len(roles.failure) > 0)
+		roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), out, nil).Roles
+		assert.True(t, len(roles.Success) > 0 && len(roles.Failure) > 0)
 		answer := out.String()[strings.LastIndex(out.String(), "\x1b[3A\r")+len("\x1b[3A\r"):]
-		assert.True(t, strings.HasPrefix(answer, string(roles.success)+"+"))
-		assert.True(t, !strings.Contains(answer, string(roles.failure)))
+		assert.True(t, strings.HasPrefix(answer, string(roles.Success)+"+"))
+		assert.True(t, !strings.Contains(answer, string(roles.Failure)))
 	}
 }

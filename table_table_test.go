@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"iter"
 	"math"
@@ -352,11 +353,11 @@ func mustTableRow(t *testing.T, ev tableEvent) tableRow {
 // middle level is the foreground, which the Cell slot also uses.
 func scaleSGR(t *testing.T) []string {
 	t.Helper()
-	th := NewTheme()
+	th := theme.New()
 	th.Light = true
 	themedTable(t, th, "FORCE_COLOR=3")
 	var levels []string
-	for _, c := range defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), &bytes.Buffer{}, nil).diverging() {
+	for _, c := range defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), &bytes.Buffer{}, nil).Diverging() {
 		assert.True(t, !slices.Contains(levels, string(c)))
 		levels = append(levels, string(c))
 	}
@@ -673,7 +674,7 @@ var factsData = factsRow{Left: "left", Count: 7, Right: "x", Owner: Person{"Alic
 
 func TestTableRemovedColorNamesNameTheirTemplate(t *testing.T) {
 	type row struct{ Name string }
-	themedTable(t, NewTheme())
+	themedTable(t, theme.New())
 	err := Table(&bytes.Buffer{}, `{{ red .Name }}`, []row{{"a"}})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), `row template:1: function "red" not defined`)

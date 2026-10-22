@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/render"
 	"io"
 	"unicode/utf8"
 )
@@ -24,14 +25,14 @@ type input struct {
 	// through it, and run binds it to the destination: look holds the
 	// binding, label the label rendered once with it, answer and feedback the
 	// bound slots of the prompt family.
-	theme            *compiledTheme
-	look             binding
+	theme            *render.Compiled
+	look             render.Binding
 	label, hint      ansi.Text
-	answer, feedback boundSlot
+	answer, feedback render.BoundSlot
 	// numeric selects the Number slots of the theme.
 	numeric bool
 	// keys are the bindings beyond editing that the hint row describes.
-	keys []hint
+	keys []render.Hint
 
 	def defaultValue
 	// rules validate the confirmed text in order; the first error rejects it.

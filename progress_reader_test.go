@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"log/slog"
 	"strings"
@@ -220,7 +221,7 @@ func TestThemedFileProgressZeroSize(t *testing.T) {
 }
 
 func TestThemedFileProgressRenderError(t *testing.T) {
-	th := NewTheme()
+	th := theme.New()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
 	th.Templates.Progress.Hint = `{{ boom }}`
 	src := &scriptedFile{size: 100, reads: []fileRead{{30, nil}, {20, nil}}}
@@ -241,7 +242,7 @@ func TestThemedFileProgressRenderError(t *testing.T) {
 }
 
 func TestThemedFileProgressLogsWithoutTerminal(t *testing.T) {
-	th := NewTheme()
+	th := theme.New()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
 	th.Templates.Progress.Label = `{{ boom }}`
 	th.Templates.Progress.Metrics = `{{ boom }}`

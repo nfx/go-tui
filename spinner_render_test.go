@@ -110,13 +110,13 @@ func TestThemedSpinnerRoles(t *testing.T) {
 	failed.Fail(errors.New("no"))
 	tick()
 	out := <-frames
-	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), s.out, nil).roles
-	assert.True(t, len(roles.accent) > 0 && len(roles.muted) > 0 && len(roles.failure) > 0)
-	assert.Contains(t, out, string(roles.accent)+"*")
-	assert.Contains(t, out, string(roles.muted)+"-")
-	assert.Contains(t, out, string(roles.failure)+"!")
+	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), s.out, nil).Roles
+	assert.True(t, len(roles.Accent) > 0 && len(roles.Muted) > 0 && len(roles.Failure) > 0)
+	assert.Contains(t, out, string(roles.Accent)+"*")
+	assert.Contains(t, out, string(roles.Muted)+"-")
+	assert.Contains(t, out, string(roles.Failure)+"!")
 	// Close is not success
-	assert.True(t, !strings.Contains(out, string(roles.success)))
+	assert.True(t, !strings.Contains(out, string(roles.Success)))
 }
 
 func TestThemedSpinnerRenderErrorEndsGroup(t *testing.T) {

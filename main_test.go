@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
 	"testing"
@@ -41,13 +42,13 @@ func TestMain(m *testing.M) {
 
 // UseTheme installs th and routes migrated widgets through it for the test,
 // for the external test package.
-func UseTheme(t *testing.T, th Theme) {
+func UseTheme(t *testing.T, th theme.Theme) {
 	t.Helper()
 	useTheme(t, th)
 }
 
 // ASCIISymbols replace the presets on terminals without the Unicode glyphs.
-var ASCIISymbols = asciiSymbols
+var ASCIISymbols = theme.New().Symbols.ASCII()
 
 // WithEnv installs an output environment fixture built from KEY=VALUE pairs.
 func WithEnv(t *testing.T, pairs ...string) {

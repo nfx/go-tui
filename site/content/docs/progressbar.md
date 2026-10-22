@@ -170,11 +170,11 @@ hint, it receives a list of entries, each with `.Left` and `.Right`, such as
 `6.2` and `MiB/s`. It does not inherit from `Templates.Prompt.Hint`.
 
 ```go
-theme := tui.NewTheme()
-theme.Templates.Progress.Hint = `{{ range . }}[{{ .Left }} {{ .Right }}] {{ end }}`
+th := theme.New()
+th.Templates.Progress.Hint = `{{ range . }}[{{ .Left }} {{ .Right }}] {{ end }}`
 ```
 
-Set it to `tui.Hidden` to keep only the bar row.
+Set it to `theme.Hidden` to keep only the bar row.
 
 ### Compact layout
 
@@ -190,9 +190,9 @@ In the stacked layout, `Templates.Progress.Frame` receives an empty
 working once it selects the compact layout:
 
 ```go
-theme := tui.NewTheme()
-theme.Progress.Compact = true
-theme.Templates.Progress.Frame = `{{ .Label }} [{{ .Bar }}] {{ .Metrics }}`
+th := theme.New()
+th.Progress.Compact = true
+th.Templates.Progress.Frame = `{{ .Label }} [{{ .Bar }}] {{ .Metrics }}`
 ```
 
 `Templates.Progress.Metrics` applies to the compact layout only, and

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/theme"
 	"testing"
 	"time"
 
@@ -76,7 +77,7 @@ func TestProgressbarStacksOnTwoRowTerminal(t *testing.T) {
 
 func TestSpinnerUpdatesAfterCompletion(t *testing.T) {
 	term := newTerminal(t, 6)
-	th := tui.NewTheme()
+	th := theme.New()
 	th.Symbols.Spinner = []string{"-"}
 	tui.UseTheme(t, th)
 	s, err := tui.NewSpinners(t.Context())

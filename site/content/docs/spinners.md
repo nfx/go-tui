@@ -121,9 +121,9 @@ around the four quadrants of the cell (`▘▀▝▐▗▄▖▌`) and terminals
 Unicode glyphs show `|/-\`.
 
 ```go
-theme := tui.DefaultTheme()
-theme.Symbols.Spinner = []string{"-", "\\", "|", "/"}
-err := tui.SetDefaultTheme(theme)
+th := tui.DefaultTheme()
+th.Symbols.Spinner = []string{"-", "\\", "|", "/"}
+err := tui.SetDefaultTheme(th)
 ```
 
 - Frames are cycled in order on each tick, every `Theme.Spinner.Interval`

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
 	"sync/atomic"
@@ -93,7 +95,7 @@ func TestThemedProgressBarWidthBounds(t *testing.T) {
 }
 
 func TestThemedProgressHeadMarksPartialCell(t *testing.T) {
-	l := &progressLook{style: progressStyle, symbols: asciiSymbols}
+	l := &progressLook{style: theme.New().Progress, symbols: theme.New().Symbols.ASCII()}
 	l.symbols.BarEmpty = "."
 	for _, tc := range []struct {
 		completion float64
@@ -194,8 +196,8 @@ func TestThemedProgressView(t *testing.T) {
 func TestThemedProgressHiddenSlots(t *testing.T) {
 	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
 	th := compactTheme()
-	th.Templates.Progress.Label = Hidden
-	th.Templates.Progress.Metrics = Hidden
+	th.Templates.Progress.Label = theme.Hidden
+	th.Templates.Progress.Metrics = theme.Hidden
 	p := themedBar(t, th, halfDone(now))
 	row, err := p.row(16, now)
 	assert.NoError(t, err)
@@ -207,7 +209,7 @@ func TestThemedProgressHiddenSlots(t *testing.T) {
 	row, err = p.row(16, now)
 	assert.NoError(t, err)
 	assert.Equal(t, "50%  =====>-----\n50 / 100 items", row.String())
-	th.Templates.Progress.Hint = Hidden
+	th.Templates.Progress.Hint = theme.Hidden
 	p = themedBar(t, th, halfDone(now))
 	row, err = p.row(16, now)
 	assert.NoError(t, err)
@@ -224,7 +226,7 @@ func TestThemedProgressFrameErrors(t *testing.T) {
 	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
 	for _, tc := range []struct {
 		funcs template.FuncMap
-		frame Template
+		frame theme.Template
 		want  string
 	}{
 		{
@@ -240,7 +242,7 @@ func TestThemedProgressFrameErrors(t *testing.T) {
 			`{{ erase }}{{ .Bar }}`, `theme.Templates.Progress.Frame: "\x1b[2K": want text and SGR only`,
 		},
 	} {
-		th := NewTheme()
+		th := theme.New()
 		th.Funcs = tc.funcs
 		th.Templates.Progress.Frame = tc.frame
 		p := themedBar(t, th, halfDone(now))
@@ -252,13 +254,13 @@ func TestThemedProgressFrameErrors(t *testing.T) {
 
 func TestThemedProgressRoles(t *testing.T) {
 	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
-	th := NewTheme()
+	th := theme.New()
 	th.Light = true
-	c, err := th.compile()
+	c, err := render.Compile(th)
 	assert.NoError(t, err)
-	look := c.bind(color.ProfileTrueColor, color.Background{Light: true})
-	roles := look.roles
-	assert.True(t, len(roles.accent) > 0 && len(roles.guide) > 0 && len(roles.muted) > 0 && len(roles.foreground) > 0)
+	look := c.Bind(color.ProfileTrueColor, color.Background{Light: true})
+	roles := look.Roles
+	assert.True(t, len(roles.Accent) > 0 && len(roles.Guide) > 0 && len(roles.Muted) > 0 && len(roles.Foreground) > 0)
 	p := &Progressbar{progressState: halfDone(now), label: ansi.Text("build"), theme: c}
 	p.look, err = p.bind(look)
 	assert.NoError(t, err)
@@ -266,22 +268,22 @@ func TestThemedProgressRoles(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(rows))
 	bar, hint := rows[0].String(), rows[1].String()
-	assert.Contains(t, bar, string(roles.foreground)+"build")
-	assert.Contains(t, bar, string(roles.accent)+"50% ")
-	assert.Contains(t, bar, string(roles.accent)+strings.Repeat("━", 24)+color.FgDefault+
-		string(roles.guide)+strings.Repeat("─", 24)+color.FgDefault)
+	assert.Contains(t, bar, string(roles.Foreground)+"build")
+	assert.Contains(t, bar, string(roles.Accent)+"50% ")
+	assert.Contains(t, bar, string(roles.Accent)+strings.Repeat("━", 24)+color.FgDefault+
+		string(roles.Guide)+strings.Repeat("─", 24)+color.FgDefault)
 	// the hint sets the values apart from their units and separators
 	assert.Contains(
 		t,
 		hint,
-		string(roles.accent)+"50 / 100"+color.FgDefault+" "+string(roles.guide)+"items"+color.FgDefault,
+		string(roles.Accent)+"50 / 100"+color.FgDefault+" "+string(roles.Guide)+"items"+color.FgDefault,
 	)
-	assert.Contains(t, hint, string(roles.guide)+" · "+color.FgDefault+string(roles.accent)+"50.00"+color.FgDefault)
+	assert.Contains(t, hint, string(roles.Guide)+" · "+color.FgDefault+string(roles.Accent)+"50.00"+color.FgDefault)
 	assert.Equal(t, "50 / 100 items · 50.00 items/s · 1s left · 1s elapsed", stripSGR(hint))
 	// running work is not a success or a failure
 	for _, row := range rows {
 		out := row.String()
-		assert.True(t, !strings.Contains(out, string(roles.success)) && !strings.Contains(out, string(roles.failure)))
+		assert.True(t, !strings.Contains(out, string(roles.Success)) && !strings.Contains(out, string(roles.Failure)))
 	}
 	assert.Equal(t, 60, rows[0].Width())
 }
@@ -407,7 +409,7 @@ func TestThemedProgressRenderErrorEndsBar(t *testing.T) {
 }
 
 func TestThemedProgressWriteErrorEndsBar(t *testing.T) {
-	useTheme(t, NewTheme())
+	useTheme(t, theme.New())
 	restored := false
 	p, err := NewMaxProgressBar(t.Context(), "build", 10, opT(func(pb *Progressbar) error {
 		pb.ticks = time.After(0)
@@ -427,7 +429,7 @@ func TestThemedProgressWriteErrorEndsBar(t *testing.T) {
 }
 
 func TestThemedProgressWithoutTerminal(t *testing.T) {
-	th := NewTheme()
+	th := theme.New()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
 	th.Templates.Progress.Label = `{{ boom }}`
 	th.Templates.Progress.Metrics = `{{ boom }}`

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"log/slog"
 	"os"
@@ -418,7 +419,7 @@ func (w frameWriter) Write(p []byte) (int, error) {
 // themedSpinners is a spinner group rendering through th on a terminal of the
 // given width, with manual ticks. Each write is one receive from frames.
 // restored reports a released terminal.
-func themedSpinners(t *testing.T, th Theme, width int, o ...opt) (*Spinners, frameWriter, func(), *atomic.Bool) {
+func themedSpinners(t *testing.T, th theme.Theme, width int, o ...opt) (*Spinners, frameWriter, func(), *atomic.Bool) {
 	t.Helper()
 	useTheme(t, th)
 	restored := &atomic.Bool{}

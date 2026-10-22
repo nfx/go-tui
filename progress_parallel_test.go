@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
 	"sync"
@@ -326,7 +327,7 @@ func TestThemedParallelProgressCancel(t *testing.T) {
 }
 
 func TestThemedParallelProgressRenderError(t *testing.T) {
-	th := NewTheme()
+	th := theme.New()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
 	th.Templates.Progress.Label = `{{ if eq .Current 1 }}{{ boom }}{{ end }}{{ .Label }}`
 	useTheme(t, th)

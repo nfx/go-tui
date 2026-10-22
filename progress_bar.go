@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/render"
 	"io"
 	"log/slog"
 	"sync"
@@ -103,7 +104,7 @@ type Progressbar struct {
 	loggedPercent int
 
 	// theme is captured with the bar; look binds it to the destination.
-	theme *compiledTheme
+	theme *render.Compiled
 	look  *progressLook
 }
 

@@ -6,6 +6,8 @@ package tui
 import (
 	"context"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
 	"reflect"
@@ -33,32 +35,32 @@ type tio struct {
 	bgMu sync.Mutex
 	// theme is the installed snapshot, set only on defaultIO. Renderers load
 	// it without locking.
-	theme atomic.Pointer[compiledTheme]
+	theme atomic.Pointer[render.Compiled]
 	// themeMu serializes installations, so that an edit of the installed
 	// theme cannot lose a concurrent one. It is never held while rendering.
 	themeMu sync.Mutex
 }
 
-func (t *tio) currentTheme() *compiledTheme { return t.theme.Load() }
+func (t *tio) currentTheme() *render.Compiled { return t.theme.Load() }
 
 // installTheme replaces the configuration and custom helpers only after validation.
-func (t *tio) installTheme(th Theme) error {
+func (t *tio) installTheme(th theme.Theme) error {
 	t.themeMu.Lock()
 	defer t.themeMu.Unlock()
 	return t.storeThemeLocked(th)
 }
 
 // updateTheme serializes edits to the installed configuration to prevent lost updates.
-func (t *tio) updateTheme(edit func(*Theme)) error {
+func (t *tio) updateTheme(edit func(*theme.Theme)) error {
 	t.themeMu.Lock()
 	defer t.themeMu.Unlock()
-	th := t.currentTheme().editable()
+	th := t.currentTheme().Editable()
 	edit(&th)
 	return t.storeThemeLocked(th)
 }
 
 // storeThemeLocked publishes a validated theme while the caller holds themeMu.
-func (t *tio) storeThemeLocked(th Theme) error {
+func (t *tio) storeThemeLocked(th theme.Theme) error {
 	c, err := t.compileTheme(th)
 	if err != nil {
 		return err
@@ -69,12 +71,12 @@ func (t *tio) storeThemeLocked(th Theme) error {
 
 // compileTheme compiles th for the terminal of the process: without the
 // Unicode symbols in the environment, the presets become ASCII.
-func (t *tio) compileTheme(th Theme) (*compiledTheme, error) {
-	c, err := th.compile()
+func (t *tio) compileTheme(th theme.Theme) (*render.Compiled, error) {
+	c, err := render.Compile(th)
 	if err != nil || t.env.hasUnicode() {
 		return c, err
 	}
-	c.source.Symbols = c.source.Symbols.ascii()
+	c.Source.Symbols = c.Source.Symbols.ASCII()
 	return c, nil
 }
 
@@ -87,7 +89,7 @@ func newDefaultIO() *tio {
 		writer: os.Stderr,
 		env:    readOutputEnv(os.LookupEnv),
 	}
-	c, err := t.compileTheme(NewTheme())
+	c, err := t.compileTheme(theme.New())
 	if err != nil {
 		panic(err) // the preset is valid
 	}
@@ -239,17 +241,17 @@ func (t *tio) background(ctx context.Context, tt *termIO, hint color.Background)
 // before it starts reading keys; other operations reuse a completed
 // detection of the route they draw on, or estimate it from the environment.
 // A forced light variant and a destination without color detect nothing.
-func (t *tio) bindTheme(ctx context.Context, c *compiledTheme, out io.Writer, tt *termIO) binding {
+func (t *tio) bindTheme(ctx context.Context, c *render.Compiled, out io.Writer, tt *termIO) render.Binding {
 	p := t.profileFor(out)
 	var bg color.Background
 	switch {
-	case c.source.Light, p < color.ProfileANSI16:
+	case c.Source.Light, p < color.ProfileANSI16:
 	case tt != nil:
 		bg = t.background(ctx, tt, t.env.bgHint)
 	default:
 		bg = t.routeBackground(out)
 	}
-	return c.bind(p, bg)
+	return c.Bind(p, bg)
 }
 
 // routeBackground is the cached detection of the current route when out

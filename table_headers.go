@@ -157,7 +157,7 @@ func (t *table) formatterTemplate(fnName string, meta *fieldMetadata) string {
 // templateFuncs merges shared color functions with per-table formatter
 // functions, bound to the writer of the table.
 func (t *table) templateFuncs() template.FuncMap {
-	shared := t.look.funcs
+	shared := t.look.Funcs
 	funcs := make(template.FuncMap, len(shared)+len(t.customTemplateFuncs)+2)
 	maps.Copy(funcs, shared)
 	funcs["tableString"] = tableString

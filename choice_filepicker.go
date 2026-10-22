@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/render"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -22,8 +23,8 @@ type filePicker struct {
 
 	// theme is captured once per invocation for the dropdowns of every
 	// directory; look is the binding of the latest one that bound.
-	theme *compiledTheme
-	look  binding
+	theme *render.Compiled
+	look  render.Binding
 }
 
 func (f *filePicker) list(dir string) ([]os.DirEntry, error) {
@@ -104,7 +105,7 @@ func (f *filePicker) step(
 	if err != nil {
 		return nil, err
 	}
-	if d.look.theme != nil {
+	if d.look.Theme != nil {
 		f.look = d.look
 	}
 	return entries[i], nil
@@ -128,7 +129,7 @@ func (f *filePicker) nextDropdown(ctx context.Context, o []opt) (*dropdown, erro
 // appearance.
 func (f *filePicker) adopt(d *dropdown) {
 	d.theme, d.inherit = f.theme, f.look
-	d.family = f.theme.templates.FilePicker
+	d.family = f.theme.Templates.FilePicker
 }
 
 // viewIn presents the entries of dir to the theme slots.

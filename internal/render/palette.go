@@ -1,18 +1,19 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package render
 
 import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/theme"
 	"strings"
 )
 
-// resolvedPalette is a palette for one destination: the selected variant,
+// ResolvedPalette is a palette for one destination: the selected variant,
 // adjusted for readability against the effective background. It is
 // computed from, and never written back to, the caller's [Palette].
-type resolvedPalette struct {
+type ResolvedPalette struct {
 	Light      bool // the variant that was selected
 	Background color.SRGB
 	// Known reports whether Background was measured rather than assumed
@@ -39,10 +40,10 @@ type slot struct {
 type parsedVariant struct {
 	foreground slot
 	reference  slot
-	accent     slot
+	Accent     slot
 	success    slot
 	err        slot
-	muted      slot
+	Variant    slot
 	guide      slot
 }
 
@@ -55,13 +56,13 @@ type parsedPalette struct {
 	dark    parsedVariant
 }
 
-// parse fills empty required fields from the preset and parses every color
+// parsePalette fills empty required fields from the preset and parses every color
 // once. The error names the theme path of the first malformed value.
-func (p Palette) parse() (out parsedPalette, err error) {
+func parsePalette(p theme.Palette) (out parsedPalette, err error) {
 	for _, f := range []struct {
 		path   string
-		c      RGB
-		preset RGB // empty for optional fields
+		c      theme.RGB
+		preset theme.RGB // empty for optional fields
 		dst    *slot
 	}{
 		{"Accent", p.Accent, "#00ADD8", &out.accent},
@@ -69,20 +70,20 @@ func (p Palette) parse() (out parsedPalette, err error) {
 		{"Error", p.Error, "#C83741", &out.err},
 		{"Light.Foreground", p.Light.Foreground, "#232830", &out.light.foreground},
 		{"Light.ReferenceBackground", p.Light.ReferenceBackground, "#FFFFFF", &out.light.reference},
-		{"Light.Accent", p.Light.Accent, "", &out.light.accent}, {"Light.Success", p.Light.Success, "", &out.light.success},
-		{"Light.Error", p.Light.Error, "", &out.light.err}, {"Light.Muted", p.Light.Muted, "", &out.light.muted},
+		{"Light.Accent", p.Light.Accent, "", &out.light.Accent}, {"Light.Success", p.Light.Success, "", &out.light.success},
+		{"Light.Error", p.Light.Error, "", &out.light.err}, {"Light.Muted", p.Light.Muted, "", &out.light.Variant},
 		{"Light.Guide", p.Light.Guide, "", &out.light.guide},
 		{"Dark.Foreground", p.Dark.Foreground, "#E1E6EE", &out.dark.foreground},
 		{"Dark.ReferenceBackground", p.Dark.ReferenceBackground, "#121212", &out.dark.reference},
-		{"Dark.Accent", p.Dark.Accent, "", &out.dark.accent}, {"Dark.Success", p.Dark.Success, "", &out.dark.success},
-		{"Dark.Error", p.Dark.Error, "", &out.dark.err}, {"Dark.Muted", p.Dark.Muted, "", &out.dark.muted},
+		{"Dark.Accent", p.Dark.Accent, "", &out.dark.Accent}, {"Dark.Success", p.Dark.Success, "", &out.dark.success},
+		{"Dark.Error", p.Dark.Error, "", &out.dark.err}, {"Dark.Muted", p.Dark.Muted, "", &out.dark.Variant},
 		{"Dark.Guide", p.Dark.Guide, "", &out.dark.guide},
 	} {
 		src := f.c
 		if src == "" {
 			src = f.preset
 		}
-		rgb, err := src.parse()
+		rgb, err := parseRGB(src)
 		if err != nil {
 			return out, fmt.Errorf("theme.Palette.%s: %w", f.path, err)
 		}
@@ -91,7 +92,7 @@ func (p Palette) parse() (out parsedPalette, err error) {
 	return out, nil
 }
 
-// resolve selects the variant and derives every role. With a measured
+// resolvePalette selects the variant and derives every role. With a measured
 // background (known), the variant follows its luminance; otherwise it is
 // light when asked and the variant's reference background is the context.
 //
@@ -100,17 +101,17 @@ func (p Palette) parse() (out parsedPalette, err error) {
 // per-variant override is always rendered literally, and so is a Foreground
 // the caller set; the preset Foreground is moved like a seed. Derived roles
 // come from the rendered colors, not from the raw seeds.
-func (p Palette) resolve(light bool, measured color.SRGB, known bool) (resolvedPalette, error) {
-	pp, err := p.parse()
+func resolvePalette(p theme.Palette, light bool, measured color.SRGB, known bool) (ResolvedPalette, error) {
+	pp, err := parsePalette(p)
 	if err != nil {
-		return resolvedPalette{}, err
+		return ResolvedPalette{}, err
 	}
-	return pp.resolve(light, measured, known), nil
+	return pp.Resolve(light, measured, known), nil
 }
 
-// resolve is [Palette.resolve] for a palette that was parsed once, as a
+// Resolve is [Palette.Resolve] for a palette that was parsed once, as a
 // compiled theme holds it. It cannot fail.
-func (pp parsedPalette) resolve(light bool, measured color.SRGB, known bool) resolvedPalette {
+func (pp parsedPalette) Resolve(light bool, measured color.SRGB, known bool) ResolvedPalette {
 	if known {
 		light = measured.IsLight()
 	}
@@ -138,15 +139,15 @@ func (pp parsedPalette) resolve(light bool, measured color.SRGB, known bool) res
 		}
 		return fg.Quieter(bg, target)
 	}
-	out := resolvedPalette{
+	out := ResolvedPalette{
 		Light:      light,
 		Background: bg,
 		Known:      known,
 		Foreground: fg,
-		Accent:     seed(v.accent, pp.accent, color.ContrastText),
+		Accent:     seed(v.Accent, pp.accent, color.ContrastText),
 		Success:    seed(v.success, pp.success, color.ContrastMark),
 		Error:      seed(v.err, pp.err, color.ContrastText),
-		Muted:      quiet(v.muted, color.ContrastText),
+		Muted:      quiet(v.Variant, color.ContrastText),
 		Guide:      quiet(v.guide, color.ContrastGuide),
 	}
 	out.Track = out.Guide
@@ -154,7 +155,7 @@ func (pp parsedPalette) resolve(light bool, measured color.SRGB, known bool) res
 }
 
 // String is for diagnostics and golden comparisons.
-func (r resolvedPalette) String() string {
+func (r ResolvedPalette) String() string {
 	var b strings.Builder
 	for _, f := range []struct {
 		name string
@@ -166,4 +167,12 @@ func (r resolvedPalette) String() string {
 		fmt.Fprintf(&b, "%s=%s ", f.name, f.c.Hex())
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// parseRGB parses a palette color; the empty (unset) color parses to zero bytes.
+func parseRGB(c theme.RGB) (color.SRGB, error) {
+	if c == "" {
+		return color.SRGB{}, nil
+	}
+	return color.ParseHex(string(c))
 }

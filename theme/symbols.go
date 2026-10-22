@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package theme
 
 import (
 	"errors"
@@ -13,7 +13,7 @@ import (
 
 // Symbols are the glyphs the built-in templates and renderers use. Every
 // symbol is a single display column. An empty field takes the Unicode preset.
-type Symbols struct {
+type Symbols struct { //nolint:recvcheck // fields hands out pointers into its receiver
 	Prompt    string
 	Focus     string
 	Guide     string
@@ -104,8 +104,8 @@ type symbolField struct {
 	glyph *string
 }
 
-// symbolFields lists the single-glyph fields of s in declaration order.
-func symbolFields(s *Symbols) []symbolField {
+// fields lists the single-glyph fields of s in declaration order.
+func (s *Symbols) fields() []symbolField {
 	return []symbolField{
 		{"Prompt", &s.Prompt},
 		{"Focus", &s.Focus},
@@ -130,8 +130,8 @@ func symbolFields(s *Symbols) []symbolField {
 
 func (s Symbols) normalize() (Symbols, error) {
 	def := unicodeSymbols
-	defs := symbolFields(&def)
-	for i, f := range symbolFields(&s) {
+	defs := def.fields()
+	for i, f := range s.fields() {
 		if *f.glyph == "" {
 			*f.glyph = *defs[i].glyph
 		}
@@ -153,13 +153,13 @@ func (s Symbols) normalize() (Symbols, error) {
 	return s, nil
 }
 
-// ascii replaces every Unicode preset symbol of s with its counterpart in
+// ASCII replaces every Unicode preset symbol of s with its counterpart in
 // [asciiSymbols], and keeps the symbols the theme chose itself.
-func (s Symbols) ascii() Symbols {
+func (s Symbols) ASCII() Symbols {
 	s = s.clone()
 	def, alt := unicodeSymbols, asciiSymbols.clone()
-	defs, alts := symbolFields(&def), symbolFields(&alt)
-	for i, f := range symbolFields(&s) {
+	defs, alts := def.fields(), alt.fields()
+	for i, f := range s.fields() {
 		if *f.glyph == *defs[i].glyph {
 			*f.glyph = *alts[i].glyph
 		}
@@ -186,3 +186,17 @@ func (Symbols) singleColumn(s string) error {
 	}
 	return nil
 }
+
+// Named returns the glyph of the field called name, such as "Prompt" or "Up".
+// It is the lookup behind the symbol template helper.
+func (s Symbols) Named(name string) (string, error) {
+	for _, f := range s.fields() {
+		if f.name == name {
+			return *f.glyph, nil
+		}
+	}
+	return "", fmt.Errorf("symbol %q: no such symbol", name)
+}
+
+// Arrows names the up and down arrow keys in key hints.
+func (s Symbols) Arrows() ansi.Text { return ansi.Text(s.Up + s.Down) }

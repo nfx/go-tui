@@ -197,12 +197,12 @@ unless a family slot overrides them.
 | `Templates.Dropdown.Answer` | `.Label`, `.Value` | the confirmation line |
 
 ```go
-theme := tui.DefaultTheme()
-theme.Templates.Dropdown.Label = `{{ accent "Select:" }} {{ bold .Label }}`
-theme.Templates.Dropdown.Active = `{{ success .Value }}`
-theme.Templates.Dropdown.Hint = `{{ range . }}{{ .Left }}={{ .Right }} {{ end }}`
-theme.Templates.Dropdown.Answer = `{{ success "selected:" }} {{ .Value }}`
-if err := tui.SetDefaultTheme(theme); err != nil {
+th := tui.DefaultTheme()
+th.Templates.Dropdown.Label = `{{ accent "Select:" }} {{ bold .Label }}`
+th.Templates.Dropdown.Active = `{{ success .Value }}`
+th.Templates.Dropdown.Hint = `{{ range . }}{{ .Left }}={{ .Right }} {{ end }}`
+th.Templates.Dropdown.Answer = `{{ success "selected:" }} {{ .Value }}`
+if err := tui.SetDefaultTheme(th); err != nil {
 	return err
 }
 city, err := tui.Dropdown(ctx, "City", cities)

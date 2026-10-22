@@ -9,30 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/theme"
 	"math"
 	"slices"
 	"strings"
 	"time"
 )
-
-// progressPercent is the completion of a bar left-aligned in four columns,
-// or the Unknown symbol without a total.
-const progressPercent = `{{ if gt .Total 0 }}{{ accent (printf "%-4s" (printf "%d%%" .Percent)) }}` +
-	`{{ else }}{{ accent (printf "%-4s" (symbol "Unknown")) }}{{ end }}`
-
-// stackedProgressFrame is the built-in frame of bars that are not
-// [ProgressStyle.Compact], which sets the label apart from the percentage.
-const stackedProgressFrame = `{{ with .Label }}{{ . }}  {{ end }}` + progressPercent +
-	` {{ .Bar }}{{ with .Metrics }} {{ . }}{{ end }}`
-
-// builtins returns the built-in templates with the frame of the layout.
-func (s ProgressStyle) builtins() Templates {
-	t := builtinTemplates
-	if !s.Compact {
-		t.Progress.Frame = stackedProgressFrame
-	}
-	return t
-}
 
 // progressView is the data of every progress slot but Hint, from one
 // snapshot of the state. Rate, Remaining and Elapsed are empty when dropped
@@ -64,7 +47,7 @@ type progressView struct {
 	// Hints are the shown metrics as pairs of a value and its unit, in the
 	// same order, led by the count of a counted bar with a total. The Hint
 	// slot renders them.
-	Hints hintView
+	Hints render.HintView
 }
 
 // progressMetric is one metric of a snapshot: its value for the legacy
@@ -75,7 +58,7 @@ type progressMetric struct {
 	kind  progressMetricKind
 	value string
 	shown string
-	pair  hint
+	pair  render.Hint
 }
 
 // progressMetricKind names the legacy field of a metric.
@@ -101,7 +84,7 @@ func (p *Progressbar) metrics(rate float64) []progressMetric {
 		}
 		ms = append(ms, progressMetric{kind: amountMetric, value: amount, shown: amount, pair: p.amountPair()})
 	case p.maxNum > 0:
-		count := hint{Left: ansi.Text(fmt.Sprintf("%d / %d", p.currentNum, p.maxNum)), Right: ansi.Text("items")}
+		count := render.Hint{Left: ansi.Text(fmt.Sprintf("%d / %d", p.currentNum, p.maxNum)), Right: ansi.Text("items")}
 		ms = append(ms, progressMetric{pair: count})
 	}
 	if p.showRate {
@@ -111,14 +94,14 @@ func (p *Progressbar) metrics(rate float64) []progressMetric {
 		d := p.remainingSeconds(rate).String()
 		ms = append(ms, progressMetric{
 			kind: remainingMetric, value: d, shown: d + " remaining",
-			pair: hint{Left: ansi.Text(d), Right: ansi.Text("left")},
+			pair: render.Hint{Left: ansi.Text(d), Right: ansi.Text("left")},
 		})
 	}
 	if p.showElapsed {
 		d := p.elapsed.Truncate(time.Second).String()
 		ms = append(ms, progressMetric{
 			kind: elapsedMetric, value: d, shown: d + " elapsed",
-			pair: hint{Left: ansi.Text(d), Right: ansi.Text("elapsed")},
+			pair: render.Hint{Left: ansi.Text(d), Right: ansi.Text("elapsed")},
 		})
 	}
 	return ms
@@ -126,16 +109,16 @@ func (p *Progressbar) metrics(rate float64) []progressMetric {
 
 // amountPair is the bytes read and the size of a file. Amounts in one unit
 // share it; otherwise each keeps its own, and the pair has no right side.
-func (p *Progressbar) amountPair() hint {
+func (p *Progressbar) amountPair() render.Hint {
 	read, unit := p.byteParts(float64(p.currentNum))
 	if p.maxNum <= 0 {
-		return hint{Left: ansi.Text(read), Right: ansi.Text(unit)}
+		return render.Hint{Left: ansi.Text(read), Right: ansi.Text(unit)}
 	}
 	size, sizeUnit := p.byteParts(float64(p.maxNum))
 	if unit != sizeUnit {
-		return hint{Left: ansi.Text(read + " " + unit + " / " + size + " " + sizeUnit)}
+		return render.Hint{Left: ansi.Text(read + " " + unit + " / " + size + " " + sizeUnit)}
 	}
-	return hint{Left: ansi.Text(read + " / " + size), Right: ansi.Text(unit)}
+	return render.Hint{Left: ansi.Text(read + " / " + size), Right: ansi.Text(unit)}
 }
 
 // rateMetric is the rate of the bar: bytes per second for a file, unless
@@ -146,7 +129,7 @@ func (p *Progressbar) rateMetric(rate float64) progressMetric {
 		shown := value + " " + unit
 		return progressMetric{
 			kind: rateMetric, value: shown, shown: shown + "/s",
-			pair: hint{Left: ansi.Text(value), Right: ansi.Text(unit + "/s")},
+			pair: render.Hint{Left: ansi.Text(value), Right: ansi.Text(unit + "/s")},
 		}
 	}
 	value := ansi.Text(p.formatRate(rate)).OneLine()
@@ -156,7 +139,7 @@ func (p *Progressbar) rateMetric(rate float64) progressMetric {
 	}
 	return progressMetric{
 		kind: rateMetric, value: value, shown: value + "/s",
-		pair: hint{Left: ansi.Text(value), Right: ansi.Text(right)},
+		pair: render.Hint{Left: ansi.Text(value), Right: ansi.Text(right)},
 	}
 }
 
@@ -212,11 +195,11 @@ func (p *Progressbar) rows(width, height int, now time.Time) ([]ansi.Text, error
 func (p *Progressbar) compact(width int, ms []progressMetric) (ansi.Text, error) {
 	for n := len(ms); n >= 0; n-- {
 		v := p.view(ms[:n])
-		label, err := p.look.label.render(v)
+		label, err := p.look.label.Render(v)
 		if err != nil {
 			return nil, err
 		}
-		metrics, err := p.look.metrics.render(v)
+		metrics, err := p.look.metrics.Render(v)
 		if err != nil {
 			return nil, err
 		}
@@ -244,7 +227,7 @@ func (p *Progressbar) stacked(width int, ms []progressMetric) ([]ansi.Text, erro
 		return nil, err
 	}
 	v := p.view(ms[:n])
-	label, err := p.look.label.render(v)
+	label, err := p.look.label.Render(v)
 	if err != nil {
 		return nil, err
 	}
@@ -302,10 +285,10 @@ const progressBarMark = "\x00"
 
 // progressLook is the theme of one bar, bound to its destination.
 type progressLook struct {
-	binding                     binding
-	style                       ProgressStyle
-	symbols                     Symbols
-	label, metrics, hint, frame boundSlot
+	binding                     render.Binding
+	style                       theme.ProgressStyle
+	symbols                     theme.Symbols
+	label, metrics, hint, frame render.BoundSlot
 }
 
 // bindLook binds the captured theme to the output of the bar. Output
@@ -316,14 +299,14 @@ func (p *Progressbar) bindLook(ctx context.Context) (err error) {
 }
 
 // bind attaches the destination helpers of look to every progress slot.
-func (p *Progressbar) bind(look binding) (*progressLook, error) {
-	t := p.theme.templates.Progress
-	l := &progressLook{binding: look, style: p.theme.source.Progress, symbols: p.theme.source.Symbols}
+func (p *Progressbar) bind(look render.Binding) (*progressLook, error) {
+	t := p.theme.Templates.Progress
+	l := &progressLook{binding: look, style: p.theme.Source.Progress, symbols: p.theme.Source.Symbols}
 	var errs [4]error
-	l.label, errs[0] = t.Label.bind(look.funcs)
-	l.metrics, errs[1] = t.Metrics.bind(look.funcs)
-	l.hint, errs[2] = t.Hint.bind(look.funcs)
-	l.frame, errs[3] = t.Frame.bind(look.funcs)
+	l.label, errs[0] = t.Label.Bind(look.Funcs)
+	l.metrics, errs[1] = t.Metrics.Bind(look.Funcs)
+	l.hint, errs[2] = t.Hint.Bind(look.Funcs)
+	l.frame, errs[3] = t.Frame.Bind(look.Funcs)
 	return l, errors.Join(errs[:]...)
 }
 
@@ -332,15 +315,15 @@ func (p *Progressbar) bind(look binding) (*progressLook, error) {
 // a fitting metric, the hint is empty and shows none; a hidden hint shows
 // all of them.
 func (l *progressLook) fitHint(width int, ms []progressMetric) (ansi.Text, int, error) {
-	if l.hint.tmpl == nil {
+	if l.hint.Tmpl == nil {
 		return nil, len(ms), nil
 	}
-	pairs := make(hintView, len(ms))
+	pairs := make(render.HintView, len(ms))
 	for i, m := range ms {
 		pairs[i] = m.pair
 	}
 	for n := len(pairs); n > 0; n-- {
-		out, err := l.hint.render(pairs[:n])
+		out, err := l.hint.Render(pairs[:n])
 		if err != nil {
 			return nil, 0, err
 		}
@@ -373,16 +356,16 @@ func (l *progressLook) fill(cols int, before ansi.Text, width int, after ansi.Te
 // returns it before and after the bar.
 func (l *progressLook) around(v progressView, label, metrics ansi.Text) (before, after ansi.Text, err error) {
 	v.Label, v.Metrics, v.Bar = label.String(), metrics.String(), progressBarMark
-	out, err := l.frame.execute(v)
+	out, err := l.frame.Execute(v)
 	if err != nil {
 		return nil, nil, err
 	}
 	before, after, ok := bytes.Cut(out, []byte(progressBarMark))
 	if !ok || bytes.Contains(after, []byte(progressBarMark)) {
-		return nil, nil, fmt.Errorf("theme.Templates.%s: want the bar once", l.frame.tmpl.Name())
+		return nil, nil, fmt.Errorf("theme.Templates.%s: want the bar once", l.frame.Tmpl.Name())
 	}
 	for _, part := range [][]byte{before, after} {
-		if err := l.frame.styled(part); err != nil {
+		if err := l.frame.Styled(part); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -403,7 +386,7 @@ func (l *progressLook) bar(width int, completion float64) ansi.Text {
 		done++
 	}
 	return slices.Concat(
-		l.binding.style(l.binding.roles.accent, ansi.Text(cells)),
-		l.binding.style(l.binding.roles.guide, ansi.Text(strings.Repeat(l.symbols.BarEmpty, width-done))),
+		l.binding.Style(l.binding.Roles.Accent, ansi.Text(cells)),
+		l.binding.Style(l.binding.Roles.Guide, ansi.Text(strings.Repeat(l.symbols.BarEmpty, width-done))),
 	)
 }

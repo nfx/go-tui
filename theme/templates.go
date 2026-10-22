@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package theme
 
 // Template is an optional template source. The zero value inherits from the
 // parent slot; [Hidden] is an explicit empty source that hides the slot
@@ -10,14 +10,6 @@ type Template string
 
 // Hidden deliberately hides a slot. It is a sentinel, not template text.
 const Hidden Template = "\x00hidden"
-
-// source returns the template text; it is empty for [Hidden].
-func (t Template) source() string {
-	if t == Hidden {
-		return ""
-	}
-	return string(t)
-}
 
 // Templates are the typed presentation slots of a theme. An unset slot
 // inherits from its parent family and finally from the built-in default, so a

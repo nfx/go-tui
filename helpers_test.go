@@ -6,6 +6,8 @@ package tui
 import (
 	"bytes"
 	"context"
+	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/render"
 	"io"
 	"iter"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"text/template"
 	"unicode/utf8"
 
 	"github.com/nfx/go-tui/internal/assert"
@@ -205,4 +208,27 @@ func (s *boundedScreen) visible() (rows []string) {
 		}
 	}
 	return rows
+}
+
+// keepTheme restores the installed theme after a test.
+func keepTheme(t *testing.T) *render.Compiled {
+	t.Helper()
+	prev := defaultIO.currentTheme()
+	t.Cleanup(func() { defaultIO.theme.Store(prev) })
+	return prev
+}
+
+// installedFuncs are the helpers of the installed theme, for a plain destination.
+func installedFuncs() template.FuncMap {
+	return defaultIO.currentTheme().Funcs(color.ProfilePlain, render.Roles{})
+}
+
+// execute renders src with funcs and fails the test on any error.
+func execute(t *testing.T, funcs template.FuncMap, src string) string {
+	t.Helper()
+	tmpl, err := template.New("t").Funcs(funcs).Parse(src)
+	assert.NoError(t, err)
+	var b strings.Builder
+	assert.NoError(t, tmpl.Execute(&b, nil))
+	return b.String()
 }

@@ -7,7 +7,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/internal/trie"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"iter"
 	"reflect"
@@ -27,11 +29,11 @@ type multichoice struct {
 	// renders through it: look is its binding to the destination,
 	// slot the bound slots, label the row rendered once per run and help
 	// the bound hint rendered every frame with the count of hidden items.
-	theme *compiledTheme
-	look  binding
+	theme *render.Compiled
+	look  render.Binding
 	slot  multichoiceSlots
 	label ansi.Text
-	help  boundSlot
+	help  render.BoundSlot
 	// pending holds the items until binding projects them.
 	pending []any
 	// content is the projected main content of every item. Its details
@@ -152,7 +154,7 @@ func (m *multichoice) addItem(item any) error {
 	m.trie.Add(search, i)
 	score := 0
 	if m.hint != "" {
-		score = choiceScore(choiceLabels{}.plainText(search), m.hintRunes)
+		score = choiceScore(render.ChoiceLabels{}.PlainText(search), m.hintRunes)
 	}
 	m.scores = append(m.scores, score)
 	matches := true
@@ -374,11 +376,11 @@ func (m *multichoice) writeAnswer(line []byte) error {
 }
 
 // multichoiceKeys are the bindings beyond confirming that the hint row describes.
-func (m *multichoice) multichoiceKeys(s Symbols) []hint {
-	return []hint{
-		{s.arrows(), ansi.Text("move")},
-		{ansi.Text("space"), ansi.Text("toggle")},
-		{ansi.Text("type"), ansi.Text("filter")},
+func (m *multichoice) multichoiceKeys(s theme.Symbols) []render.Hint {
+	return []render.Hint{
+		{Left: s.Arrows(), Right: ansi.Text("move")},
+		{Left: ansi.Text("space"), Right: ansi.Text("toggle")},
+		{Left: ansi.Text("type"), Right: ansi.Text("filter")},
 	}
 }
 

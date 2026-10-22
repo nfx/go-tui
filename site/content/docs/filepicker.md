@@ -87,10 +87,10 @@ inherit from the dropdown and choice slots. See
 [Presentation](dropdowns.md#presentation).
 
 ```go
-theme := tui.DefaultTheme()
-theme.Templates.FilePicker.Label = `{{ accent "file:" }} {{ .Label }}`
-theme.Templates.FilePicker.Answer = `{{ success "picked:" }} {{ .Value }}`
-if err := tui.SetDefaultTheme(theme); err != nil {
+th := tui.DefaultTheme()
+th.Templates.FilePicker.Label = `{{ accent "file:" }} {{ .Label }}`
+th.Templates.FilePicker.Answer = `{{ success "picked:" }} {{ .Value }}`
+if err := tui.SetDefaultTheme(th); err != nil {
 	return err
 }
 path, err := tui.FilePicker(ctx, "Pick file")

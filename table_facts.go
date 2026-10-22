@@ -133,11 +133,11 @@ func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 func (f *facts) fact(meta *fieldMetadata, out ansi.Text) (key, value ansi.Text, err error) {
 	value = ansi.Text(bytes.ReplaceAll(bytes.TrimRight(out, "\r\n"), []byte{'\t'}, []byte{' '}))
 	view := cellView{columnView: f.column(meta), Value: f.cellText(value.BeforeNewline()).String()}
-	key, err = f.header.render(view.columnView)
+	key, err = f.header.Render(view.columnView)
 	if err != nil || view.Value == "" {
 		return key, nil, err
 	}
-	value, err = f.cell.execute(view)
+	value, err = f.cell.Execute(view)
 	if err == nil {
 		err = f.cellOutput(f.cell, value)
 	}

@@ -112,9 +112,9 @@ The single feedback row for either `Input` or `Password` is drawn by the
 [WithRegex](#withregex), or [WithValidation](#withvalidation) rejects an answer.
 
 ```go
-theme := tui.DefaultTheme()
-theme.Templates.Input.Feedback = `{{ accent "Check: " }}{{ .Message }}`
-if err := tui.SetDefaultTheme(theme); err != nil {
+th := tui.DefaultTheme()
+th.Templates.Input.Feedback = `{{ accent "Check: " }}{{ .Message }}`
+if err := tui.SetDefaultTheme(th); err != nil {
 	return err
 }
 value, err := tui.Input(ctx, "Project name", tui.WithNonEmpty())

@@ -10,6 +10,8 @@ import (
 	"errors"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"log/slog"
 	"os"
@@ -875,18 +877,18 @@ func TestProgressbarAddAfterStoppedDoesNotBlock(t *testing.T) {
 
 // themedBar is a bar of the given state rendering through th to a plain
 // destination, for driving row directly.
-func themedBar(t *testing.T, th Theme, state progressState) *Progressbar {
+func themedBar(t *testing.T, th theme.Theme, state progressState) *Progressbar {
 	t.Helper()
-	c, err := th.compile()
+	c, err := render.Compile(th)
 	assert.NoError(t, err)
 	p := &Progressbar{progressState: state, label: ansi.Text("build"), theme: c}
-	p.look, err = p.bind(c.bind(color.ProfilePlain, color.Background{}))
+	p.look, err = p.bind(c.Bind(color.ProfilePlain, color.Background{}))
 	assert.NoError(t, err)
 	return p
 }
 
 // compactTheme is the ASCII theme with the single-row progress layout.
-func compactTheme() Theme {
+func compactTheme() theme.Theme {
 	th := asciiTheme(false)
 	th.Progress.Compact = true
 	return th
@@ -970,7 +972,7 @@ func (ft fakeTerminal) closeOnCleanup(t *testing.T, p *Progressbar) {
 // 40 columns wide.
 func themedProgress(
 	t *testing.T,
-	th Theme,
+	th theme.Theme,
 	size int64,
 ) (*Progressbar, frameWriter, func(time.Duration), *atomic.Bool) {
 	t.Helper()
@@ -1136,7 +1138,7 @@ func (r *scriptedFile) Size() int64 { return r.size }
 
 // themedFile is a file reader over src rendering through th on a terminal
 // 60 columns wide.
-func themedFile(t *testing.T, th Theme, src io.Reader) (*wrapReader, fakeTerminal) {
+func themedFile(t *testing.T, th theme.Theme, src io.Reader) (*wrapReader, fakeTerminal) {
 	t.Helper()
 	useTheme(t, th)
 	ft := newFakeTerminal(t, 60)

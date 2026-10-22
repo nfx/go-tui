@@ -5,6 +5,7 @@ package tui
 
 import (
 	"bytes"
+	"github.com/nfx/go-tui/theme"
 	"testing"
 )
 
@@ -13,7 +14,7 @@ func TestJSONIndentFormats(t *testing.T) {
 		Name string `json:"name"`
 		Age  int    `json:"age"`
 	}
-	buf, err := jsonIndent(data{Name: "Alice", Age: 30}, jsonStyle)
+	buf, err := jsonIndent(data{Name: "Alice", Age: 30}, theme.New().JSON)
 	if err != nil {
 		t.Fatalf("jsonIndent failed: %v", err)
 	}
@@ -23,7 +24,7 @@ func TestJSONIndentFormats(t *testing.T) {
 }
 
 func TestJSONIndentInvalidJSON(t *testing.T) {
-	_, err := jsonIndent("{", jsonStyle)
+	_, err := jsonIndent("{", theme.New().JSON)
 	if err == nil {
 		t.Fatalf("expected error")
 	}

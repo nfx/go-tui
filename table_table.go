@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/render"
 	"io"
 	"log/slog"
 	"math"
@@ -43,9 +44,9 @@ type table struct {
 	multilineCells   bool
 
 	// theme is captured at construction, and bound to w before options run.
-	theme        *compiledTheme
-	look         binding
-	header, cell boundSlot
+	theme        *render.Compiled
+	look         render.Binding
+	header, cell render.BoundSlot
 
 	customTemplateFuncs template.FuncMap
 	templateFuncSeq     int
@@ -133,13 +134,13 @@ func newTableFor(rt reflect.Type, w io.Writer, rowTmpl string, o ...opt) (*table
 func (t *table) bind() error {
 	t.theme = defaultIO.currentTheme()
 	t.look = defaultIO.bindTheme(context.Background(), t.theme, t.w, nil)
-	style := t.theme.source.Table
+	style := t.theme.Source.Table
 	// a value keeps one trailing column when it is truncated or padded
 	t.cellPad, t.colMinWidth = style.ColumnGap-1, style.MinColumnWidth
-	slots := t.theme.templates.Table
+	slots := t.theme.Templates.Table
 	var errs [2]error
-	t.header, errs[0] = slots.Header.bind(t.look.funcs)
-	t.cell, errs[1] = slots.Cell.bind(t.look.funcs)
+	t.header, errs[0] = slots.Header.Bind(t.look.Funcs)
+	t.cell, errs[1] = slots.Cell.Bind(t.look.Funcs)
 	return errors.Join(errs[:]...)
 }
 
@@ -150,12 +151,12 @@ func (*table) column(meta *fieldMetadata) columnView {
 
 // heading renders the header of a column through the Header slot.
 func (t *table) heading(meta *fieldMetadata) (ansi.Text, error) {
-	return t.header.render(t.column(meta))
+	return t.header.Render(t.column(meta))
 }
 
 // headerRow reports whether the table shows a header row.
 func (t *table) headerRow() bool {
-	return !t.suppressHeaders && t.header.tmpl != nil
+	return !t.suppressHeaders && t.header.Tmpl != nil
 }
 
 func (t *table) Append(v any) error {
@@ -242,10 +243,10 @@ func (t *table) cellText(line ansi.Text) ansi.Text {
 }
 
 // cellOutput reports output of slot that a cell line cannot keep.
-func (t *table) cellOutput(slot boundSlot, out ansi.Text) error {
+func (t *table) cellOutput(slot render.BoundSlot, out ansi.Text) error {
 	for seg := range out.Segments() {
 		if !t.cellSegment(seg) {
-			return fmt.Errorf("theme.Templates.%s: %q: want text, SGR and hyperlinks only", slot.tmpl.Name(), seg.Text)
+			return fmt.Errorf("theme.Templates.%s: %q: want text, SGR and hyperlinks only", slot.Tmpl.Name(), seg.Text)
 		}
 	}
 	return nil

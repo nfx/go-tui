@@ -4,6 +4,7 @@
 package tui
 
 import (
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"testing"
 
@@ -12,7 +13,7 @@ import (
 
 func TestThemedInputProbesBeforeReadingKeys(t *testing.T) {
 	withEnv(t, "FORCE_COLOR=3")
-	useTheme(t, NewTheme())
+	useTheme(t, theme.New())
 	// keys typed during the probe stay with the prompt
 	tt, term := probeTermIO(t, oscReply+"a\r")
 	tt.Restore = func() error { return nil }
@@ -23,5 +24,5 @@ func TestThemedInputProbesBeforeReadingKeys(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "a", got)
 	assert.Equal(t, 1, term.count())
-	assert.True(t, i.look.roles.foreground != nil) // measured, so neutrals render
+	assert.True(t, i.look.Roles.Foreground != nil) // measured, so neutrals render
 }

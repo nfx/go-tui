@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"errors"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
 	"sync"
@@ -240,7 +242,7 @@ func TestDetectBackground_ConcurrentCallersQueryOnce(t *testing.T) {
 }
 
 func TestInstalledThemeFallsBackToASCIISymbols(t *testing.T) {
-	th := NewTheme()
+	th := theme.New()
 	th.Symbols.Focus = "→"
 	d := &tio{writer: &bytes.Buffer{}}
 	d.env = readOutputEnv(func(k string) (string, bool) {
@@ -250,31 +252,31 @@ func TestInstalledThemeFallsBackToASCIISymbols(t *testing.T) {
 		return "", false
 	})
 	assert.NoError(t, d.installTheme(th))
-	sym := d.currentTheme().source.Symbols
+	sym := d.currentTheme().Source.Symbols
 	assert.Equal(t, "?", sym.Prompt)
 	assert.Equal(t, "|", sym.Guide)
 	assert.Equal(t, "→", sym.Focus) // chosen by the theme
-	assert.Equal(t, asciiSymbols.Spinner, sym.Spinner)
+	assert.Equal(t, theme.New().Symbols.ASCII().Spinner, sym.Spinner)
 	assert.Equal(t, "◆", th.Symbols.Prompt) // the caller's copy is unchanged
 
 	d.env = readOutputEnv(func(string) (string, bool) { return "", false })
 	assert.NoError(t, d.installTheme(th))
-	assert.Equal(t, "◆", d.currentTheme().source.Symbols.Prompt)
+	assert.Equal(t, "◆", d.currentTheme().Source.Symbols.Prompt)
 }
 
 func TestBindThemeDetectsOnlyWhenColorsDependOnIt(t *testing.T) {
-	light := NewTheme()
+	light := theme.New()
 	light.Light = true
 	for _, tc := range []struct {
 		name    string
 		env     string
-		theme   Theme
+		theme   theme.Theme
 		queries int
 	}{
-		{"truecolor probes", "FORCE_COLOR=3", NewTheme(), 1},
+		{"truecolor probes", "FORCE_COLOR=3", theme.New(), 1},
 		{"forced light skips", "FORCE_COLOR=3", light, 0},
-		{"plain skips", "FORCE_COLOR=0", NewTheme(), 0},
-		{"attrs skip", "NO_COLOR=1", NewTheme(), 0},
+		{"plain skips", "FORCE_COLOR=0", theme.New(), 0},
+		{"attrs skip", "NO_COLOR=1", theme.New(), 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tt, term := probeTermIO(t, "\x1b]11;rgb:fafa/fafa/fafa\x1b\\")
@@ -283,7 +285,7 @@ func TestBindThemeDetectsOnlyWhenColorsDependOnIt(t *testing.T) {
 				name, v, _ := strings.Cut(tc.env, "=")
 				return v, k == name
 			})
-			c, err := tc.theme.compile()
+			c, err := render.Compile(tc.theme)
 			assert.NoError(t, err)
 			d.bindTheme(t.Context(), c, tt.out, tt)
 			assert.Equal(t, tc.queries, term.count())
@@ -292,52 +294,52 @@ func TestBindThemeDetectsOnlyWhenColorsDependOnIt(t *testing.T) {
 }
 
 func TestBindThemeUsesMeasuredOrEstimatedBackground(t *testing.T) {
-	c, err := NewTheme().compile()
+	c, err := render.Compile(theme.New())
 	assert.NoError(t, err)
 	tt, _ := probeTermIO(t, "\x1b]11;rgb:fafa/fafa/fafa\x1b\\")
 	d := routedTio(tt)
 	d.env = readOutputEnv(func(k string) (string, bool) { return "3", k == "FORCE_COLOR" })
 	measured := d.bindTheme(t.Context(), c, tt.out, tt)
-	want := c.roles(color.ProfileTrueColor, c.palette.resolve(false, color.SRGB{250, 250, 250}, true))
-	assert.Equal(t, want, measured.roles)
+	want := c.Roles(color.ProfileTrueColor, c.Palette.Resolve(false, color.SRGB{250, 250, 250}, true))
+	assert.Equal(t, want, measured.Roles)
 
 	// without a terminal lease, the environment estimates a light background
 	d.env = readOutputEnv(func(k string) (string, bool) {
 		return map[string]string{"FORCE_COLOR": "3", "COLORFGBG": "0;15"}[k], k == "FORCE_COLOR" || k == "COLORFGBG"
 	})
 	estimated := d.bindTheme(t.Context(), c, &bytes.Buffer{}, nil)
-	want = c.roles(color.ProfileTrueColor, c.palette.resolve(true, color.SRGB{}, false))
-	assert.Equal(t, want, estimated.roles)
-	assert.True(t, estimated.roles.foreground == nil) // estimated, not measured
+	want = c.Roles(color.ProfileTrueColor, c.Palette.Resolve(true, color.SRGB{}, false))
+	assert.Equal(t, want, estimated.Roles)
+	assert.True(t, estimated.Roles.Foreground == nil) // estimated, not measured
 }
 
 func TestBindThemeReusesRouteDetectionWithoutWaiting(t *testing.T) {
-	c, err := NewTheme().compile()
+	c, err := render.Compile(theme.New())
 	assert.NoError(t, err)
 	tt, term := probeTermIO(t, "\x1b]11;rgb:fafa/fafa/fafa\x1b\\")
 	d := routedTio(tt)
 	d.env = readOutputEnv(func(k string) (string, bool) { return "3", k == "FORCE_COLOR" })
 	estimated := d.bindTheme(t.Context(), c, tt.out, nil) // nothing detected yet
 	measured := d.bindTheme(t.Context(), c, tt.out, tt)
-	assert.True(t, estimated.roles.foreground == nil)
-	assert.True(t, measured.roles.foreground != nil)
+	assert.True(t, estimated.Roles.Foreground == nil)
+	assert.True(t, measured.Roles.Foreground != nil)
 
 	// output-only work drawing on the route reuses its detection
 	for _, out := range []io.Writer{tt.out, &terminalStderr{parent: d}} {
-		assert.Equal(t, measured.roles, d.bindTheme(t.Context(), c, out, nil).roles)
+		assert.Equal(t, measured.Roles, d.bindTheme(t.Context(), c, out, nil).Roles)
 	}
 	assert.Equal(t, 1, term.count())
 	// other destinations estimate, and so does another tio's Stderr
-	assert.Equal(t, estimated.roles, d.bindTheme(t.Context(), c, &bytes.Buffer{}, nil).roles)
-	assert.Equal(t, estimated.roles, d.bindTheme(t.Context(), c, &terminalStderr{parent: &tio{}}, nil).roles)
+	assert.Equal(t, estimated.Roles, d.bindTheme(t.Context(), c, &bytes.Buffer{}, nil).Roles)
+	assert.Equal(t, estimated.Roles, d.bindTheme(t.Context(), c, &terminalStderr{parent: &tio{}}, nil).Roles)
 
 	// a probe in progress does not hold up output-only work
 	d.bgMu.Lock()
-	bound := make(chan binding)
+	bound := make(chan render.Binding)
 	go func() { bound <- d.bindTheme(t.Context(), c, tt.out, nil) }()
 	select {
 	case b := <-bound:
-		assert.Equal(t, measured.roles, b.roles)
+		assert.Equal(t, measured.Roles, b.Roles)
 	case <-time.After(time.Second):
 		t.Fatal("output-only binding waited for a probe")
 	}
@@ -345,5 +347,5 @@ func TestBindThemeReusesRouteDetectionWithoutWaiting(t *testing.T) {
 
 	// replacing the route forgets the detection
 	d.setIO(tt.in, tt.out)
-	assert.Equal(t, estimated.roles, d.bindTheme(t.Context(), c, tt.out, nil).roles)
+	assert.Equal(t, estimated.Roles, d.bindTheme(t.Context(), c, tt.out, nil).Roles)
 }

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
 	"testing"
@@ -164,7 +165,7 @@ func TestInputFeedbackSanitizesMessage(t *testing.T) {
 }
 
 func TestInputFeedbackClippedToOneRow(t *testing.T) {
-	th := NewTheme()
+	th := theme.New()
 	th.Templates.Input.Feedback = `{{ .Message }}`
 	useTheme(t, th)
 	_, out, err := runValidated(t, false, "a\r",
@@ -176,7 +177,7 @@ func TestInputFeedbackClippedToOneRow(t *testing.T) {
 }
 
 func TestInputFeedbackTemplateIsPlain(t *testing.T) {
-	th := NewTheme()
+	th := theme.New()
 	th.Templates.Input.Feedback = `!! {{ .Message }}`
 	useTheme(t, th)
 	_, out, err := runValidated(t, false, "a\r",
@@ -187,16 +188,16 @@ func TestInputFeedbackTemplateIsPlain(t *testing.T) {
 }
 
 // useTheme installs th and routes migrated widgets through it for the test.
-func useTheme(t *testing.T, th Theme) {
+func useTheme(t *testing.T, th theme.Theme) {
 	t.Helper()
 	keepTheme(t)
 	assert.NoError(t, defaultIO.installTheme(th))
 }
 
 // asciiTheme is the preset theme with ASCII symbols, Guided or Inline.
-func asciiTheme(inline bool) Theme {
-	th := NewTheme()
-	th.Symbols = asciiSymbols
+func asciiTheme(inline bool) theme.Theme {
+	th := theme.New()
+	th.Symbols = theme.New().Symbols.ASCII()
 	th.Inline = inline
 	return th
 }
@@ -205,7 +206,7 @@ func asciiTheme(inline bool) Theme {
 // given size. Each key is one read. restored reports a released terminal.
 func themedInput(
 	t *testing.T,
-	th Theme,
+	th theme.Theme,
 	width, height int,
 	keys ...string,
 ) (i *input, out *bytes.Buffer, restored *bool) {
@@ -399,8 +400,8 @@ func TestThemedInputFamilySlotsRender(t *testing.T) {
 
 func TestThemedInputHiddenSlots(t *testing.T) {
 	th := asciiTheme(false)
-	th.Templates.Prompt.Label = Hidden
-	th.Templates.Prompt.Answer = Hidden
+	th.Templates.Prompt.Label = theme.Hidden
+	th.Templates.Prompt.Answer = theme.Hidden
 	i, out, _ := themedInput(t, th, 20, 5, "a", "\r")
 	_, err := i.read(t.Context())
 	assert.NoError(t, err)
@@ -481,7 +482,7 @@ func TestThemedInputColorsFollowDestination(t *testing.T) {
 	i, out, _ := themedInput(t, asciiTheme(false), 20, 5, "a", "\r")
 	_, err := i.read(t.Context())
 	assert.NoError(t, err)
-	accent := string(i.look.roles.accent)
+	accent := string(i.look.Roles.Accent)
 	assert.True(t, strings.HasPrefix(accent, "\x1b[38;2;"))
 	assert.Contains(t, out.String(), "\r"+accent+"?\x1b[39m \x1b[1mLabel\x1b[0m\x1b[K\n")
 	// the background is unknown, so the value keeps the default and the guide is faint
@@ -497,13 +498,13 @@ func TestThemedInputColorsFollowDestination(t *testing.T) {
 
 func TestThemedInputSymbolsFollowEnvironment(t *testing.T) {
 	withEnv(t, "TERM=linux")
-	i, out, _ := themedInput(t, NewTheme(), 20, 5, "a", "\r")
+	i, out, _ := themedInput(t, theme.New(), 20, 5, "a", "\r")
 	_, err := i.read(t.Context())
 	assert.NoError(t, err)
 	assert.Contains(t, out.String(), "\r? Label\x1b[K\n\r| a\x1b[K")
 
 	withEnv(t)
-	i, out, _ = themedInput(t, NewTheme(), 20, 5, "a", "\r")
+	i, out, _ = themedInput(t, theme.New(), 20, 5, "a", "\r")
 	_, err = i.read(t.Context())
 	assert.NoError(t, err)
 	assert.Contains(t, out.String(), "\r◆ Label\x1b[K\n\r│ a\x1b[K")

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/render"
 	"io"
 	"math"
 	"math/big"
@@ -160,7 +161,9 @@ func newNumber[T numberType](ctx context.Context, label string) *number[T] {
 	n.prompt.numeric = true
 	n.prompt.rules = append(n.prompt.rules, n.validate)
 	n.prompt.adjust = n.adjust
-	n.prompt.keys = []hint{{n.prompt.theme.source.Symbols.arrows(), ansi.Text("adjust")}}
+	n.prompt.keys = []render.Hint{
+		{Left: n.prompt.theme.Source.Symbols.Arrows(), Right: ansi.Text("adjust")},
+	}
 	return n
 }
 

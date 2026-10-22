@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/theme"
 	"regexp"
 	"slices"
 	"strconv"
@@ -121,8 +122,8 @@ var themedLayouts = []themedLayout{{
 	answers:   []string{"+ Name · x", "+ Pick · b", "+ Tags · x", "+ Go · Yes", "+ Count · 3"},
 }}
 
-func (l themedLayout) theme() tui.Theme {
-	th := tui.NewTheme()
+func (l themedLayout) theme() theme.Theme {
+	th := theme.New()
 	th.Inline = l.inline
 	if l.ascii {
 		th.Symbols = tui.ASCIISymbols
@@ -550,12 +551,12 @@ func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
 func TestThemedConcurrentInstallationAndRendering(t *testing.T) {
 	tui.WithEnv(t, "FORCE_COLOR=0")
 	term := newTerminal(t, 20)
-	themes := map[string]tui.Theme{}
+	themes := map[string]theme.Theme{}
 	for name, gap := range map[string]int{"A": 2, "B": 5} {
 		th := l0.theme()
-		th.Templates.Prompt.Label = tui.Template(name + " {{ .Label }}")
-		th.Templates.Prompt.Answer = tui.Template(name + " {{ .Label }} · {{ .Value }}")
-		th.Templates.Table.Header = tui.Template(name + "{{ .Header }}")
+		th.Templates.Prompt.Label = theme.Template(name + " {{ .Label }}")
+		th.Templates.Prompt.Answer = theme.Template(name + " {{ .Label }} · {{ .Value }}")
+		th.Templates.Table.Header = theme.Template(name + "{{ .Header }}")
 		th.Table.ColumnGap = gap
 		themes[name] = th
 	}

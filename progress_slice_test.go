@@ -6,6 +6,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
 	"sync/atomic"
@@ -144,7 +145,7 @@ func TestThemedSliceProgress(t *testing.T) {
 }
 
 func TestThemedSliceProgressReturnsRenderError(t *testing.T) {
-	th := NewTheme()
+	th := theme.New()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
 	th.Templates.Progress.Hint = `{{ boom }}`
 	useTheme(t, th)

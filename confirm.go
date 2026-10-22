@@ -25,7 +25,7 @@ func Confirm(ctx context.Context, action string, opts ...opt) bool {
 // defaultConfirmRunner runs a dropdown over Yes and No through the Confirm slots.
 func defaultConfirmRunner(ctx context.Context, action string, o ...opt) bool {
 	d := newDropdown(ctx)
-	d.family = d.theme.templates.Confirm
+	d.family = d.theme.Templates.Confirm
 	d.target = targetOf[string]()
 	d.normalize = confirmDefault
 	err := opts(o).Apply(d)

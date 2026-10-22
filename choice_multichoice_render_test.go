@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"strconv"
 	"strings"
@@ -76,7 +77,7 @@ func TestMultichoiceTemplateErrorPreservesUnderlyingCause(t *testing.T) {
 }
 
 // themedMultichoiceOpt routes a themed multichoice through a 60-column scripted terminal.
-func themedMultichoiceOpt(t *testing.T, th Theme, keys ...string) (o opt, out *bytes.Buffer, restored *bool) {
+func themedMultichoiceOpt(t *testing.T, th theme.Theme, keys ...string) (o opt, out *bytes.Buffer, restored *bool) {
 	t.Helper()
 	s := scripted(t, th, 60, keys...)
 	return opT(func(m *multichoice) error {
@@ -86,7 +87,7 @@ func themedMultichoiceOpt(t *testing.T, th Theme, keys ...string) (o opt, out *b
 }
 
 // boundMultichoice prepares a themed prompt for frame tests at the given terminal height.
-func boundMultichoice(t *testing.T, th Theme, height int, items []any, o ...opt) (*multichoice, *termIO) {
+func boundMultichoice(t *testing.T, th theme.Theme, height int, items []any, o ...opt) (*multichoice, *termIO) {
 	t.Helper()
 	useTheme(t, th)
 	m := newMultichoice(t.Context())
@@ -167,7 +168,7 @@ func TestThemedMultichoiceEmptyState(t *testing.T) {
 	assert.Equal(t, "\r? Fruit\n\r| nothing for \"zz\"\n\r"+multichoiceHelp, mframe(t, m, tt))
 
 	// a hidden empty state reserves no row; the checked item still answers
-	th.Templates.Multichoice.Empty = Hidden
+	th.Templates.Multichoice.Empty = theme.Hidden
 	m, tt = boundMultichoice(t, th, 10, []any{"apple"})
 	m.handleKey(' ')
 	m.filter("zz")
@@ -241,7 +242,7 @@ func TestThemedMultichoiceMultiFieldProjects(t *testing.T) {
 func TestThemedMultichoiceHiddenAnswerRetainsNothing(t *testing.T) {
 	erase := "\x1b[4A\r"
 	th := asciiTheme(false)
-	th.Templates.Multichoice.Answer = Hidden
+	th.Templates.Multichoice.Answer = theme.Hidden
 	o, out, _ := themedMultichoiceOpt(t, th, " ", "\r")
 	_, err := Multichoice(t.Context(), "Fruit", fruits, o)
 	assert.NoError(t, err)
@@ -259,7 +260,7 @@ func TestThemedMultichoiceSlotPrecedence(t *testing.T) {
 	th.Templates.Multichoice.Active = `[{{ .Value }}]`
 	th.Templates.Dropdown.Inactive = `dropdown only`
 	th.Templates.Multichoice.Row = `{{ if .Selected }}+{{ else }}.{{ end }}{{ .Value }}#{{ .Index }}`
-	th.Templates.Prompt.Hint = Hidden
+	th.Templates.Prompt.Hint = theme.Hidden
 	th.Templates.Multichoice.Label = `{{ .Label }}:`
 	m, tt := boundMultichoice(t, th, 4, []any{"a", "b", "c", "d"})
 	m.handleKey('↓')
@@ -481,11 +482,11 @@ func TestThemedMultichoiceRolesStyleMarks(t *testing.T) {
 	m.handleKey(' ')
 	got := mframe(t, m, tt)
 	// focus and checked marks take the accent, the unchecked mark is muted
-	roles := m.look.roles
-	assert.True(t, len(roles.accent) > 0 && len(roles.muted) > 0)
-	assert.Contains(t, got, string(roles.accent)+">")
-	assert.Contains(t, got, string(roles.accent)+"x")
-	assert.Contains(t, got, string(roles.muted)+"o")
+	roles := m.look.Roles
+	assert.True(t, len(roles.Accent) > 0 && len(roles.Muted) > 0)
+	assert.Contains(t, got, string(roles.Accent)+">")
+	assert.Contains(t, got, string(roles.Accent)+"x")
+	assert.Contains(t, got, string(roles.Muted)+"o")
 }
 
 // frameStaysOnScreen replays out, the output of a prompt over a, b, c, d, e

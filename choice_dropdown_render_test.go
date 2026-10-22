@@ -6,6 +6,7 @@ package tui
 import (
 	"bytes"
 	"errors"
+	"github.com/nfx/go-tui/theme"
 	"io"
 	"strconv"
 	"strings"
@@ -88,7 +89,12 @@ func TestDropdownRenderRemembersLongestWidth(t *testing.T) {
 }
 
 // themedDropdownOpt routes a themed dropdown through a scripted terminal.
-func themedDropdownOpt(t *testing.T, th Theme, width int, keys ...string) (o opt, out *bytes.Buffer, restored *bool) {
+func themedDropdownOpt(
+	t *testing.T,
+	th theme.Theme,
+	width int,
+	keys ...string,
+) (o opt, out *bytes.Buffer, restored *bool) {
 	t.Helper()
 	s := scripted(t, th, width, keys...)
 	return opT(func(d *dropdown) error {
@@ -99,7 +105,7 @@ func themedDropdownOpt(t *testing.T, th Theme, width int, keys ...string) (o opt
 
 // boundDropdown is a themed dropdown over items, parsed and bound to a
 // terminal of the given size, which render draws a frame on.
-func boundDropdown(t *testing.T, th Theme, width, height int, items []any, o ...opt) (*dropdown, *termIO) {
+func boundDropdown(t *testing.T, th theme.Theme, width, height int, items []any, o ...opt) (*dropdown, *termIO) {
 	t.Helper()
 	useTheme(t, th)
 	d := newDropdown(t.Context())
@@ -212,7 +218,7 @@ func TestThemedDropdownMultiFieldProjects(t *testing.T) {
 
 func TestThemedDropdownHiddenAnswerRetainsNothing(t *testing.T) {
 	th := asciiTheme(false)
-	th.Templates.Dropdown.Answer = Hidden
+	th.Templates.Dropdown.Answer = theme.Hidden
 	o, out, _ := themedDropdownOpt(t, th, 40, "\r")
 	_, err := Dropdown(t.Context(), "Fruit", fruits, o)
 	assert.NoError(t, err)
@@ -228,7 +234,7 @@ func TestThemedDropdownSlotPrecedence(t *testing.T) {
 	th := asciiTheme(false)
 	th.Templates.Choice.Inactive = `{{ printf "-%s" .Value }}`
 	th.Templates.Dropdown.Active = `[{{ .Value }}]`
-	th.Templates.Prompt.Hint = Hidden
+	th.Templates.Prompt.Hint = theme.Hidden
 	th.Templates.Dropdown.Label = `{{ .Label }}:`
 	d, tt := boundDropdown(t, th, 40, 4, []any{"a", "b", "c", "d"})
 	// shared and family edits apply; hidden slots reserve no row
@@ -350,11 +356,11 @@ func TestThemedDropdownRolesStyleFocusAndRows(t *testing.T) {
 	d, tt := boundDropdown(t, th, 40, 10, []any{"a", "b"})
 	got := frame(t, d, tt)
 	// the focus mark and the active value take the accent, inactive values the foreground
-	roles := d.look.roles
-	assert.True(t, len(roles.accent) > 0 && len(roles.foreground) > 0)
-	assert.Contains(t, got, string(roles.accent)+">")
-	assert.Contains(t, got, string(roles.accent)+"a")
-	assert.Contains(t, got, string(roles.foreground)+"b")
+	roles := d.look.Roles
+	assert.True(t, len(roles.Accent) > 0 && len(roles.Foreground) > 0)
+	assert.Contains(t, got, string(roles.Accent)+">")
+	assert.Contains(t, got, string(roles.Accent)+"a")
+	assert.Contains(t, got, string(roles.Foreground)+"b")
 }
 
 func TestThemedDropdownFullHeightFrameKeepsLabelOnScreen(t *testing.T) {

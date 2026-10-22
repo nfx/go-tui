@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/render"
 	"strings"
 	"unicode"
 )
@@ -27,13 +28,13 @@ func (p *input) feedbackSafe(message string) string {
 }
 
 // slots selects the theme slots of the prompt family. A password retains no answer.
-func (p *input) slots() promptTemplates {
-	t := &p.theme.templates
+func (p *input) slots() render.PromptSlots {
+	t := &p.theme.Templates
 	switch {
 	case p.Password:
-		return promptTemplates{Label: t.Password.Label, Hint: t.Password.Hint, Feedback: t.Password.Feedback}
+		return render.PromptSlots{Label: t.Password.Label, Hint: t.Password.Hint, Feedback: t.Password.Feedback}
 	case p.numeric:
-		return promptTemplates{
+		return render.PromptSlots{
 			Label:    t.Number.Label,
 			Answer:   t.Input.Answer,
 			Hint:     t.Number.Hint,
@@ -50,24 +51,24 @@ func (p *input) bind(ctx context.Context, tt *termIO) error {
 	p.look = defaultIO.bindTheme(ctx, p.theme, p.out, tt)
 	slots := p.slots()
 	var err error
-	if p.answer, err = slots.Answer.bind(p.look.funcs); err != nil {
+	if p.answer, err = slots.Answer.Bind(p.look.Funcs); err != nil {
 		return err
 	}
-	if p.feedback, err = slots.Feedback.bind(p.look.funcs); err != nil {
+	if p.feedback, err = slots.Feedback.Bind(p.look.Funcs); err != nil {
 		return err
 	}
 	if err = p.bindHint(slots.Hint); err != nil {
 		return err
 	}
-	slot, err := slots.Label.bind(p.look.funcs)
+	slot, err := slots.Label.Bind(p.look.Funcs)
 	if err != nil {
 		return err
 	}
-	p.label, err = slot.render(labelView{p.Label})
+	p.label, err = slot.Render(render.LabelView{Label: p.Label})
 	if err != nil {
 		return err
 	}
-	if p.theme.source.Inline && p.label.Width() > 0 {
+	if p.theme.Source.Inline && p.label.Width() > 0 {
 		// the renderer owns the spacing before the value
 		p.label = append(p.label, ' ')
 	}
@@ -75,16 +76,16 @@ func (p *input) bind(ctx context.Context, tt *termIO) error {
 }
 
 // bindHint renders the hint row once; a prompt without keys beyond editing has none.
-func (p *input) bindHint(hint *compiledSlot) error {
+func (p *input) bindHint(hint *render.Slot) error {
 	p.hint = nil
 	if len(p.keys) == 0 {
 		return nil
 	}
-	slot, err := hint.bind(p.look.funcs)
+	slot, err := hint.Bind(p.look.Funcs)
 	if err != nil {
 		return err
 	}
-	p.hint, err = slot.render(hintView(p.keys))
+	p.hint, err = slot.Render(render.HintView(p.keys))
 	return err
 }
 
@@ -92,9 +93,9 @@ func (p *input) bindHint(hint *compiledSlot) error {
 func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 	io.refreshSize()
 	frame.Reset()
-	g := i.look.geometry(io.Width, io.Height)
-	lead := g.valueLead(i.label)
-	cols, err := g.valueColumns(lead)
+	g := i.look.Geometry(io.Width, io.Height)
+	lead := g.ValueLead(i.label)
+	cols, err := g.ValueColumns(lead)
 	if err != nil {
 		return err
 	}
@@ -104,31 +105,31 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 	visible := ansi.Text(string(runes[cells.RuneOffset(first):cells.RuneOffset(last)]))
 	if i.Password {
 		// Keep one mask per visible typed rune, even for multi-rune masks.
-		visible = ansi.Text(strings.Repeat(i.theme.source.Symbols.Mask, last-first))
+		visible = ansi.Text(strings.Repeat(i.theme.Source.Symbols.Mask, last-first))
 	}
 	feedback, err := i.themedFeedback()
 	if err != nil {
 		return err
 	}
-	rows := make([]frameRow, 0, 4)
-	if !g.inline {
-		rows = append(rows, frameRow{content: i.label, drop: 1})
+	rows := make([]render.FrameRow, 0, 4)
+	if !g.Inline {
+		rows = append(rows, render.FrameRow{Content: i.label, Drop: 1})
 	}
 	value := len(rows)
-	row := append(append(ansi.Text{}, lead...), i.look.style(i.look.roles.foreground, visible)...)
-	rows = append(rows, frameRow{content: row})
+	row := append(append(ansi.Text{}, lead...), i.look.Style(i.look.Roles.Foreground, visible)...)
+	rows = append(rows, render.FrameRow{Content: row})
 	if len(feedback) > 0 {
-		rows = append(rows, frameRow{content: feedback, guided: true})
+		rows = append(rows, render.FrameRow{Content: feedback, Guided: true})
 	}
 	// the hint goes first on a short terminal, before the label
-	rows = append(rows, frameRow{content: i.hint, guided: true, drop: 2})
-	fit, err := g.fit(rows)
+	rows = append(rows, render.FrameRow{Content: i.hint, Guided: true, Drop: 2})
+	fit, err := g.Fit(rows)
 	if err != nil {
 		return err
 	}
 	// a cursor inside of a cluster stands on its first rune
 	at := min(max(cells.At(i.cursor), first), last)
-	i.writeFrame(io, frame, fit, fit.at[value], lead.Width()+cells[first:at].Width(), cells[at:last].Width())
+	i.writeFrame(io, frame, fit, fit.At[value], lead.Width()+cells[first:at].Width(), cells[at:last].Width())
 	_, err = frame.WriteTo(io)
 	return err
 }
@@ -136,11 +137,11 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 // writeFrame draws fitted rows from the top of the previous frame, erases
 // the rows it had beyond them and puts the caret on row caret, col columns
 // in, which is left columns before the end of that row.
-func (i *input) writeFrame(io *termIO, frame *bytes.Buffer, fit fitted, caret, col, left int) {
+func (i *input) writeFrame(io *termIO, frame *bytes.Buffer, fit render.Fitted, caret, col, left int) {
 	if io.vp == nil && i.caretRow > 0 {
 		fmt.Fprintf(frame, "\x1b[%dA", i.caretRow)
 	}
-	for k, line := range fit.lines {
+	for k, line := range fit.Lines {
 		if k > 0 {
 			frame.WriteByte('\n')
 		}
@@ -148,7 +149,7 @@ func (i *input) writeFrame(io *termIO, frame *bytes.Buffer, fit fitted, caret, c
 		frame.Write(line)
 		frame.WriteString("\x1b[K")
 	}
-	drawn, stale := len(fit.lines), i.rows
+	drawn, stale := len(fit.Lines), i.rows
 	if io.Height > 0 {
 		// rows past the bottom of a shorter terminal are gone, and a newline
 		// there would scroll away the rows just drawn
@@ -165,7 +166,7 @@ func (i *input) writeFrame(io *termIO, frame *bytes.Buffer, fit fitted, caret, c
 	case left > 0:
 		fmt.Fprintf(frame, "\x1b[%dD", left)
 	}
-	i.rows, i.caretRow = len(fit.lines), caret
+	i.rows, i.caretRow = len(fit.Lines), caret
 }
 
 // themedFeedback renders the rejection with the feedback slot. The geometry
@@ -174,14 +175,14 @@ func (i *input) themedFeedback() (ansi.Text, error) {
 	if i.rejection == "" {
 		return nil, nil
 	}
-	return i.feedback.render(feedbackView{i.feedbackSafe(i.rejection)})
+	return i.feedback.Render(render.FeedbackView{Message: i.feedbackSafe(i.rejection)})
 }
 
 // themedAnswer renders the answer slot of the family and ends its line. A
 // hidden or empty answer retains nothing.
 func (i *input) themedAnswer(buf *bytes.Buffer) error {
 	value := i.safeText(i.typed)
-	out, err := i.answer.render(answerView{Label: i.Label, Value: value, Values: []string{value}, Count: 1})
+	out, err := i.answer.Render(render.AnswerView{Label: i.Label, Value: value, Values: []string{value}, Count: 1})
 	if err != nil || out.Width() == 0 {
 		return err
 	}

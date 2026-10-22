@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/render"
 )
 
 // render builds a width-bounded frame from cached content and current selection state.
@@ -18,7 +19,7 @@ func (m *multichoice) render(tio *termIO, buf *bytes.Buffer) error {
 // multichoiceSlots are the theme slots of a multichoice bound to one destination.
 type multichoiceSlots struct {
 	choiceSlots
-	row, answerValue, empty boundSlot
+	row, answerValue, empty render.BoundSlot
 }
 
 // emptyView is the payload of the Empty slot: the filter that matches nothing.
@@ -32,21 +33,21 @@ type collectionView struct {
 }
 
 // bind installs destination-bound templates and projects pending items.
-func (m *multichoice) bind(look binding) error {
+func (m *multichoice) bind(look render.Binding) error {
 	m.look = look
-	err := m.rebind(look.funcs)
+	err := m.rebind(look.Funcs)
 	if err != nil {
 		return err
 	}
-	s := m.theme.templates.Multichoice
-	m.slot.choiceSlots, err = s.bind(look.funcs)
+	s := m.theme.Templates.Multichoice
+	m.slot.choiceSlots, err = bindChoiceFamily(s.ChoiceFamily, look.Funcs)
 	if err != nil {
 		return err
 	}
 	var errs [3]error
-	m.slot.row, errs[0] = s.Row.bind(look.funcs)
-	m.slot.answerValue, errs[1] = s.AnswerValue.bind(look.funcs)
-	m.slot.empty, errs[2] = s.Empty.bind(look.funcs)
+	m.slot.row, errs[0] = s.Row.Bind(look.Funcs)
+	m.slot.answerValue, errs[1] = s.AnswerValue.Bind(look.Funcs)
+	m.slot.empty, errs[2] = s.Empty.Bind(look.Funcs)
 	if err := errors.Join(errs[:]...); err != nil {
 		return err
 	}
@@ -70,7 +71,7 @@ func (m *multichoice) bindRun(ctx context.Context, tio *termIO) error {
 	if err != nil {
 		return err
 	}
-	m.label, m.help, err = m.theme.templates.Multichoice.chrome(m.look.funcs, m.Label)
+	m.label, m.help, err = chromeChoiceFamily(m.theme.Templates.Multichoice.ChoiceFamily, m.look.Funcs, m.Label)
 	if err != nil {
 		return err
 	}
@@ -116,7 +117,7 @@ func (m *multichoice) themedRow(i int, active bool) (ansi.Text, error) {
 	if active {
 		slot = m.slot.active
 	}
-	value, err := slot.render(choiceView{
+	value, err := slot.Render(choiceView{
 		Value:    m.content[i].String(),
 		Details:  m.details[i].String(),
 		Index:    i,
@@ -126,7 +127,7 @@ func (m *multichoice) themedRow(i int, active bool) (ansi.Text, error) {
 	if err != nil {
 		return nil, err
 	}
-	return m.slot.row.render(multichoiceRow{value.String(), m.selected[i], active, i})
+	return m.slot.row.Render(multichoiceRow{value.String(), m.selected[i], active, i})
 }
 
 // renderThemed fits themed rows to the terminal, ending each with a newline for frame clearing.
@@ -136,15 +137,15 @@ func (m *multichoice) renderThemed(tio *termIO, buf *bytes.Buffer) error {
 		return ErrNoSpace
 	}
 	m.clampRows(tio.Height / 2)
-	rows := make([]frameRow, 0, len(m.displayed)+4)
-	rows = append(rows, frameRow{content: m.label, drop: 1})
+	rows := make([]render.FrameRow, 0, len(m.displayed)+4)
+	rows = append(rows, render.FrameRow{Content: m.label, Drop: 1})
 	if m.noMatches() {
-		empty, err := m.slot.empty.render(emptyView{m.typed})
+		empty, err := m.slot.empty.Render(emptyView{m.typed})
 		if err != nil {
 			return err
 		}
 		if empty.Width() > 0 {
-			rows = append(rows, frameRow{content: empty, guided: true})
+			rows = append(rows, render.FrameRow{Content: empty, Guided: true})
 		}
 	}
 	for row, i := range m.displayed {
@@ -152,25 +153,25 @@ func (m *multichoice) renderThemed(tio *termIO, buf *bytes.Buffer) error {
 		if err != nil {
 			return err
 		}
-		rows = append(rows, frameRow{content: line, guided: true})
+		rows = append(rows, render.FrameRow{Content: line, Guided: true})
 	}
 	help, err := themedHint(
 		m.help,
-		m.multichoiceKeys(m.theme.source.Symbols),
+		m.multichoiceKeys(m.theme.Source.Symbols),
 		len(m.relevant)-m.offset-len(m.displayed),
 	)
 	if err != nil {
 		return err
 	}
 	// on a short terminal, the hint with the count goes first, then the label
-	rows = append(rows, frameRow{content: help, guided: true, drop: 2})
+	rows = append(rows, render.FrameRow{Content: help, Guided: true, Drop: 2})
 	// the newline after the last row moves the cursor to a row of its own,
 	// which must stay on the screen, or the terminal scrolls the label away
-	fit, err := m.look.geometry(tio.Width, tio.Height-1).fit(rows)
+	fit, err := m.look.Geometry(tio.Width, tio.Height-1).Fit(rows)
 	if err != nil {
 		return err
 	}
-	for _, line := range fit.lines {
+	for _, line := range fit.Lines {
 		buf.WriteByte('\r')
 		buf.Write(line)
 		buf.WriteByte('\n')
@@ -185,12 +186,12 @@ func (m *multichoice) themedAnswer() error {
 	for _, i := range m.indices() {
 		values = append(values, m.content[i].String())
 	}
-	body, err := m.slot.answerValue.render(collectionView{values, len(values)})
+	body, err := m.slot.answerValue.Render(collectionView{values, len(values)})
 	if err != nil {
 		return err
 	}
-	out, err := m.slot.answer.render(
-		answerView{Label: m.Label, Value: body.String(), Values: values, Count: len(values)},
+	out, err := m.slot.answer.Render(
+		render.AnswerView{Label: m.Label, Value: body.String(), Values: values, Count: len(values)},
 	)
 	if err != nil || out.Width() == 0 {
 		return err

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/render"
 	"strings"
 	"text/template"
 )
@@ -40,9 +41,9 @@ func (p *projection) setProjection(main string, details ...string) {
 }
 
 // parse checks the projection using helpers replaced at destination binding.
-func (p *projection) parse(c *compiledTheme, name string) error {
-	funcs := c.funcs(color.ProfilePlain, roleStyles{})
-	funcs["__content"] = span{}.helper()
+func (p *projection) parse(c *render.Compiled, name string) error {
+	funcs := c.Funcs(color.ProfilePlain, render.Roles{})
+	funcs["__content"] = render.Span{}.Helper()
 	tmpl := template.New(name).Funcs(funcs)
 	for _, part := range []struct {
 		name, source string
@@ -80,39 +81,43 @@ func (p *projection) rebind(funcs template.FuncMap) error {
 
 // choiceSlots are the theme slots of a choice family bound to one destination.
 type choiceSlots struct {
-	value, details, active, inactive, answer boundSlot
+	value, details, active, inactive, answer render.BoundSlot
 }
 
-// bind binds the item and answer slots of the family to funcs.
-func (f choiceFamily) bind(funcs template.FuncMap) (s choiceSlots, _ error) {
+// bindChoiceFamily binds the item and answer slots of the family to funcs.
+func bindChoiceFamily(f render.ChoiceFamily, funcs template.FuncMap) (s choiceSlots, _ error) {
 	var errs [5]error
-	s.value, errs[0] = f.Value.bind(funcs)
-	s.details, errs[1] = f.Details.bind(funcs)
-	s.active, errs[2] = f.Active.bind(funcs)
-	s.inactive, errs[3] = f.Inactive.bind(funcs)
-	s.answer, errs[4] = f.Answer.bind(funcs)
+	s.value, errs[0] = f.Value.Bind(funcs)
+	s.details, errs[1] = f.Details.Bind(funcs)
+	s.active, errs[2] = f.Active.Bind(funcs)
+	s.inactive, errs[3] = f.Inactive.Bind(funcs)
+	s.answer, errs[4] = f.Answer.Bind(funcs)
 	return s, errors.Join(errs[:]...)
 }
 
-// chrome renders the label and binds the hint, which every frame renders
+// chromeChoiceFamily renders the label and binds the hint, which every frame renders
 // with the count of the items below the window.
-func (f choiceFamily) chrome(funcs template.FuncMap, label string) (head ansi.Text, hint boundSlot, _ error) {
-	slot, err := f.Label.bind(funcs)
+func chromeChoiceFamily(
+	f render.ChoiceFamily,
+	funcs template.FuncMap,
+	label string,
+) (head ansi.Text, hint render.BoundSlot, _ error) {
+	slot, err := f.Label.Bind(funcs)
 	if err != nil {
-		return nil, boundSlot{}, err
+		return nil, render.BoundSlot{}, err
 	}
-	head, err = slot.render(labelView{label})
+	head, err = slot.Render(render.LabelView{Label: label})
 	if err != nil {
-		return nil, boundSlot{}, err
+		return nil, render.BoundSlot{}, err
 	}
-	hint, err = f.Hint.bind(funcs)
+	hint, err = f.Hint.Bind(funcs)
 	return head, hint, err
 }
 
 // projectContent renders the projection or falls back to the bound Value slot.
-func (p *projection) projectContent(value boundSlot, item any) (ansi.Text, error) {
+func (p *projection) projectContent(value render.BoundSlot, item any) (ansi.Text, error) {
 	if p.mainTemplate == nil {
-		return value.render(p.slotItem(item))
+		return value.Render(p.slotItem(item))
 	}
 	var out ansi.Text
 	err := p.mainTemplate.Execute(&out, item)
@@ -123,10 +128,10 @@ func (p *projection) projectContent(value boundSlot, item any) (ansi.Text, error
 }
 
 // projectDetails uses projected details when a projection is set, otherwise the bound Details slot.
-func (p *projection) projectDetails(details boundSlot, item any) (ansi.Text, error) {
+func (p *projection) projectDetails(details render.BoundSlot, item any) (ansi.Text, error) {
 	switch {
 	case p.mainTemplate == nil:
-		return details.render(p.slotItem(item))
+		return details.Render(p.slotItem(item))
 	case p.detailsTemplate == nil:
 		return nil, nil
 	}
