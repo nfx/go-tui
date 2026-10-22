@@ -15,30 +15,10 @@ import (
 	"strings"
 )
 
-type numberType interface {
-	~int | ~int8 | ~int16 | ~int32 | ~int64 |
-		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 |
-		~float32 | ~float64
-}
-
 var (
 	errNumberBelowZero = errors.New("value cannot go below zero")
 	errNumberTooSmall  = errors.New("step is too small for this type; choose a larger digit")
 )
-
-// Number prompts for a decimal number of explicit type T (excluding uintptr).
-// Invalid or out-of-range input stays editable. Errors return T's zero value.
-//
-// Up/Down step integers by one and floats at the caret's decimal place.
-// Steps preserve fractional digits and reject overflow or invisible changes.
-//
-// Only [WithDefault], [WithAtLeast], [WithAtMost], [WithInput] and [WithOutput] apply.
-// Bounds are inclusive: typed values outside them are rejected on Enter, and
-// Up/Down refuse to step past them.
-func Number[T numberType](ctx context.Context, label string, option ...opt) (T, error) {
-	n := newNumber[T](ctx, label)
-	return n.read(ctx, option...)
-}
 
 // number adds conversion and stepping to input.
 type number[T numberType] struct {
@@ -50,51 +30,6 @@ type number[T numberType] struct {
 	// value holds the last successful conversion.
 	value    T
 	min, max *numberBound
-}
-
-// numberBound is an inclusive limit, compared exactly.
-type numberBound struct {
-	rat  *big.Rat
-	text string
-}
-
-type withNumberBounds interface {
-	setMin(b *numberBound)
-	setMax(b *numberBound)
-}
-
-// WithAtLeast rejects [Number] values below v. The bound may have any numeric
-// type; it is compared exactly and, for floats, at the precision of the answer.
-func WithAtLeast[B numberType](v B) opt {
-	return opT(func(x withNumberBounds) error {
-		b, err := newNumberBound(v)
-		if err != nil {
-			return err
-		}
-		x.setMin(b)
-		return nil
-	})
-}
-
-// WithAtMost rejects [Number] values above v. See [WithAtLeast].
-func WithAtMost[B numberType](v B) opt {
-	return opT(func(x withNumberBounds) error {
-		b, err := newNumberBound(v)
-		if err != nil {
-			return err
-		}
-		x.setMax(b)
-		return nil
-	})
-}
-
-// newNumberBound keeps a finite limit and its display text.
-func newNumberBound[B numberType](v B) (*numberBound, error) {
-	rat, text := numberRat(v)
-	if rat == nil {
-		return nil, fmt.Errorf("%w: bound must be finite", ErrInvalidOption)
-	}
-	return &numberBound{rat: rat, text: text}, nil
 }
 
 // numberRat converts v exactly; it returns nil for NaN and infinities.
@@ -406,14 +341,6 @@ func (n *number[T]) signLen(s string) int {
 	return 0
 }
 
-// decimalDraft represents coef × 10^-scale.
-type decimalDraft struct {
-	coef  *big.Int
-	scale int
-	// dot preserves a trailing decimal point.
-	dot bool
-}
-
 // parseDecimal preserves decimal places for exact stepping of validated text.
 func (n *number[T]) parseDecimal(s string) decimalDraft {
 	neg := strings.HasPrefix(s, "-")
@@ -425,52 +352,6 @@ func (n *number[T]) parseDecimal(s string) decimalDraft {
 	}
 	return decimalDraft{coef: coef, scale: len(frac), dot: dot}
 }
-
-// pow10 supplies exact decimal scale factors.
-func (d decimalDraft) pow10(n int) *big.Int {
-	return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(n)), nil)
-}
-
-// step adds or subtracts 10^exp exactly.
-func (d decimalDraft) step(exp int, up bool) decimalDraft {
-	scale := max(d.scale, -exp)
-	coef := new(big.Int).Mul(d.coef, d.pow10(scale-d.scale))
-	delta := d.pow10(scale + exp)
-	if up {
-		coef.Add(coef, delta)
-	} else {
-		coef.Sub(coef, delta)
-	}
-	return decimalDraft{coef: coef, scale: scale, dot: d.dot}
-}
-
-// String formats the value at its original scale.
-func (d decimalDraft) String() string {
-	digits := new(big.Int).Abs(d.coef).String()
-	if len(digits) <= d.scale {
-		digits = strings.Repeat("0", d.scale-len(digits)+1) + digits
-	}
-	whole, frac := digits[:len(digits)-d.scale], digits[len(digits)-d.scale:]
-	s := whole
-	if d.scale > 0 {
-		s += "." + frac
-	} else if d.dot {
-		s += "."
-	}
-	if d.coef.Sign() < 0 {
-		s = "-" + s
-	}
-	return s
-}
-
-type caretKind int
-
-const (
-	caretDigit caretKind = iota // before a digit, which selects its place
-	caretEnd
-	caretDot
-	caretSign
-)
 
 // dotAt returns the decimal point's index or len(s).
 func (n *number[T]) dotAt(s string) int {
