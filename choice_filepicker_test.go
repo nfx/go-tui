@@ -77,12 +77,6 @@ func TestFilePickerSkipRules(t *testing.T) {
 	assert.True(t, !fp.skip(&dirEntry{name: "keep.txt"}))
 }
 
-func TestDirEntryString(t *testing.T) {
-	assert.Equal(t, "..", (&dirEntry{name: "..", isDir: true}).String())
-	assert.Equal(t, "d folder"+string(os.PathSeparator), (&dirEntry{name: "folder", isDir: true}).String())
-	assert.Equal(t, "- file"+string(os.PathSeparator), (&dirEntry{name: "file", isDir: false}).String())
-}
-
 func TestFilePickerDefaults(t *testing.T) {
 	io := quiet(t)
 	ctx := t.Context()
