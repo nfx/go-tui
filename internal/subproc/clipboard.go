@@ -1,10 +1,11 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package subproc
 
 import (
 	"fmt"
+	"github.com/nfx/go-tui/internal/errs"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -52,7 +53,7 @@ var clipboardPasteImplementations = map[string][][]string{
 func (cr *clipboard) pasteCommand() (*exec.Cmd, error) {
 	impls, ok := clipboardPasteImplementations[runtime.GOOS]
 	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrUnsupportedPlatform, runtime.GOOS)
+		return nil, fmt.Errorf("%w: %s", errs.ErrUnsupportedPlatform, runtime.GOOS)
 	}
 	for _, args := range impls {
 		_, err := exec.LookPath(args[0])
@@ -61,5 +62,5 @@ func (cr *clipboard) pasteCommand() (*exec.Cmd, error) {
 		}
 		return clipboardExecCommand(args[0], args[1:]...), nil
 	}
-	return nil, fmt.Errorf("%w: no clipboard paste utility found", ErrUnsupportedPlatform)
+	return nil, fmt.Errorf("%w: no clipboard paste utility found", errs.ErrUnsupportedPlatform)
 }

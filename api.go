@@ -18,6 +18,7 @@ import (
 	"github.com/nfx/go-tui/internal/progress"
 	"github.com/nfx/go-tui/internal/prompt"
 	"github.com/nfx/go-tui/internal/spinner"
+	"github.com/nfx/go-tui/internal/subproc"
 	"github.com/nfx/go-tui/internal/table"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
@@ -433,4 +434,18 @@ type Spinner = spinner.Spinner
 // Malformed input returns an error before anything is written.
 func PrettyJSON(w io.Writer, src any) error {
 	return prettyjson.PrettyJSON(w, src)
+}
+
+// Browserf opens the specified URL in the default browser. addr is used as-is when
+// called with no args; otherwise it's a fmt template whose string args get URL-escaped
+// before substitution. A pre-built URL (already percent-encoded) must be passed with
+// no args, since running it through Sprintf as a template would misparse its "%XX"
+// sequences as format verbs.
+func Browserf(addr string, args ...any) error {
+	return subproc.Browserf(addr, args...)
+}
+
+// ShouldPasteFromClipboard returns the clipboard text, or "" when it cannot be read.
+func ShouldPasteFromClipboard() string {
+	return subproc.ShouldPasteFromClipboard()
 }

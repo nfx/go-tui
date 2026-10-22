@@ -1,10 +1,11 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package subproc
 
 import (
 	"fmt"
+	"github.com/nfx/go-tui/internal/errs"
 	"net/url"
 	"os/exec"
 	"runtime"
@@ -18,11 +19,7 @@ var (
 	browserCommandStarter = func(cmd *exec.Cmd) error { return cmd.Start() }
 )
 
-// Browserf opens the specified URL in the default browser. addr is used as-is when
-// called with no args; otherwise it's a fmt template whose string args get URL-escaped
-// before substitution. A pre-built URL (already percent-encoded) must be passed with
-// no args, since running it through Sprintf as a template would misparse its "%XX"
-// sequences as format verbs.
+// Browserf opens the URL in the default browser.
 func Browserf(addr string, args ...any) error {
 	var cmd *exec.Cmd
 	if len(args) > 0 {
@@ -41,7 +38,7 @@ func Browserf(addr string, args ...any) error {
 	case "darwin": // macOS
 		cmd = browserExecCommand("open", addr)
 	default:
-		return fmt.Errorf("%w: %s", ErrUnsupportedPlatform, browserGOOS)
+		return fmt.Errorf("%w: %s", errs.ErrUnsupportedPlatform, browserGOOS)
 	}
 	return browserCommandStarter(cmd)
 }

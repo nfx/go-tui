@@ -1,10 +1,11 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package subproc
 
 import (
 	"errors"
+	"github.com/nfx/go-tui/internal/errs"
 	"os/exec"
 	"testing"
 )
@@ -93,7 +94,7 @@ func TestBrowserfUnsypported(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error")
 	}
-	if !errors.Is(err, ErrUnsupportedPlatform) {
+	if !errors.Is(err, errs.ErrUnsupportedPlatform) {
 		t.Fatalf("expected ErrUnsupportedPlatform, got %v", err)
 	}
 }

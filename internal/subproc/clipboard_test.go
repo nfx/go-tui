@@ -1,11 +1,12 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package subproc
 
 import (
 	"bytes"
 	"errors"
+	"github.com/nfx/go-tui/internal/errs"
 	"os"
 	"os/exec"
 	"runtime"
@@ -83,7 +84,7 @@ func TestClipboardPasteCommandMissing(t *testing.T) {
 		runtime.GOOS: {{"definitely-missing-cmd"}},
 	}
 	_, err := (&clipboard{}).pasteCommand()
-	if !errors.Is(err, ErrUnsupportedPlatform) {
+	if !errors.Is(err, errs.ErrUnsupportedPlatform) {
 		t.Fatalf("expected unsupported platform error, got %v", err)
 	}
 }
