@@ -5,11 +5,9 @@ package tui
 
 import (
 	"context"
-	"fmt"
-	"regexp"
-	"strings"
 
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/prompt"
 )
 
 // WithDefault supplies the answer of a prompt. Without a terminal the prompt
@@ -32,69 +30,24 @@ import (
 func WithDefault(d any) option.Opt { return option.WithDefault(d) }
 
 // WithNonEmpty rejects confirmed input containing only whitespace or no characters.
-func WithNonEmpty() option.Opt {
-	return option.OpT(func(i *input) error {
-		i.rules = append(i.rules, func(_ context.Context, s string) error {
-			if strings.TrimSpace(s) == "" {
-				return ruleError("a value is required")
-			}
-			return nil
-		})
-		return nil
-	})
-}
+func WithNonEmpty() option.Opt { return prompt.WithNonEmpty() }
 
 // WithValidation validates confirmed input in option order; the first error is shown
 // below the input. fn receives the prompt context and blocks key handling while it
 // runs. Errors must not expose the typed value, especially for [Password].
 func WithValidation(fn func(context.Context, string) error) option.Opt {
-	return option.OpT(func(i *input) error {
-		if fn == nil {
-			return fmt.Errorf("%w: validator is nil", ErrInvalidOption)
-		}
-		i.rules = append(i.rules, fn)
-		return nil
-	})
+	return prompt.WithValidation(fn)
 }
 
 // WithRegex rejects confirmed input that does not fully match pattern, showing message.
 // A pattern that matches the empty string accepts it;
 // combine with [WithNonEmpty] to require a value.
-func WithRegex(pattern, message string) option.Opt {
-	return option.OpT(func(i *input) error {
-		if strings.TrimSpace(message) == "" {
-			return fmt.Errorf("%w: regex message is empty", ErrInvalidOption)
-		}
-		// the non-capturing group keeps alternations like `a|b` from
-		// escaping the \A and \z anchors.
-		re, err := regexp.Compile(`\A(?:` + pattern + `)\z`)
-		if err != nil {
-			return fmt.Errorf("%w: regex: %w", ErrInvalidOption, err)
-		}
-		i.rules = append(i.rules, func(_ context.Context, s string) error {
-			if !re.MatchString(s) {
-				return ruleError(message)
-			}
-			return nil
-		})
-		return nil
-	})
+func WithRegex(pattern, message string) option.Opt { return prompt.WithRegex(pattern, message) }
+
+func Input(ctx context.Context, label string, opts ...option.Opt) (string, error) {
+	return prompt.Input(ctx, label, opts...)
 }
 
-// ruleError rejects input for a built-in rule. Its message comes from the
-// option, never from the typed text, so a [Password] may show it.
-type ruleError string
-
-// Error returns the built-in rule's rejection message.
-func (e ruleError) Error() string { return string(e) }
-
-func Input(ctx context.Context, label string, option ...option.Opt) (string, error) {
-	i := newInput(ctx, label)
-	return i.read(ctx, option...)
-}
-
-func Password(ctx context.Context, label string, option ...option.Opt) (string, error) {
-	i := newInput(ctx, label)
-	i.Password = true
-	return i.read(ctx, option...)
+func Password(ctx context.Context, label string, opts ...option.Opt) (string, error) {
+	return prompt.Password(ctx, label, opts...)
 }

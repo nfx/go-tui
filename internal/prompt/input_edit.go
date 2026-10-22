@@ -1,16 +1,17 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package prompt
 
 import (
 	"errors"
 	"fmt"
-	"github.com/nfx/go-tui/internal/ansi"
-	"github.com/nfx/go-tui/internal/term"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/term"
 )
 
 // visibleWindow returns the start and end indexes of the clusters

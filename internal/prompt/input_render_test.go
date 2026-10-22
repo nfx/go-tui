@@ -1,18 +1,21 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package prompt
 
 import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nfx/go-tui/internal/ansi"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -323,8 +326,8 @@ func TestThemedInputShortTerminals(t *testing.T) {
 	}{
 		{"label dropped first", 20, 2, "no", "\r| a\x1b[K\n\r| ! no\x1b[K\x1b[1A\x1b[4G", nil},
 		{"one row keeps the value", 20, 1, "", "\r| a\x1b[K", nil},
-		{"rejection needs a second row", 20, 1, "no", "", ErrNoSpace},
-		{"no value column", 3, 5, "", "", ErrNoSpace},
+		{"rejection needs a second row", 20, 1, "no", "", errs.ErrNoSpace},
+		{"no value column", 3, 5, "", "", errs.ErrNoSpace},
 		{"unknown size is unbounded", 0, 0, "", "\r? Label\x1b[K\n\r| a\x1b[K", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -456,9 +459,9 @@ func TestThemedInputDefaultWithoutTerminal(t *testing.T) {
 	i.Out = &out
 	i.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) {
 		t.Fatal("acquired a terminal")
-		return nil, ErrNoTTY
+		return nil, errs.ErrNoTTY
 	}
-	got, err := i.read(t.Context(), WithDefault("dflt"))
+	got, err := i.read(t.Context(), option.WithDefault("dflt"))
 	assert.NoError(t, err)
 	assert.Equal(t, "dflt", got)
 	assert.Equal(t, "", out.String())

@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package prompt
 
 import (
 	"strings"
@@ -11,7 +11,7 @@ import (
 )
 
 // stepNumber steps a draft with "|" marking the caret.
-func stepNumber[T numberType](t *testing.T, draft, arrow string) (string, error) {
+func stepNumber[T Numeric](t *testing.T, draft, arrow string) (string, error) {
 	t.Helper()
 	n := newNumber[T](t.Context(), "n")
 	before, after, _ := strings.Cut(draft, "|")

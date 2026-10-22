@@ -1,17 +1,18 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package prompt
 
 import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
+	"unicode"
+
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/internal/term"
-	"strings"
-	"unicode"
 )
 
 // feedbackSafe drops line breaks and terminal controls, so that a message

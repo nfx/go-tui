@@ -1,19 +1,21 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package prompt
 
 import (
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -29,7 +31,7 @@ func TestPasswordReadsFromPipe(t *testing.T) {
 	_, err = w.WriteString("secret\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Password(t.Context(), "Label", WithInput(&terst.FDByteReader{F: r}), WithOutput(cio))
+	got, err := Password(t.Context(), "Label", option.WithInput(&terst.FDByteReader{F: r}), option.WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "secret", got)
 }
@@ -50,13 +52,13 @@ func TestPasswordRejectionStaysMasked(t *testing.T) {
 
 func TestPasswordDefaultKeepsSecretOut(t *testing.T) {
 	io := terst.Quiet(t)
-	got, err := Password(t.Context(), "Secret", io, WithDefault("hunter2"))
+	got, err := Password(t.Context(), "Secret", io, option.WithDefault("hunter2"))
 	assert.NoError(t, err)
 	assert.Equal(t, "hunter2", got)
 
-	_, err = Password(t.Context(), "Secret", io, WithDefault("hunter2"),
+	_, err = Password(t.Context(), "Secret", io, option.WithDefault("hunter2"),
 		WithValidation(func(context.Context, string) error { return errors.New("too weak") }))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 	assert.True(t, !strings.Contains(err.Error(), "hunter2"))
 }
 

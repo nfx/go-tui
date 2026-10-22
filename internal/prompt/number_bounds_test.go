@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package prompt
 
 import (
 	"io"
@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
 )
 
 func TestNumberBounds(t *testing.T) {
@@ -40,16 +42,16 @@ func TestNumberBounds(t *testing.T) {
 
 	// a range that leaves no value of T is rejected up front
 	_, _, err = runNumber[int8](t, "\r", WithAtLeast(1000))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 	_, _, err = runNumber[uint](t, "\r", WithAtMost(-1))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 }
 
 func TestNumberBoundsLimitSteps(t *testing.T) {
 	v, _, err := runNumber[int](t, "9"+keyUp+keyUp+"\r", WithAtMost(10))
 	assert.NoError(t, err)
 	assert.Equal(t, 10, v)
-	v, _, err = runNumber[int](t, keyDown+keyDown+"\r", WithDefault("1"), WithAtLeast(0))
+	v, _, err = runNumber[int](t, keyDown+keyDown+"\r", option.WithDefault("1"), WithAtLeast(0))
 	assert.NoError(t, err)
 	assert.Equal(t, 0, v)
 	// outside the range, stepping toward it works
@@ -60,11 +62,17 @@ func TestNumberBoundsLimitSteps(t *testing.T) {
 
 func TestNumberInvalidBounds(t *testing.T) {
 	_, _, err := runNumber[int](t, "1\r", WithAtLeast(5), WithAtMost(1))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 	_, _, err = runNumber[int](t, "1\r", WithAtLeast(math.NaN()))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 	_, _, err = runNumber[float32](t, "1\r", WithAtMost(math.MaxFloat64))
-	assert.ErrorIs(t, err, ErrInvalidOption)
-	_, err = Input(t.Context(), "x", WithAtLeast(1), WithInput(strings.NewReader("")), WithOutput(io.Discard))
-	assert.ErrorIs(t, err, ErrWrongWidget)
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
+	_, err = Input(
+		t.Context(),
+		"x",
+		WithAtLeast(1),
+		option.WithInput(strings.NewReader("")),
+		option.WithOutput(io.Discard),
+	)
+	assert.ErrorIs(t, err, errs.ErrWrongWidget)
 }

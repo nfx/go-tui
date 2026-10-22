@@ -1,19 +1,20 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package prompt
 
 import (
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"unicode/utf8"
+
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/internal/term"
-	"io"
-	"unicode/utf8"
 )
 
 type input struct {

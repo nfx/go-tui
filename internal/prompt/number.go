@@ -1,21 +1,23 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package prompt
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nfx/go-tui/internal/ansi"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/render"
 	"io"
 	"math"
 	"math/big"
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/render"
 )
 
 var (
@@ -24,7 +26,7 @@ var (
 )
 
 // number adds conversion and stepping to input.
-type number[T numberType] struct {
+type number[T Numeric] struct {
 	prompt *input
 	kind   reflect.Kind
 	bits   int
@@ -36,9 +38,9 @@ type number[T numberType] struct {
 }
 
 // numberRat converts v exactly; it returns nil for NaN and infinities.
-func numberRat[B numberType](v B) (*big.Rat, string) {
+func numberRat[B Numeric](v B) (*big.Rat, string) {
 	rv := reflect.ValueOf(v)
-	switch rv.Kind() { //nolint:exhaustive // numberType has only these kinds
+	switch rv.Kind() { //nolint:exhaustive // Numeric has only these kinds
 	case reflect.Float32, reflect.Float64:
 		f := rv.Float()
 		return new(big.Rat).SetFloat64(f), strconv.FormatFloat(f, 'f', -1, rv.Type().Bits())
@@ -92,7 +94,7 @@ func (n *number[T]) checkBounds() error {
 		f, _ := b.rat.Float64()
 		r := new(big.Rat).SetFloat64(float64(T(f)))
 		if r == nil {
-			return fmt.Errorf("%w: bound %s is out of range for %s", ErrInvalidOption, b.text, n.kind)
+			return fmt.Errorf("%w: bound %s is out of range for %s", errs.ErrInvalidOption, b.text, n.kind)
 		}
 		b.rat = r
 	}
@@ -100,14 +102,14 @@ func (n *number[T]) checkBounds() error {
 		// a bound may exceed T as long as part of T's range remains
 		lo, hi := n.intRange()
 		if n.min != nil && n.min.rat.Cmp(new(big.Rat).SetInt(hi)) > 0 {
-			return fmt.Errorf("%w: min %s is above the largest %s", ErrInvalidOption, n.min.text, n.kind)
+			return fmt.Errorf("%w: min %s is above the largest %s", errs.ErrInvalidOption, n.min.text, n.kind)
 		}
 		if n.max != nil && n.max.rat.Cmp(new(big.Rat).SetInt(lo)) < 0 {
-			return fmt.Errorf("%w: max %s is below the smallest %s", ErrInvalidOption, n.max.text, n.kind)
+			return fmt.Errorf("%w: max %s is below the smallest %s", errs.ErrInvalidOption, n.max.text, n.kind)
 		}
 	}
 	if n.min != nil && n.max != nil && n.min.rat.Cmp(n.max.rat) > 0 {
-		return fmt.Errorf("%w: min %s is above max %s", ErrInvalidOption, n.min.text, n.max.text)
+		return fmt.Errorf("%w: min %s is above max %s", errs.ErrInvalidOption, n.min.text, n.max.text)
 	}
 	return nil
 }
@@ -148,7 +150,7 @@ func (n *number[T]) boundsError() error {
 }
 
 // newNumber wires type-aware validation and stepping into the prompt.
-func newNumber[T numberType](ctx context.Context, label string) *number[T] {
+func newNumber[T Numeric](ctx context.Context, label string) *number[T] {
 	typ := reflect.TypeFor[T]()
 	kind := typ.Kind()
 	n := &number[T]{

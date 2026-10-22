@@ -1,11 +1,13 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package prompt
 
 import (
 	"fmt"
 	"math/big"
+
+	"github.com/nfx/go-tui/internal/errs"
 )
 
 // numberBound is an inclusive limit, compared exactly.
@@ -20,10 +22,10 @@ type withNumberBounds interface {
 }
 
 // newNumberBound keeps a finite limit and its display text.
-func newNumberBound[B numberType](v B) (*numberBound, error) {
+func newNumberBound[B Numeric](v B) (*numberBound, error) {
 	rat, text := numberRat(v)
 	if rat == nil {
-		return nil, fmt.Errorf("%w: bound must be finite", ErrInvalidOption)
+		return nil, fmt.Errorf("%w: bound must be finite", errs.ErrInvalidOption)
 	}
 	return &numberBound{rat: rat, text: text}, nil
 }

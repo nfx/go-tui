@@ -1,17 +1,19 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package prompt
 
 import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -19,7 +21,7 @@ import (
 
 func TestInputWithDefault(t *testing.T) {
 	i := newInput(t.Context(), "label")
-	err := WithDefault("abc")(i)
+	err := option.WithDefault("abc")(i)
 	assert.NoError(t, err)
 	assert.Equal(t, "abc", i.typed)
 	assert.Equal(t, 3, i.cursor)
@@ -27,7 +29,7 @@ func TestInputWithDefault(t *testing.T) {
 
 func TestInputWithDefaultCountsRunes(t *testing.T) {
 	i := newInput(t.Context(), "label")
-	err := WithDefault("héllo")(i)
+	err := option.WithDefault("héllo")(i)
 	assert.NoError(t, err)
 	assert.Equal(t, 5, i.cursor)
 }
@@ -110,20 +112,20 @@ func TestInputValidatorEmptyMessageFallsBack(t *testing.T) {
 
 func TestInputValidatorNilIsInvalidOption(t *testing.T) {
 	err := WithValidation(nil)(newInput(t.Context(), "x"))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 }
 
 func TestInputValidatorWrongWidget(t *testing.T) {
 	err := WithValidation(func(context.Context, string) error { return nil })(&struct{}{})
-	assert.ErrorIs(t, err, ErrWrongWidget)
+	assert.ErrorIs(t, err, errs.ErrWrongWidget)
 }
 
 func TestInputValidatesDefault(t *testing.T) {
-	_, out, err := runValidated(t, false, "\r", WithDefault("bad"), WithRegex(`[0-9]+`, "digits only"))
+	_, out, err := runValidated(t, false, "\r", option.WithDefault("bad"), WithRegex(`[0-9]+`, "digits only"))
 	assert.ErrorIs(t, err, io.EOF)
 	assert.Contains(t, out, "✖ ")
 	assert.Contains(t, out, "digits only")
-	got, _, err := runValidated(t, false, "\r", WithDefault("42"), WithRegex(`[0-9]+`, "digits only"))
+	got, _, err := runValidated(t, false, "\r", option.WithDefault("42"), WithRegex(`[0-9]+`, "digits only"))
 	assert.NoError(t, err)
 	assert.Equal(t, "42", got)
 }
@@ -150,60 +152,60 @@ func TestInputRegexMatchesWholeString(t *testing.T) {
 }
 
 func TestInputRegexMalformedOrBlankMessage(t *testing.T) {
-	assert.ErrorIs(t, WithRegex(`(`, "m")(newInput(t.Context(), "x")), ErrInvalidOption)
-	assert.ErrorIs(t, WithRegex(`a`, "  ")(newInput(t.Context(), "x")), ErrInvalidOption)
+	assert.ErrorIs(t, WithRegex(`(`, "m")(newInput(t.Context(), "x")), errs.ErrInvalidOption)
+	assert.ErrorIs(t, WithRegex(`a`, "  ")(newInput(t.Context(), "x")), errs.ErrInvalidOption)
 }
 
 func TestInputDefaults(t *testing.T) {
 	io := terst.Quiet(t)
 	ctx := t.Context()
 
-	got, err := Input(ctx, "Name", io, WithDefault("bob"))
+	got, err := Input(ctx, "Name", io, option.WithDefault("bob"))
 	assert.NoError(t, err)
 	assert.Equal(t, "bob", got)
 
-	got, err = Input(ctx, "Name", io, WithDefault(""))
+	got, err = Input(ctx, "Name", io, option.WithDefault(""))
 	assert.NoError(t, err)
 	assert.Equal(t, "", got)
 
-	got, err = Input(ctx, "Name", io, WithDefault(0))
+	got, err = Input(ctx, "Name", io, option.WithDefault(0))
 	assert.NoError(t, err)
 	assert.Equal(t, "0", got)
 
-	got, err = Input(ctx, "Name", io, WithDefault(nil))
+	got, err = Input(ctx, "Name", io, option.WithDefault(nil))
 	assert.NoError(t, err)
 	assert.Equal(t, "<nil>", got)
 
-	got, err = Input(ctx, "Name", io, WithDefault("first"), WithDefault("last"))
+	got, err = Input(ctx, "Name", io, option.WithDefault("first"), option.WithDefault("last"))
 	assert.NoError(t, err)
 	assert.Equal(t, "last", got)
 
 	_, err = Input(ctx, "Name", io)
-	assert.ErrorIs(t, err, ErrNoTTY)
+	assert.ErrorIs(t, err, errs.ErrNoTTY)
 }
 
 func TestInputDefaultValidation(t *testing.T) {
 	io := terst.Quiet(t)
 	ctx := t.Context()
 
-	_, err := Input(ctx, "Name", io, WithNonEmpty(), WithDefault(""))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err := Input(ctx, "Name", io, WithNonEmpty(), option.WithDefault(""))
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 
 	cause := errors.New("nope")
-	_, err = Input(ctx, "Name", io, WithDefault("x"),
+	_, err = Input(ctx, "Name", io, option.WithDefault("x"),
 		WithValidation(func(context.Context, string) error { return cause }))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 	assert.ErrorIs(t, err, cause)
 
-	_, err = Input(ctx, "Name", io, WithDefault("abc"), WithRegex(`\d+`, "digits"))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = Input(ctx, "Name", io, option.WithDefault("abc"), WithRegex(`\d+`, "digits"))
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 
-	got, err := Input(ctx, "Name", io, WithDefault("123"), WithRegex(`\d+`, "digits"))
+	got, err := Input(ctx, "Name", io, option.WithDefault("123"), WithRegex(`\d+`, "digits"))
 	assert.NoError(t, err)
 	assert.Equal(t, "123", got)
 
 	cctx, cancel := context.WithCancel(ctx)
-	_, err = Input(cctx, "Name", io, WithDefault("x"),
+	_, err = Input(cctx, "Name", io, option.WithDefault("x"),
 		WithValidation(func(context.Context, string) error { cancel(); return nil }))
 	assert.ErrorIs(t, err, context.Canceled)
 }

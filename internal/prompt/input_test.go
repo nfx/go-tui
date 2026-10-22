@@ -1,19 +1,21 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package prompt
 
 import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -73,7 +75,7 @@ func TestInputReadOptionError(t *testing.T) {
 }
 
 func TestInputReadRunError(t *testing.T) {
-	_, err := Input(t.Context(), "Label", WithOutput(io.Discard), option.OpT(func(i *input) error {
+	_, err := Input(t.Context(), "Label", option.WithOutput(io.Discard), option.OpT(func(i *input) error {
 		i.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) {
 			return nil, io.EOF
 		}
@@ -86,8 +88,8 @@ func TestInputReadRunError(t *testing.T) {
 
 func TestInputOptWrongType(t *testing.T) {
 	err := option.OpT(func(*input) error { return nil })("nope")
-	if !errors.Is(err, ErrWrongWidget) {
-		t.Fatalf("expected ErrWrongWidget, got %v", err)
+	if !errors.Is(err, errs.ErrWrongWidget) {
+		t.Fatalf("expected errs.ErrWrongWidget, got %v", err)
 	}
 }
 
@@ -263,7 +265,7 @@ func TestInputTypesMultiByteFromPipe(t *testing.T) {
 	_, err = w.WriteString("héllo\x1b[D\x1b[D\x1b[D\x7fж\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Input(t.Context(), "Label", WithInput(&terst.FDByteReader{F: r}), WithOutput(cio))
+	got, err := Input(t.Context(), "Label", option.WithInput(&terst.FDByteReader{F: r}), option.WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "hжllo", got)
 }
@@ -278,7 +280,7 @@ func TestInputReadsFromPipe(t *testing.T) {
 	_, err = w.WriteString("hi\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Input(t.Context(), "Label", WithInput(&terst.FDByteReader{F: r}), WithOutput(cio))
+	got, err := Input(t.Context(), "Label", option.WithInput(&terst.FDByteReader{F: r}), option.WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "hi", got)
 }
@@ -301,9 +303,9 @@ func TestInputReadsMultipleLeftArrowsFromPipe(t *testing.T) {
 	got, err := Input(
 		t.Context(),
 		"Label",
-		WithDefault("apple"),
-		WithInput(&terst.FDByteReader{F: r}),
-		WithOutput(cio),
+		option.WithDefault("apple"),
+		option.WithInput(&terst.FDByteReader{F: r}),
+		option.WithOutput(cio),
 	)
 	assert.NoError(t, err)
 	assert.Equal(t, "apqqqple", got)
@@ -319,7 +321,7 @@ func TestInputIgnoresSpecialKeysFromPipe(t *testing.T) {
 	_, err = w.WriteString("a\x1b[3~b\x1b[Hc\x1bxd\x1b\x1bOPe\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Input(t.Context(), "Label", WithInput(&terst.FDByteReader{F: r}), WithOutput(cio))
+	got, err := Input(t.Context(), "Label", option.WithInput(&terst.FDByteReader{F: r}), option.WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "abcde", got)
 }
@@ -339,7 +341,7 @@ func TestInputThenPasswordWithPasteDoesNotLoseBytes(t *testing.T) {
 	// step 1: feed login, run Input.
 	_, err = w.WriteString("alice\r")
 	assert.NoError(t, err)
-	gotLogin, err := Input(t.Context(), "Login", WithInput(r), WithOutput(cio))
+	gotLogin, err := Input(t.Context(), "Login", option.WithInput(r), option.WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, "alice", gotLogin)
 	// step 2: only after Input has returned, feed the password paste.
@@ -348,7 +350,7 @@ func TestInputThenPasswordWithPasteDoesNotLoseBytes(t *testing.T) {
 	wantPassword := "0123456789abcdefghijklmnopqrstuv"
 	_, err = w.WriteString(wantPassword + "\r")
 	assert.NoError(t, err)
-	gotPassword, err := Password(t.Context(), "Password", WithInput(r), WithOutput(cio))
+	gotPassword, err := Password(t.Context(), "Password", option.WithInput(r), option.WithOutput(cio))
 	assert.NoError(t, err)
 	assert.Equal(t, wantPassword, gotPassword)
 }
@@ -482,7 +484,7 @@ func TestInputHandleBufferedKeys(t *testing.T) {
 	assert.Equal(t, "xca", i.typed)
 }
 
-func runInputOn(t *testing.T, in io.Reader, option ...option.Opt) (string, error) {
+func runInputOn(t *testing.T, in io.Reader, opts ...option.Opt) (string, error) {
 	t.Helper()
 	i := newInput(t.Context(), "Label")
 	i.In, i.Out = in, &bytes.Buffer{}
@@ -492,7 +494,7 @@ func runInputOn(t *testing.T, in io.Reader, option ...option.Opt) (string, error
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	i.Ctx = ctx
-	return i.read(t.Context(), option...)
+	return i.read(t.Context(), opts...)
 }
 
 // regression: a, b, Backspace and Enter typed together must submit "a"
@@ -504,7 +506,7 @@ func TestInputRunBufferedKeystrokes(t *testing.T) {
 
 func TestInputRunBufferedKeysInTheMiddle(t *testing.T) {
 	in := &terst.ChunkReader{Chunks: [][]byte{[]byte("\x1b[Da\x1b[Cé\x1b[D\x1b[D"), []byte("é\r")}}
-	got, err := runInputOn(t, in, WithDefault("\u65e5\u672c"))
+	got, err := runInputOn(t, in, option.WithDefault("\u65e5\u672c"))
 	assert.NoError(t, err)
 	assert.Equal(t, "\u65e5aé\u672cé", got)
 }
@@ -629,7 +631,7 @@ func TestInputNeedsTwoRowsForFeedback(t *testing.T) {
 	}
 	assert.NoError(t, WithValidation(func(context.Context, string) error { return errors.New("no") })(i))
 	_, err := i.run(i.Ctx)
-	assert.ErrorIs(t, err, ErrNoSpace)
+	assert.ErrorIs(t, err, errs.ErrNoSpace)
 }
 
 func TestNewInputUsesDefaultIO(t *testing.T) {

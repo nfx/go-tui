@@ -1,20 +1,22 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package prompt
 
 import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"math"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -85,11 +87,11 @@ func TestNumberNativeWidth(t *testing.T) {
 	assert.True(t, !u.signed)
 }
 
-func runNumber[T numberType](t *testing.T, keys string, option ...option.Opt) (T, string, error) {
+func runNumber[T Numeric](t *testing.T, keys string, opts ...option.Opt) (T, string, error) {
 	t.Helper()
 	var out bytes.Buffer
-	v, err := Number[T](t.Context(), "Count:", append(option,
-		WithInput(strings.NewReader(keys)), WithOutput(&out))...)
+	v, err := Number[T](t.Context(), "Count:", append(opts,
+		option.WithInput(strings.NewReader(keys)), option.WithOutput(&out))...)
 	return v, out.String(), err
 }
 
@@ -108,12 +110,12 @@ func TestNumberTypedAndAdjusted(t *testing.T) {
 	assert.Equal(t, float32(1.35), f)
 	assert.Contains(t, out, "1.35")
 
-	p, _, err := runNumber[port](t, keyUp+keyUp+"\r", WithDefault("8080"))
+	p, _, err := runNumber[port](t, keyUp+keyUp+"\r", option.WithDefault("8080"))
 	assert.NoError(t, err)
 	assert.Equal(t, port(8082), p)
 
 	// caret in the default: 1.00 keeps its spelling when submitted
-	f64, out, err := runNumber[float64](t, "\r", WithDefault("1.00"))
+	f64, out, err := runNumber[float64](t, "\r", option.WithDefault("1.00"))
 	assert.NoError(t, err)
 	assert.Equal(t, 1.0, f64)
 	assert.Contains(t, out, "1.00")
@@ -134,7 +136,7 @@ func TestNumberInvalidDraftStaysEditable(t *testing.T) {
 	assert.Contains(t, out, "a number is required")
 
 	// an invalid default is an editable draft
-	v8, _, err := runNumber[int8](t, "\r\x7f\x7f\x7f9\r", WithDefault("300"))
+	v8, _, err := runNumber[int8](t, "\r\x7f\x7f\x7f9\r", option.WithDefault("300"))
 	assert.NoError(t, err)
 	assert.Equal(t, int8(9), v8)
 }
@@ -165,17 +167,17 @@ func TestNumberCaretMovementKeepsFeedback(t *testing.T) {
 var foreign = option.OpT(func(*struct{}) error { return nil })
 
 func TestNumberOptions(t *testing.T) {
-	v, _, err := runNumber[int](t, "\r", WithDefault("5"))
+	v, _, err := runNumber[int](t, "\r", option.WithDefault("5"))
 	assert.NoError(t, err)
 	assert.Equal(t, 5, v)
 
-	for _, o := range []option.Opt{WithNonEmpty(), WithHide(), WithValidation(func(context.Context, string) error { return nil }),
-		WithRegex(`[0-9]`, "one digit"), foreign, WithOptions(foreign)} {
+	for _, o := range []option.Opt{WithNonEmpty(), option.WithHide(), WithValidation(func(context.Context, string) error { return nil }),
+		WithRegex(`[0-9]`, "one digit"), foreign, option.WithOptions(foreign)} {
 		_, _, err = runNumber[int](t, "5\r", o)
-		assert.ErrorIs(t, err, ErrWrongWidget)
+		assert.ErrorIs(t, err, errs.ErrWrongWidget)
 	}
 	// a bundle applies the members that Number supports
-	v, _, err = runNumber[int](t, "\r", WithOptions(WithDefault("6"), WithHide()))
+	v, _, err = runNumber[int](t, "\r", option.WithOptions(option.WithDefault("6"), option.WithHide()))
 	assert.NoError(t, err)
 	assert.Equal(t, 6, v)
 }
@@ -192,7 +194,7 @@ func TestNumberErrorsReturnZero(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	f, err := Number[float64](ctx, "x", WithInput(strings.NewReader("1\r")), WithOutput(io.Discard))
+	f, err := Number[float64](ctx, "x", option.WithInput(strings.NewReader("1\r")), option.WithOutput(io.Discard))
 	assert.Error(t, err)
 	assert.Equal(t, 0.0, f)
 }
@@ -200,21 +202,31 @@ func TestNumberErrorsReturnZero(t *testing.T) {
 func TestNumberSharesReaderWithInput(t *testing.T) {
 	in := strings.NewReader("7\rhello\r")
 	var out bytes.Buffer
-	n, err := Number[int](t.Context(), "n", WithInput(in), WithOutput(&out))
+	n, err := Number[int](t.Context(), "n", option.WithInput(in), option.WithOutput(&out))
 	assert.NoError(t, err)
 	assert.Equal(t, 7, n)
-	s, err := Input(t.Context(), "s", WithInput(in), WithOutput(&out))
+	s, err := Input(t.Context(), "s", option.WithInput(in), option.WithOutput(&out))
 	assert.NoError(t, err)
 	assert.Equal(t, "hello", s)
 }
 
 func TestInputIgnoresArrows(t *testing.T) {
 	var out bytes.Buffer
-	s, err := Input(t.Context(), "s", WithInput(strings.NewReader("a"+keyUp+keyDown+"b\r")), WithOutput(&out))
+	s, err := Input(
+		t.Context(),
+		"s",
+		option.WithInput(strings.NewReader("a"+keyUp+keyDown+"b\r")),
+		option.WithOutput(&out),
+	)
 	assert.NoError(t, err)
 	assert.Equal(t, "ab", s)
 	assert.NotContains(t, out.String(), "Error")
-	p, err := Password(t.Context(), "p", WithInput(strings.NewReader("a"+keyUp+"b\r")), WithOutput(io.Discard))
+	p, err := Password(
+		t.Context(),
+		"p",
+		option.WithInput(strings.NewReader("a"+keyUp+"b\r")),
+		option.WithOutput(io.Discard),
+	)
 	assert.NoError(t, err)
 	assert.Equal(t, "ab", p)
 }
@@ -225,55 +237,55 @@ func TestNumberDefaults(t *testing.T) {
 	io := terst.Quiet(t)
 	ctx := t.Context()
 
-	got, err := Number[int](ctx, "Port", io, WithDefault(8080))
+	got, err := Number[int](ctx, "Port", io, option.WithDefault(8080))
 	assert.NoError(t, err)
 	assert.Equal(t, 8080, got)
 
-	named, err := Number[tcpPort](ctx, "Port", io, WithDefault(tcpPort(80)))
+	named, err := Number[tcpPort](ctx, "Port", io, option.WithDefault(tcpPort(80)))
 	assert.NoError(t, err)
 	assert.Equal(t, tcpPort(80), named)
 
-	big, err := Number[int64](ctx, "Big", io, WithDefault(int64(9007199254740993)))
+	big, err := Number[int64](ctx, "Big", io, option.WithDefault(int64(9007199254740993)))
 	assert.NoError(t, err)
 	assert.Equal(t, int64(9007199254740993), big)
 
-	f, err := Number[float64](ctx, "Float", io, WithDefault(1e21))
+	f, err := Number[float64](ctx, "Float", io, option.WithDefault(1e21))
 	assert.NoError(t, err)
 	assert.Equal(t, 1e21, f)
 
-	f32, err := Number[float32](ctx, "Float", io, WithDefault(float32(0.1)))
+	f32, err := Number[float32](ctx, "Float", io, option.WithDefault(float32(0.1)))
 	assert.NoError(t, err)
 	assert.Equal(t, float32(0.1), f32)
 
-	text, err := Number[int](ctx, "Port", io, WithDefault("42"))
+	text, err := Number[int](ctx, "Port", io, option.WithDefault("42"))
 	assert.NoError(t, err)
 	assert.Equal(t, 42, text)
 
-	zero, err := Number[int8](ctx, "Small", io, WithDefault(300))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	zero, err := Number[int8](ctx, "Small", io, option.WithDefault(300))
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 	assert.Equal(t, int8(0), zero)
 
-	_, err = Number[int](ctx, "Port", io, WithDefault("abc"))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = Number[int](ctx, "Port", io, option.WithDefault("abc"))
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 
-	_, err = Number[int](ctx, "Port", io, WithDefault(5), WithAtLeast(10))
-	assert.ErrorIs(t, err, ErrInvalidOption)
-	got, err = Number[int](ctx, "Port", io, WithDefault(10), WithAtLeast(10), WithAtMost(10))
+	_, err = Number[int](ctx, "Port", io, option.WithDefault(5), WithAtLeast(10))
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
+	got, err = Number[int](ctx, "Port", io, option.WithDefault(10), WithAtLeast(10), WithAtMost(10))
 	assert.NoError(t, err)
 	assert.Equal(t, 10, got)
 
 	_, err = Number[int](ctx, "Port", io)
-	assert.ErrorIs(t, err, ErrNoTTY)
+	assert.ErrorIs(t, err, errs.ErrNoTTY)
 
 	cctx, cancel := context.WithCancel(ctx)
 	cancel()
-	_, err = Number[int](cctx, "Port", io, WithDefault(1))
+	_, err = Number[int](cctx, "Port", io, option.WithDefault(1))
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
 // themedNumber is a Number rendering through th on a scripted terminal of the
 // given size. Each key is one read. restored reports a released terminal.
-func themedNumber[T numberType](
+func themedNumber[T Numeric](
 	t *testing.T,
 	th theme.Theme,
 	width, height int,
@@ -392,7 +404,7 @@ func TestThemedNumberStepsAndRetainsExactDraft(t *testing.T) {
 
 	// the submitted spelling is retained, not the converted value
 	d, out, _ := themedNumber[float64](t, terst.ASCIITheme(false), 30, 5, "\r")
-	v, err := d.read(t.Context(), WithDefault("1.00"))
+	v, err := d.read(t.Context(), option.WithDefault("1.00"))
 	assert.NoError(t, err)
 	assert.Equal(t, 1.0, v)
 	assert.True(t, strings.HasSuffix(out.String(), "+ Count · 1.00\n"))
@@ -401,7 +413,7 @@ func TestThemedNumberStepsAndRetainsExactDraft(t *testing.T) {
 	th := terst.ASCIITheme(false)
 	th.Templates.Number.Feedback = `number: {{ .Message }}`
 	b, out, _ := themedNumber[int](t, th, 40, 5, keyUp, "\r")
-	i, err := b.read(t.Context(), WithDefault(10), WithAtMost(10))
+	i, err := b.read(t.Context(), option.WithDefault(10), WithAtMost(10))
 	assert.NoError(t, err)
 	assert.Equal(t, 10, i)
 	assert.Contains(t, out.String(), "\n\r| number: value must be at most 10\x1b[K")
@@ -418,7 +430,7 @@ func TestThemedNumberKeepsOptionSet(t *testing.T) {
 	for _, o := range []option.Opt{foreign} {
 		n, _, restored := themedNumber[int](t, terst.ASCIITheme(false), 30, 5, "1", "\r")
 		_, err := n.read(t.Context(), o)
-		assert.ErrorIs(t, err, ErrWrongWidget)
+		assert.ErrorIs(t, err, errs.ErrWrongWidget)
 		assert.True(t, !*restored)
 	}
 }
@@ -440,9 +452,9 @@ func TestThemedNumberHintErrorRestoresTerminal(t *testing.T) {
 	n.prompt.Out = out
 	n.prompt.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) {
 		t.Fatal("acquired a terminal")
-		return nil, ErrNoTTY
+		return nil, errs.ErrNoTTY
 	}
-	v, err := n.read(t.Context(), WithDefault(5))
+	v, err := n.read(t.Context(), option.WithDefault(5))
 	assert.NoError(t, err)
 	assert.Equal(t, 5, v)
 	assert.Equal(t, "", out.String())
