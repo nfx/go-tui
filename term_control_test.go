@@ -1,0 +1,233 @@
+// Copyright 2026 Serge Smertin
+// SPDX-License-Identifier: MIT
+
+package tui
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"strings"
+	"sync"
+	"testing"
+	"testing/iotest"
+
+	"github.com/nfx/go-tui/internal/assert"
+)
+
+func TestScanControlFrame(t *testing.T) {
+	invalid := controlFrame{isInvalid: true}
+	for name, tc := range map[string]struct {
+		in   string
+		want controlFrame
+	}{
+		"bel":         {"\x1b]11;rgb:ffff/0000/8080\x07", controlFrame{size: 24, isComplete: true, reply: controlReply{11, "rgb:ffff/0000/8080"}}},
+		"st":          {"\x1b]11;rgb:ff/00/80\x1b\\", controlFrame{size: 19, isComplete: true, reply: controlReply{11, "rgb:ff/00/80"}}},
+		"trailing":    {"\x1b]11;x\x07a", controlFrame{size: 7, isComplete: true, reply: controlReply{11, "x"}}},
+		"empty data":  {"\x1b]4;\x07", controlFrame{size: 5, isComplete: true, reply: controlReply{4, ""}}},
+		"alt bracket": {"\x1b]", controlFrame{size: 2, isIncomplete: true}},
+		"code only":   {"\x1b]11", controlFrame{size: 4, isIncomplete: true}},
+		"no end":      {"\x1b]11;rgb:", controlFrame{size: 9, isIncomplete: true}},
+		"lone esc":    {"\x1b]11;x\x1b", controlFrame{size: 7, isIncomplete: true}},
+		"no code":     {"\x1b];x\x07", invalid},
+		"letter code": {"\x1b]a;x\x07", invalid},
+		"long code":   {"\x1b]1111;x\x07", invalid},
+		"control":     {"\x1b]11;a\rb\x07", invalid},
+		"bad esc":     {"\x1b]11;a\x1b[A\x07", invalid},
+		"too long":    {"\x1b]11;" + strings.Repeat("a", maxControlFrame) + "\x07", invalid},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.want, new(termIO).scanControlFrame([]byte(tc.in)))
+		})
+	}
+}
+
+// oscReply is what a terminal sends for an OSC 11 query.
+const oscReply = "\x1b]11;rgb:1e1e/1e1e/2e2e\x07"
+
+// scriptedKeys reads keys from in.
+func scriptedKeys(in io.Reader) *termIO {
+	return &termIO{in: &mockDescriptor{Reader: in, fd: 0}, splitKeys: true}
+}
+
+// nextEvent reads one event and waits for its reader to finish.
+func nextEvent(t *testing.T, tio *termIO) keyEvent {
+	t.Helper()
+	ev := <-tio.readEvents(t.Context(), nil)
+	tio.awaitReader()
+	return ev
+}
+
+// readKeys reads events until EOF and returns the keys that are not ignored.
+func readKeys(t *testing.T, tio *termIO) string {
+	t.Helper()
+	var keys strings.Builder
+	for {
+		ev := nextEvent(t, tio)
+		if ev.err != nil {
+			assert.ErrorIs(t, ev.err, io.EOF)
+			return keys.String()
+		}
+		if ev.key != keyIgnored {
+			keys.WriteRune(ev.key)
+		}
+	}
+}
+
+func TestTermIO_ControlReplyIsNotAKey(t *testing.T) {
+	for name, tc := range map[string]struct{ in, keys string }{
+		"alone then key": {oscReply + "a", "a"},
+		"key then reply": {"a" + oscReply, "a"},
+		"coalesced":      {"a" + oscReply + "b", "ab"},
+		"st terminator":  {"\x1b]11;rgb:0/0/0\x1b\\a", "a"},
+		"arrow after":    {oscReply + "\x1b[A", "↑"},
+		"two replies":    {oscReply + oscReply + "a", "a"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tio := scriptedKeys(bytes.NewBufferString(tc.in))
+			q := tio.expectControl(11)
+			defer q.cancel()
+			assert.Equal(t, tc.keys, readKeys(t, tio))
+			assert.Equal(t, 1, len(q.reply))
+			assert.Equal(t, 11, (<-q.reply).code)
+		})
+	}
+}
+
+func TestTermIO_ControlReplyKeepsKeyPermit(t *testing.T) {
+	tio := scriptedKeys(bytes.NewBufferString(oscReply + "a"))
+	permits := make(chan struct{}, 1)
+	permits <- struct{}{} // a single key may be read
+	ev := <-tio.readEvents(t.Context(), permits)
+	assert.NoError(t, ev.err)
+	assert.Equal(t, 'a', ev.key)
+}
+
+func TestTermIO_ControlReplySplitAcrossReads(t *testing.T) {
+	tio := scriptedKeys(iotest.OneByteReader(strings.NewReader("\x1b]11;rgb:0000/0000/0000\x1b\\q")))
+	q := tio.expectControl(11)
+	assert.Equal(t, 'q', nextEvent(t, tio).key)
+	assert.Equal(t, "rgb:0000/0000/0000", (<-q.reply).data)
+}
+
+func TestTermIO_LateControlReplyIsDropped(t *testing.T) {
+	tio := scriptedKeys(bytes.NewBufferString(oscReply + "a"))
+	tio.expectControl(11).cancel() // the query already timed out
+	assert.Equal(t, 'a', nextEvent(t, tio).key)
+}
+
+func TestTermIO_ControlReplyWrongCodeStaysQueued(t *testing.T) {
+	tio := scriptedKeys(bytes.NewBufferString(oscReply + "a"))
+	q := tio.expectControl(10)
+	defer q.cancel()
+	assert.Equal(t, 'a', nextEvent(t, tio).key)
+	assert.Equal(t, 0, len(q.reply)) // a reply for another code is not delivered
+}
+
+func TestTermIO_AltBracketStillAKey(t *testing.T) {
+	tio := &termIO{}
+	n, complete := tio.escapeSequenceLen([]byte("\x1b]"))
+	assert.Equal(t, 2, n)
+	assert.Equal(t, false, complete) // waits [escapeTimeout] for a header, then it is Alt+]
+	key, consumed, err := tio.decodeRuneBytes([]byte("\x1b]"), 2)
+	assert.NoError(t, err)
+	assert.Equal(t, rune(keyIgnored), key)
+	assert.Equal(t, 2, consumed)
+}
+
+func TestTermIO_InvalidOSCIsNotSwallowed(t *testing.T) {
+	// not a reply (no numeric code), so only Alt+] is dropped and the text stays typed
+	tio := scriptedKeys(bytes.NewBufferString("\x1b]xy"))
+	assert.Equal(t, "xy", readKeys(t, tio))
+}
+
+func TestTermIO_PasteWithControlReplyStaysPaste(t *testing.T) {
+	in := "\x1b[200~" + oscReply + "\x1b[201~"
+	tio := &termIO{in: &mockDescriptor{Reader: bytes.NewBufferString(in), fd: 0}, bracketedPaste: true}
+	q := tio.expectControl(11)
+	defer q.cancel()
+	assert.Equal(t, oscReply, string(nextEvent(t, tio).paste))
+	assert.Equal(t, 0, len(q.reply)) // the paste payload is not routed as a reply
+}
+
+func TestChanIO_WriteControlIsVerbatimAndNotReplayed(t *testing.T) {
+	out := &syncBuffer{}
+	cio := startChanIOTo(t.Context(), out, 80, 24)
+
+	vp, err := cio.pushViewport()
+	assert.NoError(t, err)
+	_, err = vp.Write([]byte("prompt"))
+	assert.NoError(t, err)
+	assert.NoError(t, cio.Flush())
+
+	const query = "\x1b]11;?\x07"
+	assert.NoError(t, cio.writeControl(t.Context(), []byte(query)))
+	assert.Equal(t, 1, strings.Count(out.String(), query))
+
+	// redraws of the managed rows must not repeat the request
+	_, err = vp.Write([]byte(" more"))
+	assert.NoError(t, err)
+	assert.NoError(t, cio.Flush())
+	cio.releaseViewport(vp)
+	assert.NoError(t, cio.Flush())
+	assert.Equal(t, 1, strings.Count(out.String(), query))
+}
+
+func TestChanIO_WriteControlNotHeldBackByPartialLine(t *testing.T) {
+	out := &syncBuffer{}
+	cio := startChanIOTo(t.Context(), out, 80, 24)
+	vp, err := cio.pushViewport()
+	assert.NoError(t, err)
+	defer cio.releaseViewport(vp)
+	_, err = cio.Write([]byte("no newline yet"))
+	assert.NoError(t, err)
+	assert.NoError(t, cio.writeControl(t.Context(), []byte("\x1b]11;?\x07")))
+	assert.Contains(t, out.String(), "\x1b]11;?\x07")
+}
+
+func TestChanIO_WriteControlCancelled(t *testing.T) {
+	cio := newUnstartedIO(t.Context(), 80, 24, 0) // nothing serves the channel
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	assert.ErrorIs(t, cio.writeControl(ctx, []byte("x")), context.Canceled)
+}
+
+func TestTermIO_WriteControl(t *testing.T) {
+	out := &bytes.Buffer{}
+	direct := &termIO{out: out, fd: 2}
+	assert.NoError(t, direct.writeControl(t.Context(), []byte("q")))
+	assert.Equal(t, "q", out.String())
+
+	scripted := &termIO{out: out}
+	assert.ErrorIs(t, scripted.writeControl(t.Context(), []byte("q")), ErrNoTTY)
+	assert.Equal(t, "q", out.String())
+}
+
+// replyingTerminal answers OSC 11 queries through the input pipe.
+type replyingTerminal struct {
+	mu      sync.Mutex
+	queries int
+	reply   string
+	in      *io.PipeWriter
+}
+
+// Write counts queries and injects the configured reply.
+func (r *replyingTerminal) Write(p []byte) (int, error) {
+	if string(p) != "\x1b]11;?\x07" {
+		return len(p), nil
+	}
+	r.mu.Lock()
+	r.queries++
+	r.mu.Unlock()
+	if r.reply != "" {
+		go r.in.Write([]byte(r.reply)) //nolint:errcheck
+	}
+	return len(p), nil
+}
+
+// count returns the synchronized query count.
+func (r *replyingTerminal) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.queries
+}

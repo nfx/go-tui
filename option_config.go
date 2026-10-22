@@ -1,0 +1,25 @@
+// Copyright 2026 Serge Smertin
+// SPDX-License-Identifier: MIT
+
+package tui
+
+import (
+	"context"
+	"io"
+)
+
+type config struct {
+	ctx context.Context
+	in  io.Reader
+	out io.Writer
+}
+
+// implement [withIO] interface.
+func (c *config) setReader(r io.Reader) {
+	c.in = r
+}
+
+// implement [withIO] interface.
+func (c *config) setWriter(w io.Writer) {
+	c.out = w
+}
