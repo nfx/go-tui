@@ -4,10 +4,9 @@
 package tui
 
 import (
-	"bytes"
-	"context"
-	"github.com/nfx/go-tui/internal/term"
 	"io"
+
+	"github.com/nfx/go-tui/internal/prettyjson"
 )
 
 // PrettyJSON pretty-prints JSON data, with two-space indentation unless the
@@ -18,18 +17,5 @@ import (
 // the terminal is never queried. Without color the output is plain JSON.
 // Malformed input returns an error before anything is written.
 func PrettyJSON(w io.Writer, src any) error {
-	theme := term.Default.CurrentTheme()
-	out, err := jsonIndent(src, theme.Source.JSON)
-	if err != nil {
-		return err
-	}
-	if p := term.Default.ProfileFor(w); p.Attrs() {
-		style := newJSONLook(term.Default.BindTheme(context.Background(), theme, w, nil))
-		colored := bytes.NewBuffer(make([]byte, 0, 2*out.Len()))
-		style.recolor(out, colored)
-		out = colored
-	}
-	out.WriteByte('\n')
-	_, err = out.WriteTo(w)
-	return err
+	return prettyjson.PrettyJSON(w, src)
 }

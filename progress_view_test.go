@@ -282,7 +282,7 @@ func TestThemedProgressRoles(t *testing.T) {
 		string(roles.Accent)+"50 / 100"+color.FgDefault+" "+string(roles.Guide)+"items"+color.FgDefault,
 	)
 	assert.Contains(t, hint, string(roles.Guide)+" · "+color.FgDefault+string(roles.Accent)+"50.00"+color.FgDefault)
-	assert.Equal(t, "50 / 100 items · 50.00 items/s · 1s left · 1s elapsed", stripSGR(hint))
+	assert.Equal(t, "50 / 100 items · 50.00 items/s · 1s left · 1s elapsed", terst.StripSGR(hint))
 	// running work is not a success or a failure
 	for _, row := range rows {
 		out := row.String()

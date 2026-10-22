@@ -185,7 +185,7 @@ func TestProgressbarTickRenders(t *testing.T) {
 	assert.NotContains(t, output, "\x1b[1A\r\x1b[K\r")
 	// a terminal one row high has no room for the hint row, so the metrics
 	// stay on the row of the bar
-	assert.Contains(t, stripSGR(output), "download  50%  ╸ 10.00/s · 1s remaining")
+	assert.Contains(t, terst.StripSGR(output), "download  50%  ╸ 10.00/s · 1s remaining")
 
 	p.Add(5)
 	now = start.Add(2 * time.Second)
@@ -204,7 +204,7 @@ func TestProgressbarTickRenders(t *testing.T) {
 	}
 
 	assert.Contains(t, second, "\x1b[1A\r\x1b[K\r")
-	assert.Contains(t, stripSGR(second), "download  75% ")
+	assert.Contains(t, terst.StripSGR(second), "download  75% ")
 }
 
 func TestProgressbarEmitsStructuredEvents(t *testing.T) {
@@ -721,7 +721,7 @@ func TestProgressbarTickShowsElapsed(t *testing.T) {
 	}
 	out, ok := p.io.Out.(*bytes.Buffer)
 	assert.True(t, ok)
-	assert.Contains(t, stripSGR(out.String()), "2s elapsed")
+	assert.Contains(t, terst.StripSGR(out.String()), "2s elapsed")
 }
 
 type errWriterPB struct{}

@@ -72,7 +72,7 @@ func TestThemedTableRoles(t *testing.T) {
 		assert.NotContains(t, out, string(role))
 	}
 	assert.Equal(t, "NAME    AMOUNT NOTE   \nalpha        1 first  \n"+
-		"beta        22        \ngamma      333 third  \n", stripSGR(out))
+		"beta        22        \ngamma      333 third  \n", terst.StripSGR(out))
 }
 
 func TestThemedTableSlots(t *testing.T) {
@@ -165,7 +165,7 @@ func TestThemedTableScaleBuckets(t *testing.T) {
 			scale := look.Diverging()
 			lines := strings.Split(buf.String(), "\n")
 			for i, bucket := range want {
-				line, value := lines[i+1], strings.TrimSpace(stripSGR(lines[i+1]))
+				line, value := lines[i+1], strings.TrimSpace(terst.StripSGR(lines[i+1]))
 				if bucket < 0 {
 					// only the Cell slot's foreground
 					assert.Equal(t, "   "+string(look.Roles.Foreground)+value+color.FgDefault+ansi.Reset+" ", line)
@@ -257,7 +257,7 @@ func TestThemedTableWidthLockAfterFirstBatch(t *testing.T) {
 	colored := &bytes.Buffer{}
 	assert.NoError(t, TableAuto(colored, data))
 	assert.True(t, colored.String() != plain.String())
-	assert.Equal(t, plain.String(), stripSGR(colored.String()))
+	assert.Equal(t, plain.String(), terst.StripSGR(colored.String()))
 }
 
 func TestThemedTableCellKeepsHyperlinksDropsControls(t *testing.T) {
@@ -320,7 +320,7 @@ func TestThemedTableErrors(t *testing.T) {
 	}
 
 	themedTable(t, theme.New())
-	err := TableAuto(errWriterTable{}, themedRows)
+	err := TableAuto(terst.FailingWriter{Err: io.EOF}, themedRows)
 	assert.ErrorIs(t, err, io.EOF)
 }
 
@@ -335,7 +335,7 @@ func TestThemedTableIterMatchesTable(t *testing.T) {
 		assert.NoError(t, TableAuto(whole, data))
 		assert.Equal(t, whole.String(), iterated.String())
 		// widths lock after the first batch, decoration not counted
-		assert.Equal(t, "a m…   12345… muc…  ", stripSGR(lines(iterated.String())[12]))
+		assert.Equal(t, "a m…   12345… muc…  ", terst.StripSGR(lines(iterated.String())[12]))
 	}
 	roles := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), &bytes.Buffer{}, nil).Roles
 	buf := &bytes.Buffer{}
@@ -435,7 +435,7 @@ func TestThemedTableIterScaleRanksSeenSoFar(t *testing.T) {
 	assert.True(t, strings.HasPrefix(buf.String(), firstBatch))
 	assert.Equal(t, strings.Join(out[:11], "\n")+"\n", firstBatch)
 	for i, bucket := range want {
-		line, value := out[i+1], strings.TrimSpace(stripSGR(out[i+1]))
+		line, value := out[i+1], strings.TrimSpace(terst.StripSGR(out[i+1]))
 		if bucket < 0 {
 			assert.Equal(t, "    "+string(look.Roles.Foreground)+value+color.FgDefault+ansi.Reset+" ", line)
 			continue
@@ -477,6 +477,6 @@ func TestThemedTableIterErrors(t *testing.T) {
 	assert.Contains(t, err.Error(), "boom")
 	assert.Equal(t, firstBatch, buf.String())
 
-	err = TableIter(errWriterTable{}, "", iterate(data))
+	err = TableIter(terst.FailingWriter{Err: io.EOF}, "", iterate(data))
 	assert.ErrorIs(t, err, io.EOF)
 }

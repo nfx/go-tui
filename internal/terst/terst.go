@@ -17,6 +17,7 @@ import (
 
 	xterm "golang.org/x/term"
 
+	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
@@ -319,6 +320,18 @@ func (r *BlockingByteReader) Waiters() int {
 
 func (r *BlockingByteReader) Close() {
 	close(r.ch)
+}
+
+// StripSGR removes SGR sequences, keeping text and every other sequence.
+func StripSGR(s string) string {
+	var out ansi.Text
+	for seg := range ansi.Text(s).Segments() {
+		if _, sgr := seg.SGRParams(); seg.IsEscape && sgr {
+			continue
+		}
+		out = append(out, seg.Text...)
+	}
+	return out.String()
 }
 
 // ASCIITheme is the preset theme with ASCII symbols, Guided or Inline.

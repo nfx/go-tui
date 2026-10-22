@@ -282,7 +282,7 @@ func TestThemedFactsRoles(t *testing.T) {
 	plain := &bytes.Buffer{}
 	terst.WithEnv(t)
 	assert.NoError(t, Facts(plain, factsData))
-	assert.Equal(t, plain.String(), stripSGR(out))
+	assert.Equal(t, plain.String(), terst.StripSGR(out))
 }
 
 func TestThemedFactsSlots(t *testing.T) {
@@ -390,5 +390,5 @@ func TestThemedFactsErrors(t *testing.T) {
 	}
 
 	themedTable(t, theme.New())
-	assert.ErrorIs(t, Facts(errWriterTable{}, factsData), io.EOF)
+	assert.ErrorIs(t, Facts(terst.FailingWriter{Err: io.EOF}, factsData), io.EOF)
 }

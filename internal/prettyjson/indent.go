@@ -1,12 +1,13 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package prettyjson
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+
 	"github.com/nfx/go-tui/theme"
 )
 

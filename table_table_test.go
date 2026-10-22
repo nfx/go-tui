@@ -21,6 +21,7 @@ import (
 	"text/template"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 type Pet struct {
@@ -143,7 +144,7 @@ func TestTableIterAppendError(t *testing.T) {
 	iter := func(yield func(Person, error) bool) {
 		yield(Person{Name: "A"}, nil)
 	}
-	err := TableIter(errWriterTable{}, "{{.Name}}", iter, option.OpT(func(t *table) error {
+	err := TableIter(terst.FailingWriter{Err: io.EOF}, "{{.Name}}", iter, option.OpT(func(t *table) error {
 		t.batchSize = 1
 		return nil
 	}))
@@ -233,14 +234,8 @@ func TestTableInvalidTemplate(t *testing.T) {
 	assert.Error(t, err)
 }
 
-type errWriterTable struct{}
-
-func (errWriterTable) Write(p []byte) (int, error) {
-	return 0, io.EOF
-}
-
 func TestTableAppendWriteError(t *testing.T) {
-	tbl, err := newTable[Person](errWriterTable{}, "{{.Name}}")
+	tbl, err := newTable[Person](terst.FailingWriter{Err: io.EOF}, "{{.Name}}")
 	assert.NoError(t, err)
 	tbl.batchSize = 1
 	err = tbl.Append(Person{Name: "A"})
@@ -455,10 +450,10 @@ func TestTableScaleColorFollowsPhysicalCell(t *testing.T) {
 	assertNoGreenRedScaleColor(t, lv, mustTableRow(t, events[1]).Cells[1])
 	// multi-line record: value stays on the first physical row, continuation is plain
 	first := mustTableRow(t, events[2]).Cells
-	assert.Equal(t, "a", strings.TrimSpace(stripSGR(first[0])))
+	assert.Equal(t, "a", strings.TrimSpace(terst.StripSGR(first[0])))
 	assertScaledCellContains(t, first[1], lv[4], "100")
 	cont := mustTableRow(t, events[3]).Cells
-	assert.Equal(t, "b", strings.TrimSpace(stripSGR(cont[0])))
+	assert.Equal(t, "b", strings.TrimSpace(terst.StripSGR(cont[0])))
 	assertNoGreenRedScaleColor(t, lv, cont[0])
 	assertNoGreenRedScaleColor(t, lv, cont[1])
 	last := mustTableRow(t, events[4]).Cells
@@ -475,9 +470,9 @@ func TestTableMultilineCellsDisabledByDefault(t *testing.T) {
 	events := collectEvents(t, "", data, WithColumnGreenRedScale("Value"))
 	assert.Equal(t, 4, len(events))
 	first := mustTableRow(t, events[1]).Cells
-	assert.Equal(t, "a b", strings.TrimSpace(stripSGR(first[0])))
+	assert.Equal(t, "a b", strings.TrimSpace(terst.StripSGR(first[0])))
 	second := mustTableRow(t, events[2]).Cells
-	assert.Equal(t, "c d", strings.TrimSpace(stripSGR(second[0])))
+	assert.Equal(t, "c d", strings.TrimSpace(terst.StripSGR(second[0])))
 	assertScaledCellContains(t, second[1], lv[4], "2")
 }
 
@@ -619,18 +614,6 @@ func TestTableMaxWidthIsTotalRowBudget(t *testing.T) {
 
 func factPlain(out string) string {
 	return strings.NewReplacer("\x1b[1m", "", "\x1b[0m", "").Replace(out)
-}
-
-// stripSGR removes SGR sequences, keeping text and every other sequence.
-func stripSGR(s string) string {
-	var out ansi.Text
-	for seg := range ansi.Text(s).Segments() {
-		if _, sgr := seg.SGRParams(); seg.IsEscape && sgr {
-			continue
-		}
-		out = append(out, seg.Text...)
-	}
-	return out.String()
 }
 
 type themedRow struct {

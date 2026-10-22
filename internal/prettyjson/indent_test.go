@@ -1,12 +1,13 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package prettyjson
 
 import (
 	"bytes"
-	"github.com/nfx/go-tui/theme"
 	"testing"
+
+	"github.com/nfx/go-tui/theme"
 )
 
 func TestJSONIndentFormats(t *testing.T) {

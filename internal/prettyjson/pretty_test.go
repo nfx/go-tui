@@ -1,21 +1,22 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package prettyjson
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/nfx/go-tui/internal/ansi"
-	"github.com/nfx/go-tui/internal/color"
-	"github.com/nfx/go-tui/internal/render"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"regexp"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -398,11 +399,23 @@ func TestThemedPrettyJSONDestinations(t *testing.T) {
 
 	// write errors are returned
 	terst.WithEnv(t, "FORCE_COLOR=3")
-	assert.ErrorIs(t, PrettyJSON(errWriterTable{}, `{"a":1}`), io.EOF)
+	assert.ErrorIs(t, PrettyJSON(terst.FailingWriter{Err: io.EOF}, `{"a":1}`), io.EOF)
 
 	// malformed input and marshal errors write nothing
 	var buf bytes.Buffer
 	assert.Error(t, PrettyJSON(&buf, `{"a":`))
 	assert.Error(t, PrettyJSON(&buf, map[string]any{"f": func() {}}))
 	assert.Equal(t, 0, buf.Len())
+}
+
+func TestPrettyJSONLevels(t *testing.T) {
+	render := func(env string) string { return renderJSON(t, env, `{"a":{"b":"c"}}`) }
+	assert.NotContains(t, render("FORCE_COLOR=0"), "\x1b[")
+	attrs := render("FORCE_COLOR=1")
+	assert.True(t, regexp.MustCompile("\x1b\\[(3|9)[0-7]m").MatchString(attrs))
+	assert.NotContains(t, attrs, "38;5;")
+	assert.Contains(t, render("FORCE_COLOR=2"), "38;5;")
+	assert.Contains(t, render("FORCE_COLOR=3"), "38;2;")
+	stripped := terst.RegexpSGR.ReplaceAllString(render("FORCE_COLOR=1"), "")
+	assert.Equal(t, "{\n  \"a\": {\n    \"b\": \"c\"\n  }\n}\n", stripped)
 }

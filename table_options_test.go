@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestWithColumnTypeFormat(t *testing.T) {
@@ -300,11 +301,11 @@ func TestWithColumnGreenRedScalePreservesTypeFormatting(t *testing.T) {
 		{Name: "B", Rate: 0.20},
 	}
 	events := collectEvents(t, "", data, WithFloat64AsPercent(), WithColumnGreenRedScale("Rate"))
-	assert.Equal(t, "5%", strings.TrimSpace(stripSGR(mustTableRow(t, events[1]).Cells[1])))
+	assert.Equal(t, "5%", strings.TrimSpace(terst.StripSGR(mustTableRow(t, events[1]).Cells[1])))
 	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[1], lv[4], "20%")
 
 	events = collectEvents(t, "", data, WithColumnGreenRedScale("Rate"), WithFloat64AsPercent())
-	assert.Equal(t, "5%", strings.TrimSpace(stripSGR(mustTableRow(t, events[1]).Cells[1])))
+	assert.Equal(t, "5%", strings.TrimSpace(terst.StripSGR(mustTableRow(t, events[1]).Cells[1])))
 	assertScaledCellContains(t, mustTableRow(t, events[2]).Cells[1], lv[4], "20%")
 }
 
