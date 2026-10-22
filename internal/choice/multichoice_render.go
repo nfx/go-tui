@@ -1,13 +1,15 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"bytes"
 	"context"
 	"errors"
+
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/internal/term"
 )
@@ -66,7 +68,7 @@ func (m *multichoice) bind(look render.Binding) error {
 func (m *multichoice) bindRun(ctx context.Context, tio *term.IO) error {
 	tio.RefreshSize()
 	if tio.Width < 1 || tio.Height < 3 {
-		return ErrNoSpace
+		return errs.ErrNoSpace
 	}
 	err := m.bind(term.Default.BindTheme(ctx, m.theme, m.out, tio))
 	if err != nil {
@@ -135,7 +137,7 @@ func (m *multichoice) themedRow(i int, active bool) (ansi.Text, error) {
 func (m *multichoice) renderThemed(tio *term.IO, buf *bytes.Buffer) error {
 	tio.RefreshSize()
 	if tio.Width < 1 || tio.Height < 3 {
-		return ErrNoSpace
+		return errs.ErrNoSpace
 	}
 	m.clampRows(tio.Height / 2)
 	rows := make([]render.FrameRow, 0, len(m.displayed)+4)

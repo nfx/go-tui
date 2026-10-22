@@ -1,19 +1,20 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"bytes"
 	"errors"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"strconv"
 	"strings"
 	"testing"
 	"text/template"
+
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -241,7 +242,7 @@ func TestThemedDropdownHiddenAnswerRetainsNothing(t *testing.T) {
 	assert.True(t, strings.HasSuffix(out.String(), "\x1b[4A\r"))
 
 	o, out, _ = themedDropdownOpt(t, terst.ASCIITheme(false), 40, "\r")
-	_, err = Dropdown(t.Context(), "Fruit", fruits, o, WithHide())
+	_, err = Dropdown(t.Context(), "Fruit", fruits, o, option.WithHide())
 	assert.NoError(t, err)
 	assert.True(t, strings.HasSuffix(out.String(), "\x1b[4A\r"))
 }
@@ -277,7 +278,7 @@ func TestThemedDropdownIndexKeepsSourceIndexOfDuplicates(t *testing.T) {
 
 func TestThemedDropdownTypedDefaultSeedsFirstRow(t *testing.T) {
 	o, out, _ := themedDropdownOpt(t, terst.ASCIITheme(false), 40, "\r")
-	got, err := Dropdown(t.Context(), "Pick", []int{1, 2, 3}, o, WithDefault(2))
+	got, err := Dropdown(t.Context(), "Pick", []int{1, 2, 3}, o, option.WithDefault(2))
 	assert.NoError(t, err)
 	assert.Equal(t, 2, got)
 	assert.True(t, strings.HasPrefix(out.String(), "\r? Pick\n\r| > 2\n\r|   1\n\r|   3\n"))
@@ -303,12 +304,12 @@ func TestThemedDropdownAutomaticAnswerMatchesProjection(t *testing.T) {
 	th.Templates.Choice.Value = `{{ printf "z%s" . }}`
 	terst.UseTheme(t, th)
 	var out bytes.Buffer
-	got, err := Dropdown(t.Context(), "Fruit", fruits, WithOutput(&out), WithDefault("zb"))
+	got, err := Dropdown(t.Context(), "Fruit", fruits, option.WithOutput(&out), option.WithDefault("zb"))
 	assert.NoError(t, err)
 	assert.Equal(t, "banana", got)
 
-	got, err = Dropdown(t.Context(), "Fruit", fruits, WithOutput(&out),
-		WithTemplate(`(printf "y%s" .)`), WithDefault("yc"))
+	got, err = Dropdown(t.Context(), "Fruit", fruits, option.WithOutput(&out),
+		WithTemplate(`(printf "y%s" .)`), option.WithDefault("yc"))
 	assert.NoError(t, err)
 	assert.Equal(t, "cherry", got)
 

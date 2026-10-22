@@ -1,23 +1,25 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"context"
 	"fmt"
-	"github.com/nfx/go-tui/internal/ansi"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/render"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/internal/trie"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"iter"
 	"reflect"
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/internal/trie"
+	"github.com/nfx/go-tui/theme"
 )
 
 type multichoice struct {
@@ -118,7 +120,7 @@ func (m *multichoice) prepare(o []option.Opt) error {
 		return err
 	}
 	if !m.loading && len(m.Items) == 0 {
-		return ErrNoItems
+		return errs.ErrNoItems
 	}
 	err = m.parseTemplates()
 	if err != nil {
@@ -285,7 +287,7 @@ func (m *multichoice) answerFromDefault(ctx context.Context) error {
 		}
 		m.loading = false
 		if len(m.Items) == 0 {
-			return ErrEmptyLazyResult
+			return errs.ErrEmptyLazyResult
 		}
 	}
 	picked, err := m.resolveTyped()

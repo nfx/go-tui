@@ -1,13 +1,12 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"os"
 	"reflect"
@@ -15,6 +14,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -34,7 +37,7 @@ func TestMultichoiceRunNoSpace(t *testing.T) {
 		}, nil
 	}
 	err := m.run(m.Ctx)
-	assert.ErrorIs(t, err, ErrNoSpace)
+	assert.ErrorIs(t, err, errs.ErrNoSpace)
 }
 
 func TestMultichoiceRunHandlesKeys(t *testing.T) {
@@ -244,13 +247,19 @@ func TestMultichoiceBracketedPasteSplitsAndHandoff(t *testing.T) {
 				t.Context(),
 				"First",
 				[]string{"one", "two"},
-				WithInput(in),
-				WithOutput(io.Discard),
+				option.WithInput(in),
+				option.WithOutput(io.Discard),
 			)
 			if err != nil || !reflect.DeepEqual(first, []string{"two"}) {
 				t.Fatalf("%v, %v", first, err)
 			}
-			next, err := Multichoice(t.Context(), "Next", []string{"next"}, WithInput(in), WithOutput(io.Discard))
+			next, err := Multichoice(
+				t.Context(),
+				"Next",
+				[]string{"next"},
+				option.WithInput(in),
+				option.WithOutput(io.Discard),
+			)
 			if err != nil || !reflect.DeepEqual(next, []string{"next"}) {
 				t.Fatalf("handoff: %v, %v", next, err)
 			}
@@ -262,11 +271,23 @@ func TestMultichoiceBracketedPasteSplitsAndHandoff(t *testing.T) {
 	old := &term.IO{In: in, Input: term.SharedInputState(in)}
 	read, _ := old.StartRead(t.Context())
 	<-read.Done
-	first, err := Multichoice(t.Context(), "First", []string{"one"}, WithInput(in), WithOutput(io.Discard))
+	first, err := Multichoice(
+		t.Context(),
+		"First",
+		[]string{"one"},
+		option.WithInput(in),
+		option.WithOutput(io.Discard),
+	)
 	if err != nil || len(first) != 1 {
 		t.Fatal(first, err)
 	}
-	second, err := Multichoice(t.Context(), "Second", []string{"two"}, WithInput(in), WithOutput(io.Discard))
+	second, err := Multichoice(
+		t.Context(),
+		"Second",
+		[]string{"two"},
+		option.WithInput(in),
+		option.WithOutput(io.Discard),
+	)
 	if err != nil || len(second) != 1 {
 		t.Fatal(second, err)
 	}
@@ -337,7 +358,7 @@ func TestMultichoiceLazyDefaultState(t *testing.T) {
 		{"duplicate", []any{"api", "api"}, "api", nil, []int{}, nil},
 		{"manually unchecked", []any{"api", "other"}, "api", []int{0, 0}, []int{}, nil},
 		{"already checked", []any{"api", "other"}, "api", []int{0}, []int{0}, nil},
-		{"empty", nil, "api", nil, nil, ErrEmptyLazyResult},
+		{"empty", nil, "api", nil, nil, errs.ErrEmptyLazyResult},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newMultichoice(t.Context())
@@ -433,7 +454,14 @@ func TestMultichoiceLazyPublicLoading(t *testing.T) {
 	result := make(chan []string, 1)
 	failure := make(chan error, 1)
 	go func() {
-		got, err := MultichoiceLazy(t.Context(), "Lazy", seq, WithDefault("api"), WithInput(input), WithOutput(out))
+		got, err := MultichoiceLazy(
+			t.Context(),
+			"Lazy",
+			seq,
+			option.WithDefault("api"),
+			option.WithInput(input),
+			option.WithOutput(out),
+		)
 		result <- got
 		failure <- err
 	}()
@@ -482,7 +510,7 @@ func TestMultichoiceLazyPublicFailures(t *testing.T) {
 		seq  func(func(string, error) bool)
 		want error
 	}{
-		{"empty", func(func(string, error) bool) {}, ErrEmptyLazyResult},
+		{"empty", func(func(string, error) bool) {}, errs.ErrEmptyLazyResult},
 		{"error only", func(yield func(string, error) bool) { yield("", sentinel) }, sentinel},
 		{"late error", func(yield func(string, error) bool) {
 			if yield("api", nil) {
@@ -496,14 +524,14 @@ func TestMultichoiceLazyPublicFailures(t *testing.T) {
 			input, typing := io.Pipe()
 			defer func() { assert.NoError(t, input.Close()) }()
 			defer func() { assert.NoError(t, typing.Close()) }()
-			got, err := MultichoiceLazy(ctx, "Lazy", tc.seq, WithInput(input), WithOutput(io.Discard))
+			got, err := MultichoiceLazy(ctx, "Lazy", tc.seq, option.WithInput(input), option.WithOutput(io.Discard))
 			if got != nil || !errors.Is(err, tc.want) {
 				t.Fatal(got, err)
 			}
 		})
 	}
 	got, err := MultichoiceLazy[string](t.Context(), "Nil", nil)
-	if got != nil || !errors.Is(err, ErrInvalidOption) {
+	if got != nil || !errors.Is(err, errs.ErrInvalidOption) {
 		t.Fatal(got, err)
 	}
 }
@@ -586,10 +614,10 @@ func TestMultichoiceLazyDuplicateAndNilProjection(t *testing.T) {
 		t.Context(),
 		"Equal",
 		seq,
-		WithDefault("[2]"),
-		WithInput(stream),
-		WithOutput(stream),
-		WithHide(),
+		option.WithDefault("[2]"),
+		option.WithInput(stream),
+		option.WithOutput(stream),
+		option.WithHide(),
 	)
 	if err != nil || !reflect.DeepEqual(got, [][]int{{1}, {1}}) {
 		t.Fatal(got, err)
@@ -607,10 +635,10 @@ func TestMultichoiceLazyDuplicateAndNilProjection(t *testing.T) {
 		t.Context(),
 		"Nil",
 		anySeq,
-		WithDefault("ready"),
-		WithInput(stream),
-		WithOutput(stream),
-		WithHide(),
+		option.WithDefault("ready"),
+		option.WithInput(stream),
+		option.WithOutput(stream),
+		option.WithHide(),
 	)
 	if err != nil || !reflect.DeepEqual(values, nils) {
 		t.Fatal(values, err)
@@ -625,7 +653,7 @@ func TestMultichoiceLegacyHandoffPreservesPasteFraming(t *testing.T) {
 			defer func() { assert.NoError(t, typing.Close()) }()
 			in := newPromptReadNotifier(pipe)
 			cancelPromptRead(t, in, func(ctx context.Context) error {
-				_, err := Input(ctx, "Old", WithInput(in), WithOutput(io.Discard))
+				_, err := Dropdown(ctx, "Old", []string{"one"}, option.WithInput(in), option.WithOutput(io.Discard))
 				return err
 			})
 			ctx, stop := context.WithTimeout(t.Context(), time.Second)
@@ -633,7 +661,13 @@ func TestMultichoiceLegacyHandoffPreservesPasteFraming(t *testing.T) {
 			out := &terst.SyncBuffer{}
 			done := make(chan promptChoiceResult, 1)
 			go func() {
-				items, err := Multichoice(ctx, "Next", []string{"one", "two"}, WithInput(in), WithOutput(out))
+				items, err := Multichoice(
+					ctx,
+					"Next",
+					[]string{"one", "two"},
+					option.WithInput(in),
+					option.WithOutput(out),
+				)
 				done <- promptChoiceResult{items, err}
 			}()
 			waitBufferContains(t, out, "○ one")
@@ -666,7 +700,7 @@ func TestMultichoiceFreshPasteAfterCancelledRead(t *testing.T) {
 	defer func() { assert.NoError(t, typing.Close()) }()
 	in := newPromptReadNotifier(pipe)
 	cancelPromptRead(t, in, func(ctx context.Context) error {
-		_, err := Multichoice(ctx, "Old", []string{"old"}, WithInput(in), WithOutput(io.Discard))
+		_, err := Multichoice(ctx, "Old", []string{"old"}, option.WithInput(in), option.WithOutput(io.Discard))
 		return err
 	})
 	ctx, stop := context.WithTimeout(t.Context(), time.Second)
@@ -674,7 +708,7 @@ func TestMultichoiceFreshPasteAfterCancelledRead(t *testing.T) {
 	out := &terst.SyncBuffer{}
 	done := make(chan promptChoiceResult, 1)
 	go func() {
-		items, err := Multichoice(ctx, "Next", []string{"one", "two"}, WithInput(in), WithOutput(out))
+		items, err := Multichoice(ctx, "Next", []string{"one", "two"}, option.WithInput(in), option.WithOutput(out))
 		done <- promptChoiceResult{items, err}
 	}()
 	waitBufferContains(t, out, "○ one")
@@ -693,22 +727,28 @@ func TestMultichoiceLazyDefaults(t *testing.T) {
 	var started bool
 
 	_, err := MultichoiceLazy(ctx, "Pick", seq(&started, nil, "a"), io)
-	assert.ErrorIs(t, err, ErrNoTTY)
+	assert.ErrorIs(t, err, errs.ErrNoTTY)
 	assert.True(t, !started)
 
-	got, err := MultichoiceLazy(ctx, "Pick", seq(&started, nil, "a", "b", "c"), io, WithDefault([]string{"c", "a"}))
+	got, err := MultichoiceLazy(
+		ctx,
+		"Pick",
+		seq(&started, nil, "a", "b", "c"),
+		io,
+		option.WithDefault([]string{"c", "a"}),
+	)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"a", "c"}, got)
 
-	_, err = MultichoiceLazy(ctx, "Pick", seq(&started, nil, "a", "a"), io, WithDefault([]string{"a"}))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = MultichoiceLazy(ctx, "Pick", seq(&started, nil, "a", "a"), io, option.WithDefault([]string{"a"}))
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 
 	late := errors.New("late")
-	_, err = MultichoiceLazy(ctx, "Pick", seq(&started, late, "a"), io, WithDefault("a"))
+	_, err = MultichoiceLazy(ctx, "Pick", seq(&started, late, "a"), io, option.WithDefault("a"))
 	assert.ErrorIs(t, err, late)
 
-	_, err = MultichoiceLazy(ctx, "Pick", seq[string](&started, nil), io, WithDefault("a"))
-	assert.ErrorIs(t, err, ErrEmptyLazyResult)
+	_, err = MultichoiceLazy(ctx, "Pick", seq[string](&started, nil), io, option.WithDefault("a"))
+	assert.ErrorIs(t, err, errs.ErrEmptyLazyResult)
 }
 
 func TestMultichoiceLazyAutomaticAnswerCancelsWhileProducerBlocked(t *testing.T) {
@@ -720,7 +760,7 @@ func TestMultichoiceLazyAutomaticAnswerCancelsWhileProducerBlocked(t *testing.T)
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := MultichoiceLazy(ctx, "Pick", seq, WithDefault("a"), WithOutput(&bytes.Buffer{}))
+		_, err := MultichoiceLazy(ctx, "Pick", seq, option.WithDefault("a"), option.WithOutput(&bytes.Buffer{}))
 		done <- err
 	}()
 	cancel()

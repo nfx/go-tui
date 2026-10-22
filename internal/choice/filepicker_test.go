@@ -1,13 +1,10 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"errors"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,7 +13,13 @@ import (
 	"testing"
 	"text/template"
 
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
+
 	"bytes"
+
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
 )
@@ -92,31 +95,31 @@ func TestFilePickerDefaults(t *testing.T) {
 	}
 	dir := WithStartDir(root)
 
-	got, err := FilePicker(ctx, "File", io, dir, WithDefault("notes.md"))
+	got, err := FilePicker(ctx, "File", io, dir, option.WithDefault("notes.md"))
 	assert.NoError(t, err)
 	assert.Equal(t, filepath.Join(root, "notes.md"), got)
 
 	// exact beats prefix
-	got, err = FilePicker(ctx, "File", io, dir, WithDefault("main.go"))
+	got, err = FilePicker(ctx, "File", io, dir, option.WithDefault("main.go"))
 	assert.NoError(t, err)
 	assert.Equal(t, filepath.Join(root, "main.go"), got)
 
-	got, err = FilePicker(ctx, "File", io, dir, WithDefault("notes"))
+	got, err = FilePicker(ctx, "File", io, dir, option.WithDefault("notes"))
 	assert.NoError(t, err)
 	assert.Equal(t, filepath.Join(root, "notes.md"), got)
 
-	_, err = FilePicker(ctx, "File", io, dir, WithDefault("main"))
-	assert.ErrorIs(t, err, ErrInvalidOption)
-	_, err = FilePicker(ctx, "File", io, dir, WithDefault("missing"))
-	assert.ErrorIs(t, err, ErrInvalidOption)
-	_, err = FilePicker(ctx, "File", io, dir, WithDefault(42))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = FilePicker(ctx, "File", io, dir, option.WithDefault("main"))
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
+	_, err = FilePicker(ctx, "File", io, dir, option.WithDefault("missing"))
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
+	_, err = FilePicker(ctx, "File", io, dir, option.WithDefault(42))
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 	_, err = FilePicker(ctx, "File", io, dir)
-	assert.ErrorIs(t, err, ErrNoTTY)
+	assert.ErrorIs(t, err, errs.ErrNoTTY)
 
 	// filters apply before resolution
-	_, err = FilePicker(ctx, "File", io, dir, WithExtensions(".md"), WithDefault("main.go"))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = FilePicker(ctx, "File", io, dir, WithExtensions(".md"), option.WithDefault("main.go"))
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 
 	// a typed directory entry continues the traversal; it never returns a directory
 	entries, err := os.ReadDir(root)
@@ -127,8 +130,8 @@ func TestFilePickerDefaults(t *testing.T) {
 			sub = e
 		}
 	}
-	_, err = FilePicker(ctx, "File", io, dir, WithDefault(sub))
-	assert.ErrorIs(t, err, ErrInvalidOption) // the same default is missing inside of sub
+	_, err = FilePicker(ctx, "File", io, dir, option.WithDefault(sub))
+	assert.ErrorIs(t, err, errs.ErrInvalidOption) // the same default is missing inside of sub
 
 	// singleton navigation
 	only := t.TempDir()
@@ -142,7 +145,7 @@ func TestFilePickerDefaults(t *testing.T) {
 	assert.Error(t, err)
 
 	// a cycle is rejected instead of looping
-	_, err = FilePicker(ctx, "File", io, WithStartDir(only), WithDefault(".."))
+	_, err = FilePicker(ctx, "File", io, WithStartDir(only), option.WithDefault(".."))
 	assert.Error(t, err)
 }
 
@@ -291,7 +294,7 @@ func TestThemedFilePickerHiddenAnswer(t *testing.T) {
 		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"))
 
 	o, out, _ = themedDropdownOpt(t, terst.ASCIITheme(false), 40, "\r")
-	_, err = FilePicker(t.Context(), "File", WithStartDir(dir), o, WithHide())
+	_, err = FilePicker(t.Context(), "File", WithStartDir(dir), o, option.WithHide())
 	assert.NoError(t, err)
 	assert.True(t, !strings.Contains(out.String(), "+ File"))
 }
@@ -314,23 +317,23 @@ func TestThemedFilePickerDefaultsWithoutTerminal(t *testing.T) {
 		assert.NoError(t, os.WriteFile(filepath.Join(root, name), nil, 0o600))
 	}
 	dir := WithStartDir(root)
-	got, err := FilePicker(ctx, "File", io, dir, WithDefault("main"))
+	got, err := FilePicker(ctx, "File", io, dir, option.WithDefault("main"))
 	assert.NoError(t, err)
 	assert.Equal(t, filepath.Join(root, "main.go"), got)
 	// the exact name of an entry wins over the hint
-	got, err = FilePicker(ctx, "File", io, dir, WithDefault("notes.md"))
+	got, err = FilePicker(ctx, "File", io, dir, option.WithDefault("notes.md"))
 	assert.NoError(t, err)
 	assert.Equal(t, filepath.Join(root, "notes.md"), got)
 	// "notes" names the directory, and is missing inside of it
-	_, err = FilePicker(ctx, "File", io, dir, WithDefault("notes"))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = FilePicker(ctx, "File", io, dir, option.WithDefault("notes"))
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 	_, err = FilePicker(ctx, "File", io, dir)
-	assert.ErrorIs(t, err, ErrNoTTY)
+	assert.ErrorIs(t, err, errs.ErrNoTTY)
 
 	// hints match the FilePicker projection
 	th.Templates.FilePicker.Value = `x{{ .Name }}`
 	terst.UseTheme(t, th)
-	got, err = FilePicker(ctx, "File", io, dir, WithDefault("xma"))
+	got, err = FilePicker(ctx, "File", io, dir, option.WithDefault("xma"))
 	assert.NoError(t, err)
 	assert.Equal(t, filepath.Join(root, "main.go"), got)
 }
@@ -368,8 +371,8 @@ func TestFilePickerSplitsOptionsBetweenParts(t *testing.T) {
 	writer := &bytes.Buffer{}
 	f, d, err := newFilePicker(t.Context(),
 		WithStartDir(t.TempDir()),
-		WithOutput(writer),
-		WithOptions(WithShowHidden(), WithHide()),
+		option.WithOutput(writer),
+		option.WithOptions(WithShowHidden(), option.WithHide()),
 	)
 	assert.NoError(t, err)
 	assert.True(t, f.showHidden)

@@ -1,13 +1,14 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"errors"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/terst"
 )
 
@@ -27,7 +28,7 @@ func TestWithTemplateAddsActiveDetails(t *testing.T) {
 
 func TestWithOneMatch_setsValue(t *testing.T) {
 	d := newDropdown(t.Context())
-	err := WithDefault("alpha")(d)
+	err := option.WithDefault("alpha")(d)
 	assert.NoError(t, err)
 	assert.Equal(t, "alpha", d.oneMatch)
 }
@@ -38,7 +39,7 @@ func TestWithOneMatch_singlePrefixMatchReturnsIndex(t *testing.T) {
 		dropdownHeuristicLabelItem{ID: 1, Name: "alpha"},
 		dropdownHeuristicLabelItem{ID: 2, Name: "beta"},
 	}
-	err := WithDefault("beta")(d)
+	err := option.WithDefault("beta")(d)
 	assert.NoError(t, err)
 	bindDropdown(t, d)
 	_, err = d.renderInit(terst.NewTermIO(20, 6))
@@ -57,7 +58,7 @@ func TestWithOneMatch_noMatchKeepsDropdown(t *testing.T) {
 		dropdownHeuristicLabelItem{ID: 1, Name: "alpha"},
 		dropdownHeuristicLabelItem{ID: 2, Name: "beta"},
 	}
-	err := WithDefault("gamma")(d)
+	err := option.WithDefault("gamma")(d)
 	assert.NoError(t, err)
 	assert.NoError(t, d.parseTemplates())
 	_, err = d.renderInit(terst.NewTermIO(20, 6))
@@ -73,7 +74,7 @@ func TestWithOneMatch_sortsByLevensteinDistance(t *testing.T) {
 		dropdownHeuristicLabelItem{ID: 2, Name: "alpha"},
 		dropdownHeuristicLabelItem{ID: 3, Name: "omega"},
 	}
-	err := WithDefault("alpa")(d)
+	err := option.WithDefault("alpa")(d)
 	assert.NoError(t, err)
 	bindDropdown(t, d)
 	_, err = d.renderInit(terst.NewTermIO(20, 6))
@@ -89,7 +90,7 @@ func TestWithOneMatch_multipleMatchesKeepDropdown(t *testing.T) {
 		dropdownHeuristicLabelItem{ID: 1, Name: "same"},
 		dropdownHeuristicLabelItem{ID: 2, Name: "same"},
 	}
-	err := WithDefault("same")(d)
+	err := option.WithDefault("same")(d)
 	assert.NoError(t, err)
 	assert.NoError(t, d.parseTemplates())
 	_, err = d.renderInit(terst.NewTermIO(20, 6))

@@ -1,19 +1,21 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"strings"
 	"testing"
 	"text/template"
+
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -45,7 +47,7 @@ func TestDefaultConfirmRunnerReturnsTrue(t *testing.T) {
 		}
 		return nil
 	})
-	assert.True(t, defaultConfirmRunner(t.Context(), "Proceed?", WithInput(in), WithOutput(out), opt))
+	assert.True(t, defaultConfirmRunner(t.Context(), "Proceed?", option.WithInput(in), option.WithOutput(out), opt))
 }
 
 func TestDefaultConfirmRunnerReturnsFalseOnError(t *testing.T) {
@@ -62,20 +64,20 @@ func TestDefaultConfirmRunnerReturnsFalseOnError(t *testing.T) {
 func TestConfirmDefaults(t *testing.T) {
 	io := terst.Quiet(t)
 	ctx := t.Context()
-	assert.True(t, Confirm(ctx, "Go?", io, WithDefault(true)))
-	assert.True(t, !Confirm(ctx, "Go?", io, WithDefault(false)))
-	assert.True(t, Confirm(ctx, "Go?", io, WithDefault("Yes")))
-	assert.True(t, Confirm(ctx, "Go?", io, WithDefault("y")))
-	assert.True(t, !Confirm(ctx, "Go?", io, WithDefault("no")))
+	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault(true)))
+	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault(false)))
+	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault("Yes")))
+	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault("y")))
+	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault("no")))
 	assert.True(t, !Confirm(ctx, "Go?", io))
-	assert.True(t, !Confirm(ctx, "Go?", io, WithDefault(42)))
+	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault(42)))
 	cctx, cancel := context.WithCancel(ctx)
 	cancel()
-	assert.True(t, !Confirm(cctx, "Go?", io, WithDefault(true)))
+	assert.True(t, !Confirm(cctx, "Go?", io, option.WithDefault(true)))
 
 	// the error behind the false is visible one level down
 	_, err := Dropdown(ctx, "Go?", []string{"Yes", "No"}, io)
-	assert.ErrorIs(t, err, ErrNoTTY)
+	assert.ErrorIs(t, err, errs.ErrNoTTY)
 }
 
 func TestThemedConfirmGuidedFrameAndYes(t *testing.T) {
@@ -149,21 +151,21 @@ func TestThemedConfirmDefaultsWithoutTerminal(t *testing.T) {
 	terst.UseTheme(t, th)
 	io := terst.Quiet(t)
 	ctx := t.Context()
-	assert.True(t, Confirm(ctx, "Go?", io, WithDefault(true)))
-	assert.True(t, !Confirm(ctx, "Go?", io, WithDefault(false)))
-	assert.True(t, Confirm(ctx, "Go?", io, WithDefault("Yes")))
-	assert.True(t, Confirm(ctx, "Go?", io, WithDefault("y")))
-	assert.True(t, !Confirm(ctx, "Go?", io, WithDefault("no")))
+	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault(true)))
+	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault(false)))
+	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault("Yes")))
+	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault("y")))
+	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault("no")))
 	assert.True(t, !Confirm(ctx, "Go?", io))
-	assert.True(t, !Confirm(ctx, "Go?", io, WithDefault(42)))
+	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault(42)))
 
 	// a Confirm projection is what hints match; an exact boolean still wins
 	th.Templates.Confirm.Value = `{{ if eq . "Yes" }}sure{{ else }}never{{ end }}`
 	terst.UseTheme(t, th)
-	assert.True(t, Confirm(ctx, "Go?", io, WithDefault("s")))
-	assert.True(t, !Confirm(ctx, "Go?", io, WithDefault("never")))
-	assert.True(t, Confirm(ctx, "Go?", io, WithDefault(true)))
-	assert.True(t, !Confirm(ctx, "Go?", io, WithDefault("y")))
+	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault("s")))
+	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault("never")))
+	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault(true)))
+	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault("y")))
 }
 
 func TestThemedConfirmHelperErrorIsFalseAndRestoresTerminal(t *testing.T) {

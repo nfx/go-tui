@@ -1,18 +1,19 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"bytes"
 	"context"
 	"fmt"
+	"slices"
+	"strings"
+
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/internal/trie"
-	"slices"
-	"strings"
 )
 
 // bind installs destination-bound helpers and choice slots.

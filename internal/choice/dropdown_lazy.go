@@ -1,17 +1,19 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"iter"
+
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 )
 
 type lazyResult struct {
@@ -57,7 +59,7 @@ loop:
 		return -1, err
 	}
 	if len(items) == 0 {
-		return -1, ErrEmptyLazyResult
+		return -1, errs.ErrEmptyLazyResult
 	}
 	d.Items = items
 	i, err := d.resolveAutomatic(items)
@@ -227,7 +229,7 @@ func (d *dropdown) finishLazyItems(tio *term.IO, frame *bytes.Buffer, space int)
 		if clearErr != nil {
 			return -1, false, errors.Join(io.EOF, clearErr)
 		}
-		return -1, false, ErrEmptyLazyResult
+		return -1, false, errs.ErrEmptyLazyResult
 	}
 	err := d.validateLazySeed()
 	if err != nil {

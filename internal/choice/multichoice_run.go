@@ -1,19 +1,21 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nfx/go-tui/internal/ansi"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"strings"
 	"unicode"
+
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
 )
 
 // handleKey changes state only; returning true confirms the checked collection.
@@ -107,7 +109,7 @@ func (m *multichoice) startProducer(ctx context.Context) <-chan itPair {
 func (m *multichoice) finishLoading() error {
 	m.loading = false
 	if len(m.Items) == 0 {
-		return ErrEmptyLazyResult
+		return errs.ErrEmptyLazyResult
 	}
 	err := m.resolveDefault()
 	if err != nil {

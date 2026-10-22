@@ -1,21 +1,23 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/theme"
 	"io"
 	"strconv"
 	"strings"
 	"testing"
 	"text/template"
 	"time"
+
+	"github.com/nfx/go-tui/internal/errs"
+	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -57,7 +59,7 @@ func TestMultichoiceTemplateErrorPreservesUnderlyingCause(t *testing.T) {
 		"Eager",
 		[]choiceTemplateFailure{{cause}},
 		WithTemplate(".Label"),
-		WithOutput(io.Discard),
+		option.WithOutput(io.Discard),
 	)
 	if eager != nil || !errors.Is(err, cause) {
 		t.Fatal(eager, err)
@@ -71,8 +73,8 @@ func TestMultichoiceTemplateErrorPreservesUnderlyingCause(t *testing.T) {
 		"Lazy",
 		seq,
 		WithTemplate(".Label"),
-		WithInput(input),
-		WithOutput(io.Discard),
+		option.WithInput(input),
+		option.WithOutput(io.Discard),
 	)
 	if lazy != nil || !errors.Is(err, cause) {
 		t.Fatal(lazy, err)
@@ -262,7 +264,7 @@ func TestThemedMultichoiceHiddenAnswerRetainsNothing(t *testing.T) {
 	assert.True(t, strings.HasSuffix(out.String(), erase))
 
 	o, out, _ = themedMultichoiceOpt(t, terst.ASCIITheme(false), " ", "\r")
-	_, err = Multichoice(t.Context(), "Fruit", fruits, o, WithHide())
+	_, err = Multichoice(t.Context(), "Fruit", fruits, o, option.WithHide())
 	assert.NoError(t, err)
 	assert.True(t, strings.HasSuffix(out.String(), erase))
 }
@@ -320,7 +322,7 @@ func TestThemedMultichoiceKVShowsKeys(t *testing.T) {
 
 func TestThemedMultichoiceTypedDefaultChecksAfterBinding(t *testing.T) {
 	o, out, _ := themedMultichoiceOpt(t, terst.ASCIITheme(false), "\r")
-	got, err := Multichoice(t.Context(), "Pick", []string{"a", "b", "c"}, o, WithDefault([]string{"c", "a"}))
+	got, err := Multichoice(t.Context(), "Pick", []string{"a", "b", "c"}, o, option.WithDefault([]string{"c", "a"}))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"a", "c"}, got)
 	// the first checked entry takes the focus
@@ -328,14 +330,14 @@ func TestThemedMultichoiceTypedDefaultChecksAfterBinding(t *testing.T) {
 	assert.True(t, strings.HasSuffix(out.String(), "+ Pick · a, c\n"))
 
 	o, _, restored := themedMultichoiceOpt(t, terst.ASCIITheme(false), "\r")
-	_, err = Multichoice(t.Context(), "Pick", []string{"a"}, o, WithDefault([]string{"zz"}))
-	assert.ErrorIs(t, err, ErrInvalidOption)
+	_, err = Multichoice(t.Context(), "Pick", []string{"a"}, o, option.WithDefault([]string{"zz"}))
+	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 	assert.True(t, *restored)
 }
 
 func TestThemedMultichoiceHintMatchesProjection(t *testing.T) {
 	o, out, _ := themedMultichoiceOpt(t, terst.ASCIITheme(false), "\r")
-	got, err := Multichoice(t.Context(), "Pick", fruits, o, WithTemplate(`(printf "z%s" .)`), WithDefault("zb"))
+	got, err := Multichoice(t.Context(), "Pick", fruits, o, WithTemplate(`(printf "z%s" .)`), option.WithDefault("zb"))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"banana"}, got)
 	assert.True(t, strings.HasSuffix(out.String(), "+ Pick · zbanana\n"))
@@ -355,16 +357,22 @@ func TestThemedMultichoiceAutomaticAnswerRunsOnlyProjection(t *testing.T) {
 	th.Templates.Choice.Value = `{{ printf "z%s" . }}`
 	terst.UseTheme(t, th)
 	var out bytes.Buffer
-	got, err := Multichoice(t.Context(), "Fruit", fruits, WithOutput(&out), WithDefault("zb"))
+	got, err := Multichoice(t.Context(), "Fruit", fruits, option.WithOutput(&out), option.WithDefault("zb"))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"banana"}, got)
 
-	got, err = Multichoice(t.Context(), "Fruit", fruits, WithOutput(&out),
-		WithTemplate(`(printf "y%s" .)`), WithDefault("yc"))
+	got, err = Multichoice(t.Context(), "Fruit", fruits, option.WithOutput(&out),
+		WithTemplate(`(printf "y%s" .)`), option.WithDefault("yc"))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"cherry"}, got)
 
-	got, err = MultichoiceLazy(t.Context(), "Fruit", lazySeq("apple", "banana"), WithOutput(&out), WithDefault("zb"))
+	got, err = MultichoiceLazy(
+		t.Context(),
+		"Fruit",
+		lazySeq("apple", "banana"),
+		option.WithOutput(&out),
+		option.WithDefault("zb"),
+	)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"banana"}, got)
 	assert.Equal(t, "", out.String())
@@ -413,7 +421,7 @@ func TestThemedMultichoiceLazyConfirmsAfterExhaustion(t *testing.T) {
 	terst.UseTheme(t, terst.ASCIITheme(false))
 	stream := &completionChecklistIO{ready: make(chan struct{}), marker: "x banana"}
 	got, err := MultichoiceLazy(t.Context(), "Fruit", lazySeq("apple", "banana"),
-		WithDefault("banana"), WithInput(stream), WithOutput(stream))
+		option.WithDefault("banana"), option.WithInput(stream), option.WithOutput(stream))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"banana"}, got)
 }

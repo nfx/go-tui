@@ -1,16 +1,17 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"errors"
 	"fmt"
+	"strings"
+	"text/template"
+
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/color"
 	"github.com/nfx/go-tui/internal/render"
-	"strings"
-	"text/template"
 )
 
 // projection is the content of a choice list set by [WithTemplate]. It

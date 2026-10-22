@@ -1,19 +1,20 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nfx/go-tui/internal/ansi"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/internal/trie"
 	"io"
 	"slices"
 	"unicode/utf8"
+
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/internal/trie"
 )
 
 // hintMatches looks up prefix hints in the labels of items without drawing them.

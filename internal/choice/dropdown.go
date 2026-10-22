@@ -1,20 +1,22 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"slices"
+
 	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/internal/trie"
-	"io"
-	"slices"
 )
 
 type dropdown struct {
@@ -314,7 +316,7 @@ func (d *dropdown) run(ctx context.Context) (int, error) {
 	}
 	defer io.Restore() //nolint:errcheck // we can't do much about it here
 	if io.Height < 3 {
-		return -1, ErrNoSpace
+		return -1, errs.ErrNoSpace
 	}
 	// before the event reader starts, as binding may probe the background
 	err = d.bind(d.destination(ctx, io))

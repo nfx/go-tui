@@ -1,21 +1,23 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"bytes"
 	"context"
-	"github.com/nfx/go-tui/internal/ansi"
-	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/internal/trie"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/internal/trie"
+
+	"io"
+
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
-	"io"
 )
 
 func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {

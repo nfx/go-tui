@@ -1,15 +1,16 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package choice
 
 import (
 	"fmt"
+	"reflect"
+	"strconv"
+
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
-	"reflect"
-	"strconv"
 )
 
 // themedHint renders slot for keys, led by the count of hidden items.
