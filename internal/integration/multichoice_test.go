@@ -1,7 +1,7 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui_test
+package integration
 
 import (
 	"bytes"
@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/theme"
 	"io"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -506,15 +505,7 @@ func TestMultichoicePTYKeyboardResizeAndRestore(t *testing.T) {
 				t.Fatal(err)
 			}
 			screen := newScreen(40)
-			tui.SetDefaultIO(tty, &ttyWriter{fd: tty.Fd(), screen: screen})
-			defer func() {
-				if closer, ok := tui.Stderr().(io.Closer); ok {
-					if err := closer.Close(); err != nil {
-						t.Error(err)
-					}
-				}
-				tui.SetDefaultIO(os.Stdin, os.Stderr)
-			}()
+			terst.UseIO(t, tty, &ttyWriter{fd: tty.Fd(), screen: screen})
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			result := make(chan error, 1)

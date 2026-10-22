@@ -1,18 +1,15 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui_test
+package integration
 
 import (
 	"github.com/nfx/go-tui/theme"
-	"io"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	tui "github.com/nfx/go-tui"
-	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
 )
 
@@ -44,15 +41,7 @@ func newTerminal(t *testing.T, height int) *terminal {
 	const width = 40
 	tty := openTTY(t, width, height)
 	term := &terminal{keyboard: newKeyboard(t), screen: newScreen(width), tty: tty}
-	tui.SetDefaultIO(term.keyboard, &ttyWriter{fd: tty.Fd(), screen: term.screen})
-	t.Cleanup(func() {
-		// a later terminal of the same test may have restored os.Stderr already
-		closer, ok := tui.Stderr().(io.Closer)
-		if ok && closer != io.Closer(os.Stderr) {
-			assert.NoError(t, closer.Close())
-		}
-		tui.SetDefaultIO(os.Stdin, os.Stderr)
-	})
+	terst.UseIO(t, term.keyboard, &ttyWriter{fd: tty.Fd(), screen: term.screen})
 	return term
 }
 

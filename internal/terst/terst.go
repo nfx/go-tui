@@ -386,6 +386,22 @@ func NextKey(t *testing.T, in io.Reader) rune {
 	return ev.Key
 }
 
+// UseIO makes in and out the default input and output for the test, like the
+// stdin and stderr of a CLI. Cleanup closes the coordinated writer and
+// restores os.Stdin and os.Stderr.
+func UseIO(t *testing.T, in io.Reader, out io.Writer) {
+	t.Helper()
+	term.Default.SetIO(in, out)
+	t.Cleanup(func() {
+		// a later UseIO of the same test may have restored os.Stderr already
+		closer, ok := term.Default.StderrWriter().(io.Closer)
+		if ok && closer != io.Closer(os.Stderr) {
+			assert.NoError(t, closer.Close())
+		}
+		term.Default.SetIO(os.Stdin, os.Stderr)
+	})
+}
+
 // UseTheme installs th and routes migrated widgets through it for the test.
 func UseTheme(t *testing.T, th theme.Theme) {
 	t.Helper()

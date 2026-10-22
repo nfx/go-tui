@@ -3,7 +3,7 @@
 
 //go:build darwin || linux
 
-package tui_test
+package integration
 
 import (
 	"os"
