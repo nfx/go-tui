@@ -10,12 +10,12 @@ import (
 )
 
 type Tui struct {
-	opts
+	Opts
 	*termIO // exposes io.ReadWriter
 	ctx     context.Context
 }
 
-func NewTUI(ctx context.Context, opts ...opt) (*Tui, error) {
+func NewTUI(ctx context.Context, opts ...Opt) (*Tui, error) {
 	cio, err := NewIO(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("io: %w", err)
@@ -25,7 +25,7 @@ func NewTUI(ctx context.Context, opts ...opt) (*Tui, error) {
 		return nil, fmt.Errorf("term: %w", err)
 	}
 	return &Tui{
-		opts:   opts,
+		Opts:   opts,
 		ctx:    ctx,
 		termIO: tio,
 	}, nil

@@ -7,23 +7,23 @@ import (
 	"io"
 )
 
-type withIO interface {
-	setWriter(w io.Writer)
-	setReader(r io.Reader)
+type IO interface {
+	SetWriter(w io.Writer)
+	SetReader(r io.Reader)
 }
 
-// withDefault is implemented by widgets that accept a default answer or hint.
-type withDefault interface {
-	setDefault(d any)
+// Default is implemented by widgets that accept a default answer or hint.
+type Default interface {
+	SetDefault(d any)
 }
 
-// withPrompt is implemented by widgets that ask a question and print the answer.
-type withPrompt interface {
-	setHide()
-	withDefault
+// Prompt is implemented by widgets that ask a question and print the answer.
+type Prompt interface {
+	SetHide()
+	Default
 }
 
 // Private capabilities keep existing option constructors shared by choice widgets.
-type withChoiceContent interface {
-	setContentTemplate(main string, details ...string)
+type ChoiceContent interface {
+	SetContentTemplate(main string, details ...string)
 }

@@ -411,7 +411,7 @@ func TestThemedProgressRenderErrorEndsBar(t *testing.T) {
 func TestThemedProgressWriteErrorEndsBar(t *testing.T) {
 	useTheme(t, theme.New())
 	restored := false
-	p, err := NewMaxProgressBar(t.Context(), "build", 10, opT(func(pb *Progressbar) error {
+	p, err := NewMaxProgressBar(t.Context(), "build", 10, OpT(func(pb *Progressbar) error {
 		pb.ticks = time.After(0)
 		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
 			return &termIO{in: in, out: errWriterPB{}, Width: 40, Height: 1, Restore: func() error {
@@ -435,7 +435,7 @@ func TestThemedProgressWithoutTerminal(t *testing.T) {
 	th.Templates.Progress.Metrics = `{{ boom }}`
 	th.Templates.Progress.Frame = `{{ boom }}{{ .Bar }}`
 	useTheme(t, th)
-	noTTY := opT(func(pb *Progressbar) error {
+	noTTY := OpT(func(pb *Progressbar) error {
 		pb.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { return nil, ErrNoTTY }
 		return nil
 	})

@@ -13,8 +13,8 @@ import (
 
 func TestLongRunningShowsMessageWhileCbRuns(t *testing.T) {
 	cio, tick, spinnerOpts := testIOforSpinners(t, 24, 5)
-	testLongRunningWithNewSpinners(t, func(ctx context.Context, opt ...opt) (*Spinners, error) {
-		return NewSpinners(ctx, append(opts{spinnerOpts}, opt...)...)
+	testLongRunningWithNewSpinners(t, func(ctx context.Context, opt ...Opt) (*Spinners, error) {
+		return NewSpinners(ctx, append(Opts{spinnerOpts}, opt...)...)
 	})
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -39,7 +39,7 @@ func TestLongRunningShowsMessageWhileCbRuns(t *testing.T) {
 }
 
 func TestLongRunningFallsBackWhenSpinnerSetupFails(t *testing.T) {
-	testLongRunningWithNewSpinners(t, func(context.Context, ...opt) (*Spinners, error) {
+	testLongRunningWithNewSpinners(t, func(context.Context, ...Opt) (*Spinners, error) {
 		return nil, errors.New("spinner setup failed")
 	})
 	expected := errors.New("callback failed")

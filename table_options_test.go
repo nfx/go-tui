@@ -98,7 +98,7 @@ func TestColumnOptionsUnknownColumn(t *testing.T) {
 	}
 	tests := []struct {
 		name string
-		opt  opt
+		opt  Opt
 	}{
 		{
 			name: "name format",

@@ -27,16 +27,16 @@ import (
 // only when exactly one item matches d as a prefix. Multichoice checks a unique
 // word-prefix match once and still requires Enter. Lazy choices resolve the
 // default after successful exhaustion. [Confirm] takes a bool or "Yes"/"No".
-func WithDefault(d any) opt {
-	return opT(func(x withDefault) error {
-		x.setDefault(d)
+func WithDefault(d any) Opt {
+	return OpT(func(x Default) error {
+		x.SetDefault(d)
 		return nil
 	})
 }
 
 // WithNonEmpty rejects confirmed input containing only whitespace or no characters.
-func WithNonEmpty() opt {
-	return opT(func(i *input) error {
+func WithNonEmpty() Opt {
+	return OpT(func(i *input) error {
 		i.rules = append(i.rules, func(_ context.Context, s string) error {
 			if strings.TrimSpace(s) == "" {
 				return ruleError("a value is required")
@@ -50,8 +50,8 @@ func WithNonEmpty() opt {
 // WithValidation validates confirmed input in option order; the first error is shown
 // below the input. fn receives the prompt context and blocks key handling while it
 // runs. Errors must not expose the typed value, especially for [Password].
-func WithValidation(fn func(context.Context, string) error) opt {
-	return opT(func(i *input) error {
+func WithValidation(fn func(context.Context, string) error) Opt {
+	return OpT(func(i *input) error {
 		if fn == nil {
 			return fmt.Errorf("%w: validator is nil", ErrInvalidOption)
 		}
@@ -63,8 +63,8 @@ func WithValidation(fn func(context.Context, string) error) opt {
 // WithRegex rejects confirmed input that does not fully match pattern, showing message.
 // A pattern that matches the empty string accepts it;
 // combine with [WithNonEmpty] to require a value.
-func WithRegex(pattern, message string) opt {
-	return opT(func(i *input) error {
+func WithRegex(pattern, message string) Opt {
+	return OpT(func(i *input) error {
 		if strings.TrimSpace(message) == "" {
 			return fmt.Errorf("%w: regex message is empty", ErrInvalidOption)
 		}
@@ -91,12 +91,12 @@ type ruleError string
 // Error returns the built-in rule's rejection message.
 func (e ruleError) Error() string { return string(e) }
 
-func Input(ctx context.Context, label string, option ...opt) (string, error) {
+func Input(ctx context.Context, label string, option ...Opt) (string, error) {
 	i := newInput(ctx, label)
 	return i.read(ctx, option...)
 }
 
-func Password(ctx context.Context, label string, option ...opt) (string, error) {
+func Password(ctx context.Context, label string, option ...Opt) (string, error) {
 	i := newInput(ctx, label)
 	i.Password = true
 	return i.read(ctx, option...)

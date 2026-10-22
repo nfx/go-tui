@@ -94,10 +94,10 @@ func themedDropdownOpt(
 	th theme.Theme,
 	width int,
 	keys ...string,
-) (o opt, out *bytes.Buffer, restored *bool) {
+) (o Opt, out *bytes.Buffer, restored *bool) {
 	t.Helper()
 	s := scripted(t, th, width, keys...)
-	return opT(func(d *dropdown) error {
+	return OpT(func(d *dropdown) error {
 		d.in, d.out, d.makeTermIO = s.in, s.out, s.makeTermIO
 		return nil
 	}), s.out, s.restored
@@ -105,12 +105,12 @@ func themedDropdownOpt(
 
 // boundDropdown is a themed dropdown over items, parsed and bound to a
 // terminal of the given size, which render draws a frame on.
-func boundDropdown(t *testing.T, th theme.Theme, width, height int, items []any, o ...opt) (*dropdown, *termIO) {
+func boundDropdown(t *testing.T, th theme.Theme, width, height int, items []any, o ...Opt) (*dropdown, *termIO) {
 	t.Helper()
 	useTheme(t, th)
 	d := newDropdown(t.Context())
 	d.Label, d.Items = "Fruit", items
-	assert.NoError(t, opts(o).Apply(d))
+	assert.NoError(t, Opts(o).Apply(d))
 	assert.NoError(t, d.parseTemplates())
 	tt := &termIO{out: &bytes.Buffer{}, Width: width, Height: height}
 	assert.NoError(t, d.bind(defaultIO.bindTheme(t.Context(), d.theme, d.out, tt)))
@@ -365,7 +365,7 @@ func TestThemedDropdownRolesStyleFocusAndRows(t *testing.T) {
 
 func TestThemedDropdownFullHeightFrameKeepsLabelOnScreen(t *testing.T) {
 	o, out, _ := themedDropdownOpt(t, asciiTheme(false), 60, "\x1b[B", "\x1b[B", "\x1b[A", "\x1b[B", "\r")
-	six := opT(func(d *dropdown) error {
+	six := OpT(func(d *dropdown) error {
 		next := d.makeTermIO
 		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			tt, err := next(in, out)

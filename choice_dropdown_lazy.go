@@ -28,7 +28,7 @@ func (d *dropdown) answerLazyFromDefault(ctx context.Context, seq iter.Seq2[any,
 		return -1, err
 	}
 	if !d.def.set && !d.OneReturn {
-		return -1, errNoDefault(d.Label)
+		return -1, NoDefault(d.Label)
 	}
 	// consume through the producer channel so that cancellation returns
 	// even while the iterator is blocked between yields

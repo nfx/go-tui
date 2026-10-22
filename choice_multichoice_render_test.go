@@ -77,17 +77,17 @@ func TestMultichoiceTemplateErrorPreservesUnderlyingCause(t *testing.T) {
 }
 
 // themedMultichoiceOpt routes a themed multichoice through a 60-column scripted terminal.
-func themedMultichoiceOpt(t *testing.T, th theme.Theme, keys ...string) (o opt, out *bytes.Buffer, restored *bool) {
+func themedMultichoiceOpt(t *testing.T, th theme.Theme, keys ...string) (o Opt, out *bytes.Buffer, restored *bool) {
 	t.Helper()
 	s := scripted(t, th, 60, keys...)
-	return opT(func(m *multichoice) error {
+	return OpT(func(m *multichoice) error {
 		m.in, m.out, m.makeTermIO = s.in, s.out, s.makeTermIO
 		return nil
 	}), s.out, s.restored
 }
 
 // boundMultichoice prepares a themed prompt for frame tests at the given terminal height.
-func boundMultichoice(t *testing.T, th theme.Theme, height int, items []any, o ...opt) (*multichoice, *termIO) {
+func boundMultichoice(t *testing.T, th theme.Theme, height int, items []any, o ...Opt) (*multichoice, *termIO) {
 	t.Helper()
 	useTheme(t, th)
 	m := newMultichoice(t.Context())
@@ -449,7 +449,7 @@ func TestThemedMultichoicePasteFiltersAndCancellationRestores(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	o, out, restored := themedMultichoiceOpt(t, asciiTheme(false))
 	acquired := make(chan struct{})
-	signal := opT(func(m *multichoice) error {
+	signal := OpT(func(m *multichoice) error {
 		next := m.makeTermIO
 		m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			defer close(acquired)
@@ -508,7 +508,7 @@ func frameStaysOnScreen(t *testing.T, out string) {
 
 func TestThemedMultichoiceFullHeightFrameKeepsLabelOnScreen(t *testing.T) {
 	o, out, _ := themedMultichoiceOpt(t, asciiTheme(false), "\x1b[B", "\x1b[B", " ", "\x1b[A", "\x1b[B", "\r")
-	six := opT(func(m *multichoice) error {
+	six := OpT(func(m *multichoice) error {
 		next := m.makeTermIO
 		m.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			tt, err := next(in, out)

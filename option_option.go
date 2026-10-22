@@ -6,22 +6,23 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/errs"
 	"reflect"
 )
 
-// opt configures a widget. Every option supports a fixed set of widgets and
-// returns an error wrapping [ErrWrongWidget] when applied to any other.
+// Opt configures a widget. Every option supports a fixed set of widgets and
+// returns an error wrapping [errs.ErrWrongWidget] when applied to any other.
 //
 // Widget entry points reject options they do not support, so a misplaced
 // option fails loudly instead of doing nothing. Use [WithOptions] to share
 // one set of options between different widgets.
-type opt func(any) error
+type Opt func(any) error
 
-type opts []opt
+type Opts []Opt
 
 // Apply applies every option to target and stops at the first error,
-// including [ErrWrongWidget].
-func (o opts) Apply(target any) error {
+// including [errs.ErrWrongWidget].
+func (o Opts) Apply(target any) error {
 	for _, o := range o {
 		err := o(target)
 		if err != nil {
@@ -31,26 +32,26 @@ func (o opts) Apply(target any) error {
 	return nil
 }
 
-// opT turns a setter for one target type into an option. T is either a widget
+// OpT turns a setter for one target type into an option. T is either a widget
 // pointer or an interface that several widgets implement.
-func opT[T any](o func(T) error) opt {
+func OpT[T any](o func(T) error) Opt {
 	return func(raw any) error {
 		target, ok := raw.(T)
 		if !ok {
-			return fmt.Errorf("%w: need %v, got %T", ErrWrongWidget, reflect.TypeFor[T](), raw)
+			return fmt.Errorf("%w: need %v, got %T", errs.ErrWrongWidget, reflect.TypeFor[T](), raw)
 		}
 		return o(target)
 	}
 }
 
-// applyToAny applies o to every target that supports it, for widgets that are
+// ApplyToAny applies o to every target that supports it, for widgets that are
 // assembled from several parts. It fails when none of the targets supports o.
-func applyToAny(o opt, targets ...any) error {
+func ApplyToAny(o Opt, targets ...any) error {
 	var wrong error
 	applied := false
 	for _, target := range targets {
 		err := o(target)
-		if errors.Is(err, ErrWrongWidget) {
+		if errors.Is(err, errs.ErrWrongWidget) {
 			wrong = err
 			continue
 		}

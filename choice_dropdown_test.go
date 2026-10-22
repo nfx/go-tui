@@ -125,7 +125,7 @@ func (r *blockingByteReader) Close() {
 }
 
 // testIOforDropdown provides channel-driven prompt I/O at a fixed terminal size.
-func testIOforDropdown(t *testing.T, width, height int, o ...opt) (*chanIO, opt) {
+func testIOforDropdown(t *testing.T, width, height int, o ...Opt) (*chanIO, Opt) {
 	t.Helper()
 	useTheme(t, asciiTheme(false))
 	ctx, cancel := context.WithCancel(t.Context())
@@ -139,10 +139,10 @@ func testIOforDropdown(t *testing.T, width, height int, o ...opt) (*chanIO, opt)
 		close(cio.In)
 		close(cio.Out)
 	})
-	return cio, WithOptions(append(opts{
+	return cio, WithOptions(append(Opts{
 		WithInput(cio),
 		WithOutput(cio),
-		opT(func(d *dropdown) error {
+		OpT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{
 					in:      in,
@@ -528,7 +528,7 @@ func TestDropdownRunOneReturn(t *testing.T) {
 func TestDropdownOptionHelpers(t *testing.T) {
 	d := newDropdown(t.Context())
 
-	for _, opt := range []opt{
+	for _, opt := range []Opt{
 		WithOneReturn(),
 		WithHide(),
 		WithTemplate(".Label"),
@@ -638,10 +638,10 @@ func TestDropdownShowAnswerUsesResolvedLabel(t *testing.T) {
 func TestDropdownContextAndIOSetters(t *testing.T) {
 	d := newDropdown(t.Context())
 	in := bytes.NewBufferString("input")
-	d.setReader(in)
+	d.SetReader(in)
 	assert.Equal(t, in, d.in)
 	out := &bytes.Buffer{}
-	d.setWriter(out)
+	d.SetWriter(out)
 	assert.Equal(t, out, d.out)
 }
 
@@ -650,7 +650,7 @@ func TestDropdownSetWriterUsesTuiViewport(t *testing.T) {
 	cio := newUnstartedIO(ctx, 10, 2, 0)
 	tui := &Tui{ctx: ctx, termIO: &termIO{out: cio}}
 	d := newDropdown(t.Context())
-	d.setWriter(tui)
+	d.SetWriter(tui)
 	_, ok := d.out.(*viewport)
 	assert.True(t, ok)
 }
@@ -913,10 +913,10 @@ func (w itemsLoadedWriter) Write(p []byte) (int, error) {
 }
 
 // notifyItemsLoaded must be applied after WithOutput.
-func notifyItemsLoaded(minItems int) (opt, <-chan struct{}) {
+func notifyItemsLoaded(minItems int) (Opt, <-chan struct{}) {
 	ready := make(chan struct{})
 	once := &sync.Once{}
-	return opT(func(d *dropdown) error {
+	return OpT(func(d *dropdown) error {
 		d.out = itemsLoadedWriter{Writer: d.out, d: d, ready: ready, once: once, min: minItems}
 		return nil
 	}), ready
@@ -963,8 +963,8 @@ func assertNoWaitersFor(t *testing.T, r *blockingByteReader, d time.Duration) {
 	}
 }
 
-func fixedTermOpt() opt {
-	return opT(func(d *dropdown) error {
+func fixedTermOpt() Opt {
+	return OpT(func(d *dropdown) error {
 		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			return &termIO{in: in, out: out, Width: 20, Height: 6, Restore: func() error { return nil }}, nil
 		}
@@ -1044,7 +1044,7 @@ func TestDropdownEagerRedrawsOnResizeWhileIdle(t *testing.T) {
 		value, _ := Dropdown(ctx, "Pick", []string{"a", "b"}, WithOptions( //nolint:errcheck // test cleanup
 			WithInput(reader),
 			WithOutput(out),
-			opT(func(d *dropdown) error {
+			OpT(func(d *dropdown) error {
 				d.makeTermIO = func(in io.Reader, w io.Writer) (*termIO, error) {
 					return &termIO{
 						in: in, out: w, Width: 20, Height: 6,
@@ -1290,7 +1290,7 @@ func TestDropdownConfirmClearsFrameOnce(t *testing.T) {
 	var out bytes.Buffer
 	_, err := Dropdown(t.Context(), "Fruit", fruits, WithOutput(&out),
 		WithInput(&chunkReader{chunks: [][]byte{[]byte("\r")}}),
-		opT(func(d *dropdown) error {
+		OpT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 				return &termIO{in: in, out: out, Width: 40, Height: 10, Restore: func() error { return nil }}, nil
 			}

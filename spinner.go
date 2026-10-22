@@ -26,7 +26,7 @@ func LongRunning(ctx context.Context, message string, cb func(context.Context) e
 	return cb(ctx)
 }
 
-func NewSpinners(ctx context.Context, opt ...opt) (*Spinners, error) {
+func NewSpinners(ctx context.Context, opt ...Opt) (*Spinners, error) {
 	s := newSpinners(ctx)
 	started := false
 	defer func() {
@@ -35,7 +35,7 @@ func NewSpinners(ctx context.Context, opt ...opt) (*Spinners, error) {
 			s.ticker.Stop()
 		}
 	}()
-	err := opts(opt).Apply(s)
+	err := Opts(opt).Apply(s)
 	if err != nil {
 		return nil, err
 	}
@@ -63,17 +63,17 @@ func NewSpinners(ctx context.Context, opt ...opt) (*Spinners, error) {
 }
 
 // WithPrefixf sets the text shown next to a spinner added with [Spinners.Add].
-func WithPrefixf(prefix string, args ...any) opt {
+func WithPrefixf(prefix string, args ...any) Opt {
 	// TODO: decide if we expose text/template or fmt. This is a bit of a mess
-	return opT(func(cs *createSpinner) error {
+	return OpT(func(cs *createSpinner) error {
 		cs.prefix = fmt.Sprintf(prefix, args...)
 		return nil
 	})
 }
 
 // WithKeep will keep the spinner displayed after it's done.
-func WithKeep() opt {
-	return opT(func(cs *createSpinner) error {
+func WithKeep() Opt {
+	return OpT(func(cs *createSpinner) error {
 		cs.keep = true
 		return nil
 	})

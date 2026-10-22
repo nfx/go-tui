@@ -16,7 +16,7 @@ import (
 // Column widths lock after the first batch, scales rank the values seen so
 // far, and written rows are never repainted. The theme and the writer's
 // capabilities are captured before the first row, and hold for every batch.
-func TableIter[T any](w io.Writer, rowTmpl string, iterator iter.Seq2[T, error], o ...opt) error {
+func TableIter[T any](w io.Writer, rowTmpl string, iterator iter.Seq2[T, error], o ...Opt) error {
 	t, err := newTable[T](w, rowTmpl, o...)
 	if err != nil {
 		return fmt.Errorf("table: %w", err)
@@ -34,7 +34,7 @@ func TableIter[T any](w io.Writer, rowTmpl string, iterator iter.Seq2[T, error],
 	return t.flush(true)
 }
 
-func Table[T any](w io.Writer, rowTmpl string, iterator []T, o ...opt) error {
+func Table[T any](w io.Writer, rowTmpl string, iterator []T, o ...Opt) error {
 	t, err := newTable[T](w, rowTmpl, o...)
 	if err != nil {
 		return fmt.Errorf("table: %w", err)
@@ -49,7 +49,7 @@ func Table[T any](w io.Writer, rowTmpl string, iterator []T, o ...opt) error {
 	return t.flush(true)
 }
 
-func TableAuto[T any](w io.Writer, iterator []T, o ...opt) error {
+func TableAuto[T any](w io.Writer, iterator []T, o ...Opt) error {
 	t, err := newTable[T](w, "", o...)
 	if err != nil {
 		return fmt.Errorf("table: %w", err)
@@ -64,9 +64,9 @@ func TableAuto[T any](w io.Writer, iterator []T, o ...opt) error {
 	return t.flush(true)
 }
 
-func Facts[T any](w io.Writer, data T, o ...opt) error {
-	options := make([]opt, 0, len(o)+1)
-	options = append(options, opT(func(t *table) error {
+func Facts[T any](w io.Writer, data T, o ...Opt) error {
+	options := make([]Opt, 0, len(o)+1)
+	options = append(options, OpT(func(t *table) error {
 		t.suppressHeaders = true
 		return nil
 	}))
@@ -93,8 +93,8 @@ func Facts[T any](w io.Writer, data T, o ...opt) error {
 	return nil
 }
 
-func WithColumnTypeFormat[T any](fn func(v T) string) opt {
-	return opT(func(t *table) error {
+func WithColumnTypeFormat[T any](fn func(v T) string) Opt {
+	return OpT(func(t *table) error {
 		if !t.autoTemplate {
 			return nil
 		}
@@ -109,8 +109,8 @@ func WithColumnTypeFormat[T any](fn func(v T) string) opt {
 	})
 }
 
-func WithColumnFormat[T any](name string, fn func(v T) string) opt {
-	return opT(func(t *table) error {
+func WithColumnFormat[T any](name string, fn func(v T) string) Opt {
+	return OpT(func(t *table) error {
 		if !t.autoTemplate {
 			return nil
 		}
@@ -132,8 +132,8 @@ func WithColumnFormat[T any](name string, fn func(v T) string) opt {
 	})
 }
 
-func WithColumnTemplate(name, columnTmpl string) opt {
-	return opT(func(t *table) error {
+func WithColumnTemplate(name, columnTmpl string) Opt {
+	return OpT(func(t *table) error {
 		if !t.autoTemplate {
 			return nil
 		}
@@ -150,8 +150,8 @@ func WithColumnTemplate(name, columnTmpl string) opt {
 	})
 }
 
-func WithIncludeColumns(names ...string) opt {
-	return opT(func(t *table) error {
+func WithIncludeColumns(names ...string) Opt {
+	return OpT(func(t *table) error {
 		if !t.autoTemplate {
 			return nil
 		}
@@ -171,8 +171,8 @@ func WithIncludeColumns(names ...string) opt {
 	})
 }
 
-func WithSkipColumns(names ...string) opt {
-	return opT(func(t *table) error {
+func WithSkipColumns(names ...string) Opt {
+	return OpT(func(t *table) error {
 		if !t.autoTemplate {
 			return nil
 		}
@@ -193,8 +193,8 @@ func WithSkipColumns(names ...string) opt {
 }
 
 // WithMaxWidth caps the total rendered row width and cell padding included.
-func WithMaxWidth(chars int) opt {
-	return opT(func(t *table) error {
+func WithMaxWidth(chars int) Opt {
+	return OpT(func(t *table) error {
 		if chars <= 0 {
 			return fmt.Errorf("%w: max width must be greater than 0", ErrInvalidState)
 		}
@@ -206,21 +206,21 @@ func WithMaxWidth(chars int) opt {
 
 // WithMultilineCells renders line breaks inside cells as aligned physical rows.
 // Without it, line breaks inside cells are rendered as spaces.
-func WithMultilineCells() opt {
-	return opT(func(t *table) error {
+func WithMultilineCells() Opt {
+	return OpT(func(t *table) error {
 		t.multilineCells = true
 		return nil
 	})
 }
 
-func WithFloat64AsPercent() opt {
+func WithFloat64AsPercent() Opt {
 	return WithColumnTypeFormat(func(v float64) string {
 		return percentString(v)
 	})
 }
 
-func WithFloat64AsPercentPositiveColored() opt {
-	return opT(func(t *table) error {
+func WithFloat64AsPercentPositiveColored() Opt {
+	return OpT(func(t *table) error {
 		return WithColumnTypeFormat(t.signedPercent)(t)
 	})
 }
@@ -229,8 +229,8 @@ func WithFloat64AsPercentPositiveColored() opt {
 // scale from green (lowest ranked values) to red (highest ranked values),
 // based on unique seen-so-far values. For TableIter, previously rendered
 // rows are not recalculated.
-func WithColumnGreenRedScale(name string) opt {
-	return opT(func(t *table) error {
+func WithColumnGreenRedScale(name string) Opt {
+	return OpT(func(t *table) error {
 		return t.setColumnScale(name, false)
 	})
 }
@@ -239,8 +239,8 @@ func WithColumnGreenRedScale(name string) opt {
 // scale from red (lowest ranked values) to green (highest ranked values),
 // based on unique seen-so-far values. For TableIter, previously rendered
 // rows are not recalculated.
-func WithColumnRedGreenScale(name string) opt {
-	return opT(func(t *table) error {
+func WithColumnRedGreenScale(name string) Opt {
+	return OpT(func(t *table) error {
 		return t.setColumnScale(name, true)
 	})
 }

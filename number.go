@@ -22,15 +22,15 @@ type numberType interface {
 // Only [WithDefault], [WithAtLeast], [WithAtMost], [WithInput] and [WithOutput] apply.
 // Bounds are inclusive: typed values outside them are rejected on Enter, and
 // Up/Down refuse to step past them.
-func Number[T numberType](ctx context.Context, label string, option ...opt) (T, error) {
+func Number[T numberType](ctx context.Context, label string, option ...Opt) (T, error) {
 	n := newNumber[T](ctx, label)
 	return n.read(ctx, option...)
 }
 
 // WithAtLeast rejects [Number] values below v. The bound may have any numeric
 // type; it is compared exactly and, for floats, at the precision of the answer.
-func WithAtLeast[B numberType](v B) opt {
-	return opT(func(x withNumberBounds) error {
+func WithAtLeast[B numberType](v B) Opt {
+	return OpT(func(x withNumberBounds) error {
 		b, err := newNumberBound(v)
 		if err != nil {
 			return err
@@ -41,8 +41,8 @@ func WithAtLeast[B numberType](v B) opt {
 }
 
 // WithAtMost rejects [Number] values above v. See [WithAtLeast].
-func WithAtMost[B numberType](v B) opt {
-	return opT(func(x withNumberBounds) error {
+func WithAtMost[B numberType](v B) Opt {
+	return OpT(func(x withNumberBounds) error {
 		b, err := newNumberBound(v)
 		if err != nil {
 			return err

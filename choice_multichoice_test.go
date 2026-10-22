@@ -62,7 +62,7 @@ func newPipeMultichoice(ctx context.Context, in io.Reader) *multichoice {
 }
 
 // preparedMultichoice builds item state for tests that bypass terminal interaction.
-func preparedMultichoice(t *testing.T, items []any, o ...opt) *multichoice {
+func preparedMultichoice(t *testing.T, items []any, o ...Opt) *multichoice {
 	t.Helper()
 	m := newMultichoice(t.Context())
 	m.Items = items
@@ -153,7 +153,7 @@ func TestMultichoicePreparationAndCapabilities(t *testing.T) {
 	if m.count != 0 {
 		t.Fatal("default was reapplied")
 	}
-	for _, option := range []opt{WithTemplate(".Name")} {
+	for _, option := range []Opt{WithTemplate(".Name")} {
 		if err := option(newMultichoice(t.Context())); err != nil {
 			t.Fatal(err)
 		}
@@ -171,9 +171,9 @@ func TestMultichoicePreparationAndCapabilities(t *testing.T) {
 	invalid.out = &out
 	acquired := false
 	invalid.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) { acquired = true; return nil, ErrNoTTY }
-	for _, option := range []opt{WithTemplate("{{"), WithTemplate(".Missing")} {
+	for _, option := range []Opt{WithTemplate("{{"), WithTemplate(".Missing")} {
 		// syntax fails preparation; templates run when the theme binds
-		err := invalid.prepare([]opt{option})
+		err := invalid.prepare([]Opt{option})
 		if err == nil {
 			err = invalid.bindRun(t.Context(), newTestTermIO(60, 10))
 		}

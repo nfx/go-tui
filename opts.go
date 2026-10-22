@@ -13,7 +13,7 @@ import (
 // when the widget supports it and skipped otherwise. The bundle fails with
 // [ErrWrongWidget] only when the widget supports none of its members. Any
 // other error from a member, such as an invalid value, is returned as is.
-func WithOptions(o ...opt) opt {
+func WithOptions(o ...Opt) Opt {
 	return func(target any) error {
 		if len(o) == 0 {
 			return nil
@@ -37,17 +37,17 @@ func WithOptions(o ...opt) opt {
 }
 
 // WithInput overrides the input source of an interactive widget.
-func WithInput(r io.Reader) opt {
-	return opT(func(x withIO) error {
-		x.setReader(r)
+func WithInput(r io.Reader) Opt {
+	return OpT(func(x IO) error {
+		x.SetReader(r)
 		return nil
 	})
 }
 
 // WithOutput overrides the output destination of an interactive widget.
-func WithOutput(w io.Writer) opt {
-	return opT(func(x withIO) error {
-		x.setWriter(w)
+func WithOutput(w io.Writer) Opt {
+	return OpT(func(x IO) error {
+		x.SetWriter(w)
 		return nil
 	})
 }

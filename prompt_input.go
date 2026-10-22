@@ -15,7 +15,7 @@ import (
 )
 
 type input struct {
-	config
+	Config
 
 	Label    string
 	Hide     bool
@@ -34,7 +34,7 @@ type input struct {
 	// keys are the bindings beyond editing that the hint row describes.
 	keys []render.Hint
 
-	def defaultValue
+	def DefaultValue
 	// rules validate the confirmed text in order; the first error rejects it.
 	rules []func(context.Context, string) error
 	// rejection is the message of the last rejected confirmation.
@@ -56,13 +56,13 @@ type input struct {
 }
 
 // implement [withPrompt] interface.
-func (i *input) setHide() {
+func (i *input) SetHide() {
 	i.Hide = true
 }
 
 // implement [withPrompt] interface.
-func (i *input) setDefault(d any) {
-	i.def = defaultValue{set: true, raw: d}
+func (i *input) SetDefault(d any) {
+	i.def = DefaultValue{set: true, raw: d}
 	i.typed = fmt.Sprint(d)
 	i.cursor = utf8.RuneCountInString(i.typed)
 }
@@ -79,8 +79,8 @@ func newInput(ctx context.Context, label string) *input {
 	}
 }
 
-func (i *input) read(ctx context.Context, option ...opt) (string, error) {
-	err := opts(option).Apply(i)
+func (i *input) read(ctx context.Context, option ...Opt) (string, error) {
+	err := Opts(option).Apply(i)
 	if err != nil {
 		return "", err
 	}
@@ -106,7 +106,7 @@ func (i *input) answerFromDefault(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if !i.def.set {
-		return "", errNoDefault(i.Label)
+		return "", NoDefault(i.Label)
 	}
 	for _, rule := range i.rules {
 		err = rule(ctx, i.typed)
@@ -115,7 +115,7 @@ func (i *input) answerFromDefault(ctx context.Context) (string, error) {
 		}
 		if err != nil {
 			// the text itself stays out of the error, it may be a secret
-			return "", errBadDefault("is rejected: %w", err)
+			return "", BadDefault("is rejected: %w", err)
 		}
 	}
 	return i.typed, nil

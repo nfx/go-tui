@@ -10,23 +10,23 @@ import (
 	"github.com/nfx/go-tui/theme"
 )
 
-func WithOneReturn() opt {
-	return opT(func(d *dropdown) error {
+func WithOneReturn() Opt {
+	return OpT(func(d *dropdown) error {
 		d.OneReturn = true
 		return nil
 	})
 }
 
 // WithTemplate shares main content across choice rows and answers; details appear only on the active row.
-func WithTemplate(main string, activeDetails ...string) opt {
-	return opT(func(d withChoiceContent) error {
-		d.setContentTemplate(main, activeDetails...)
+func WithTemplate(main string, activeDetails ...string) Opt {
+	return OpT(func(d ChoiceContent) error {
+		d.SetContentTemplate(main, activeDetails...)
 		return nil
 	})
 }
 
-// setContentTemplate keeps active-only details out of inactive rows and answers.
-func (d *dropdown) setContentTemplate(main string, activeDetails ...string) {
+// SetContentTemplate keeps active-only details out of inactive rows and answers.
+func (d *dropdown) SetContentTemplate(main string, activeDetails ...string) {
 	d.setProjection(main, activeDetails...)
 }
 

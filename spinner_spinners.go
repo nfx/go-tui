@@ -17,7 +17,7 @@ import (
 )
 
 type Spinners struct {
-	config
+	Config
 	// cancel ends the group; a render failure is its cause.
 	cancel  context.CancelCauseFunc
 	io      *termIO
@@ -72,7 +72,7 @@ func (s *Spinners) Close() {
 	}
 }
 
-func (s *Spinners) MustAddBackground(opt ...opt) *Spinner {
+func (s *Spinners) MustAddBackground(opt ...Opt) *Spinner {
 	spinner, err := s.Add(context.Background(), opt...)
 	if err != nil {
 		panic(err)
@@ -81,7 +81,7 @@ func (s *Spinners) MustAddBackground(opt ...opt) *Spinner {
 }
 
 // Add creates a spinner that animates the frames of the theme of the group.
-func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
+func (s *Spinners) Add(ctx context.Context, opt ...Opt) (*Spinner, error) {
 	// rewrap the context, so that we can cancel the spinner when
 	// we don't want to cancel the parent context.
 	ctx, cancel := context.WithCancel(ctx)
@@ -91,7 +91,7 @@ func (s *Spinners) Add(ctx context.Context, opt ...opt) (*Spinner, error) {
 		frames:      s.theme.Source.Symbols.Spinner,
 		replyOffset: replyOffset,
 	}
-	err := opts(opt).Apply(&req)
+	err := Opts(opt).Apply(&req)
 	if err != nil {
 		cancel()
 		return nil, err

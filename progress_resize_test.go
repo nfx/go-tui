@@ -28,7 +28,7 @@ func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 	p, err := newStartedProgressBar(t.Context(), "downloading files", 20,
 		WithInput(cio),
 		WithOutput(cio),
-		opT(func(pb *Progressbar) error {
+		OpT(func(pb *Progressbar) error {
 			pb.now = func() time.Time { return now }
 			pb.redrawAt = start
 			pb.ticks = ticks
@@ -83,7 +83,7 @@ func TestProgressbarTickOnResizeExitsWhenDone(t *testing.T) {
 	p, err := newStartedProgressBar(t.Context(), "downloading files", 10,
 		WithInput(cio),
 		WithOutput(cio),
-		opT(func(pb *Progressbar) error {
+		OpT(func(pb *Progressbar) error {
 			pb.ticks = make(chan time.Time)
 			pb.ticker = time.NewTicker(time.Hour)
 			pb.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {

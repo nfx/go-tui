@@ -212,7 +212,7 @@ func TestThemedFilePickerKeepsOneThemeAcrossDirectories(t *testing.T) {
 	other.Templates.Prompt.Label = `other {{ .Label }}`
 	other.Templates.Prompt.Answer = `other {{ .Value }}`
 	terminals := 0
-	install := opT(func(d *dropdown) error {
+	install := OpT(func(d *dropdown) error {
 		next := d.makeTermIO
 		d.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 			terminals++

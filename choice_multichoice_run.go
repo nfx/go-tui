@@ -116,7 +116,7 @@ func (m *multichoice) finishLoading() error {
 }
 
 // run emits an answer only after successful interaction and cleanup.
-func (m *multichoice) run(ctx context.Context, o ...opt) error {
+func (m *multichoice) run(ctx context.Context, o ...Opt) error {
 	if err := m.prepare(o); err != nil {
 		return err
 	}

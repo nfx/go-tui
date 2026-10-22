@@ -71,7 +71,7 @@ func TestInputReadOptionError(t *testing.T) {
 }
 
 func TestInputReadRunError(t *testing.T) {
-	_, err := Input(t.Context(), "Label", WithOutput(io.Discard), opT(func(i *input) error {
+	_, err := Input(t.Context(), "Label", WithOutput(io.Discard), OpT(func(i *input) error {
 		i.makeTermIO = func(io.Reader, io.Writer) (*termIO, error) {
 			return nil, io.EOF
 		}
@@ -83,7 +83,7 @@ func TestInputReadRunError(t *testing.T) {
 }
 
 func TestInputOptWrongType(t *testing.T) {
-	err := opT(func(*input) error { return nil })("nope")
+	err := OpT(func(*input) error { return nil })("nope")
 	if !errors.Is(err, ErrWrongWidget) {
 		t.Fatalf("expected ErrWrongWidget, got %v", err)
 	}
@@ -487,7 +487,7 @@ func TestInputHandleBufferedKeys(t *testing.T) {
 	assert.Equal(t, "xca", i.typed)
 }
 
-func runInputOn(t *testing.T, in io.Reader, option ...opt) (string, error) {
+func runInputOn(t *testing.T, in io.Reader, option ...Opt) (string, error) {
 	t.Helper()
 	i := newInput(t.Context(), "Label")
 	i.in, i.out = in, &bytes.Buffer{}

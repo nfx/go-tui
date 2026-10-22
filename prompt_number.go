@@ -49,8 +49,8 @@ func numberRat[B numberType](v B) (*big.Rat, string) {
 	return new(big.Rat).SetInt64(i), strconv.FormatInt(i, 10)
 }
 
-// setDefault seeds the editable number text.
-func (n *number[T]) setDefault(d any) { n.prompt.setDefault(n.format(d)) }
+// SetDefault seeds the editable number text.
+func (n *number[T]) SetDefault(d any) { n.prompt.SetDefault(n.format(d)) }
 
 // format writes numeric values in plain decimal notation at their own width,
 // and anything else as text, which the numeric rules then judge.
@@ -69,11 +69,11 @@ func (n *number[T]) format(d any) string {
 	return fmt.Sprint(d)
 }
 
-// setReader routes prompt input through r.
-func (n *number[T]) setReader(r io.Reader) { n.prompt.setReader(r) }
+// SetReader routes prompt input through r.
+func (n *number[T]) SetReader(r io.Reader) { n.prompt.SetReader(r) }
 
-// setWriter routes prompt output through w.
-func (n *number[T]) setWriter(w io.Writer) { n.prompt.setWriter(w) }
+// SetWriter routes prompt output through w.
+func (n *number[T]) SetWriter(w io.Writer) { n.prompt.SetWriter(w) }
 
 // setMin records the inclusive lower limit.
 func (n *number[T]) setMin(b *numberBound) { n.min = b }
@@ -168,9 +168,9 @@ func newNumber[T numberType](ctx context.Context, label string) *number[T] {
 }
 
 // read checks options before prompting and returns the confirmed value.
-func (n *number[T]) read(ctx context.Context, option ...opt) (T, error) {
+func (n *number[T]) read(ctx context.Context, option ...Opt) (T, error) {
 	var zero T
-	if err := opts(option).Apply(n); err != nil {
+	if err := Opts(option).Apply(n); err != nil {
 		return zero, err
 	}
 	if err := n.checkBounds(); err != nil {

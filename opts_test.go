@@ -13,7 +13,7 @@ import (
 )
 
 type optsDummy struct {
-	config
+	Config
 }
 
 func TestWithIOOptions(t *testing.T) {
@@ -38,7 +38,7 @@ func TestWithIOOptions(t *testing.T) {
 func TestOptTRejectsWrongWidget(t *testing.T) {
 	err := WithOutput(&bytes.Buffer{})("nope")
 	assert.ErrorIs(t, err, ErrWrongWidget)
-	assert.Contains(t, err.Error(), "need tui.withIO, got string")
+	assert.Contains(t, err.Error(), "need tui.IO, got string")
 }
 
 func TestWithOptionsSkipsUnsupportedMembers(t *testing.T) {

@@ -37,7 +37,7 @@ func TestInputWithNonEmpty(t *testing.T) {
 }
 
 // runValidated drives validation with scripted keys and captures output on a 40x3 terminal.
-func runValidated(t *testing.T, password bool, keys string, o ...opt) (string, string, error) {
+func runValidated(t *testing.T, password bool, keys string, o ...Opt) (string, string, error) {
 	t.Helper()
 	i := newInput(t.Context(), "Label")
 	i.Password = password
@@ -51,7 +51,7 @@ func runValidated(t *testing.T, password bool, keys string, o ...opt) (string, s
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*termIO, error) {
 		return &termIO{in: in, out: out, Width: 40, Height: 3, Restore: func() error { return nil }}, nil
 	}
-	if err := opts(o).Apply(i); err != nil {
+	if err := Opts(o).Apply(i); err != nil {
 		return "", "", err
 	}
 	got, err := i.run(i.ctx)

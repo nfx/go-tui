@@ -38,10 +38,10 @@ func newProgressbar(ctx context.Context) *Progressbar {
 }
 
 // newStartedProgressBar starts a bar, rendering through the captured theme.
-func newStartedProgressBar(ctx context.Context, label string, size int64, o ...opt) (*Progressbar, error) {
+func newStartedProgressBar(ctx context.Context, label string, size int64, o ...Opt) (*Progressbar, error) {
 	var err error
 	p := newProgressbar(ctx)
-	err = opts(o).Apply(p)
+	err = Opts(o).Apply(p)
 	if err != nil {
 		p.cancel(err)
 		return nil, fmt.Errorf("apply option: %w", err)
@@ -79,7 +79,7 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, o ...o
 }
 
 type Progressbar struct {
-	config
+	Config
 	progressState
 	label      ansi.Text
 	increments chan int64

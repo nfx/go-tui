@@ -15,7 +15,7 @@ func stepNumber[T numberType](t *testing.T, draft, arrow string) (string, error)
 	t.Helper()
 	n := newNumber[T](t.Context(), "n")
 	before, after, _ := strings.Cut(draft, "|")
-	n.prompt.setDefault(before + after)
+	n.prompt.SetDefault(before + after)
 	n.prompt.cursor = len(before)
 	err := n.adjust(map[string]rune{"up": '↑', "down": '↓'}[arrow])
 	return n.prompt.typed[:n.prompt.cursor] + "|" + n.prompt.typed[n.prompt.cursor:], err

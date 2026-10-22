@@ -54,7 +54,7 @@ type multichoice struct {
 	offset      int
 	count       int
 	hint        string
-	def         defaultValue
+	def         DefaultValue
 	target      choiceTarget
 	typed       string
 	Hide        bool
@@ -79,39 +79,39 @@ func newMultichoice(ctx context.Context) *multichoice {
 	}
 }
 
-// setReader supplies the input used when the prompt acquires its terminal.
-func (m *multichoice) setReader(r io.Reader) { m.in = r }
+// SetReader supplies the input used when the prompt acquires its terminal.
+func (m *multichoice) SetReader(r io.Reader) { m.in = r }
 
-// setWriter unwraps Tui output so prompts share its managed renderer.
-func (m *multichoice) setWriter(w io.Writer) {
+// SetWriter unwraps Tui output so prompts share its managed renderer.
+func (m *multichoice) SetWriter(w io.Writer) {
 	if t, ok := w.(*Tui); ok {
 		w = t.out
 	}
 	m.out = w
 }
 
-// setHide suppresses the final answer while retaining the interactive prompt.
-func (m *multichoice) setHide() { m.Hide = true }
+// SetHide suppresses the final answer while retaining the interactive prompt.
+func (m *multichoice) SetHide() { m.Hide = true }
 
-// setDefault records the default; a string is also a selection hint that
+// SetDefault records the default; a string is also a selection hint that
 // does not pre-fill the filter.
-func (m *multichoice) setDefault(d any) {
-	m.def = defaultValue{set: true, raw: d}
+func (m *multichoice) SetDefault(d any) {
+	m.def = DefaultValue{set: true, raw: d}
 	m.hint, _ = d.(string) //nolint:errcheck // not a string is no hint
 }
 
-// setContentTemplate shares item content with collection answers, keeping details active-only.
-func (m *multichoice) setContentTemplate(main string, details ...string) {
+// SetContentTemplate shares item content with collection answers, keeping details active-only.
+func (m *multichoice) SetContentTemplate(main string, details ...string) {
 	m.setProjection(main, details...)
 }
 
 // prepare validates options and defers item projection until destination binding.
-func (m *multichoice) prepare(o []opt) error {
+func (m *multichoice) prepare(o []Opt) error {
 	err := m.Ctx.Err()
 	if err != nil {
 		return err
 	}
-	err = opts(o).Apply(m)
+	err = Opts(o).Apply(m)
 	if err != nil {
 		return err
 	}
@@ -251,7 +251,7 @@ func (m *multichoice) answerFromDefault(ctx context.Context) error {
 		return err
 	}
 	if !m.def.set {
-		return errNoDefault(m.Label)
+		return NoDefault(m.Label)
 	}
 	// without a terminal only the projection runs, for the hint to match
 	err = m.bind(defaultIO.bindTheme(ctx, m.theme, m.out, nil))
@@ -429,7 +429,7 @@ func (c choiceTarget) resolveSelection(d any, items []any, hint func(string) ([]
 				return nil, err
 			}
 			if slices.Contains(picked, i) {
-				return nil, errBadDefault("selection repeats an entry")
+				return nil, BadDefault("selection repeats an entry")
 			}
 			picked = append(picked, i)
 		}
@@ -438,7 +438,7 @@ func (c choiceTarget) resolveSelection(d any, items []any, hint func(string) ([]
 	}
 	s, ok := d.(string)
 	if !ok {
-		return nil, errBadDefault("%T matches no entry", d)
+		return nil, BadDefault("%T matches no entry", d)
 	}
 	matches, err := hint(s)
 	if err != nil {

@@ -10,8 +10,8 @@ import (
 	"strings"
 )
 
-func WithExtensions(exts ...string) opt {
-	return opT(func(f *filePicker) error {
+func WithExtensions(exts ...string) Opt {
+	return OpT(func(f *filePicker) error {
 		for _, ext := range exts {
 			f.extensions[strings.ToLower(ext)] = true
 		}
@@ -19,35 +19,35 @@ func WithExtensions(exts ...string) opt {
 	})
 }
 
-func WithStartDir(dir string) opt {
-	return opT(func(f *filePicker) error {
+func WithStartDir(dir string) Opt {
+	return OpT(func(f *filePicker) error {
 		f.start = dir
 		return nil
 	})
 }
 
-func WithIgnoreUp() opt {
-	return opT(func(f *filePicker) error {
+func WithIgnoreUp() Opt {
+	return OpT(func(f *filePicker) error {
 		f.ignoreUp = true
 		return nil
 	})
 }
 
-func WithIgnoreDirs() opt {
-	return opT(func(f *filePicker) error {
+func WithIgnoreDirs() Opt {
+	return OpT(func(f *filePicker) error {
 		f.ignoreDirs = true
 		return nil
 	})
 }
 
-func WithShowHidden() opt {
-	return opT(func(f *filePicker) error {
+func WithShowHidden() Opt {
+	return OpT(func(f *filePicker) error {
 		f.showHidden = true
 		return nil
 	})
 }
 
-func FilePicker(ctx context.Context, title string, o ...opt) (string, error) {
+func FilePicker(ctx context.Context, title string, o ...Opt) (string, error) {
 	f, d, err := newFilePicker(ctx, o...)
 	if err != nil {
 		return "", err
@@ -58,13 +58,13 @@ func FilePicker(ctx context.Context, title string, o ...opt) (string, error) {
 	terminal := outputIsTerminal(d.out)
 	if !terminal && !d.canAnswer() {
 		// nothing can answer, so no directory is walked
-		return "", errNoDefault(title)
+		return "", NoDefault(title)
 	}
 	visited := walked{}
 	for stack[len(stack)-1].IsDir() {
 		dirName := joinStack(stack)
 		if !terminal && visited.revisits(dirName) {
-			return "", errBadDefault("walks %s again", dirName)
+			return "", BadDefault("walks %s again", dirName)
 		}
 		entries, err := f.list(dirName)
 		if err != nil {

@@ -80,7 +80,7 @@ func (c choiceTarget) matches(d any, items []any) ([]int, error) {
 	if d != nil {
 		rv := reflect.ValueOf(d)
 		if rv.Kind() == reflect.Func && !rv.IsNil() {
-			return nil, errBadDefault("%T is a function, which cannot be identified", d)
+			return nil, BadDefault("%T is a function, which cannot be identified", d)
 		}
 		if typ := c.elem(); typ.Kind() != reflect.Interface {
 			// assignable types may differ, e.g. a named slice and an unnamed one
@@ -125,11 +125,11 @@ func (c choiceTarget) equalValues(a, b any) bool {
 func uniqueMatch(matches []int, what string) (int, error) {
 	switch len(matches) {
 	case 0:
-		return -1, errBadDefault("%s matches no entry", what)
+		return -1, BadDefault("%s matches no entry", what)
 	case 1:
 		return matches[0], nil
 	}
-	return -1, errBadDefault("%s matches %d entries", what, len(matches))
+	return -1, BadDefault("%s matches %d entries", what, len(matches))
 }
 
 // resolveSingle finds the one entry a default identifies. A value of the target
@@ -146,7 +146,7 @@ func (c choiceTarget) resolveSingle(d any, items []any, hint func(string) ([]int
 	}
 	s, ok := d.(string)
 	if !ok {
-		return -1, errBadDefault("%T matches no entry", d)
+		return -1, BadDefault("%T matches no entry", d)
 	}
 	matches, err := hint(s)
 	if err != nil {

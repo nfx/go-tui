@@ -69,7 +69,7 @@ type dropdown struct {
 	typed    []rune
 	oneMatch string // see [WithDefault]
 	// def is the raw default; target types it; normalize adapts it first.
-	def       defaultValue
+	def       DefaultValue
 	target    choiceTarget
 	normalize func(any) any
 	// seedIdx is the entry a typed default selects when seeded is set.
@@ -154,7 +154,7 @@ func (d *dropdown) resolveAutomatic(items []any) (int, error) {
 		return 0, nil
 	}
 	if !d.def.set {
-		return -1, errNoDefault(d.Label)
+		return -1, NoDefault(d.Label)
 	}
 	return d.target.resolveSingle(d.def.raw, items, d.hintMatches(items))
 }
@@ -169,7 +169,7 @@ func (d *dropdown) seedDefault() error {
 		return nil
 	}
 	if !d.target.accepts(d.def.raw) {
-		return errBadDefault("%T has the wrong type", d.def.raw)
+		return BadDefault("%T has the wrong type", d.def.raw)
 	}
 	if d.itItems != nil {
 		d.seedLazy = true // the entry may arrive later
@@ -216,28 +216,28 @@ func newDropdown(ctx context.Context) *dropdown {
 }
 
 // implement [withPrompt] interface.
-func (d *dropdown) setHide() {
+func (d *dropdown) SetHide() {
 	d.Hide = true
 }
 
 // implement [withPrompt] interface.
-func (d *dropdown) setDefault(v any) {
+func (d *dropdown) SetDefault(v any) {
 	if d.normalize != nil {
 		v = d.normalize(v)
 	}
-	d.def = defaultValue{set: true, raw: v}
+	d.def = DefaultValue{set: true, raw: v}
 	hint, _ := v.(string) //nolint:errcheck // not a string is no hint
 	d.oneMatch = hint
 	d.rankHint = hint
 }
 
 // implements [withIO].
-func (d *dropdown) setReader(r io.Reader) {
+func (d *dropdown) SetReader(r io.Reader) {
 	d.in = r
 }
 
 // implements [withIO].
-func (d *dropdown) setWriter(w io.Writer) {
+func (d *dropdown) SetWriter(w io.Writer) {
 	tui, ok := w.(*Tui)
 	if ok {
 		w = tui.prependView(10) // TODO: height is properly available only after render, right?...

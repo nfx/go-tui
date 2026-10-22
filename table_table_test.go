@@ -92,7 +92,7 @@ func TestTableEmitsStructuredEvents(t *testing.T) {
 	}
 	buf := &bytes.Buffer{}
 	var events []tableEvent
-	err := Table(buf, "{{.Name}}\t{{.Age}}", data, opT(func(tbl *table) error {
+	err := Table(buf, "{{.Name}}\t{{.Age}}", data, OpT(func(tbl *table) error {
 		tbl.eventSink = func(ev tableEvent) {
 			events = append(events, ev)
 		}
@@ -141,7 +141,7 @@ func TestTableIterAppendError(t *testing.T) {
 	iter := func(yield func(Person, error) bool) {
 		yield(Person{Name: "A"}, nil)
 	}
-	err := TableIter(errWriterTable{}, "{{.Name}}", iter, opT(func(t *table) error {
+	err := TableIter(errWriterTable{}, "{{.Name}}", iter, OpT(func(t *table) error {
 		t.batchSize = 1
 		return nil
 	}))
@@ -287,7 +287,7 @@ func TestTableRejectsOptionsOfOtherWidgets(t *testing.T) {
 	data := []item{{Name: "a"}}
 	err := TableAuto(&bytes.Buffer{}, data, WithHide())
 	assert.ErrorIs(t, err, ErrWrongWidget)
-	assert.Contains(t, err.Error(), "need tui.withPrompt, got *tui.table")
+	assert.Contains(t, err.Error(), "need tui.Prompt, got *tui.table")
 
 	err = TableAuto(&bytes.Buffer{}, data, WithOutput(&bytes.Buffer{}))
 	assert.ErrorIs(t, err, ErrWrongWidget)
@@ -312,10 +312,10 @@ type tableFormatRow struct {
 }
 
 // collectEvents runs a table render and returns emitted table events.
-func collectEvents[T any](t *testing.T, rowTmpl string, data []T, o ...opt) []tableEvent {
+func collectEvents[T any](t *testing.T, rowTmpl string, data []T, o ...Opt) []tableEvent {
 	t.Helper()
 	var events []tableEvent
-	o = append(o, opT(func(tbl *table) error {
+	o = append(o, OpT(func(tbl *table) error {
 		tbl.eventSink = func(ev tableEvent) {
 			events = append(events, ev)
 		}
@@ -326,10 +326,10 @@ func collectEvents[T any](t *testing.T, rowTmpl string, data []T, o ...opt) []ta
 	return events
 }
 
-func collectIterEvents[T any](t *testing.T, rowTmpl string, data []T, o ...opt) []tableEvent {
+func collectIterEvents[T any](t *testing.T, rowTmpl string, data []T, o ...Opt) []tableEvent {
 	t.Helper()
 	var events []tableEvent
-	o = append(o, opT(func(tbl *table) error {
+	o = append(o, OpT(func(tbl *table) error {
 		tbl.eventSink = func(ev tableEvent) {
 			events = append(events, ev)
 		}
@@ -502,7 +502,7 @@ func TestTableMultilineCellsTruncateEachLine(t *testing.T) {
 	}
 	data := []row{{"a\nbb\nccc\ndddd\neeeeee\nff"}}
 	// 3 visible characters, the truncation tailer and the cell padding
-	o := []opt{WithMultilineCells(), WithMaxWidth(5)}
+	o := []Opt{WithMultilineCells(), WithMaxWidth(5)}
 
 	events := collectEvents(t, "{{.Text}}", data, o...)
 	assert.Equal(t, 8, len(events))
@@ -534,7 +534,7 @@ func TestTableTrailingLineBreakEndsRow(t *testing.T) {
 	}
 	data := []row{{"foo", "1"}, {"bar", "2"}}
 	for _, tmpl := range []string{"{{.Name}}\t{{.ID}}\n", "{{.Name}}\t{{.ID}}\r\n"} {
-		for _, o := range [][]opt{nil, {WithMultilineCells()}} {
+		for _, o := range [][]Opt{nil, {WithMultilineCells()}} {
 			events := collectEvents(t, tmpl, data, o...)
 			assert.Equal(t, 4, len(events))
 			assert.Equal(t, "1", strings.TrimSpace(mustTableRow(t, events[1]).Cells[1]))
@@ -558,7 +558,7 @@ func TestTableEmptyFirstBatchColumnKeepsMinimumWidth(t *testing.T) {
 		data[i].Name = fmt.Sprintf("n%02d", i)
 	}
 	data[11].Note = "late"
-	suppress := opT(func(tbl *table) error {
+	suppress := OpT(func(tbl *table) error {
 		tbl.suppressHeaders = true
 		return nil
 	})

@@ -82,7 +82,7 @@ func TestNumberNativeWidth(t *testing.T) {
 	assert.True(t, !u.signed)
 }
 
-func runNumber[T numberType](t *testing.T, keys string, option ...opt) (T, string, error) {
+func runNumber[T numberType](t *testing.T, keys string, option ...Opt) (T, string, error) {
 	t.Helper()
 	var out bytes.Buffer
 	v, err := Number[T](t.Context(), "Count:", append(option,
@@ -148,7 +148,7 @@ func TestNumberArrowFeedback(t *testing.T) {
 
 func TestNumberCaretMovementKeepsFeedback(t *testing.T) {
 	n := newNumber[uint](t.Context(), "n")
-	n.prompt.setDefault("0")
+	n.prompt.SetDefault("0")
 	n.prompt.reject(n.adjust('↓'))
 	assert.Equal(t, errNumberBelowZero.Error(), n.prompt.rejection)
 	n.prompt.pressLeft()
@@ -163,7 +163,7 @@ func TestNumberOptions(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 5, v)
 
-	for _, o := range []opt{WithNonEmpty(), WithHide(), WithValidation(func(context.Context, string) error { return nil }),
+	for _, o := range []Opt{WithNonEmpty(), WithHide(), WithValidation(func(context.Context, string) error { return nil }),
 		WithRegex(`[0-9]`, "one digit"), WithOneReturn(), WithOptions(WithTemplate(".Name"))} {
 		_, _, err = runNumber[int](t, "5\r", o)
 		assert.ErrorIs(t, err, ErrWrongWidget)
@@ -409,7 +409,7 @@ func TestThemedNumberStepsAndRetainsExactDraft(t *testing.T) {
 }
 
 func TestThemedNumberKeepsOptionSet(t *testing.T) {
-	for _, o := range []opt{WithTemplate("x")} {
+	for _, o := range []Opt{WithTemplate("x")} {
 		n, _, restored := themedNumber[int](t, asciiTheme(false), 30, 5, "1", "\r")
 		_, err := n.read(t.Context(), o)
 		assert.ErrorIs(t, err, ErrWrongWidget)

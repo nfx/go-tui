@@ -65,7 +65,7 @@ func (f *filePicker) skip(e os.DirEntry) bool {
 
 // newFilePicker applies o to the picker and to the dropdown that shows the
 // first directory. Every option must be supported by at least one of them.
-func newFilePicker(ctx context.Context, o ...opt) (*filePicker, *dropdown, error) {
+func newFilePicker(ctx context.Context, o ...Opt) (*filePicker, *dropdown, error) {
 	f := &filePicker{
 		extensions: map[string]bool{},
 	}
@@ -73,7 +73,7 @@ func newFilePicker(ctx context.Context, o ...opt) (*filePicker, *dropdown, error
 	f.theme = d.theme
 	f.adopt(d)
 	for _, option := range o {
-		err := applyToAny(option, f, d)
+		err := ApplyToAny(option, f, d)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -114,7 +114,7 @@ func (f *filePicker) step(
 // nextDropdown configures the dropdown of the next directory. Options were
 // validated by newFilePicker, so the bundle may only skip the ones that
 // configure the picker itself.
-func (f *filePicker) nextDropdown(ctx context.Context, o []opt) (*dropdown, error) {
+func (f *filePicker) nextDropdown(ctx context.Context, o []Opt) (*dropdown, error) {
 	d := newDropdown(ctx)
 	f.adopt(d)
 	err := WithOptions(o...)(d)
@@ -246,7 +246,7 @@ func (f *filePicker) answerFromDefault(
 		return i, nil
 	}
 	if !d.def.set {
-		return -1, errNoDefault(title)
+		return -1, NoDefault(title)
 	}
 	var matches []int
 	switch want := d.def.raw.(type) {
@@ -279,5 +279,5 @@ func (f *filePicker) answerFromDefault(
 		}
 		return i, ctx.Err()
 	}
-	return -1, errBadDefault("%T is neither a name nor an os.DirEntry", d.def.raw)
+	return -1, BadDefault("%T is neither a name nor an os.DirEntry", d.def.raw)
 }

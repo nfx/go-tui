@@ -112,7 +112,7 @@ func (r failReader) Read([]byte) (int, error) {
 
 // quiet configures a prompt without terminal: no input may be read, and the
 // buffer must stay empty.
-func quiet(t *testing.T) opt {
+func quiet(t *testing.T) Opt {
 	t.Helper()
 	strictOutput(t)
 	out := &bytes.Buffer{}

@@ -146,7 +146,7 @@ func TestThemedSpinnerRenderErrorEndsGroup(t *testing.T) {
 func TestThemedSpinnerWriteErrorEndsGroup(t *testing.T) {
 	gone := errors.New("terminal gone")
 	var released atomic.Bool
-	s, frames, tick, _ := themedSpinners(t, asciiTheme(false), 40, opT(func(s *Spinners) error {
+	s, frames, tick, _ := themedSpinners(t, asciiTheme(false), 40, OpT(func(s *Spinners) error {
 		s.makeTermIO = func(in io.Reader, _ io.Writer) (*termIO, error) {
 			return &termIO{in: in, out: failingWriter{gone}, Width: 40, Height: 10, Restore: func() error {
 				released.Store(true)
@@ -165,7 +165,7 @@ func TestThemedSpinnerWriteErrorEndsGroup(t *testing.T) {
 }
 
 func TestThemedSpinnerInterval(t *testing.T) {
-	realTicks := opT(func(s *Spinners) error {
+	realTicks := OpT(func(s *Spinners) error {
 		s.ticks = s.ticker.C
 		return nil
 	})

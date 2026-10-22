@@ -64,7 +64,7 @@ func TestChanIO_Forward(t *testing.T) {
 
 	s, err := NewSpinners(cio.ctx,
 		WithOutput(cio),
-		opT(func(s *Spinners) error { //nolint:unparam // ..
+		OpT(func(s *Spinners) error { //nolint:unparam // ..
 			s.ticks = ticks
 			return nil
 		}),

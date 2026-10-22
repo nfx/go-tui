@@ -119,7 +119,7 @@ func TestThemedPasswordRejectionIsSecretIndependent(t *testing.T) {
 	th.Templates.Password.Feedback = `{{ error (spy .Message) }}`
 	for _, tc := range []struct {
 		name string
-		opts []opt
+		opts []Opt
 		want string
 	}{
 		{"theme slot", nil, "\n\r| Invalid value\x1b[K"},
@@ -127,7 +127,7 @@ func TestThemedPasswordRejectionIsSecretIndependent(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			seen = nil
 			i, out := themedPassword(t, th, "hunter2", "\r", "!", "\r")
-			got, err := i.read(t.Context(), append([]opt{leak}, tc.opts...)...)
+			got, err := i.read(t.Context(), append([]Opt{leak}, tc.opts...)...)
 			assert.NoError(t, err)
 			assert.Equal(t, "hunter2!", got)
 			assert.Contains(t, out.String(), tc.want)

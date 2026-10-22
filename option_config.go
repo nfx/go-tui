@@ -8,18 +8,18 @@ import (
 	"io"
 )
 
-type config struct {
+type Config struct {
 	ctx context.Context
 	in  io.Reader
 	out io.Writer
 }
 
 // implement [withIO] interface.
-func (c *config) setReader(r io.Reader) {
+func (c *Config) SetReader(r io.Reader) {
 	c.in = r
 }
 
 // implement [withIO] interface.
-func (c *config) setWriter(w io.Writer) {
+func (c *Config) SetWriter(w io.Writer) {
 	c.out = w
 }
