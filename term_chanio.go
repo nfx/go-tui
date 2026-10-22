@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/nfx/go-tui/internal/errs"
 	"io"
 	"sync"
 	"time"
@@ -17,12 +18,12 @@ import (
 func startIO(ctx context.Context, out io.Writer) (*chanIO, error) {
 	fdw, ok := out.(descriptor)
 	if !ok {
-		return nil, fmt.Errorf("stderr: %w", ErrNoTTY)
+		return nil, fmt.Errorf("stderr: %w", errs.ErrNoTTY)
 	}
 	fd := int(fdw.Fd())
 	w, h, err := termGetSize(fd)
 	if err != nil {
-		return nil, fmt.Errorf("get size: %w: %w", ErrNoTTY, err)
+		return nil, fmt.Errorf("get size: %w: %w", errs.ErrNoTTY, err)
 	}
 	cio := newUnstartedIO(ctx, w, h, fd)
 	go cio.handleViewports(ctx)

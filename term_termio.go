@@ -6,6 +6,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"github.com/nfx/go-tui/internal/errs"
 	"io"
 	"sync"
 
@@ -73,11 +74,11 @@ func acquireTermIO(
 	stderr, isOutFD := out.(descriptor)
 	cio, isOutChanIO := out.(*chanIO)
 	if !isOutFD && !isOutChanIO {
-		return nil, fmt.Errorf("stderr: %w", ErrNoTTY)
+		return nil, fmt.Errorf("stderr: %w", errs.ErrNoTTY)
 	}
 	stdin, ok := in.(descriptor)
 	if !ok {
-		return nil, fmt.Errorf("stdin: %w", ErrNoTTY)
+		return nil, fmt.Errorf("stdin: %w", errs.ErrNoTTY)
 	}
 	if cio != nil {
 		restore, err := rawRestore(stdin)
@@ -105,12 +106,12 @@ func acquireTermIO(
 		}, restore), nil
 	}
 	if defaultIO.env.ci {
-		return nil, fmt.Errorf("stderr: CI: %w", ErrNoTTY)
+		return nil, fmt.Errorf("stderr: CI: %w", errs.ErrNoTTY)
 	}
 	fd := int(stderr.Fd())
 	width, height, err := termGetSize(fd)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrNoTTY, err)
+		return nil, fmt.Errorf("%w: %w", errs.ErrNoTTY, err)
 	}
 	restore, err := rawRestore(stdin)
 	if err != nil {
@@ -137,7 +138,7 @@ const plainWidth, plainHeight = 80, 24
 // Output that cannot host a terminal is never a prompt, whatever the input is.
 func makePromptIO(in io.Reader, out io.Writer) (*termIO, error) {
 	if !outputIsTerminal(out) {
-		return nil, fmt.Errorf("stderr: %w", ErrNoTTY)
+		return nil, fmt.Errorf("stderr: %w", errs.ErrNoTTY)
 	}
 	_, isInFD := in.(descriptor)
 	_, isOutFD := out.(descriptor)

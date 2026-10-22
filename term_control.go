@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/nfx/go-tui/internal/errs"
 	"io"
 	"slices"
 	"time"
@@ -181,5 +182,5 @@ func (t *termIO) writeControl(ctx context.Context, p []byte) error {
 		_, err := t.out.Write(p)
 		return err
 	}
-	return fmt.Errorf("control: %w", ErrNoTTY)
+	return fmt.Errorf("control: %w", errs.ErrNoTTY)
 }
