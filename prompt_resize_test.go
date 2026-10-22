@@ -11,35 +11,35 @@ import (
 
 func TestInputVisibleWindowNoClipping(t *testing.T) {
 	i := &input{cursor: 3}
-	start, end := i.visibleWindow(text("hello").clusters(), 10)
+	start, end := i.visibleWindow(Text("hello").Clusters(), 10)
 	assert.Equal(t, 0, start)
 	assert.Equal(t, 5, end)
 }
 
 func TestInputVisibleWindowClipsCursorAtStart(t *testing.T) {
 	i := &input{cursor: 2}
-	start, end := i.visibleWindow(text("abcdefghij").clusters(), 5)
+	start, end := i.visibleWindow(Text("abcdefghij").Clusters(), 5)
 	assert.Equal(t, 0, start)
 	assert.Equal(t, 5, end)
 }
 
 func TestInputVisibleWindowClipsCursorAtEnd(t *testing.T) {
 	i := &input{cursor: 9}
-	start, end := i.visibleWindow(text("abcdefghij").clusters(), 5)
+	start, end := i.visibleWindow(Text("abcdefghij").Clusters(), 5)
 	assert.Equal(t, 5, start)
 	assert.Equal(t, 10, end)
 }
 
 func TestInputVisibleWindowClipsCursorInMiddle(t *testing.T) {
 	i := &input{cursor: 5}
-	start, end := i.visibleWindow(text("abcdefghij").clusters(), 4)
+	start, end := i.visibleWindow(Text("abcdefghij").Clusters(), 4)
 	assert.Equal(t, 3, start)
 	assert.Equal(t, 7, end)
 }
 
 func TestInputVisibleWindowZeroAvail(t *testing.T) {
 	i := &input{cursor: 3}
-	start, end := i.visibleWindow(text("hello").clusters(), 0)
+	start, end := i.visibleWindow(Text("hello").Clusters(), 0)
 	assert.Equal(t, 3, start)
 	assert.Equal(t, 3, end)
 }

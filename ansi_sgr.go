@@ -4,12 +4,12 @@
 package tui
 
 const (
-	reset = "\x1b[0m"
+	Reset = "\x1b[0m"
 
 	// Text combineting.
-	bold          = "\x1b[1m"
-	dim           = "\x1b[2m"
-	italic        = "\x1b[3m"
-	underline     = "\x1b[4m"
-	strikethrough = "\x1b[9m"
+	Bold          = "\x1b[1m"
+	Dim           = "\x1b[2m"
+	Italic        = "\x1b[3m"
+	Underline     = "\x1b[4m"
+	Strikethrough = "\x1b[9m"
 )

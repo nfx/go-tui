@@ -19,36 +19,36 @@ type geometry struct {
 }
 
 // lead returns the guide prefix for guided rows outside inline layouts.
-func (g geometry) lead(guided bool) text {
+func (g geometry) lead(guided bool) Text {
 	if !guided || g.inline {
 		return nil
 	}
-	return text(g.guide + " ")
+	return Text(g.guide + " ")
 }
 
 // columns returns space after lead, reserving the last column against autowrap;
 // unknown widths are unbounded, and negative results mean lead does not fit.
-func (g geometry) columns(lead text) int {
+func (g geometry) columns(lead Text) int {
 	if g.width <= 0 {
 		return math.MaxInt
 	}
-	return g.width - 1 - lead.width()
+	return g.width - 1 - lead.Width()
 }
 
 // valueLead returns the guide or an inline label clipped to reserve value and caret space.
-func (g geometry) valueLead(label text) text {
+func (g geometry) valueLead(label Text) Text {
 	switch {
 	case !g.inline:
 		return g.lead(true)
-	case g.width <= 0 || label.width() <= g.width-2:
+	case g.width <= 0 || label.Width() <= g.width-2:
 		return label
 	}
-	return label.truncateColumns(g.width - 2)
+	return label.TruncateColumns(g.width - 2)
 }
 
 // valueColumns reserves the last column for the caret and returns ErrNoSpace
 // if no value column fits after lead.
-func (g geometry) valueColumns(lead text) (int, error) {
+func (g geometry) valueColumns(lead Text) (int, error) {
 	cols := g.columns(lead)
 	if cols < 1 {
 		return 0, ErrNoSpace
@@ -59,7 +59,7 @@ func (g geometry) valueColumns(lead text) (int, error) {
 // frameRow is one physical row of a frame before fitting. A row that composes
 // its own lead, such as the value row, is not guided.
 type frameRow struct {
-	content text
+	content Text
 	guided  bool
 	// drop orders optional rows: when the height is short, the largest drop
 	// goes first, and of equal ones the later row. Zero is required.
@@ -68,7 +68,7 @@ type frameRow struct {
 
 // fitted are the rows of a frame that fit, each with its lead and clipped.
 type fitted struct {
-	lines []text
+	lines []Text
 	// at is the position in lines of every row given to fit, or -1 when the
 	// row was dropped.
 	at []int
@@ -80,7 +80,7 @@ func (g geometry) fit(rows []frameRow) (fitted, error) {
 	keep := make([]bool, len(rows))
 	kept, required := 0, 0
 	for i, r := range rows {
-		cols, visible := g.columns(g.lead(r.guided)), r.content.width() > 0
+		cols, visible := g.columns(g.lead(r.guided)), r.content.Width() > 0
 		switch {
 		case r.drop > 0 && (!visible || cols < 1):
 			continue
@@ -104,7 +104,7 @@ func (g geometry) fit(rows []frameRow) (fitted, error) {
 		}
 		keep[victim] = false
 	}
-	out := fitted{lines: make([]text, 0, kept), at: make([]int, len(rows))}
+	out := fitted{lines: make([]Text, 0, kept), at: make([]int, len(rows))}
 	for i, r := range rows {
 		if !keep[i] {
 			out.at[i] = -1
@@ -112,11 +112,11 @@ func (g geometry) fit(rows []frameRow) (fitted, error) {
 		}
 		lead := g.lead(r.guided)
 		content := r.content
-		if cols := g.columns(lead); content.width() > cols {
-			content = content.truncateColumns(cols)
+		if cols := g.columns(lead); content.Width() > cols {
+			content = content.TruncateColumns(cols)
 		}
 		out.at[i] = len(out.lines)
-		out.lines = append(out.lines, append(append(text{}, lead...), content...))
+		out.lines = append(out.lines, append(append(Text{}, lead...), content...))
 	}
 	return out, nil
 }

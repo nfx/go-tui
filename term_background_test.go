@@ -38,19 +38,19 @@ func routedTio(tt *termIO) *tio {
 func TestDetectBackground_OSCReply(t *testing.T) {
 	tt, term := probeTermIO(t, "\x1b]11;rgb:fafa/fafa/fafa\x1b\\")
 	d := routedTio(tt)
-	b := d.background(t.Context(), tt, background{})
-	assert.True(t, b.measured)
-	assert.Equal(t, sRGB{250, 250, 250}, b.rgb)
-	assert.True(t, b.light)
+	b := d.background(t.Context(), tt, Background{})
+	assert.True(t, b.Measured)
+	assert.Equal(t, SRGB{250, 250, 250}, b.RGB)
+	assert.True(t, b.Light)
 	// cached: no second query
-	b = d.background(t.Context(), tt, background{})
-	assert.True(t, b.measured)
+	b = d.background(t.Context(), tt, Background{})
+	assert.True(t, b.Measured)
 	assert.Equal(t, 1, term.count())
 }
 
 func TestDetectBackground_TimeoutFallsBackOnceToEnv(t *testing.T) {
 	tt, term := probeTermIO(t, "") // a terminal that never answers
-	hint := background{light: true}
+	hint := Background{Light: true}
 	d := routedTio(tt)
 	b := d.background(t.Context(), tt, hint)
 	assert.Equal(t, hint, b)
@@ -60,8 +60,8 @@ func TestDetectBackground_TimeoutFallsBackOnceToEnv(t *testing.T) {
 
 func TestDetectBackground_MalformedReplyIsNotDark(t *testing.T) {
 	tt, _ := probeTermIO(t, "\x1b]11;rgb:zz/00/00\x07")
-	b := tt.detectBackground(t.Context(), background{light: true})
-	assert.Equal(t, background{light: true}, b)
+	b := tt.detectBackground(t.Context(), Background{Light: true})
+	assert.Equal(t, Background{Light: true}, b)
 }
 
 func TestDetectBackground_SkipsQuery(t *testing.T) {
@@ -76,7 +76,7 @@ func TestDetectBackground_SkipsQuery(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			tt, term := probeTermIO(t, oscReply)
 			disable(t)
-			assert.Equal(t, background{}, tt.detectBackground(t.Context(), background{}))
+			assert.Equal(t, Background{}, tt.detectBackground(t.Context(), Background{}))
 			assert.Equal(t, 0, term.count())
 		})
 	}
@@ -85,17 +85,17 @@ func TestDetectBackground_SkipsQuery(t *testing.T) {
 func TestDetectBackground_ReplacedOutputRouteProbesAgain(t *testing.T) {
 	tt, term := probeTermIO(t, oscReply)
 	d := routedTio(tt)
-	d.background(t.Context(), tt, background{})
+	d.background(t.Context(), tt, Background{})
 	next := &replyingTerminal{reply: oscReply, in: term.in}
 	d.setIO(nil, next)
 	tt.out = next
-	d.background(t.Context(), tt, background{})
+	d.background(t.Context(), tt, Background{})
 	assert.Equal(t, 1, next.count())
 }
 
 func TestDetectBackground_KeyTypedDuringProbeIsKept(t *testing.T) {
 	tt, _ := probeTermIO(t, oscReply+"a")
-	assert.True(t, tt.detectBackground(t.Context(), background{}).measured)
+	assert.True(t, tt.detectBackground(t.Context(), Background{}).Measured)
 	assert.Equal(t, 'a', nextEvent(t, tt).key)
 }
 
@@ -103,7 +103,7 @@ func TestDetectBackground_KeyBeforeReplyIsKept(t *testing.T) {
 	tt, term := probeTermIO(t, oscReply)
 	go term.in.Write([]byte("a")) //nolint:errcheck
 	time.Sleep(20 * time.Millisecond)
-	assert.True(t, tt.detectBackground(t.Context(), background{}).measured)
+	assert.True(t, tt.detectBackground(t.Context(), Background{}).Measured)
 	go term.in.Write([]byte("b")) //nolint:errcheck
 	assert.Equal(t, 'a', nextEvent(t, tt).key)
 	assert.Equal(t, 'b', nextEvent(t, tt).key)
@@ -146,7 +146,7 @@ func TestDetectBackground_InputBeforeReplyIsKept(t *testing.T) {
 			tt.bracketedPaste = tc.bracketed
 			go term.in.Write([]byte(tc.typed)) //nolint:errcheck
 			time.Sleep(20 * time.Millisecond)
-			tt.detectBackground(t.Context(), background{})
+			tt.detectBackground(t.Context(), Background{})
 			tc.check(t, nextEvent(t, tt))
 		})
 	}
@@ -168,14 +168,14 @@ func TestDetectBackground_StaleTerminalDoesNotUseCache(t *testing.T) {
 	d := routedTio(tt)
 	// Stale terminals must not populate the new route's cache.
 	d.setIO(nil, &replyingTerminal{})
-	assert.True(t, d.background(t.Context(), tt, background{}).measured)
+	assert.True(t, d.background(t.Context(), tt, Background{}).Measured)
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	assert.True(t, d.bg == nil)
 }
 
 func TestParseOSCColor(t *testing.T) {
-	for in, want := range map[string]sRGB{
+	for in, want := range map[string]SRGB{
 		"rgb:0000/0000/0000": {0, 0, 0},
 		"rgb:ffff/ffff/ffff": {255, 255, 255},
 		"rgb:1e1e/1e1e/2e2e": {0x1e, 0x1e, 0x2e},
@@ -199,10 +199,10 @@ func TestParseOSCColor(t *testing.T) {
 func TestParseColorFGBG(t *testing.T) {
 	rgb, ok := new(termIO).parseColorFGBG("15;0")
 	assert.True(t, ok)
-	assert.Equal(t, sRGB{0, 0, 0}, rgb)
+	assert.Equal(t, SRGB{0, 0, 0}, rgb)
 	rgb, ok = new(termIO).parseColorFGBG("0;default;15")
 	assert.True(t, ok)
-	assert.Equal(t, sRGB{255, 255, 255}, rgb)
+	assert.Equal(t, SRGB{255, 255, 255}, rgb)
 	for _, in := range []string{"", "15", "15;default", "15;", "15;256", "15;-1", "a;b", "1;2;3;4"} {
 		_, ok := new(termIO).parseColorFGBG(in)
 		assert.Equal(t, false, ok)
@@ -214,13 +214,13 @@ func TestBackgroundFromEnv(t *testing.T) {
 		return func(k string) (string, bool) { return v, k == "COLORFGBG" }
 	}
 	b := new(termIO).backgroundFromEnv(env("0;15"))
-	assert.True(t, b.light)
-	assert.Equal(t, false, b.measured)
+	assert.True(t, b.Light)
+	assert.Equal(t, false, b.Measured)
 	// Blue is dark; mid gray is light despite its low palette index.
-	assert.Equal(t, false, new(termIO).backgroundFromEnv(env("15;4")).light)
-	assert.True(t, new(termIO).backgroundFromEnv(env("15;8")).light)
-	assert.Equal(t, background{}, new(termIO).backgroundFromEnv(env("default;default")))
-	assert.Equal(t, background{}, new(termIO).backgroundFromEnv(nil))
+	assert.Equal(t, false, new(termIO).backgroundFromEnv(env("15;4")).Light)
+	assert.True(t, new(termIO).backgroundFromEnv(env("15;8")).Light)
+	assert.Equal(t, Background{}, new(termIO).backgroundFromEnv(env("default;default")))
+	assert.Equal(t, Background{}, new(termIO).backgroundFromEnv(nil))
 }
 
 func TestDetectBackground_ConcurrentCallersQueryOnce(t *testing.T) {
@@ -231,7 +231,7 @@ func TestDetectBackground_ConcurrentCallersQueryOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			d.background(t.Context(), tt, background{})
+			d.background(t.Context(), tt, Background{})
 		}()
 	}
 	wg.Wait()
@@ -297,7 +297,7 @@ func TestBindThemeUsesMeasuredOrEstimatedBackground(t *testing.T) {
 	d := routedTio(tt)
 	d.env = readOutputEnv(func(k string) (string, bool) { return "3", k == "FORCE_COLOR" })
 	measured := d.bindTheme(t.Context(), c, tt.out, tt)
-	want := c.roles(profileTrueColor, c.palette.resolve(false, sRGB{250, 250, 250}, true))
+	want := c.roles(ProfileTrueColor, c.palette.resolve(false, SRGB{250, 250, 250}, true))
 	assert.Equal(t, want, measured.roles)
 
 	// without a terminal lease, the environment estimates a light background
@@ -305,7 +305,7 @@ func TestBindThemeUsesMeasuredOrEstimatedBackground(t *testing.T) {
 		return map[string]string{"FORCE_COLOR": "3", "COLORFGBG": "0;15"}[k], k == "FORCE_COLOR" || k == "COLORFGBG"
 	})
 	estimated := d.bindTheme(t.Context(), c, &bytes.Buffer{}, nil)
-	want = c.roles(profileTrueColor, c.palette.resolve(true, sRGB{}, false))
+	want = c.roles(ProfileTrueColor, c.palette.resolve(true, SRGB{}, false))
 	assert.Equal(t, want, estimated.roles)
 	assert.True(t, estimated.roles.foreground == nil) // estimated, not measured
 }

@@ -7,94 +7,94 @@ import (
 	"fmt"
 )
 
-// colorProfile is what SGR a destination accepts, ordered by capability.
-type colorProfile int
+// Profile is what SGR a destination accepts, ordered by capability.
+type Profile int
 
 const (
-	// profilePlain emits no SGR at all.
-	profilePlain colorProfile = iota
-	// profileAttrs emits bold/italic/underline/dim/strike, but no color.
-	profileAttrs
-	profileANSI16
-	profileANSI256
-	profileTrueColor
+	// ProfilePlain emits no SGR at all.
+	ProfilePlain Profile = iota
+	// ProfileAttrs emits bold/italic/underline/dim/strike, but no color.
+	ProfileAttrs
+	ProfileANSI16
+	ProfileANSI256
+	ProfileTrueColor
 )
 
 const (
-	fgDefault = "\x1b[39m"
-	// intensityDefault ends bold and faint.
-	intensityDefault = "\x1b[22m"
-	bgDefault        = "\x1b[49m"
+	FgDefault = "\x1b[39m"
+	// IntensityDefault ends bold and faint.
+	IntensityDefault = "\x1b[22m"
+	BgDefault        = "\x1b[49m"
 )
 
-// attrs reports whether text attributes are accepted.
-func (p colorProfile) attrs() bool { return p >= profileAttrs }
+// Attrs reports whether text attributes are accepted.
+func (p Profile) Attrs() bool { return p >= ProfileAttrs }
 
-// encode returns the foreground or background SGR sequence for c, or nil for
+// Encode returns the foreground or background SGR sequence for c, or nil for
 // profiles without color.
-func (p colorProfile) encode(c sRGB, background bool) text {
+func (p Profile) Encode(c SRGB, background bool) Text {
 	switch p {
-	case profileANSI16:
-		return text(c.ansi16Escape(background))
-	case profileANSI256:
+	case ProfileANSI16:
+		return Text(c.ansi16Escape(background))
+	case ProfileANSI256:
 		return fmt.Appendf(nil, "\x1b[%d;5;%dm", c.base(background), c.nearestIndex(256))
-	case profileTrueColor:
+	case ProfileTrueColor:
 		return fmt.Appendf(nil, "\x1b[%d;2;%d;%d;%dm", c.base(background), c[0], c[1], c[2])
 	default:
 		return nil
 	}
 }
 
-// named preserves a named SGR code only when the profile supports it.
-func (p colorProfile) named(seq text) string {
-	set, _ := seq.scan().sgrEffect()
+// Named preserves a Named SGR code only when the profile supports it.
+func (p Profile) Named(seq Text) string {
+	set, _ := seq.Scan().SGREffect()
 	switch {
-	case p >= profileANSI16:
+	case p >= ProfileANSI16:
 		return seq.String()
-	case p == profileAttrs && set&(sgrForeground|sgrBackground) == 0:
+	case p == ProfileAttrs && set&(SGRForeground|SGRBackground) == 0:
 		return seq.String()
 	default:
 		return ""
 	}
 }
 
-// fg returns the SGR sequence selecting c as foreground.
-func (p colorProfile) fg(c sRGB) text { return p.encode(c, false) }
+// Fg returns the SGR sequence selecting c as foreground.
+func (p Profile) Fg(c SRGB) Text { return p.Encode(c, false) }
 
 // bg returns the SGR sequence selecting c as background.
-func (p colorProfile) bg(c sRGB) text { return p.encode(c, true) }
+func (p Profile) bg(c SRGB) Text { return p.Encode(c, true) }
 
-// shown is what a destination displays for c: the nearest palette entry for
+// Shown is what a destination displays for c: the nearest palette entry for
 // indexed profiles, c itself for truecolor.
-func (p colorProfile) shown(c sRGB) sRGB {
+func (p Profile) Shown(c SRGB) SRGB {
 	switch p {
-	case profileANSI16:
-		return ansiPalette()[c.basicIndex()]
-	case profileANSI256:
-		return ansiPalette()[c.nearestIndex(256)]
+	case ProfileANSI16:
+		return ANSIPalette()[c.basicIndex()]
+	case ProfileANSI256:
+		return ANSIPalette()[c.nearestIndex(256)]
 	default:
 		return c
 	}
 }
 
-// readable returns c, or a nearby shade of the same hue, whose displayed
+// Readable returns c, or a nearby shade of the same hue, whose displayed
 // color still meets the target against bg. The adjustment is bounded; ok is
-// false when no colored result is readable and the caller should keep a
+// false when no colored result is Readable and the caller should keep a
 // neutral color plus a shape or label. The encoder stays pure: only the
 // resolved RGB is adjusted, never the encoding. With 16 colors, a shade
-// rarely moves to another basic color, so the nearest readable one of the
+// rarely moves to another basic color, so the nearest Readable one of the
 // same kind is taken instead.
-func (p colorProfile) readable(c, bg sRGB, target float64) (rgb sRGB, ok bool) {
-	if p == profileANSI16 {
-		i, ok := c.nearestBasic(func(e sRGB) bool { return e.contrast(bg) >= target })
+func (p Profile) Readable(c, bg SRGB, target float64) (rgb SRGB, ok bool) {
+	if p == ProfileANSI16 {
+		i, ok := c.nearestBasic(func(e SRGB) bool { return e.Contrast(bg) >= target })
 		if !ok {
 			return c, false
 		}
-		return ansiPalette()[i], true
+		return ANSIPalette()[i], true
 	}
 	for step := range 9 {
-		cand := c.atLeast(bg, target+0.5*float64(step))
-		if p.shown(cand).contrast(bg) >= target {
+		cand := c.AtLeast(bg, target+0.5*float64(step))
+		if p.Shown(cand).Contrast(bg) >= target {
 			return cand, true
 		}
 	}
@@ -105,11 +105,11 @@ func (p colorProfile) readable(c, bg sRGB, target float64) (rgb sRGB, ok bool) {
 // 16-color terminal is not promised five different greens. Comparison uses
 // the encoded bytes, never RGB strings. Profiles without color collapse to
 // the first shade.
-func (p colorProfile) distinct(shades []sRGB) []sRGB {
-	var out []sRGB
+func (p Profile) distinct(shades []SRGB) []SRGB {
+	var out []SRGB
 	seen := map[string]bool{}
 	for _, c := range shades {
-		key := string(p.fg(c))
+		key := string(p.Fg(c))
 		if seen[key] {
 			continue
 		}

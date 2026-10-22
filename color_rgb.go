@@ -9,17 +9,17 @@ import (
 	"strconv"
 )
 
-// sRGB holds parsed 8-bit sRGB components.
+// SRGB holds parsed 8-bit SRGB components.
 // see https://en.wikipedia.org/wiki/SRGB.
-type sRGB [3]uint8
+type SRGB [3]uint8
 
-// hex returns the canonical uppercase "#RRGGBB" form.
-func (c sRGB) hex() string {
+// Hex returns the canonical uppercase "#RRGGBB" form.
+func (c SRGB) Hex() string {
 	return fmt.Sprintf("#%02X%02X%02X", c[0], c[1], c[2])
 }
 
-// parseHex parses "#RRGGBB" or "#RGB", with case-insensitive digits.
-func parseHex(s string) (rgb sRGB, err error) {
+// ParseHex parses "#RRGGBB" or "#RGB", with case-insensitive digits.
+func ParseHex(s string) (rgb SRGB, err error) {
 	bad := fmt.Errorf("%q: want \"#RRGGBB\" or \"#RGB\"", s)
 	if s == "" || s[0] != '#' {
 		return rgb, bad
@@ -50,8 +50,8 @@ func parseHex(s string) (rgb sRGB, err error) {
 }
 
 // mustHex parses a constant color and panics when it is malformed.
-func mustHex(s string) sRGB {
-	rgb, err := parseHex(s)
+func mustHex(s string) SRGB {
+	rgb, err := ParseHex(s)
 	if err != nil {
 		panic(err)
 	}
@@ -59,7 +59,7 @@ func mustHex(s string) sRGB {
 }
 
 // base is the extended-color SGR parameter: 38 for foreground, 48 for background.
-func (sRGB) base(background bool) int {
+func (SRGB) base(background bool) int {
 	if background {
 		return 48
 	}
@@ -70,8 +70,8 @@ func (sRGB) base(background bool) int {
 // closest in [oklab]. Ties go to the lowest index. The distance is always
 // measured from the original color, so 16-color output is never derived from
 // a 256-color approximation.
-func (c sRGB) nearestIndex(n int) int {
-	target := c.oklab()
+func (c SRGB) nearestIndex(n int) int {
+	target := c.OKLab()
 	lab := ansiPaletteLab()
 	best, bestDist := 0, math.Inf(1)
 	for i := range n {
@@ -90,17 +90,17 @@ const neutralChroma = 0.04
 // gray and among the hues otherwise. Those few grays sit between many
 // mid-tone hues in lightness, so the plain nearest one would turn an accent
 // gray and tint a gray red or teal.
-func (c sRGB) basicIndex() int {
-	i, _ := c.nearestBasic(func(sRGB) bool { return true })
+func (c SRGB) basicIndex() int {
+	i, _ := c.nearestBasic(func(SRGB) bool { return true })
 	return i
 }
 
 // nearestBasic is [sRGB.basicIndex] among the entries that accept takes, or
 // false when it takes none of them.
-func (c sRGB) nearestBasic(accept func(sRGB) bool) (int, bool) {
-	target := c.oklab()
+func (c SRGB) nearestBasic(accept func(SRGB) bool) (int, bool) {
+	target := c.OKLab()
 	gray := target.lch().C < neutralChroma
-	pal, lab := ansiPalette(), ansiPaletteLab()
+	pal, lab := ANSIPalette(), ansiPaletteLab()
 	best, bestDist := 0, math.Inf(1)
 	for i := range 16 {
 		if (i == 0 || i == 7 || i == 8 || i == 15) != gray || !accept(pal[i]) {
@@ -116,7 +116,7 @@ func (c sRGB) nearestBasic(accept func(sRGB) bool) (int, bool) {
 // ansi16Escape encodes the basic color of c, see [sRGB.basicIndex]. Bright
 // colors use the 90/100 series, never bold, so weight and brightness stay
 // independent.
-func (c sRGB) ansi16Escape(background bool) string {
+func (c SRGB) ansi16Escape(background bool) string {
 	i := c.basicIndex()
 	var code int
 	switch {

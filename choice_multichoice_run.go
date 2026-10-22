@@ -42,10 +42,10 @@ func (m *multichoice) handleKey(key rune) bool {
 			m.count++
 		}
 	case 0x7f, 0x08:
-		clusters := text(m.typed).clusters()
+		clusters := Text(m.typed).Clusters()
 		if len(clusters) > 0 {
 			runes := []rune(m.typed)
-			m.filter(string(runes[:clusters[len(clusters)-1].start]))
+			m.filter(string(runes[:clusters[len(clusters)-1].Start]))
 		}
 	case keyEscape:
 		if m.typed != "" {

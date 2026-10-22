@@ -16,8 +16,8 @@ type spinnerState struct {
 	active  bool
 	keep    bool
 	frames  []string
-	Prefix  text
-	Message text
+	Prefix  Text
+	Message Text
 	Failed  bool
 	Done    bool
 }

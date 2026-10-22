@@ -39,7 +39,7 @@ func (p *projection) setProjection(main string, details ...string) {
 
 // parse checks the projection using helpers replaced at destination binding.
 func (p *projection) parse(c *compiledTheme, name string) error {
-	funcs := c.funcs(profilePlain, roleStyles{})
+	funcs := c.funcs(ProfilePlain, roleStyles{})
 	funcs["__content"] = span{}.helper()
 	tmpl := template.New(name).Funcs(funcs)
 	for _, part := range []struct {
@@ -94,7 +94,7 @@ func (f choiceFamily) bind(funcs template.FuncMap) (s choiceSlots, _ error) {
 
 // chrome renders the label and binds the hint, which every frame renders
 // with the count of the items below the window.
-func (f choiceFamily) chrome(funcs template.FuncMap, label string) (head text, hint boundSlot, _ error) {
+func (f choiceFamily) chrome(funcs template.FuncMap, label string) (head Text, hint boundSlot, _ error) {
 	slot, err := f.Label.bind(funcs)
 	if err != nil {
 		return nil, boundSlot{}, err
@@ -108,32 +108,32 @@ func (f choiceFamily) chrome(funcs template.FuncMap, label string) (head text, h
 }
 
 // projectContent renders the projection or falls back to the bound Value slot.
-func (p *projection) projectContent(value boundSlot, item any) (text, error) {
+func (p *projection) projectContent(value boundSlot, item any) (Text, error) {
 	if p.mainTemplate == nil {
 		return value.render(p.slotItem(item))
 	}
-	var out text
+	var out Text
 	err := p.mainTemplate.Execute(&out, item)
 	if err != nil {
 		return nil, fmt.Errorf("content: %w", err)
 	}
-	return out.beforeNewline(), nil
+	return out.BeforeNewline(), nil
 }
 
 // projectDetails uses projected details when a projection is set, otherwise the bound Details slot.
-func (p *projection) projectDetails(details boundSlot, item any) (text, error) {
+func (p *projection) projectDetails(details boundSlot, item any) (Text, error) {
 	switch {
 	case p.mainTemplate == nil:
 		return details.render(p.slotItem(item))
 	case p.detailsTemplate == nil:
 		return nil, nil
 	}
-	var out text
+	var out Text
 	err := p.detailsTemplate.Execute(&out, item)
 	if err != nil {
 		return nil, fmt.Errorf("details: %w", err)
 	}
-	return out.beforeNewline(), nil
+	return out.BeforeNewline(), nil
 }
 
 // choiceView is the payload of the Active and Inactive slots: the projected

@@ -516,8 +516,8 @@ func TestTableMultilineCellsTruncateEachLine(t *testing.T) {
 	assert.Equal(t, 7, len(lines))
 	assert.Equal(t, "TE…", strings.TrimSpace(lines[0]))
 	for _, line := range lines {
-		if text(line).width() > 5 {
-			t.Fatalf("width %d > 5: %q", text(line).width(), line)
+		if Text(line).Width() > 5 {
+			t.Fatalf("width %d > 5: %q", Text(line).Width(), line)
 		}
 	}
 	assert.Equal(t, "dd…", strings.TrimSpace(lines[4]))
@@ -578,8 +578,8 @@ func TestTableEmptyFirstBatchColumnKeepsMinimumWidth(t *testing.T) {
 	buf.Reset()
 	assert.NoError(t, TableAuto(buf, data, suppress, WithMaxWidth(20)))
 	for line := range strings.SplitSeq(strings.TrimRight(buf.String(), "\n"), "\n") {
-		if text(line).width() > 20 {
-			t.Fatalf("width %d > 20: %q", text(line).width(), line)
+		if Text(line).Width() > 20 {
+			t.Fatalf("width %d > 20: %q", Text(line).Width(), line)
 		}
 	}
 }
@@ -601,8 +601,8 @@ func TestTableMaxWidthIsTotalRowBudget(t *testing.T) {
 		lines := strings.Split(strings.TrimRight(factPlain(buf.String()), "\n"), "\n")
 		assert.Equal(t, 26, len(lines))
 		for _, line := range lines {
-			if text(line).width() > maxWidth {
-				t.Fatalf("width %d > %d: %q", text(line).width(), maxWidth, line)
+			if Text(line).Width() > maxWidth {
+				t.Fatalf("width %d > %d: %q", Text(line).Width(), maxWidth, line)
 			}
 		}
 	}
@@ -619,12 +619,12 @@ func factPlain(out string) string {
 
 // stripSGR removes SGR sequences, keeping text and every other sequence.
 func stripSGR(s string) string {
-	var out text
-	for seg := range text(s).segments() {
-		if _, sgr := seg.sgrParams(); seg.isEscape && sgr {
+	var out Text
+	for seg := range Text(s).Segments() {
+		if _, sgr := seg.SGRParams(); seg.IsEscape && sgr {
 			continue
 		}
-		out = append(out, seg.text...)
+		out = append(out, seg.Text...)
 	}
 	return out.String()
 }

@@ -66,7 +66,7 @@ func (p *input) bind(ctx context.Context, tt *termIO) error {
 	if err != nil {
 		return err
 	}
-	if p.theme.source.Inline && p.label.width() > 0 {
+	if p.theme.source.Inline && p.label.Width() > 0 {
 		// the renderer owns the spacing before the value
 		p.label = append(p.label, ' ')
 	}
@@ -98,12 +98,12 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 		return err
 	}
 	runes := i.displayRunes()
-	cells := text(string(runes)).clusters()
+	cells := Text(string(runes)).Clusters()
 	first, last := i.visibleWindow(cells, cols)
-	visible := text(string(runes[cells.runeOffset(first):cells.runeOffset(last)]))
+	visible := Text(string(runes[cells.RuneOffset(first):cells.RuneOffset(last)]))
 	if i.Password {
 		// Keep one mask per visible typed rune, even for multi-rune masks.
-		visible = text(strings.Repeat(i.theme.source.Symbols.Mask, last-first))
+		visible = Text(strings.Repeat(i.theme.source.Symbols.Mask, last-first))
 	}
 	feedback, err := i.themedFeedback()
 	if err != nil {
@@ -114,7 +114,7 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 		rows = append(rows, frameRow{content: i.label, drop: 1})
 	}
 	value := len(rows)
-	row := append(append(text{}, lead...), i.look.style(i.look.roles.foreground, visible)...)
+	row := append(append(Text{}, lead...), i.look.style(i.look.roles.foreground, visible)...)
 	rows = append(rows, frameRow{content: row})
 	if len(feedback) > 0 {
 		rows = append(rows, frameRow{content: feedback, guided: true})
@@ -126,8 +126,8 @@ func (i *input) render(io *termIO, frame *bytes.Buffer) error {
 		return err
 	}
 	// a cursor inside of a cluster stands on its first rune
-	at := min(max(cells.at(i.cursor), first), last)
-	i.writeFrame(io, frame, fit, fit.at[value], lead.width()+cells[first:at].width(), cells[at:last].width())
+	at := min(max(cells.At(i.cursor), first), last)
+	i.writeFrame(io, frame, fit, fit.at[value], lead.Width()+cells[first:at].Width(), cells[at:last].Width())
 	_, err = frame.WriteTo(io)
 	return err
 }
@@ -169,7 +169,7 @@ func (i *input) writeFrame(io *termIO, frame *bytes.Buffer, fit fitted, caret, c
 
 // themedFeedback renders the rejection with the feedback slot. The geometry
 // clips it.
-func (i *input) themedFeedback() (text, error) {
+func (i *input) themedFeedback() (Text, error) {
 	if i.rejection == "" {
 		return nil, nil
 	}
@@ -181,7 +181,7 @@ func (i *input) themedFeedback() (text, error) {
 func (i *input) themedAnswer(buf *bytes.Buffer) error {
 	value := i.safeText(i.typed)
 	out, err := i.answer.render(answerView{Label: i.Label, Value: value, Values: []string{value}, Count: 1})
-	if err != nil || out.width() == 0 {
+	if err != nil || out.Width() == 0 {
 		return err
 	}
 	buf.Write(out)

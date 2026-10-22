@@ -27,15 +27,15 @@ func (d choiceLabels) itemLabel(item any) string {
 }
 
 // rowLabel flattens item labels to fit single-line choice slots.
-func (d choiceLabels) rowLabel(item any) string { return text(d.itemLabel(item)).oneLine() }
+func (d choiceLabels) rowLabel(item any) string { return Text(d.itemLabel(item)).OneLine() }
 
 // plainText removes terminal styling and preserves word boundaries for ranking.
-func (choiceLabels) plainText(t text) string {
+func (choiceLabels) plainText(t Text) string {
 	var b strings.Builder
-	for seg := range t.segments() {
-		if seg.isText() {
-			b.Write(seg.text)
-		} else if bytes.Equal(seg.text, []byte{'\n'}) || bytes.Equal(seg.text, []byte{'\t'}) {
+	for seg := range t.Segments() {
+		if seg.IsText() {
+			b.Write(seg.Text)
+		} else if bytes.Equal(seg.Text, []byte{'\n'}) || bytes.Equal(seg.Text, []byte{'\t'}) {
 			b.WriteByte(' ')
 		}
 	}

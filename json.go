@@ -22,7 +22,7 @@ func PrettyJSON(w io.Writer, src any) error {
 	if err != nil {
 		return err
 	}
-	if p := defaultIO.profileFor(w); p.attrs() {
+	if p := defaultIO.profileFor(w); p.Attrs() {
 		style := newJSONLook(defaultIO.bindTheme(context.Background(), theme, w, nil))
 		colored := bytes.NewBuffer(make([]byte, 0, 2*out.Len()))
 		style.recolor(out, colored)

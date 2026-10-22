@@ -425,35 +425,35 @@ func TestProfileFor(t *testing.T) {
 		name string
 		env  []string
 		tty  bool
-		want colorProfile
+		want Profile
 	}{
-		{"tty truecolor", []string{"COLORTERM=truecolor"}, true, profileTrueColor},
-		{"tty 24bit", []string{"COLORTERM=24bit"}, true, profileTrueColor},
-		{"tty 256", []string{"TERM=xterm-256color"}, true, profileANSI256},
-		{"tty bare", nil, true, profileANSI16},
-		{"tty windows terminal", []string{"WT_SESSION=x"}, true, profileTrueColor},
-		{"pipe force 3", []string{"FORCE_COLOR=3"}, false, profileTrueColor},
-		{"pipe force 2", []string{"FORCE_COLOR=2"}, false, profileANSI256},
-		{"pipe force 1", []string{"FORCE_COLOR=1"}, false, profileANSI16},
-		{"pipe force empty", []string{"FORCE_COLOR="}, false, profileANSI16},
-		{"pipe force garbage", []string{"FORCE_COLOR=banana"}, false, profileANSI16},
-		{"tty force 0", []string{"FORCE_COLOR=0"}, true, profilePlain},
-		{"tty force false", []string{"FORCE_COLOR=false"}, true, profilePlain},
-		{"unknown non-tty", nil, false, profilePlain},
-		{"clicolor force", []string{"CLICOLOR_FORCE=1"}, false, profileANSI16},
-		{"clicolor force 0", []string{"CLICOLOR_FORCE=0"}, false, profilePlain},
-		{"clicolor force depth", []string{"CLICOLOR_FORCE=1", "COLORTERM=truecolor"}, false, profileTrueColor},
-		{"no color tty", []string{"NO_COLOR=1"}, true, profileAttrs},
-		{"no color pipe", []string{"NO_COLOR=1"}, false, profilePlain},
-		{"force beats no color", []string{"NO_COLOR=1", "FORCE_COLOR=3"}, true, profileTrueColor},
-		{"dumb", []string{"TERM=dumb"}, true, profilePlain},
-		{"ci tty", []string{"CI=true", "COLORTERM=truecolor"}, true, profileAttrs},
-		{"ci pipe", []string{"CI=true"}, false, profilePlain},
-		{"ci 1", []string{"CI=1"}, true, profileAttrs},
-		{"ci false", []string{"CI=false"}, true, profileANSI16},
-		{"ci 0", []string{"CI=0"}, true, profileANSI16},
-		{"ci clicolor force", []string{"CI=true", "CLICOLOR_FORCE=1"}, false, profileANSI16},
-		{"ci force color", []string{"CI=true", "FORCE_COLOR=3"}, false, profileTrueColor},
+		{"tty truecolor", []string{"COLORTERM=truecolor"}, true, ProfileTrueColor},
+		{"tty 24bit", []string{"COLORTERM=24bit"}, true, ProfileTrueColor},
+		{"tty 256", []string{"TERM=xterm-256color"}, true, ProfileANSI256},
+		{"tty bare", nil, true, ProfileANSI16},
+		{"tty windows terminal", []string{"WT_SESSION=x"}, true, ProfileTrueColor},
+		{"pipe force 3", []string{"FORCE_COLOR=3"}, false, ProfileTrueColor},
+		{"pipe force 2", []string{"FORCE_COLOR=2"}, false, ProfileANSI256},
+		{"pipe force 1", []string{"FORCE_COLOR=1"}, false, ProfileANSI16},
+		{"pipe force empty", []string{"FORCE_COLOR="}, false, ProfileANSI16},
+		{"pipe force garbage", []string{"FORCE_COLOR=banana"}, false, ProfileANSI16},
+		{"tty force 0", []string{"FORCE_COLOR=0"}, true, ProfilePlain},
+		{"tty force false", []string{"FORCE_COLOR=false"}, true, ProfilePlain},
+		{"unknown non-tty", nil, false, ProfilePlain},
+		{"clicolor force", []string{"CLICOLOR_FORCE=1"}, false, ProfileANSI16},
+		{"clicolor force 0", []string{"CLICOLOR_FORCE=0"}, false, ProfilePlain},
+		{"clicolor force depth", []string{"CLICOLOR_FORCE=1", "COLORTERM=truecolor"}, false, ProfileTrueColor},
+		{"no color tty", []string{"NO_COLOR=1"}, true, ProfileAttrs},
+		{"no color pipe", []string{"NO_COLOR=1"}, false, ProfilePlain},
+		{"force beats no color", []string{"NO_COLOR=1", "FORCE_COLOR=3"}, true, ProfileTrueColor},
+		{"dumb", []string{"TERM=dumb"}, true, ProfilePlain},
+		{"ci tty", []string{"CI=true", "COLORTERM=truecolor"}, true, ProfileAttrs},
+		{"ci pipe", []string{"CI=true"}, false, ProfilePlain},
+		{"ci 1", []string{"CI=1"}, true, ProfileAttrs},
+		{"ci false", []string{"CI=false"}, true, ProfileANSI16},
+		{"ci 0", []string{"CI=0"}, true, ProfileANSI16},
+		{"ci clicolor force", []string{"CI=true", "CLICOLOR_FORCE=1"}, false, ProfileANSI16},
+		{"ci force color", []string{"CI=true", "FORCE_COLOR=3"}, false, ProfileTrueColor},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			withEnv(t, tc.env...)
@@ -470,7 +470,7 @@ func TestProfileConsoleWithoutVTIsPlain(t *testing.T) {
 	withEnv(t, "COLORTERM=truecolor")
 	tty := ttyWriter(t)
 	consoleVT = func(io.Writer) bool { return false }
-	assert.Equal(t, profilePlain, defaultIO.profileFor(tty))
+	assert.Equal(t, ProfilePlain, defaultIO.profileFor(tty))
 }
 
 func TestProfileConsoleVTNotCalledForPipe(t *testing.T) {
@@ -481,14 +481,14 @@ func TestProfileConsoleVTNotCalledForPipe(t *testing.T) {
 		return false
 	}
 	t.Cleanup(func() { consoleVT = prev })
-	assert.Equal(t, profileTrueColor, defaultIO.profileFor(&bytes.Buffer{}))
+	assert.Equal(t, ProfileTrueColor, defaultIO.profileFor(&bytes.Buffer{}))
 }
 
 func TestProfileForManagedWriterUsesRawOutput(t *testing.T) {
 	withEnv(t, "COLORTERM=truecolor")
 	tty := ttyWriter(t)
 	managed := &tio{writer: tty, env: defaultIO.env}
-	assert.Equal(t, profileTrueColor, managed.profileFor(&chanIO{}))
+	assert.Equal(t, ProfileTrueColor, managed.profileFor(&chanIO{}))
 	piped := &tio{writer: &bytes.Buffer{}, env: defaultIO.env}
-	assert.Equal(t, profilePlain, piped.profileFor(&chanIO{}))
+	assert.Equal(t, ProfilePlain, piped.profileFor(&chanIO{}))
 }

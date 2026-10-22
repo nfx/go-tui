@@ -18,7 +18,7 @@ func (c RGB) Validate() error {
 }
 
 // must parses a color that was already validated or is a constant.
-func (c RGB) must() sRGB {
+func (c RGB) must() SRGB {
 	rgb, err := c.parse()
 	if err != nil {
 		panic(err)
@@ -28,9 +28,9 @@ func (c RGB) must() sRGB {
 
 // parse returns the color bytes. The empty (unset) value parses to zero
 // bytes without error, so callers that care check c == "" themselves.
-func (c RGB) parse() (sRGB, error) {
+func (c RGB) parse() (SRGB, error) {
 	if c == "" {
-		return sRGB{}, nil
+		return SRGB{}, nil
 	}
-	return parseHex(string(c))
+	return ParseHex(string(c))
 }

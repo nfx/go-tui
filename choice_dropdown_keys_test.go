@@ -61,9 +61,9 @@ func TestDropdownPressKeyRuneAndRenderMore(t *testing.T) {
 	d.Items = []any{"alpha", "beta"}
 	d.relevant = []int{0, 1}
 	d.displayed = d.relevant
-	d.trie = newTrie()
-	d.trie.Add(text("alpha"), 0)
-	d.trie.Add(text("beta"), 1)
+	d.trie = NewTrie()
+	d.trie.Add(Text("alpha"), 0)
+	d.trie.Add(Text("beta"), 1)
 
 	tio := newTestTermIO(20, 6)
 
@@ -78,8 +78,8 @@ func TestDropdownPressKeyRuneAndRenderMore(t *testing.T) {
 
 	d.OneReturn = true
 	d.typed = nil
-	d.trie = newTrie()
-	d.trie.Add(text("abc"), 0)
+	d.trie = NewTrie()
+	d.trie.Add(Text("abc"), 0)
 	d.Items = []any{"abc"}
 	d.relevant = []int{0}
 	d.displayed = d.relevant
@@ -101,7 +101,7 @@ func TestDropdownPressKeys(t *testing.T) {
 	assert.Equal(t, 0, d.selected)
 
 	d.typed = nil
-	d.trie = newTrie()
+	d.trie = NewTrie()
 	d.relevant = []int{0}
 	d.displayed = d.relevant
 	d.pressBackspace(newTestTermIO(10, 4))
@@ -122,8 +122,8 @@ func TestDropdownClearFrame(t *testing.T) {
 func TestDropdownPressAnyOneReturn(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.OneReturn = true
-	d.trie = newTrie()
-	d.trie.Add(text("ok"), 0)
+	d.trie = NewTrie()
+	d.trie.Add(Text("ok"), 0)
 
 	assert.True(t, d.pressAny('o', 1, 1))
 }
@@ -148,8 +148,8 @@ func TestDropdownPressKeyRuneEnter(t *testing.T) {
 
 func TestDropdownPressKeyRuneBackspace(t *testing.T) {
 	d := newDropdown(t.Context())
-	d.trie = newTrie()
-	d.trie.Add(text("a"), 0)
+	d.trie = NewTrie()
+	d.trie.Add(Text("a"), 0)
 	d.relevant = []int{0}
 	d.displayed = []int{0}
 	d.Items = []any{"a"}
@@ -173,8 +173,8 @@ func TestDropdownPressKeyRuneArrows(t *testing.T) {
 
 func TestDropdownPressKeyRuneDefault(t *testing.T) {
 	d := newDropdown(t.Context())
-	d.trie = newTrie()
-	d.trie.Add(text("a"), 0)
+	d.trie = NewTrie()
+	d.trie.Add(Text("a"), 0)
 	d.Items = []any{"a"}
 	d.relevant = []int{0}
 	d.displayed = []int{0}
@@ -185,9 +185,9 @@ func TestDropdownPressKeyRuneDefault(t *testing.T) {
 
 func TestDropdownPressKeyRuneEmitsStateEvents(t *testing.T) {
 	d := newDropdown(t.Context())
-	d.trie = newTrie()
-	d.trie.Add(text("alpha"), 0)
-	d.trie.Add(text("beta"), 1)
+	d.trie = NewTrie()
+	d.trie.Add(Text("alpha"), 0)
+	d.trie.Add(Text("beta"), 1)
 	d.Items = []any{"alpha", "beta"}
 	d.relevant = []int{0, 1}
 	d.displayed = []int{0, 1}
@@ -211,8 +211,8 @@ func TestDropdownPressKeyRuneEmitsStateEvents(t *testing.T) {
 func TestDropdownPressKeyRuneOneReturn(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.OneReturn = true
-	d.trie = newTrie()
-	d.trie.Add(text("a"), 0)
+	d.trie = NewTrie()
+	d.trie.Add(Text("a"), 0)
 	d.Items = []any{"a"}
 	d.relevant = []int{0}
 	d.displayed = []int{0}

@@ -25,7 +25,7 @@ func (t *termIO) canProbe() bool {
 
 // detectBackground uses the existing input owner for OSC 11, then falls back
 // to hint, the COLORFGBG estimate or dark. [tio.background] handles caching.
-func (t *termIO) detectBackground(ctx context.Context, hint background) background {
+func (t *termIO) detectBackground(ctx context.Context, hint Background) Background {
 	if t.canProbe() {
 		if b, ok := t.probeBackground(ctx); ok {
 			return b
@@ -38,7 +38,7 @@ func (t *termIO) detectBackground(ctx context.Context, hint background) backgrou
 const backgroundProbeTimeout = 200 * time.Millisecond
 
 // probeBackground queries OSC 11 without consuming keys; invalid replies fail.
-func (t *termIO) probeBackground(ctx context.Context) (background, bool) {
+func (t *termIO) probeBackground(ctx context.Context) (Background, bool) {
 	ctx, cancel := context.WithTimeout(ctx, backgroundProbeTimeout)
 	// Register before reading to catch fast replies; drain and replay intervening keys.
 	q := t.expectControl(11)
@@ -78,26 +78,26 @@ func (t *termIO) probeBackground(ctx context.Context) (background, bool) {
 	}()
 	err := t.writeControl(ctx, []byte("\x1b]11;?\x07"))
 	if err != nil {
-		return background{}, false
+		return Background{}, false
 	}
 	select {
 	case <-ctx.Done():
-		return background{}, false
+		return Background{}, false
 	case reply := <-q.reply:
 		rgb, ok := t.parseOSCColor(reply.data)
 		if !ok {
-			return background{}, false
+			return Background{}, false
 		}
-		return background{
-			rgb:      rgb,
-			light:    rgb.isLight(),
-			measured: true,
+		return Background{
+			RGB:      rgb,
+			Light:    rgb.IsLight(),
+			Measured: true,
 		}, true
 	}
 }
 
 // parseOSCColor scales xterm rgb:R/G/B components of one to four hex digits to bytes.
-func (t *termIO) parseOSCColor(data string) (rgb sRGB, ok bool) {
+func (t *termIO) parseOSCColor(data string) (rgb SRGB, ok bool) {
 	spec, found := strings.CutPrefix(data, "rgb:")
 	if !found {
 		return rgb, false
@@ -121,7 +121,7 @@ func (t *termIO) parseOSCColor(data string) (rgb sRGB, ok bool) {
 }
 
 // parseColorFGBG estimates the background from fg;bg or fg;xpm;bg using the ANSI palette.
-func (t *termIO) parseColorFGBG(v string) (rgb sRGB, ok bool) {
+func (t *termIO) parseColorFGBG(v string) (rgb SRGB, ok bool) {
 	fields := strings.Split(v, ";")
 	if len(fields) < 2 || len(fields) > 3 {
 		return rgb, false
@@ -130,18 +130,18 @@ func (t *termIO) parseColorFGBG(v string) (rgb sRGB, ok bool) {
 	if err != nil || i < 0 || i > 255 {
 		return rgb, false
 	}
-	return ansiPalette()[i], true
+	return ANSIPalette()[i], true
 }
 
 // backgroundFromEnv classifies COLORFGBG, or falls back to dark.
-func (t *termIO) backgroundFromEnv(lookup func(string) (string, bool)) background {
+func (t *termIO) backgroundFromEnv(lookup func(string) (string, bool)) Background {
 	if lookup == nil {
-		return background{}
+		return Background{}
 	}
 	v, _ := lookup("COLORFGBG")
 	rgb, ok := t.parseColorFGBG(v)
 	if !ok {
-		return background{}
+		return Background{}
 	}
-	return background{light: rgb.isLight()}
+	return Background{Light: rgb.IsLight()}
 }

@@ -24,10 +24,10 @@ const (
 const jsonLevels = 5
 
 // jsonShades are the encoded shades of a token kind, by nesting depth.
-type jsonShades []text
+type jsonShades []Text
 
 // at returns the shade for depth, brightest at the top level.
-func (s jsonShades) at(depth int) text {
+func (s jsonShades) at(depth int) Text {
 	if len(s) == 0 {
 		return nil
 	}
@@ -38,8 +38,8 @@ func (s jsonShades) at(depth int) text {
 // that accepts SGR. Keys are always bold, after their shade.
 type jsonLook struct {
 	keys  jsonShades // may be empty
-	value text       // prefix for strings, numbers and literals
-	punct text       // prefix for brackets and braces
+	value Text       // prefix for strings, numbers and literals
+	punct Text       // prefix for brackets and braces
 }
 
 // newJSONLook maps the roles of a binding onto JSON: keys are the accent,
@@ -51,13 +51,13 @@ type jsonLook struct {
 func newJSONLook(b binding) jsonLook {
 	look := jsonLook{value: b.roles.foreground, punct: b.roles.muted}
 	if len(look.punct) == 0 {
-		look.punct = text(bold)
+		look.punct = Text(Bold)
 	}
-	if b.profile < profileANSI16 {
+	if b.profile < ProfileANSI16 {
 		return look
 	}
 	pal := b.palette
-	top, ok := b.theme.role(b.profile, pal, b.theme.variant(pal).accent, pal.Accent, contrastText, false)
+	top, ok := b.theme.role(b.profile, pal, b.theme.variant(pal).accent, pal.Accent, ContrastText, false)
 	if ok {
 		look.keys = jsonDimming(b.profile, top, pal.Background)
 	}
@@ -69,22 +69,22 @@ func newJSONLook(b binding) jsonLook {
 // so an explicit accent stays literal. Shades are judged as displayed on p:
 // one that is not strictly dimmer than the previous is dropped, so a
 // destination with a coarse palette gets fewer levels, never a reversed one.
-func jsonDimming(p colorProfile, top, bg sRGB) jsonShades {
-	out := jsonShades{p.fg(top)}
-	prev := p.shown(top).contrast(bg)
-	hi := top.contrast(bg)
+func jsonDimming(p Profile, top, bg SRGB) jsonShades {
+	out := jsonShades{p.Fg(top)}
+	prev := p.Shown(top).Contrast(bg)
+	hi := top.Contrast(bg)
 	for i := 1; i < jsonLevels; i++ {
-		target := hi - (hi-contrastText)*float64(i)/float64(jsonLevels-1)
-		c, ok := p.readable(top.quieter(bg, target), bg, contrastText)
+		target := hi - (hi-ContrastText)*float64(i)/float64(jsonLevels-1)
+		c, ok := p.Readable(top.Quieter(bg, target), bg, ContrastText)
 		if !ok {
 			continue
 		}
-		shown := p.shown(c).contrast(bg)
+		shown := p.Shown(c).Contrast(bg)
 		if shown >= prev {
 			continue
 		}
 		prev = shown
-		out = append(out, p.fg(c))
+		out = append(out, p.Fg(c))
 	}
 	return out
 }
@@ -99,7 +99,7 @@ func (s *jsonLook) recolor(identBuf, w *bytes.Buffer) {
 		depth, stack = s.prettyJsonLoop(stack, w, ch, depth)
 	}
 	if stack[len(stack)-1] == jsonConst { // a root scalar runs to the end
-		w.WriteString(reset)
+		w.WriteString(Reset)
 	}
 }
 
@@ -115,7 +115,7 @@ func (s *jsonLook) prettyJsonLoop(stack []jsonState, w *bytes.Buffer, ch byte, d
 			w.WriteByte(ch)
 			return depth, stack
 		}
-		w.WriteString(reset)
+		w.WriteString(Reset)
 		stack = stack[:len(stack)-1]
 	}
 	if curr == jsonQuoted && ch == '\\' {
@@ -185,7 +185,7 @@ func (s *jsonLook) prettyJsonOpen(stack []jsonState, w *bytes.Buffer, ch byte, d
 	}
 	w.Write(s.punct)
 	w.WriteByte(ch)
-	w.WriteString(reset)
+	w.WriteString(Reset)
 	return depth + 1, append(stack, state)
 }
 
@@ -200,7 +200,7 @@ func (s *jsonLook) prettyJsonClose(stack []jsonState, w *bytes.Buffer, ch byte, 
 	}
 	w.Write(s.punct)
 	w.WriteByte(ch)
-	w.WriteString(reset)
+	w.WriteString(Reset)
 	return depth, stack
 }
 
@@ -233,12 +233,12 @@ func (s *jsonLook) prettyJsonQuote(stack []jsonState, w *bytes.Buffer, ch byte, 
 	switch curr {
 	case jsonObject: // open key
 		w.Write(s.keys.at(depth))
-		w.WriteString(bold)
+		w.WriteString(Bold)
 		w.WriteByte(ch)
 		stack = append(stack, jsonQuoted)
 	case jsonQuoted: // close key or string
 		w.WriteByte(ch)
-		w.WriteString(reset)
+		w.WriteString(Reset)
 		stack = stack[:len(stack)-1]
 	case jsonValue: // open string
 		stack = stack[:len(stack)-1]

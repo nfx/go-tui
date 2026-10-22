@@ -37,12 +37,12 @@ func TestProgressbarLinesToClearShrinks(t *testing.T) {
 
 // row renders p in width columns on a terminal of unknown height, joining
 // the rows of a stacked frame with a line break.
-func (p *Progressbar) row(width int, now time.Time) (text, error) {
+func (p *Progressbar) row(width int, now time.Time) (Text, error) {
 	rows, err := p.rows(width, 0, now)
 	if err != nil {
 		return nil, err
 	}
-	var out text
+	var out Text
 	for i, r := range rows {
 		if i > 0 {
 			out = append(out, '\n')
@@ -106,7 +106,7 @@ func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
 		t.Fatalf("no progress output")
 	}
 
-	assert.Equal(t, 39, text(output).width())
+	assert.Equal(t, 39, Text(output).Width())
 }
 
 func mustReceiveProgressEvent(t *testing.T, ch <-chan progressEvent) progressEvent {
@@ -699,7 +699,7 @@ func TestProgressbarTickShowsElapsed(t *testing.T) {
 			startedAt:   time.Now().Add(-2 * time.Second),
 			redrawAt:    time.Now().Add(-1 * time.Second),
 		},
-		label: text("test"),
+		label: Text("test"),
 		io: &termIO{
 			out:     &bytes.Buffer{},
 			Width:   40,
@@ -731,7 +731,7 @@ func TestProgressbarTickWriteError(t *testing.T) {
 			redrawAt:   time.Now(),
 			startedAt:  time.Now().Add(-time.Second),
 		},
-		label: text("test"),
+		label: Text("test"),
 		io: &termIO{
 			out:     errWriterPB{},
 			Width:   40,
@@ -877,8 +877,8 @@ func themedBar(t *testing.T, th Theme, state progressState) *Progressbar {
 	t.Helper()
 	c, err := th.compile()
 	assert.NoError(t, err)
-	p := &Progressbar{progressState: state, label: text("build"), theme: c}
-	p.look, err = p.bind(c.bind(profilePlain, background{}))
+	p := &Progressbar{progressState: state, label: Text("build"), theme: c}
+	p.look, err = p.bind(c.bind(ProfilePlain, Background{}))
 	assert.NoError(t, err)
 	return p
 }
@@ -1102,7 +1102,7 @@ func halfFile(now time.Time) progressState {
 }
 
 // afterTrack is what a row shows after the empty track of its bar.
-func afterTrack(row text) string {
+func afterTrack(row Text) string {
 	s := row.String()
 	return s[strings.LastIndex(s, "-")+len("-"):]
 }

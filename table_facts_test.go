@@ -269,9 +269,9 @@ func TestThemedFactsRoles(t *testing.T) {
 	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
 	assert.True(t, len(roles.foreground) > 0)
 	out := buf.String()
-	assert.Contains(t, out, bold+string(roles.foreground)+"OWNER.NAME"+fgDefault+reset)
-	assert.Contains(t, out, string(roles.foreground)+"Alice"+fgDefault)
-	for _, role := range []text{roles.accent, roles.success, roles.failure, roles.muted} {
+	assert.Contains(t, out, Bold+string(roles.foreground)+"OWNER.NAME"+FgDefault+Reset)
+	assert.Contains(t, out, string(roles.foreground)+"Alice"+FgDefault)
+	for _, role := range []Text{roles.accent, roles.success, roles.failure, roles.muted} {
 		assert.NotContains(t, out, string(role))
 	}
 	plain := &bytes.Buffer{}
@@ -327,7 +327,7 @@ func TestThemedFactsSignedPercent(t *testing.T) {
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Facts(buf, tableFormatRow{"A", -0.5, 1}, WithFloat64AsPercentPositiveColored()))
 	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
-	assert.Contains(t, buf.String(), string(roles.failure)+"-50%"+fgDefault)
+	assert.Contains(t, buf.String(), string(roles.failure)+"-50%"+FgDefault)
 	assert.NotContains(t, buf.String(), "\x1b[31m")
 }
 

@@ -28,16 +28,16 @@ type multichoice struct {
 	theme *compiledTheme
 	look  binding
 	slot  multichoiceSlots
-	label text
+	label Text
 	help  boundSlot
 	// pending holds the items until binding projects them.
 	pending []any
 	// content is the projected main content of every item. Its details
 	// render when a frame first draws it, which drawn records.
-	content, details []text
+	content, details []Text
 	drawn            []bool
 
-	trie      *trie
+	trie      *Trie
 	hintRunes []rune
 	scores    []int
 
@@ -118,7 +118,7 @@ func (m *multichoice) prepare(o []opt) error {
 	if err != nil {
 		return fmt.Errorf("templates: %w", err)
 	}
-	m.trie = newTrie()
+	m.trie = NewTrie()
 	m.hintRunes = []rune(strings.ToLower(m.hint))
 	items := m.Items
 	m.Items = nil
@@ -155,7 +155,7 @@ func (m *multichoice) addItem(item any) error {
 	m.scores = append(m.scores, score)
 	matches := true
 	if m.typed != "" {
-		single := newTrie()
+		single := NewTrie()
 		single.Add(search, i)
 		matches = len(single.Prefix(m.typed)) > 0
 	}
@@ -173,7 +173,7 @@ func (m *multichoice) addItem(item any) error {
 }
 
 // indexItem caches item content and returns the text used for filtering.
-func (m *multichoice) indexItem(item any) (text, error) {
+func (m *multichoice) indexItem(item any) (Text, error) {
 	return m.projectItem(item)
 }
 
@@ -235,7 +235,7 @@ func (m *multichoice) resolveDefault() error {
 
 // resolveTyped resolves the default against the entries collected so far.
 func (m *multichoice) resolveTyped() ([]int, error) {
-	return m.target.resolveSelection(m.def.raw, m.Items, hintFromTrie(m.trie))
+	return m.target.resolveSelection(m.def.raw, m.Items, HintFromTrie(m.trie))
 }
 
 // answerFromDefault checks the entries of the default without a terminal.
@@ -373,7 +373,7 @@ func (m *multichoice) writeAnswer(line []byte) error {
 
 // multichoiceKeys are the bindings beyond confirming that the hint row describes.
 func (m *multichoice) multichoiceKeys(s Symbols) []hint {
-	return []hint{{s.arrows(), text("move")}, {text("space"), text("toggle")}, {text("type"), text("filter")}}
+	return []hint{{s.arrows(), Text("move")}, {Text("space"), Text("toggle")}, {Text("type"), Text("filter")}}
 }
 
 // selection reports whether d is a slice of the target type, and returns its members.

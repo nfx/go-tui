@@ -21,7 +21,7 @@ func TestSpinnerRedrawTruncatesLongMessage(t *testing.T) {
 	s.state = []*spinnerState{
 		{
 			frames:  []string{"..."},
-			Message: text("this is a very long spinner message that should be truncated"),
+			Message: Text("this is a very long spinner message that should be truncated"),
 			tick:    0,
 		},
 	}
@@ -36,6 +36,6 @@ func TestSpinnerRedrawTruncatesLongMessage(t *testing.T) {
 			continue
 		}
 		// each line must fit within the full width = 20
-		assert.True(t, text(line).width() <= 20)
+		assert.True(t, Text(line).Width() <= 20)
 	}
 }

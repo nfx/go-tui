@@ -123,7 +123,7 @@ func NewFileProgressReader(ctx context.Context, r io.Reader, label string, o ...
 	p.showRate = true
 	p.showEstimate = true
 	p.maxNum = size
-	p.label = text(label)
+	p.label = Text(label)
 	p.io, err = p.makeTermIO(p.in, p.out)
 	if errors.Is(err, ErrNoTTY) {
 		p.io = nil

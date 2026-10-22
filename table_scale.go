@@ -18,14 +18,14 @@ import (
 // option colors it.
 func (t *table) signedPercent(v float64) string {
 	out := percentString(v)
-	var role text
+	var role Text
 	switch {
 	case v > 0:
 		role = t.look.roles.success
 	case v < 0:
 		role = t.look.roles.failure
 	}
-	return t.look.style(role, text(out)).String()
+	return t.look.style(role, Text(out)).String()
 }
 
 // percentString scales values to percentages and truncates toward zero.

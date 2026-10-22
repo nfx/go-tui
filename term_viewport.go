@@ -200,7 +200,7 @@ func (v *viewport) writeTo(w io.Writer) (int64, []int, error) {
 			return bytes, widths, err
 		}
 		bytes += int64(b)
-		widths = append(widths, text(l).width())
+		widths = append(widths, Text(l).Width())
 	}
 	return bytes, widths, nil
 }
@@ -210,7 +210,7 @@ func (v *viewport) writeTo(w io.Writer) (int64, []int, error) {
 func (v *viewport) padded(chunk []byte, lo, mid int) (int, int) {
 	line := bytes.Clone(chunk[lo:mid])
 	if !v.fixedHeight {
-		pl := v.width - text(line).width()
+		pl := v.width - Text(line).Width()
 		if pl < 0 {
 			pl = 0
 		}
@@ -229,19 +229,19 @@ func (v *viewport) padded(chunk []byte, lo, mid int) (int, int) {
 func (v *viewport) appendToLinebuffer(chunk []byte) int {
 	lo, mid, hi := 0, 0, len(chunk)
 	var printed, addedLines int
-	for t := range text(chunk).segments() {
-		switch t.text[0] {
+	for t := range Text(chunk).Segments() {
+		switch t.Text[0] {
 		case '\n': // FIXME: windows is \r\n ?..
 			lo, mid = v.padded(chunk, lo, mid)
 			addedLines++
 			printed = 0 // reset printed column count
 		default:
-			if t.width > 0 && printed > 0 && v.width > 0 && printed+t.width > v.width {
+			if t.Width > 0 && printed > 0 && v.width > 0 && printed+t.Width > v.width {
 				lo, addedLines = v.addLine(chunk, lo, mid, addedLines)
 				printed = 0
 			}
-			printed += t.width
-			mid += len(t.text)
+			printed += t.Width
+			mid += len(t.Text)
 		}
 	}
 	if lo < hi {
@@ -262,11 +262,11 @@ func (v *viewport) joinPartial(chunk []byte) []byte {
 		// the neighbors form the clusters that are wrapped
 		chunk = bytes.ReplaceAll(chunk, []byte{'\r'}, nil)
 	}
-	text := text(chunk).stripBroken()
-	if n := text.incompleteTail(); n > 0 {
+	text := Text(chunk).StripBroken()
+	if n := text.IncompleteTail(); n > 0 {
 		v.partial = bytes.Clone(text[len(text)-n:])
 		text = text[:len(text)-n]
-	} else if n := text.incompleteSequence(); n > 0 {
+	} else if n := text.IncompleteSequence(); n > 0 {
 		// the terminator is too far away to wait for, and an open string
 		// sequence would swallow everything written after it
 		text = text[:len(text)-n]

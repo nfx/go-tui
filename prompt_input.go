@@ -25,7 +25,7 @@ type input struct {
 	// bound slots of the prompt family.
 	theme            *compiledTheme
 	look             binding
-	label, hint      text
+	label, hint      Text
 	answer, feedback boundSlot
 	// numeric selects the Number slots of the theme.
 	numeric bool

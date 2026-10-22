@@ -34,7 +34,7 @@ func (d *dropdown) parseTemplates() error {
 
 // dropdownKeys are the bindings beyond confirming that the hint row describes.
 func (d *dropdown) dropdownKeys(s Symbols) []hint {
-	return []hint{{s.arrows(), text("move")}, {text("type"), text("filter")}}
+	return []hint{{s.arrows(), Text("move")}, {Text("type"), Text("filter")}}
 }
 
 type oneHatch int //nolint:errname // hack for [WithDefault]

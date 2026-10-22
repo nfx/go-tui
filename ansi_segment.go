@@ -8,44 +8,44 @@ import (
 	"strconv"
 )
 
-// segment is a part of text that is never split.
+// Segment is a part of text that is never split.
 //
 // It is a cluster (one or more runes shown as 0, 1 or 2 columns) unless one of
 // the flags is set.
-type segment struct {
-	text  []byte
-	width int // terminal columns
+type Segment struct {
+	Text  []byte
+	Width int // terminal columns
 
-	// isInvalid is set for a single byte that is not UTF-8.
-	isInvalid bool
-	// isControl is set for a control character, like \n, \t or DEL.
-	isControl bool
-	// isEscape is set for a complete escape sequence.
-	isEscape bool
-	// isIncomplete is set for an escape sequence cut by the end of input.
-	isIncomplete bool
-	// isBroken is set for a lone ESC, or an escape sequence cancelled by a byte
+	// IsInvalid is set for a single byte that is not UTF-8.
+	IsInvalid bool
+	// IsControl is set for a control character, like \n, \t or DEL.
+	IsControl bool
+	// IsEscape is set for a complete escape sequence.
+	IsEscape bool
+	// IsIncomplete is set for an escape sequence cut by the end of input.
+	IsIncomplete bool
+	// IsBroken is set for a lone ESC, or an escape sequence cancelled by a byte
 	// that cannot belong to it, so it would swallow the text appended after it.
-	isBroken bool
+	IsBroken bool
 }
 
-// isText reports whether t is printable text rather than terminal control data.
-func (t segment) isText() bool {
-	return !t.isInvalid && !t.isControl && !t.isEscape && !t.isIncomplete && !t.isBroken
+// IsText reports whether t is printable text rather than terminal control data.
+func (t Segment) IsText() bool {
+	return !t.IsInvalid && !t.IsControl && !t.IsEscape && !t.IsIncomplete && !t.IsBroken
 }
 
 // sgrStyle reports whether t is SGR and may leave a style open.
-func (t segment) sgrStyle() (styled, ok bool) {
-	params, ok := t.sgrParams()
+func (t Segment) sgrStyle() (styled, ok bool) {
+	params, ok := t.SGRParams()
 	if !ok {
 		return false, false
 	}
 	return len(bytes.Trim(params, "0;")) > 0, true
 }
 
-// sgrParams returns SGR parameters, rejecting non-SGR sequences.
-func (t segment) sgrParams() (text, bool) {
-	params, ok := bytes.CutPrefix(t.text, []byte("\x1b["))
+// SGRParams returns SGR parameters, rejecting non-SGR sequences.
+func (t Segment) SGRParams() (Text, bool) {
+	params, ok := bytes.CutPrefix(t.Text, []byte("\x1b["))
 	if !ok {
 		return nil, false
 	}
@@ -57,23 +57,23 @@ func (t segment) sgrParams() (text, bool) {
 	return params, true
 }
 
-// sgrChannel is a part of the style that SGR sets and resets independently.
-type sgrChannel uint8
+// SGRChannel is a part of the style that SGR sets and resets independently.
+type SGRChannel uint8
 
 const (
-	sgrForeground sgrChannel = 1 << iota
-	sgrBackground
-	sgrIntensity // bold and dim share reset 22
-	sgrItalic
-	sgrUnderline
-	sgrStrike
+	SGRForeground SGRChannel = 1 << iota
+	SGRBackground
+	SGRIntensity // bold and dim share reset 22
+	SGRItalic
+	SGRUnderline
+	SGRStrike
 
-	sgrAll = sgrForeground | sgrBackground | sgrIntensity | sgrItalic | sgrUnderline | sgrStrike
+	SGRAll = SGRForeground | SGRBackground | SGRIntensity | SGRItalic | SGRUnderline | SGRStrike
 )
 
-// sgrEffect reports final channel changes without treating color arguments as resets.
-func (t segment) sgrEffect() (set, cleared sgrChannel) {
-	params, ok := t.sgrParams()
+// SGREffect reports final channel changes without treating color arguments as resets.
+func (t Segment) SGREffect() (set, cleared SGRChannel) {
+	params, ok := t.SGRParams()
 	if !ok {
 		return 0, 0
 	}
@@ -101,41 +101,41 @@ func (t segment) sgrEffect() (set, cleared sgrChannel) {
 }
 
 // sgrCodeEffect returns the channels one SGR parameter sets and resets.
-func (t segment) sgrCodeEffect(code int) (on, off sgrChannel) {
+func (t Segment) sgrCodeEffect(code int) (on, off SGRChannel) {
 	switch {
 	case code == 0:
-		return 0, sgrAll
+		return 0, SGRAll
 	case code == 1 || code == 2:
-		return sgrIntensity, 0
+		return SGRIntensity, 0
 	case code == 3:
-		return sgrItalic, 0
+		return SGRItalic, 0
 	case code == 4:
-		return sgrUnderline, 0
+		return SGRUnderline, 0
 	case code == 9:
-		return sgrStrike, 0
+		return SGRStrike, 0
 	case code == 22:
-		return 0, sgrIntensity
+		return 0, SGRIntensity
 	case code == 23:
-		return 0, sgrItalic
+		return 0, SGRItalic
 	case code == 24:
-		return 0, sgrUnderline
+		return 0, SGRUnderline
 	case code == 29:
-		return 0, sgrStrike
+		return 0, SGRStrike
 	case code >= 30 && code <= 38, code >= 90 && code <= 97:
-		return sgrForeground, 0
+		return SGRForeground, 0
 	case code == 39:
-		return 0, sgrForeground
+		return 0, SGRForeground
 	case code >= 40 && code <= 48, code >= 100 && code <= 107:
-		return sgrBackground, 0
+		return SGRBackground, 0
 	case code == 49:
-		return 0, sgrBackground
+		return 0, SGRBackground
 	}
 	return 0, 0
 }
 
-// osc8 returns the URI of an OSC 8 sequence, and whether t is one.
-func (t segment) osc8() (uri []byte, ok bool) {
-	body, ok := bytes.CutPrefix(t.text, []byte("\x1b]8;"))
+// OSC8 returns the URI of an OSC 8 sequence, and whether t is one.
+func (t Segment) OSC8() (uri []byte, ok bool) {
+	body, ok := bytes.CutPrefix(t.Text, []byte("\x1b]8;"))
 	if !ok {
 		return nil, false
 	}
@@ -145,13 +145,13 @@ func (t segment) osc8() (uri []byte, ok bool) {
 }
 
 // isHyperlink reports whether t is an OSC 8 sequence that opens a link.
-func (t segment) isHyperlink() bool {
-	uri, ok := t.osc8()
+func (t Segment) isHyperlink() bool {
+	uri, ok := t.OSC8()
 	return ok && len(uri) > 0
 }
 
 // endsHyperlink reports whether t is an OSC 8 sequence that closes a link.
-func (t segment) endsHyperlink() bool {
-	uri, ok := t.osc8()
+func (t Segment) endsHyperlink() bool {
+	uri, ok := t.OSC8()
 	return ok && len(uri) == 0
 }

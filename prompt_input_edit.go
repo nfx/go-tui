@@ -13,52 +13,52 @@ import (
 
 // visibleWindow returns the start and end indexes of the clusters
 // that fit into availW terminal columns, anchored around the cursor.
-func (i *input) visibleWindow(cells clusters, availW int) (int, int) {
-	at := cells.at(i.cursor)
+func (i *input) visibleWindow(cells Clusters, availW int) (int, int) {
+	at := cells.At(i.cursor)
 	if availW <= 0 {
 		return at, at
 	}
-	if cells.width() <= availW {
+	if cells.Width() <= availW {
 		return 0, len(cells)
 	}
 	half := availW / 2
 	start := 0
 	switch {
-	case cells[:at].width() <= half:
-	case cells[at:].width() <= half:
+	case cells[:at].Width() <= half:
+	case cells[at:].Width() <= half:
 		// fill the window backwards from the end of the text
 		start = len(cells)
-		for w := 0; start > 0 && w+cells[start-1].width <= availW; start-- {
-			w += cells[start-1].width
+		for w := 0; start > 0 && w+cells[start-1].Width <= availW; start-- {
+			w += cells[start-1].Width
 		}
 	default:
 		// keep half of the window before the cursor
 		start = at
-		for w := 0; start > 0 && w+cells[start-1].width <= half; start-- {
-			w += cells[start-1].width
+		for w := 0; start > 0 && w+cells[start-1].Width <= half; start-- {
+			w += cells[start-1].Width
 		}
 	}
 	end := start
-	for w := 0; end < len(cells) && w+cells[end].width <= availW; end++ {
-		w += cells[end].width
+	for w := 0; end < len(cells) && w+cells[end].Width <= availW; end++ {
+		w += cells[end].Width
 	}
 	return start, end
 }
 
 // prevBoundary returns the rune offset of the cluster boundary before cursor.
 func (i *input) prevBoundary(cursor int) int {
-	cells := text(string(i.displayRunes())).clusters()
-	if k := cells.at(cursor - 1); k < len(cells) {
-		return cells[k].start
+	cells := Text(string(i.displayRunes())).Clusters()
+	if k := cells.At(cursor - 1); k < len(cells) {
+		return cells[k].Start
 	}
 	return max(cursor-1, 0)
 }
 
 // nextBoundary returns the rune offset of the cluster boundary after cursor.
 func (i *input) nextBoundary(cursor int) int {
-	cells := text(string(i.displayRunes())).clusters()
-	if k := cells.at(cursor); k < len(cells) {
-		return cells[k].end
+	cells := Text(string(i.displayRunes())).Clusters()
+	if k := cells.At(cursor); k < len(cells) {
+		return cells[k].End
 	}
 	return cursor + 1
 }

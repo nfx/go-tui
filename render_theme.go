@@ -22,7 +22,7 @@ type compiledTheme struct {
 func (c *compiledTheme) editable() Theme { return c.source.clone() }
 
 // funcs returns built-in and custom helpers bound to one destination.
-func (c *compiledTheme) funcs(p colorProfile, roles roleStyles) template.FuncMap {
+func (c *compiledTheme) funcs(p Profile, roles roleStyles) template.FuncMap {
 	return c.source.withCustom(destination{profile: p, roles: roles, symbols: c.source.Symbols}.funcs())
 }
 
@@ -39,29 +39,29 @@ func (c *compiledTheme) geometry(width, height int) geometry {
 // displayed shade keeps readable also keeps the terminal default, and the
 // symbols of the templates still carry its meaning. A guide without a color
 // is faint instead, so it stays quieter than the muted role.
-func (c *compiledTheme) roles(p colorProfile, pal resolvedPalette) roleStyles {
-	if p < profileANSI16 {
+func (c *compiledTheme) roles(p Profile, pal resolvedPalette) roleStyles {
+	if p < ProfileANSI16 {
 		return roleStyles{}
 	}
 	v := c.variant(pal)
-	style := func(override slot, rgb sRGB, target float64, neutral bool) text {
+	style := func(override slot, rgb SRGB, target float64, neutral bool) Text {
 		shown, ok := c.role(p, pal, override, rgb, target, neutral)
 		if !ok {
 			return nil
 		}
-		return p.fg(shown)
+		return p.Fg(shown)
 	}
-	guide := style(v.guide, pal.Guide, contrastGuide, true)
+	guide := style(v.guide, pal.Guide, ContrastGuide, true)
 	if guide == nil {
-		guide = text(dim)
+		guide = Text(Dim)
 	}
 	return roleStyles{
-		foreground: style(v.foreground, pal.Foreground, contrastText, true),
-		muted:      style(v.muted, pal.Muted, contrastText, true),
+		foreground: style(v.foreground, pal.Foreground, ContrastText, true),
+		muted:      style(v.muted, pal.Muted, ContrastText, true),
 		guide:      guide,
-		accent:     style(v.accent, pal.Accent, contrastText, false),
-		success:    style(v.success, pal.Success, contrastText, false),
-		failure:    style(v.err, pal.Error, contrastText, false),
+		accent:     style(v.accent, pal.Accent, ContrastText, false),
+		success:    style(v.success, pal.Success, ContrastText, false),
+		failure:    style(v.err, pal.Error, ContrastText, false),
 	}
 }
 
@@ -76,20 +76,20 @@ func (c *compiledTheme) variant(pal resolvedPalette) parsedVariant {
 // role is the color a role renders in, or false when it keeps the terminal
 // default; see [compiledTheme.roles].
 func (c *compiledTheme) role(
-	p colorProfile,
+	p Profile,
 	pal resolvedPalette,
 	override slot,
-	rgb sRGB,
+	rgb SRGB,
 	target float64,
 	neutral bool,
-) (sRGB, bool) {
+) (SRGB, bool) {
 	switch {
 	case override.set:
 		return override.rgb, true
 	case neutral && !pal.Known && !c.source.Light:
-		return sRGB{}, false
+		return SRGB{}, false
 	}
-	return p.readable(rgb, pal.Background, target)
+	return p.Readable(rgb, pal.Background, target)
 }
 
 // scaleLevels is the number of levels of a diverging scale.
@@ -100,23 +100,23 @@ const scaleLevels = 5
 // are halfway in OKLab between the rendered role and the foreground, held to
 // [contrastText] like the roles. Levels may encode alike on small palettes;
 // an empty level keeps the terminal default.
-func (c *compiledTheme) diverging(p colorProfile, pal resolvedPalette, roles roleStyles) []text {
-	if p < profileANSI16 {
-		return make([]text, scaleLevels)
+func (c *compiledTheme) diverging(p Profile, pal resolvedPalette, roles roleStyles) []Text {
+	if p < ProfileANSI16 {
+		return make([]Text, scaleLevels)
 	}
 	v := c.variant(pal)
-	half := func(override slot, rgb sRGB) text {
-		end, ok := c.role(p, pal, override, rgb, contrastText, false)
+	half := func(override slot, rgb SRGB) Text {
+		end, ok := c.role(p, pal, override, rgb, ContrastText, false)
 		if !ok {
 			return nil
 		}
-		mid, ok := p.readable(end.oklab().mix(pal.Foreground.oklab(), 0.5), pal.Background, contrastText)
+		mid, ok := p.Readable(end.OKLab().Mix(pal.Foreground.OKLab(), 0.5), pal.Background, ContrastText)
 		if !ok {
 			return nil
 		}
-		return p.fg(mid)
+		return p.Fg(mid)
 	}
-	return []text{
+	return []Text{
 		roles.success,
 		half(v.success, pal.Success),
 		roles.foreground,
@@ -128,8 +128,8 @@ func (c *compiledTheme) diverging(p colorProfile, pal resolvedPalette, roles rol
 // bind resolves the palette against the background of a destination with
 // profile p. The variant follows a measured background, or else the theme
 // and the estimate in bg.
-func (c *compiledTheme) bind(p colorProfile, bg background) binding {
-	pal := c.palette.resolve(c.source.Light || bg.light, bg.rgb, bg.measured)
+func (c *compiledTheme) bind(p Profile, bg Background) binding {
+	pal := c.palette.resolve(c.source.Light || bg.Light, bg.RGB, bg.Measured)
 	roles := c.roles(p, pal)
 	return binding{theme: c, profile: p, palette: pal, roles: roles, funcs: c.funcs(p, roles)}
 }

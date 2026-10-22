@@ -22,7 +22,7 @@ type outputEnv struct {
 	windowsTerminal bool
 	// bgHint is the background estimated from COLORFGBG, the fallback of
 	// detection, read with the same lifetime as the color policy.
-	bgHint background
+	bgHint Background
 	// ci is set in CI logs, which are rarely color-capable but are viewed in
 	// browsers with the Unicode glyphs. A CI job may run on a pseudo-terminal,
 	// but nobody answers prompts or watches redraws there, so it is never
@@ -96,12 +96,12 @@ func (e outputEnv) utf8Locale() bool {
 var consoleVT = func(io.Writer) bool { return true }
 
 // depth derives color depth from terminal hints, defaulting to ansi16.
-func (e outputEnv) depth() colorProfile {
+func (e outputEnv) depth() Profile {
 	switch {
 	case e.colorTerm == "truecolor" || e.colorTerm == "24bit", e.windowsTerminal:
-		return profileTrueColor
+		return ProfileTrueColor
 	case strings.Contains(e.term, "256color"):
-		return profileANSI256
+		return ProfileANSI256
 	}
-	return profileANSI16
+	return ProfileANSI16
 }

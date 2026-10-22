@@ -17,10 +17,10 @@ type dropdown struct {
 	Ctx          context.Context
 	Label        string
 	Items        []any
-	trie         *trie
-	active       []text
+	trie         *Trie
+	active       []Text
 	activeWidths []int
-	inactive     []text
+	inactive     []Text
 	widths       []int
 	relevant     []int
 	displayed    []int
@@ -42,11 +42,11 @@ type dropdown struct {
 	look    binding
 	inherit binding
 	slot    choiceSlots
-	label   text
+	label   Text
 	hint    boundSlot
 	// content is the projected main content of every item, and search the
 	// plain text of it that filtering and ranking see.
-	content []text
+	content []Text
 	search  []string
 	// rows is the height of the last frame.
 	rows int
@@ -206,7 +206,7 @@ func newDropdown(ctx context.Context) *dropdown {
 		Label:         "Select from list",
 		makeTermIO:    makePromptIO,
 		IterBatchSize: 10,
-		trie:          newTrie(),
+		trie:          NewTrie(),
 		theme:         theme,
 		family:        theme.templates.Dropdown,
 	}

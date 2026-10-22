@@ -12,25 +12,25 @@ import (
 // roleStyles are the encoded foregrounds of the semantic helpers and of the
 // guide for one destination. An empty style keeps the terminal default.
 type roleStyles struct {
-	foreground, muted, guide, accent, success, failure text
+	foreground, muted, guide, accent, success, failure Text
 }
 
 // destination is what the built-in template helpers depend on: what one output
 // accepts and shows.
 type destination struct {
-	profile colorProfile
+	profile Profile
 	roles   roleStyles
 	symbols Symbols
 }
 
 // newSpan defines a style wrapper that leaves text unchanged when no sequences are set.
-func (d destination) newSpan(closer string, seqs ...text) span {
+func (d destination) newSpan(closer string, seqs ...Text) span {
 	s := span{closer: closer}
 	for _, seq := range seqs {
 		if len(seq) == 0 {
 			continue
 		}
-		set, _ := seq.scan().sgrEffect()
+		set, _ := seq.Scan().SGREffect()
 		s.open = append(s.open, sgrCode{seq: seq.String(), channels: set})
 		s.channels |= set
 	}
@@ -39,10 +39,10 @@ func (d destination) newSpan(closer string, seqs ...text) span {
 
 // roleSpan wraps text in a role style: a color, or the faint fallback of
 // the guide, which needs its own reset.
-func (d destination) roleSpan(role text) span {
-	s := d.newSpan(fgDefault, role)
-	if s.channels&sgrIntensity != 0 {
-		s.closer = intensityDefault
+func (d destination) roleSpan(role Text) span {
+	s := d.newSpan(FgDefault, role)
+	if s.channels&SGRIntensity != 0 {
+		s.closer = IntensityDefault
 	}
 	return s
 }
@@ -50,15 +50,15 @@ func (d destination) roleSpan(role text) span {
 // named returns the attribute helpers and ago.
 func (d destination) named() template.FuncMap {
 	var namedStyles = map[string]string{
-		"bold":      bold,
-		"dim":       dim,
-		"italic":    italic,
-		"underline": underline,
-		"strike":    strikethrough,
+		"bold":      Bold,
+		"dim":       Dim,
+		"italic":    Italic,
+		"underline": Underline,
+		"strike":    Strikethrough,
 	}
 	funcs := make(template.FuncMap, len(namedStyles)+1)
 	for name, seq := range namedStyles {
-		funcs[name] = d.newSpan(reset, text(d.profile.named(text(seq)))).helper()
+		funcs[name] = d.newSpan(Reset, Text(d.profile.Named(Text(seq)))).helper()
 	}
 	funcs["ago"] = ago
 	return funcs
@@ -67,7 +67,7 @@ func (d destination) named() template.FuncMap {
 // funcs returns all built-in helpers bound to the destination.
 func (d destination) funcs() template.FuncMap {
 	funcs := d.named()
-	for name, seq := range map[string]text{
+	for name, seq := range map[string]Text{
 		"text":    d.roles.foreground,
 		"muted":   d.roles.muted,
 		"guide":   d.roles.guide,
@@ -86,9 +86,9 @@ func (d destination) funcs() template.FuncMap {
 
 // color returns a foreground or background helper that validates colors at execution.
 func (d destination) color(background bool) func(string, ...any) (string, error) {
-	name, closer := "fg", fgDefault
+	name, closer := "fg", FgDefault
 	if background {
-		name, closer = "bg", bgDefault
+		name, closer = "bg", BgDefault
 	}
 	return func(c string, args ...any) (string, error) {
 		rgb, err := RGB(c).parse()
@@ -98,7 +98,7 @@ func (d destination) color(background bool) func(string, ...any) (string, error)
 		if err != nil {
 			return "", fmt.Errorf("%s: %w", name, err)
 		}
-		seq := d.profile.encode(rgb, background)
+		seq := d.profile.Encode(rgb, background)
 		s := d.newSpan(closer, seq)
 		return s.wrap(s.formatArgs(args)).String(), nil
 	}

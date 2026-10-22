@@ -240,7 +240,7 @@ func (s *Spinners) updateSpinner(update updateOffset) {
 	if update.err != nil {
 		update.message = update.err.Error()
 		s.state[update.offset].Failed = true
-		s.state[update.offset].Message = text(update.message)
+		s.state[update.offset].Message = Text(update.message)
 		s.logStage(slog.LevelError, update.message, update.offset, "failed")
 		s.emit(spinnerFailed{
 			Index: update.offset,
@@ -251,7 +251,7 @@ func (s *Spinners) updateSpinner(update updateOffset) {
 	if s.state[update.offset].Message.String() != update.message {
 		s.logStage(slog.LevelInfo, update.message, update.offset, "running")
 	}
-	s.state[update.offset].Message = text(update.message)
+	s.state[update.offset].Message = Text(update.message)
 	s.emit(spinnerUpdated{
 		Index:   update.offset,
 		Message: update.message,
@@ -348,7 +348,7 @@ func (s *Spinners) redraw(prevActive int) (int, error) {
 // row renders a spinner through the slot of its state. Only a running
 // spinner advances its frame. The row is clipped before the last column, so
 // that it cannot autowrap.
-func (s *Spinners) row(spinner *spinnerState) (text, error) {
+func (s *Spinners) row(spinner *spinnerState) (Text, error) {
 	slot, state := s.rows.running, "running"
 	switch {
 	case spinner.Failed:
@@ -367,8 +367,8 @@ func (s *Spinners) row(spinner *spinnerState) (text, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cols := s.theme.geometry(s.io.Width, 0).columns(nil); row.width() > cols {
-		row = row.truncateColumns(cols)
+	if cols := s.theme.geometry(s.io.Width, 0).columns(nil); row.Width() > cols {
+		row = row.TruncateColumns(cols)
 	}
 	return row, nil
 }
@@ -376,16 +376,16 @@ func (s *Spinners) row(spinner *spinnerState) (text, error) {
 // oneLine keeps the text and SGR of caller content on one row: line breaks
 // and tabs become spaces, invalid bytes U+FFFD, and other controls and
 // escape sequences are dropped.
-func (*Spinners) oneLine(t text) string {
-	var out text
-	for seg := range t.segments() {
-		_, sgr := seg.sgrParams()
+func (*Spinners) oneLine(t Text) string {
+	var out Text
+	for seg := range t.Segments() {
+		_, sgr := seg.SGRParams()
 		switch {
-		case seg.isText(), seg.isEscape && sgr:
-			out = append(out, seg.text...)
-		case seg.isInvalid:
+		case seg.IsText(), seg.IsEscape && sgr:
+			out = append(out, seg.Text...)
+		case seg.IsInvalid:
 			out = append(out, "\uFFFD"...)
-		case seg.isControl && bytes.ContainsAny(seg.text, "\r\n\t"):
+		case seg.IsControl && bytes.ContainsAny(seg.Text, "\r\n\t"):
 			out = append(out, ' ')
 		}
 	}
@@ -437,7 +437,7 @@ func (s *Spinners) newSpinner(ns createSpinner) {
 	offset := len(s.state)
 	s.state = append(s.state, &spinnerState{
 		cancel: ns.cancel,
-		Prefix: text(ns.prefix),
+		Prefix: Text(ns.prefix),
 		tick:   (len(s.state) + 1) % len(ns.frames),
 		frames: ns.frames,
 		active: true,

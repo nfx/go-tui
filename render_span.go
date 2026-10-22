@@ -10,8 +10,8 @@ import (
 )
 
 // formatArgs joins helper arguments without separators.
-func (span) formatArgs(args []any) text {
-	var result text
+func (span) formatArgs(args []any) Text {
+	var result Text
 	for _, t := range args {
 		switch x := t.(type) {
 		case *string:
@@ -35,14 +35,14 @@ func (span) formatArgs(args []any) text {
 // no state between calls, so its helpers are safe for concurrent executions.
 type span struct {
 	open     []sgrCode
-	channels sgrChannel
+	channels SGRChannel
 	closer   string
 }
 
 // sgrCode is one opening SGR sequence and the channels it sets.
 type sgrCode struct {
 	seq      string
-	channels sgrChannel
+	channels SGRChannel
 }
 
 // helper adapts s to a template helper with the argument conversions.
@@ -52,24 +52,24 @@ func (s span) helper() func(...any) string {
 
 // wrap styles body, restoring outer channels after nested resets when content follows.
 // Non-SGR escape sequences pass through unchanged.
-func (s span) wrap(body text) text {
+func (s span) wrap(body Text) Text {
 	if len(s.open) == 0 {
 		return body
 	}
-	var out text
+	var out Text
 	for _, c := range s.open {
 		out = append(out, c.seq...)
 	}
 	if bytes.IndexByte(body, 0x1b) < 0 {
 		out = append(out, body...)
 	} else {
-		var pending sgrChannel
-		for seg := range body.segments() {
+		var pending SGRChannel
+		for seg := range body.Segments() {
 			if pending != 0 {
 				s.restore(&out, pending)
 			}
-			out = append(out, seg.text...)
-			_, cleared := seg.sgrEffect()
+			out = append(out, seg.Text...)
+			_, cleared := seg.SGREffect()
 			pending = cleared & s.channels
 		}
 	}
@@ -78,7 +78,7 @@ func (s span) wrap(body text) text {
 }
 
 // restore appends the opening codes of s that set any of channels, in order.
-func (s span) restore(out *text, channels sgrChannel) {
+func (s span) restore(out *Text, channels SGRChannel) {
 	for _, c := range s.open {
 		if c.channels&channels != 0 {
 			*out = append(*out, c.seq...)

@@ -21,7 +21,7 @@ import (
 func TestDropdownLazyClearsOnlyRenderedArea(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, d.parseTemplates())
-	d.trie = newTrie()
+	d.trie = NewTrie()
 
 	var (
 		frame  bytes.Buffer
@@ -217,7 +217,7 @@ func TestDropdownHandleLazyItemDoneWithItems(t *testing.T) {
 func TestDropdownHandleLazyItemAddError(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.mainTemplate = template.Must(template.New("content").Parse("{{call .}}"))
-	d.trie = newTrie()
+	d.trie = NewTrie()
 	tio := newTestTermIO(20, 6)
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyItem(tio, frame, 1, itPair{item: "x"}, true)

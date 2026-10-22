@@ -133,7 +133,7 @@ type boundSlot struct {
 }
 
 // render returns complete slot output or an error, allowing only text and SGR.
-func (b boundSlot) render(data any) (text, error) {
+func (b boundSlot) render(data any) (Text, error) {
 	out, err := b.execute(data)
 	if err == nil {
 		err = b.styled(out)
@@ -145,11 +145,11 @@ func (b boundSlot) render(data any) (text, error) {
 }
 
 // execute returns the slot output without checking it.
-func (b boundSlot) execute(data any) (text, error) {
+func (b boundSlot) execute(data any) (Text, error) {
 	if b.tmpl == nil {
 		return nil, nil
 	}
-	var out text
+	var out Text
 	err := b.tmpl.Execute(&out, data)
 	if err != nil {
 		return nil, fmt.Errorf("theme.Templates.%s: %w", b.tmpl.Name(), err)
@@ -158,9 +158,9 @@ func (b boundSlot) execute(data any) (text, error) {
 }
 
 // styled reports slot output that is not only text and SGR.
-func (b boundSlot) styled(out text) error {
-	if seg, ok := out.unstyled(); ok {
-		return fmt.Errorf("theme.Templates.%s: %q: want text and SGR only", b.tmpl.Name(), seg.text)
+func (b boundSlot) styled(out Text) error {
+	if seg, ok := out.Unstyled(); ok {
+		return fmt.Errorf("theme.Templates.%s: %q: want text and SGR only", b.tmpl.Name(), seg.Text)
 	}
 	return nil
 }

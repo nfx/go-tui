@@ -115,30 +115,30 @@ func (t *table) renderCells(v any) ([]string, error) {
 // the line before, so a style spanning a line break continues; truncation
 // closes every line, so it cannot bleed into the next column.
 func (*table) carryStyles(lines []string) {
-	var open text
-	var active sgrChannel
+	var open Text
+	var active SGRChannel
 	for k, line := range lines {
 		if k > 0 && len(open) > 0 && line != "" {
 			lines[k] = string(open) + line
 		}
-		for seg := range text(line).segments() {
-			if _, sgr := seg.sgrParams(); !sgr {
+		for seg := range Text(line).Segments() {
+			if _, sgr := seg.SGRParams(); !sgr {
 				continue
 			}
-			set, cleared := seg.sgrEffect()
+			set, cleared := seg.SGREffect()
 			active = (active | set) &^ cleared
 			if active == 0 {
 				open = open[:0]
 				continue
 			}
-			open = append(open, seg.text...)
+			open = append(open, seg.Text...)
 		}
 	}
 }
 
 // decorate wraps each line of an automatic row template in its scale color
 // and then in the Cell slot. Explicit row templates are left as rendered.
-func (t *table) decorate(row []text, colors []string) error {
+func (t *table) decorate(row []Text, colors []string) error {
 	if !t.autoTemplate {
 		return nil
 	}
@@ -151,7 +151,7 @@ func (t *table) decorate(row []text, colors []string) error {
 			continue
 		}
 		if i < len(colors) {
-			line = t.look.style(text(colors[i]), line)
+			line = t.look.style(Text(colors[i]), line)
 		}
 		meta := t.columns[i].meta
 		out, err := t.cell.execute(cellView{columnView: t.column(meta), Value: line.String()})
@@ -167,8 +167,8 @@ func (t *table) decorate(row []text, colors []string) error {
 }
 
 // padded writes cell aligned within column col.
-func (t *table) padded(buf *bytes.Buffer, cell text, col int) error {
-	padding := t.columns[col].width - cell.width()
+func (t *table) padded(buf *bytes.Buffer, cell Text, col int) error {
+	padding := t.columns[col].width - cell.Width()
 	if t.columns[col].meta.alignRight { // right align
 		err := t.pad(buf, padding)
 		if err != nil {
@@ -205,15 +205,15 @@ func (t *table) fitPending() {
 		t.allocateWidths()
 	}
 	for _, line := range t.pending {
-		row := make([]text, len(line))
+		row := make([]Text, len(line))
 		for i, c := range line {
 			if len(c.text) == 0 {
 				// value is not available, but we need to insert something
 				// to keep the table structure intact.
-				row[i] = text(" ")
+				row[i] = Text(" ")
 				continue
 			}
-			row[i] = c.text.truncateVisible(t.columns[i].maxVisible, ' ')
+			row[i] = c.text.TruncateVisible(t.columns[i].maxVisible, ' ')
 		}
 		t.rows = append(t.rows, row)
 	}
@@ -261,7 +261,7 @@ func (t *table) allocateWidths() {
 			if len(c.text) == 0 {
 				continue
 			}
-			used[i] = max(used[i], c.text.truncateVisible(limits[i], ' ').width())
+			used[i] = max(used[i], c.text.TruncateVisible(limits[i], ' ').Width())
 		}
 	}
 	for i := range t.columns {

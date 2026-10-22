@@ -14,7 +14,7 @@ func TestJSONStyleDerivesFromResolvedRoles(t *testing.T) {
 	look := func(p Palette) jsonLook {
 		th := NewTheme()
 		th.Palette = p
-		return newJSONLook(jsonBound(t, th, profileTrueColor, measuredBG(sRGB{0x12, 0x12, 0x12})))
+		return newJSONLook(jsonBound(t, th, ProfileTrueColor, measuredBG(SRGB{0x12, 0x12, 0x12})))
 	}
 	base := look(Palette{})
 	accent := look(Palette{Accent: "#2D9B55"})
@@ -35,14 +35,14 @@ func TestJSONStyleDerivesFromResolvedRoles(t *testing.T) {
 
 func TestJSONKeyShadesDimMonotonicallyOnEveryProfile(t *testing.T) {
 	pal := legacyJSONPalette()
-	for _, p := range []colorProfile{profileANSI16, profileANSI256, profileTrueColor} {
-		keys := newJSONLook(presetJSONTheme().bind(p, background{})).keys
+	for _, p := range []Profile{ProfileANSI16, ProfileANSI256, ProfileTrueColor} {
+		keys := newJSONLook(presetJSONTheme().bind(p, Background{})).keys
 		assert.True(t, len(keys) > 0)
 		prev := 22.0
 		for _, k := range keys {
-			c := displayed(t, p, k).contrast(pal.Background)
+			c := displayed(t, p, k).Contrast(pal.Background)
 			assert.True(t, c < prev)          // strictly dimmer, so also distinct
-			assert.True(t, c >= contrastText) // keys are words
+			assert.True(t, c >= ContrastText) // keys are words
 			prev = c
 		}
 	}
@@ -51,13 +51,13 @@ func TestJSONKeyShadesDimMonotonicallyOnEveryProfile(t *testing.T) {
 }
 
 func TestJSONKeysAcrossLightAndDarkBackgrounds(t *testing.T) {
-	for _, bg := range []sRGB{{0, 0, 0}, {0x12, 0x12, 0x12}, {0x77, 0x77, 0x77}, {0xEE, 0xEE, 0xEE}, {255, 255, 255}} {
-		for _, p := range []colorProfile{profileANSI16, profileANSI256, profileTrueColor} {
+	for _, bg := range []SRGB{{0, 0, 0}, {0x12, 0x12, 0x12}, {0x77, 0x77, 0x77}, {0xEE, 0xEE, 0xEE}, {255, 255, 255}} {
+		for _, p := range []Profile{ProfileANSI16, ProfileANSI256, ProfileTrueColor} {
 			prev := 22.0
 			for _, k := range newJSONLook(jsonBound(t, NewTheme(), p, measuredBG(bg))).keys {
-				c := displayed(t, p, k).contrast(bg)
+				c := displayed(t, p, k).Contrast(bg)
 				assert.True(t, c < prev)
-				assert.True(t, c >= contrastText)
+				assert.True(t, c >= ContrastText)
 				prev = c
 			}
 		}
@@ -65,14 +65,14 @@ func TestJSONKeysAcrossLightAndDarkBackgrounds(t *testing.T) {
 }
 
 func TestJSONStyleWithoutColor(t *testing.T) {
-	st := newJSONLook(presetJSONTheme().bind(profileAttrs, background{}))
-	assert.Equal(t, text(bold), st.punct)
+	st := newJSONLook(presetJSONTheme().bind(ProfileAttrs, Background{}))
+	assert.Equal(t, Text(Bold), st.punct)
 	assert.Equal(t, 0, len(st.keys))
 	assert.Equal(t, 0, len(st.value))
 }
 
 func TestJSONStyleWithKnownBackgroundColorsNeutrals(t *testing.T) {
-	look := jsonBound(t, NewTheme(), profileTrueColor, measuredBG(sRGB{0xFF, 0xFF, 0xFF}))
+	look := jsonBound(t, NewTheme(), ProfileTrueColor, measuredBG(SRGB{0xFF, 0xFF, 0xFF}))
 	st := newJSONLook(look)
 	assert.True(t, len(look.roles.foreground) > 0)
 	assert.Equal(t, string(look.roles.foreground), string(st.value))

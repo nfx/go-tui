@@ -12,8 +12,8 @@ import (
 )
 
 type factCell struct {
-	title      text
-	value      text
+	title      Text
+	value      Text
 	width      int
 	alignRight bool
 }
@@ -104,7 +104,7 @@ func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 		if err != nil {
 			return nil, fmt.Errorf("column %q template: %w", meta.name, err)
 		}
-		var buf text
+		var buf Text
 		err = tmpl.Execute(&buf, facts)
 		if err != nil {
 			return nil, fmt.Errorf("column %q render: %w", meta.name, err)
@@ -114,7 +114,7 @@ func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 			return nil, fmt.Errorf("column %q: %w", meta.name, err)
 		}
 		cellWidth := max(
-			max(header.width(), value.width())+f.cellPad+1,
+			max(header.Width(), value.Width())+f.cellPad+1,
 			f.minColumn())
 		cells[i] = factCell{
 			title:      header,
@@ -129,9 +129,9 @@ func (f *facts) renderFactCells(facts any) ([]factCell, error) {
 // fact presents a key and its formatted value through the Header and Cell
 // slots, the latter over the first line of the value. An empty value stays
 // empty, as in tables.
-func (f *facts) fact(meta *fieldMetadata, out text) (key, value text, err error) {
-	value = text(bytes.ReplaceAll(bytes.TrimRight(out, "\r\n"), []byte{'\t'}, []byte{' '}))
-	view := cellView{columnView: f.column(meta), Value: f.cellText(value.beforeNewline()).String()}
+func (f *facts) fact(meta *fieldMetadata, out Text) (key, value Text, err error) {
+	value = Text(bytes.ReplaceAll(bytes.TrimRight(out, "\r\n"), []byte{'\t'}, []byte{' '}))
+	view := cellView{columnView: f.column(meta), Value: f.cellText(value.BeforeNewline()).String()}
 	key, err = f.header.render(view.columnView)
 	if err != nil || view.Value == "" {
 		return key, nil, err
@@ -178,15 +178,15 @@ func (f *facts) packFactRows(cells []factCell, cols, maxWidth int) ([][]factCell
 
 // renderFactRow clips a fact row to its allocated column widths.
 func (f *facts) renderFactRow(row []factCell, colWidths []int) error {
-	headers := make([]text, len(row))
-	values := make([]text, len(row))
+	headers := make([]Text, len(row))
+	values := make([]Text, len(row))
 	keys := false
 	f.columns = make([]tableColumn, len(row))
 	for i, cell := range row {
 		maxLen := colWidths[i] - f.cellPad
-		headers[i] = cell.title.truncateVisible(maxLen, ' ')
+		headers[i] = cell.title.TruncateVisible(maxLen, ' ')
 		keys = keys || len(cell.title) > 0
-		values[i] = cell.value.truncateVisible(maxLen, ' ')
+		values[i] = cell.value.TruncateVisible(maxLen, ' ')
 		f.columns[i] = tableColumn{
 			width: colWidths[i],
 			meta:  &fieldMetadata{alignRight: cell.alignRight},

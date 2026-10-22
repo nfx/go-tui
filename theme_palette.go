@@ -25,7 +25,7 @@ func (p Palette) canonical() Palette {
 		&p.Dark.Success, &p.Dark.Error, &p.Dark.Muted, &p.Dark.Guide,
 	} {
 		if *c != "" {
-			*c = RGB(c.must().hex())
+			*c = RGB(c.must().Hex())
 		}
 	}
 	return p

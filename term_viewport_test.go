@@ -352,7 +352,7 @@ func TestViewportJoinsSplitWrites(t *testing.T) {
 
 func TestViewportDropsLongSequence(t *testing.T) {
 	v := &viewport{width: 4, height: 10, fixedHeight: true}
-	title := "\x1b]0;" + strings.Repeat("x", maxHeldBytes)
+	title := "\x1b]0;" + strings.Repeat("x", MaxHeldBytes)
 	assert.Equal(t, 0, len(v.joinPartial([]byte(title[:4]))))
 	assert.Equal(t, 4, len(v.partial))
 	// the terminator is too far away to wait for, so the sequence is dropped
@@ -383,13 +383,13 @@ func FuzzViewportWrap(f *testing.F) {
 			if !bytes.HasSuffix(line, []byte{'\n'}) {
 				t.Fatalf("line %q has no line break", line)
 			}
-			body := text(line[:len(line)-1])
-			if w := body.width(); w > v.width && !oneCluster(body) {
+			body := Text(line[:len(line)-1])
+			if w := body.Width(); w > v.width && !oneCluster(body) {
 				t.Fatalf("width %d exceeds %d: %q", w, v.width, body)
 			}
-			for seg := range body.segments() {
-				if seg.isIncomplete || seg.isBroken {
-					t.Fatalf("split sequence %q in %q", seg.text, body)
+			for seg := range body.Segments() {
+				if seg.IsIncomplete || seg.IsBroken {
+					t.Fatalf("split sequence %q in %q", seg.Text, body)
 				}
 			}
 		}
@@ -398,10 +398,10 @@ func FuzzViewportWrap(f *testing.F) {
 
 // oneCluster reports whether line holds a single visible segment,
 // which is wider than the viewport and cannot be wrapped.
-func oneCluster(line text) bool {
+func oneCluster(line Text) bool {
 	visible := 0
-	for seg := range line.segments() {
-		if seg.width > 0 {
+	for seg := range line.Segments() {
+		if seg.Width > 0 {
 			visible++
 		}
 	}

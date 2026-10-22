@@ -43,7 +43,7 @@ func TestThemedProgressRowDropsMetricsToFit(t *testing.T) {
 		row, err := p.row(tc.width, now)
 		assert.NoError(t, err)
 		assert.Equal(t, tc.want, row.String())
-		assert.True(t, row.width() <= max(tc.width, 0))
+		assert.True(t, row.Width() <= max(tc.width, 0))
 	}
 }
 
@@ -158,7 +158,7 @@ func TestThemedProgressView(t *testing.T) {
 	state := halfDone(now)
 	state.fmtRate = func(r float64) string { return fmt.Sprintf("%.0f\nitems", r) }
 	p := themedBar(t, th, state)
-	p.label = text("multi\nline\x1b[2K")
+	p.label = Text("multi\nline\x1b[2K")
 	row, err := p.row(80, now)
 	assert.NoError(t, err)
 	// the rate is formatted by WithFormatRate and kept on one line
@@ -183,7 +183,7 @@ func TestThemedProgressView(t *testing.T) {
 	th.Templates.Progress.Hint = `{{ range . }}[{{ .Left }}{{ with .Right }} {{ . }}{{ end }}]{{ end }}`
 	th.Templates.Progress.Frame = `{{ .Label }} {{ .Percent }} [{{ .Bar }}] {{ len .Hints }}/{{ len .Values }}{{ .Metrics }}`
 	p = themedBar(t, th, state)
-	p.label = text("multi\nline\x1b[2K")
+	p.label = Text("multi\nline\x1b[2K")
 	row, err = p.row(40, now)
 	assert.NoError(t, err)
 	assert.Equal(t, "<multi line> 50 [=========---------] 3/2\n[50 / 100 items][50 items /s][1s left]", row.String())
@@ -254,10 +254,10 @@ func TestThemedProgressRoles(t *testing.T) {
 	th.Light = true
 	c, err := th.compile()
 	assert.NoError(t, err)
-	look := c.bind(profileTrueColor, background{light: true})
+	look := c.bind(ProfileTrueColor, Background{Light: true})
 	roles := look.roles
 	assert.True(t, len(roles.accent) > 0 && len(roles.guide) > 0 && len(roles.muted) > 0 && len(roles.foreground) > 0)
-	p := &Progressbar{progressState: halfDone(now), label: text("build"), theme: c}
+	p := &Progressbar{progressState: halfDone(now), label: Text("build"), theme: c}
 	p.look, err = p.bind(look)
 	assert.NoError(t, err)
 	rows, err := p.rows(60, 0, now)
@@ -266,18 +266,18 @@ func TestThemedProgressRoles(t *testing.T) {
 	bar, hint := rows[0].String(), rows[1].String()
 	assert.Contains(t, bar, string(roles.foreground)+"build")
 	assert.Contains(t, bar, string(roles.accent)+"50% ")
-	assert.Contains(t, bar, string(roles.accent)+strings.Repeat("━", 24)+fgDefault+
-		string(roles.guide)+strings.Repeat("─", 24)+fgDefault)
+	assert.Contains(t, bar, string(roles.accent)+strings.Repeat("━", 24)+FgDefault+
+		string(roles.guide)+strings.Repeat("─", 24)+FgDefault)
 	// the hint sets the values apart from their units and separators
-	assert.Contains(t, hint, string(roles.accent)+"50 / 100"+fgDefault+" "+string(roles.guide)+"items"+fgDefault)
-	assert.Contains(t, hint, string(roles.guide)+" · "+fgDefault+string(roles.accent)+"50.00"+fgDefault)
+	assert.Contains(t, hint, string(roles.accent)+"50 / 100"+FgDefault+" "+string(roles.guide)+"items"+FgDefault)
+	assert.Contains(t, hint, string(roles.guide)+" · "+FgDefault+string(roles.accent)+"50.00"+FgDefault)
 	assert.Equal(t, "50 / 100 items · 50.00 items/s · 1s left · 1s elapsed", stripSGR(hint))
 	// running work is not a success or a failure
 	for _, row := range rows {
 		out := row.String()
 		assert.True(t, !strings.Contains(out, string(roles.success)) && !strings.Contains(out, string(roles.failure)))
 	}
-	assert.Equal(t, 60, rows[0].width())
+	assert.Equal(t, 60, rows[0].Width())
 }
 
 func TestThemedProgressCompletes(t *testing.T) {
@@ -369,12 +369,12 @@ func TestThemedProgressLongLabel(t *testing.T) {
 		{4, "50%…"},
 	} {
 		p := themedBar(t, asciiTheme(false), halfDone(now))
-		p.label = text("ファイル build")
+		p.label = Text("ファイル build")
 		p.showRate, p.showEstimate, p.showElapsed = false, false, false
 		rows, err := p.rows(tc.width, 0, now)
 		assert.NoError(t, err)
 		assert.Equal(t, tc.want, rows[0].String())
-		assert.True(t, rows[0].width() <= tc.width)
+		assert.True(t, rows[0].Width() <= tc.width)
 	}
 }
 

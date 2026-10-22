@@ -7,9 +7,9 @@ import (
 	"math"
 )
 
-// oklab converts to OKLab using Björn Ottosson's matrices.
-// see https://bottosson.github.io/posts/oklab/#converting-from-linear-srgb-to-oklab.
-func (c sRGB) oklab() oklab {
+// OKLab converts to OKLab using Björn Ottosson's matrices.
+// see https://bottosson.github.io/posts/OKLab/#converting-from-linear-srgb-to-OKLab.
+func (c SRGB) OKLab() oklab {
 	r, g, b := c.srgbToLinear(c[0]), c.srgbToLinear(c[1]), c.srgbToLinear(c[2])
 	l := math.Cbrt(0.4122214708*r + 0.5363325363*g + 0.0514459929*b)
 	m := math.Cbrt(0.2119034982*r + 0.6806995451*g + 0.1073969566*b)
@@ -38,8 +38,8 @@ func (c oklab) lch() oklch {
 	return oklch{L: c.L, C: math.Hypot(c.A, c.B), H: math.Atan2(c.B, c.A)}
 }
 
-// mix moves from c toward o by t in 0..1.
-func (c oklab) mix(o oklab, t float64) sRGB {
+// Mix moves from c toward o by t in 0..1.
+func (c oklab) Mix(o oklab, t float64) SRGB {
 	rgb, _ := oklab{L: c.L + (o.L-c.L)*t, A: c.A + (o.A-c.A)*t, B: c.B + (o.B-c.B)*t}.srgb()
 	return rgb
 }
@@ -59,7 +59,7 @@ func (c oklab) linearToSRGB(v float64) (uint8, bool) {
 
 // srgb converts back to bytes, reporting whether the color fits the gamut.
 // see https://bottosson.github.io/posts/oklab/#converting-from-linear-srgb-to-oklab.
-func (c oklab) srgb() (rgb sRGB, inGamut bool) {
+func (c oklab) srgb() (rgb SRGB, inGamut bool) {
 	cube := func(v float64) float64 { return v * v * v }
 	l := cube(c.L + 0.3963377774*c.A + 0.2158037573*c.B)
 	m := cube(c.L - 0.1055613458*c.A - 0.0638541728*c.B)
@@ -80,8 +80,8 @@ func (c oklab) srgb() (rgb sRGB, inGamut bool) {
 
 // srgb converts to bytes at the given lightness, keeping the hue and
 // reducing chroma only as far as needed to fit sRGB.
-func (c oklch) srgb() sRGB {
-	at := func(chroma float64) (sRGB, bool) {
+func (c oklch) srgb() SRGB {
+	at := func(chroma float64) (SRGB, bool) {
 		return oklab{L: c.L, A: chroma * math.Cos(c.H), B: chroma * math.Sin(c.H)}.srgb()
 	}
 	if rgb, ok := at(c.C); ok {
@@ -95,7 +95,7 @@ func (c oklch) srgb() sRGB {
 }
 
 // withLightness keeps hue and (as far as the gamut allows) chroma.
-func (c oklch) withLightness(l float64) sRGB {
+func (c oklch) withLightness(l float64) SRGB {
 	c.L = l
 	return c.srgb()
 }

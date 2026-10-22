@@ -51,4 +51,4 @@ func (s Symbols) named(name string) (string, error) {
 }
 
 // arrows names the up and down arrow keys in key hints.
-func (s Symbols) arrows() text { return text(s.Up + s.Down) }
+func (s Symbols) arrows() Text { return Text(s.Up + s.Down) }

@@ -53,7 +53,7 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, o ...o
 	p.showRate = true
 	p.showEstimate = true
 	p.maxNum = size
-	p.label = text(label)
+	p.label = Text(label)
 	p.io, err = p.makeTermIO(p.in, p.out)
 	if errors.Is(err, ErrNoTTY) {
 		return p, nil // logs milestones instead, see [Progressbar.logProgress]
@@ -79,7 +79,7 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, o ...o
 type Progressbar struct {
 	config
 	progressState
-	label      text
+	label      Text
 	increments chan int64
 	stopped    chan struct{}
 	cancel     context.CancelCauseFunc
@@ -260,12 +260,12 @@ func (p *Progressbar) tick(frame *bytes.Buffer) bool {
 		}
 	}
 	widths := make([]int, len(rows))
-	out := make(text, 0, 2*max(p.io.Width, 4)*len(rows))
+	out := make(Text, 0, 2*max(p.io.Width, 4)*len(rows))
 	for i, row := range rows {
 		out = append(out, '\r')
 		out = append(out, row...)
 		out = append(out, '\n')
-		widths[i] = row.width()
+		widths[i] = row.Width()
 	}
 	out = append(out, '\r')
 	if err := p.flushLine(frame, out); err != nil {
@@ -292,7 +292,7 @@ func (p *Progressbar) linesToClear(width int) int {
 	return max(lines, 1)
 }
 
-func (p *Progressbar) flushLine(frame *bytes.Buffer, line text) error {
+func (p *Progressbar) flushLine(frame *bytes.Buffer, line Text) error {
 	if _, err := frame.Write(line); err != nil {
 		return err
 	}

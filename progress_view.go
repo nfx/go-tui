@@ -100,7 +100,7 @@ func (p *Progressbar) metrics(rate float64) []progressMetric {
 		}
 		ms = append(ms, progressMetric{kind: amountMetric, value: amount, shown: amount, pair: p.amountPair()})
 	case p.maxNum > 0:
-		count := hint{Left: text(fmt.Sprintf("%d / %d", p.currentNum, p.maxNum)), Right: text("items")}
+		count := hint{Left: Text(fmt.Sprintf("%d / %d", p.currentNum, p.maxNum)), Right: Text("items")}
 		ms = append(ms, progressMetric{pair: count})
 	}
 	if p.showRate {
@@ -110,14 +110,14 @@ func (p *Progressbar) metrics(rate float64) []progressMetric {
 		d := p.remainingSeconds(rate).String()
 		ms = append(ms, progressMetric{
 			kind: remainingMetric, value: d, shown: d + " remaining",
-			pair: hint{Left: text(d), Right: text("left")},
+			pair: hint{Left: Text(d), Right: Text("left")},
 		})
 	}
 	if p.showElapsed {
 		d := p.elapsed.Truncate(time.Second).String()
 		ms = append(ms, progressMetric{
 			kind: elapsedMetric, value: d, shown: d + " elapsed",
-			pair: hint{Left: text(d), Right: text("elapsed")},
+			pair: hint{Left: Text(d), Right: Text("elapsed")},
 		})
 	}
 	return ms
@@ -128,13 +128,13 @@ func (p *Progressbar) metrics(rate float64) []progressMetric {
 func (p *Progressbar) amountPair() hint {
 	read, unit := p.byteParts(float64(p.currentNum))
 	if p.maxNum <= 0 {
-		return hint{Left: text(read), Right: text(unit)}
+		return hint{Left: Text(read), Right: Text(unit)}
 	}
 	size, sizeUnit := p.byteParts(float64(p.maxNum))
 	if unit != sizeUnit {
-		return hint{Left: text(read + " " + unit + " / " + size + " " + sizeUnit)}
+		return hint{Left: Text(read + " " + unit + " / " + size + " " + sizeUnit)}
 	}
-	return hint{Left: text(read + " / " + size), Right: text(unit)}
+	return hint{Left: Text(read + " / " + size), Right: Text(unit)}
 }
 
 // rateMetric is the rate of the bar: bytes per second for a file, unless
@@ -145,24 +145,24 @@ func (p *Progressbar) rateMetric(rate float64) progressMetric {
 		shown := value + " " + unit
 		return progressMetric{
 			kind: rateMetric, value: shown, shown: shown + "/s",
-			pair: hint{Left: text(value), Right: text(unit + "/s")},
+			pair: hint{Left: Text(value), Right: Text(unit + "/s")},
 		}
 	}
-	value := text(p.formatRate(rate)).oneLine()
+	value := Text(p.formatRate(rate)).OneLine()
 	right := "/s"
 	if p.fmtRate == nil {
 		right = "items/s"
 	}
 	return progressMetric{
 		kind: rateMetric, value: value, shown: value + "/s",
-		pair: hint{Left: text(value), Right: text(right)},
+		pair: hint{Left: Text(value), Right: Text(right)},
 	}
 }
 
 // view returns the progress data with the metrics ms shown.
 func (p *Progressbar) view(ms []progressMetric) progressView {
 	v := progressView{
-		Label:   p.label.oneLine(),
+		Label:   p.label.OneLine(),
 		Current: p.currentNum,
 		Total:   p.maxNum,
 		Percent: min(100, max(0, int(p.completion()*100))),
@@ -191,24 +191,24 @@ func (p *Progressbar) view(ms []progressMetric) progressView {
 // rows renders the bar in width columns and at most height rows from one
 // snapshot of the state, in the layout of the theme. A height below two
 // rows takes the compact row; a height that is not positive is unknown.
-func (p *Progressbar) rows(width, height int, now time.Time) ([]text, error) {
+func (p *Progressbar) rows(width, height int, now time.Time) ([]Text, error) {
 	p.increment(now)
 	if width <= 0 {
-		return []text{nil}, nil
+		return []Text{nil}, nil
 	}
 	ms := p.metrics(p.rollingRate())
 	if !p.look.style.Compact && (height <= 0 || height >= 2) {
 		return p.stacked(width, ms)
 	}
 	row, err := p.compact(width, ms)
-	return []text{row}, err
+	return []Text{row}, err
 }
 
 // compact renders the single row of the bar in width columns. It drops
 // metrics, the last first, until the bar keeps MinBarWidth; the bar then
 // takes the columns the rest of the frame leaves, up to MaxBarWidth. A row
 // that does not fit even without metrics is clipped.
-func (p *Progressbar) compact(width int, ms []progressMetric) (text, error) {
+func (p *Progressbar) compact(width int, ms []progressMetric) (Text, error) {
 	for n := len(ms); n >= 0; n-- {
 		v := p.view(ms[:n])
 		label, err := p.look.label.render(v)
@@ -223,7 +223,7 @@ func (p *Progressbar) compact(width int, ms []progressMetric) (text, error) {
 		if err != nil {
 			return nil, err
 		}
-		bar := p.look.barWidth(width - before.width() - after.width())
+		bar := p.look.barWidth(width - before.Width() - after.Width())
 		if bar < p.look.style.MinBarWidth && n > 0 {
 			continue
 		}
@@ -237,7 +237,7 @@ func (p *Progressbar) compact(width int, ms []progressMetric) (text, error) {
 // first, and is omitted when none fits. The label is shortened, and then
 // dropped, before the bar goes below MinBarWidth; a row that does not fit
 // even without the label is clipped.
-func (p *Progressbar) stacked(width int, ms []progressMetric) ([]text, error) {
+func (p *Progressbar) stacked(width int, ms []progressMetric) ([]Text, error) {
 	hint, n, err := p.look.fitHint(width, ms)
 	if err != nil {
 		return nil, err
@@ -252,21 +252,21 @@ func (p *Progressbar) stacked(width int, ms []progressMetric) ([]text, error) {
 		if err != nil {
 			return nil, err
 		}
-		bar := p.look.barWidth(width - before.width() - after.width())
+		bar := p.look.barWidth(width - before.Width() - after.Width())
 		if short := p.look.style.MinBarWidth - bar; short > 0 && len(label) > 0 {
 			// one column of what is left goes to the ellipsis
-			if keep := label.width() - short; keep >= 2 {
-				label = label.truncateColumns(keep)
+			if keep := label.Width() - short; keep >= 2 {
+				label = label.TruncateColumns(keep)
 			} else {
 				label = nil
 			}
 			continue
 		}
 		row := p.look.fill(width, before, bar, after, p.completion())
-		if hint.width() == 0 {
-			return []text{row}, nil
+		if hint.Width() == 0 {
+			return []Text{row}, nil
 		}
-		return []text{row, hint}, nil
+		return []Text{row, hint}, nil
 	}
 }
 
@@ -330,7 +330,7 @@ func (p *Progressbar) bind(look binding) (*progressLook, error) {
 // columns, the last dropped first, and returns how many it shows. Without
 // a fitting metric, the hint is empty and shows none; a hidden hint shows
 // all of them.
-func (l *progressLook) fitHint(width int, ms []progressMetric) (text, int, error) {
+func (l *progressLook) fitHint(width int, ms []progressMetric) (Text, int, error) {
 	if l.hint.tmpl == nil {
 		return nil, len(ms), nil
 	}
@@ -343,7 +343,7 @@ func (l *progressLook) fitHint(width int, ms []progressMetric) (text, int, error
 		if err != nil {
 			return nil, 0, err
 		}
-		if out.width() <= width {
+		if out.Width() <= width {
 			return out, n, nil
 		}
 	}
@@ -360,17 +360,17 @@ func (l *progressLook) barWidth(cols int) int {
 
 // fill joins the frame around a bar of width cells at completion, clipped
 // to cols columns.
-func (l *progressLook) fill(cols int, before text, width int, after text, completion float64) text {
+func (l *progressLook) fill(cols int, before Text, width int, after Text, completion float64) Text {
 	row := slices.Concat(before, l.bar(max(width, 0), completion), after)
-	if row.width() > cols {
-		row = row.truncateColumns(cols)
+	if row.Width() > cols {
+		row = row.TruncateColumns(cols)
 	}
 	return row
 }
 
 // around renders the frame of v with the rendered label and metrics, and
 // returns it before and after the bar.
-func (l *progressLook) around(v progressView, label, metrics text) (before, after text, err error) {
+func (l *progressLook) around(v progressView, label, metrics Text) (before, after Text, err error) {
 	v.Label, v.Metrics, v.Bar = label.String(), metrics.String(), progressBarMark
 	out, err := l.frame.execute(v)
 	if err != nil {
@@ -391,7 +391,7 @@ func (l *progressLook) around(v progressView, label, metrics text) (before, afte
 // bar draws width cells at completion: the done cells and the head, which
 // marks a partly done cell, in the accent role, then the track in the guide
 // role.
-func (l *progressLook) bar(width int, completion float64) text {
+func (l *progressLook) bar(width int, completion float64) Text {
 	// tolerate rounding, so that 5% of 20 cells is one cell without a head
 	const epsilon = 1e-9
 	exact := float64(width) * completion
@@ -402,7 +402,7 @@ func (l *progressLook) bar(width int, completion float64) text {
 		done++
 	}
 	return slices.Concat(
-		l.binding.style(l.binding.roles.accent, text(cells)),
-		l.binding.style(l.binding.roles.guide, text(strings.Repeat(l.symbols.BarEmpty, width-done))),
+		l.binding.style(l.binding.roles.accent, Text(cells)),
+		l.binding.style(l.binding.roles.guide, Text(strings.Repeat(l.symbols.BarEmpty, width-done))),
 	)
 }

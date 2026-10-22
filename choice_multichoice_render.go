@@ -73,7 +73,7 @@ func (m *multichoice) bindRun(ctx context.Context, tio *termIO) error {
 	if err != nil {
 		return err
 	}
-	m.label = m.label.beforeNewline()
+	m.label = m.label.BeforeNewline()
 	if m.loading {
 		return nil
 	}
@@ -81,7 +81,7 @@ func (m *multichoice) bindRun(ctx context.Context, tio *termIO) error {
 }
 
 // projectItem caches searchable content, deferring details and non-searchable rows until drawing.
-func (m *multichoice) projectItem(item any) (text, error) {
+func (m *multichoice) projectItem(item any) (Text, error) {
 	content, err := m.projectContent(m.slot.value, item)
 	if err != nil {
 		return nil, err
@@ -106,7 +106,7 @@ func (m *multichoice) drawItem(i int) (err error) {
 }
 
 // themedRow wraps state-specific content in the Row slot that owns focus and check marks.
-func (m *multichoice) themedRow(i int, active bool) (text, error) {
+func (m *multichoice) themedRow(i int, active bool) (Text, error) {
 	err := m.drawItem(i)
 	if err != nil {
 		return nil, err
@@ -142,7 +142,7 @@ func (m *multichoice) renderThemed(tio *termIO, buf *bytes.Buffer) error {
 		if err != nil {
 			return err
 		}
-		if empty.width() > 0 {
+		if empty.Width() > 0 {
 			rows = append(rows, frameRow{content: empty, guided: true})
 		}
 	}
@@ -191,7 +191,7 @@ func (m *multichoice) themedAnswer() error {
 	out, err := m.slot.answer.render(
 		answerView{Label: m.Label, Value: body.String(), Values: values, Count: len(values)},
 	)
-	if err != nil || out.width() == 0 {
+	if err != nil || out.Width() == 0 {
 		return err
 	}
 	return m.writeAnswer(append(out, '\n'))

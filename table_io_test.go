@@ -51,31 +51,31 @@ func TestPrettyJSONLevels(t *testing.T) {
 }
 
 func TestGeometryValueColumns(t *testing.T) {
-	long := text(strings.Repeat("x", 100))
+	long := Text(strings.Repeat("x", 100))
 	for _, tc := range []struct {
 		name     string
 		inline   bool
 		guide    string
 		width    int
-		label    text
+		label    Text
 		wantLead string
 		wantCols int
 		wantErr  bool
 	}{
-		{"guide unknown width", false, "│", 0, text("Name: "), "│ ", math.MaxInt, false},
-		{"inline unknown width", true, "│", 0, text("Name: "), "Name: ", math.MaxInt, false},
+		{"guide unknown width", false, "│", 0, Text("Name: "), "│ ", math.MaxInt, false},
+		{"inline unknown width", true, "│", 0, Text("Name: "), "Name: ", math.MaxInt, false},
 		{"guide width 1", false, "│", 1, nil, "│ ", 0, true},
 		{"guide width 2", false, "│", 2, nil, "│ ", 0, true},
 		{"guide width 3 holds only the caret", false, "│", 3, nil, "│ ", 0, true},
 		{"guide width 4", false, "│", 4, nil, "│ ", 1, false},
 		{"guide label does not count", false, "│", 80, long, "│ ", 77, false},
 		{"ascii guide", false, "|", 10, nil, "| ", 7, false},
-		{"inline width 1", true, "│", 1, text("Name: "), "", 0, true},
-		{"inline width 2 drops the label", true, "│", 2, text("Name: "), "", 1, false},
-		{"inline label fits exactly", true, "│", 8, text("Name: "), "Name: ", 1, false},
-		{"inline long label is clipped", true, "│", 7, text("Name: "), "Name…", 1, false},
+		{"inline width 1", true, "│", 1, Text("Name: "), "", 0, true},
+		{"inline width 2 drops the label", true, "│", 2, Text("Name: "), "", 1, false},
+		{"inline label fits exactly", true, "│", 8, Text("Name: "), "Name: ", 1, false},
+		{"inline long label is clipped", true, "│", 7, Text("Name: "), "Name…", 1, false},
 		{"inline empty label", true, "│", 10, nil, "", 9, false},
-		{"inline wide label", true, "│", 6, text("\u754c\u9762\u754c: "), "\u754c…", 2, false},
+		{"inline wide label", true, "│", 6, Text("\u754c\u9762\u754c: "), "\u754c…", 2, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			g := geometry{inline: tc.inline, guide: tc.guide, width: tc.width, height: 1}
@@ -90,7 +90,7 @@ func TestGeometryValueColumns(t *testing.T) {
 			assert.Equal(t, tc.wantCols, cols)
 			if tc.width > 0 {
 				// the window and its caret cell fill the row exactly
-				assert.Equal(t, tc.width, lead.width()+cols+1)
+				assert.Equal(t, tc.width, lead.Width()+cols+1)
 			}
 		})
 	}
@@ -110,67 +110,67 @@ func TestGeometryFit(t *testing.T) {
 		wantErr       bool
 	}{
 		{"unknown size keeps everything", false, 0, 0, []frameRow{
-			{content: text("label")},
-			{content: text(strings.Repeat("v", 300)), guided: true},
-			{content: text("hint"), guided: true, drop: 1},
+			{content: Text("label")},
+			{content: Text(strings.Repeat("v", 300)), guided: true},
+			{content: Text("hint"), guided: true, drop: 1},
 		}, want{[]string{"label", "│ " + strings.Repeat("v", 300), "│ hint"}, []int{0, 1, 2}}, false},
 		{"height 1 keeps the required row", false, 20, 1, []frameRow{
-			{content: text("v")},
-			{content: text("hint"), guided: true, drop: 1},
+			{content: Text("v")},
+			{content: Text("hint"), guided: true, drop: 1},
 		}, want{[]string{"v"}, []int{0, -1}}, false},
 		{"required rows exceed the height", false, 20, 1, []frameRow{
-			{content: text("a")}, {content: text("b")},
+			{content: Text("a")}, {content: Text("b")},
 		}, want{}, true},
 		{"largest drop goes first", false, 20, 3, []frameRow{
-			{content: text("value")},
-			{content: text("details"), drop: 1},
-			{content: text("more"), drop: 2},
-			{content: text("hint"), drop: 3},
+			{content: Text("value")},
+			{content: Text("details"), drop: 1},
+			{content: Text("more"), drop: 2},
+			{content: Text("hint"), drop: 3},
 		}, want{[]string{"value", "details", "more"}, []int{0, 1, 2, -1}}, false},
 		{"short height drops more", false, 20, 2, []frameRow{
-			{content: text("value")},
-			{content: text("details"), drop: 1},
-			{content: text("more"), drop: 2},
-			{content: text("hint"), drop: 3},
+			{content: Text("value")},
+			{content: Text("details"), drop: 1},
+			{content: Text("more"), drop: 2},
+			{content: Text("hint"), drop: 3},
 		}, want{[]string{"value", "details"}, []int{0, 1, -1, -1}}, false},
 		{"equal drop removes the later row", false, 20, 2, []frameRow{
-			{content: text("value")},
-			{content: text("a"), drop: 1},
-			{content: text("b"), drop: 1},
+			{content: Text("value")},
+			{content: Text("a"), drop: 1},
+			{content: Text("b"), drop: 1},
 		}, want{[]string{"value", "a"}, []int{0, 1, -1}}, false},
 		{"empty optional rows reserve nothing", false, 10, 0, []frameRow{
 			{guided: true},
 			{drop: 1},
-			{content: text("\x1b[2m\x1b[0m"), drop: 1},
-			{content: text("x")},
+			{content: Text("\x1b[2m\x1b[0m"), drop: 1},
+			{content: Text("x")},
 		}, want{[]string{"│ ", "x"}, []int{0, -1, -1, 1}}, false},
 		{"exact fit is unchanged and one more is clipped", false, 10, 0, []frameRow{
-			{content: text("\x1b[1mabcdefg\x1b[0m"), guided: true},
-			{content: text("abcdefgh"), guided: true},
+			{content: Text("\x1b[1mabcdefg\x1b[0m"), guided: true},
+			{content: Text("abcdefgh"), guided: true},
 		}, want{[]string{"│ \x1b[1mabcdefg\x1b[0m", "│ abcdef…"}, []int{0, 1}}, false},
 		{"wide, combining and emoji clusters", false, 6, 0, []frameRow{
-			{content: text("\u754c\u9762\u754c")},
-			{content: text(strings.Repeat("e\u0301", 5))},
-			{content: text("👍👍👍")},
+			{content: Text("\u754c\u9762\u754c")},
+			{content: Text(strings.Repeat("e\u0301", 5))},
+			{content: Text("👍👍👍")},
 		}, want{[]string{"\u754c\u9762…", strings.Repeat("e\u0301", 5), "👍👍…"}, []int{0, 1, 2}}, false},
 		{"inline has no guide", true, 10, 0, []frameRow{
-			{content: text("abc"), guided: true},
+			{content: Text("abc"), guided: true},
 		}, want{[]string{"abc"}, []int{0}}, false},
 		{"width 2 cannot hold the guide", false, 2, 0, []frameRow{
 			{guided: true},
 		}, want{}, true},
 		{"width 3 keeps an empty guided row", false, 3, 0, []frameRow{
 			{guided: true},
-			{content: text("hint"), guided: true, drop: 1},
+			{content: Text("hint"), guided: true, drop: 1},
 		}, want{[]string{"│ "}, []int{0, -1}}, false},
 		{"width 3 cannot show guided content", false, 3, 0, []frameRow{
-			{content: text("x"), guided: true},
+			{content: Text("x"), guided: true},
 		}, want{}, true},
 		{"width 1 cannot show content", true, 1, 0, []frameRow{
-			{content: text("x")},
+			{content: Text("x")},
 		}, want{}, true},
 		{"width 2 shows the ellipsis", true, 2, 0, []frameRow{
-			{content: text("xy")},
+			{content: Text("xy")},
 		}, want{[]string{"…"}, []int{0}}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -185,7 +185,7 @@ func TestGeometryFit(t *testing.T) {
 			for _, l := range got.lines {
 				lines = append(lines, l.String())
 				if tc.width > 0 {
-					assert.True(t, l.width() < tc.width)
+					assert.True(t, l.Width() < tc.width)
 				}
 			}
 			assert.Equal(t, tc.want.lines, lines)
@@ -195,7 +195,7 @@ func TestGeometryFit(t *testing.T) {
 }
 
 func TestFitDoesNotAliasRows(t *testing.T) {
-	content := text("abc")
+	content := Text("abc")
 	g := geometry{guide: "│", width: 10}
 	got, err := g.fit([]frameRow{{content: content, guided: true}})
 	assert.NoError(t, err)

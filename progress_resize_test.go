@@ -67,7 +67,7 @@ func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 	}
 	contentLine := body[lo+1:]
 	// content must not exceed shrunken width minus 1 (autowrap column)
-	assert.True(t, text(contentLine).width() <= 19)
+	assert.True(t, Text(contentLine).Width() <= 19)
 }
 
 func TestProgressbarTickOnResizeExitsWhenDone(t *testing.T) {
@@ -135,7 +135,7 @@ func TestProgressbarTickTinyWidth(t *testing.T) {
 					redrawAt:   time.Now(),
 					startedAt:  time.Now().Add(-time.Second),
 				},
-				label: text("test"),
+				label: Text("test"),
 				io: &termIO{
 					out:     &bytes.Buffer{},
 					Width:   tt.width,
@@ -159,7 +159,7 @@ func TestProgressbarLabelTruncation(t *testing.T) {
 			redrawAt:   time.Now(),
 			startedAt:  time.Now().Add(-time.Second),
 		},
-		label: text("this is a very long label that exceeds terminal width"),
+		label: Text("this is a very long label that exceeds terminal width"),
 		io: &termIO{
 			out:     &bytes.Buffer{},
 			Width:   15,
@@ -175,7 +175,7 @@ func TestProgressbarLabelTruncation(t *testing.T) {
 	assert.True(t, ok)
 	lines := bytes.Split(out.Bytes(), []byte("\n"))
 	for _, line := range lines {
-		w := text(line).width()
+		w := Text(line).Width()
 		assert.True(t, w <= 14)
 	}
 }

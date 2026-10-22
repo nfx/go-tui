@@ -159,7 +159,7 @@ func newNumber[T numberType](ctx context.Context, label string) *number[T] {
 	n.prompt.numeric = true
 	n.prompt.rules = append(n.prompt.rules, n.validate)
 	n.prompt.adjust = n.adjust
-	n.prompt.keys = []hint{{n.prompt.theme.source.Symbols.arrows(), text("adjust")}}
+	n.prompt.keys = []hint{{n.prompt.theme.source.Symbols.arrows(), Text("adjust")}}
 	return n
 }
 

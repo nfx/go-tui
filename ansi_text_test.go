@@ -15,7 +15,7 @@ import (
 )
 
 func TestTextWrite(t *testing.T) {
-	var b text
+	var b Text
 	n, err := fmt.Fprintf(&b, "a%dc", 1)
 	assert.NoError(t, err)
 	assert.Equal(t, 3, n)
@@ -45,7 +45,7 @@ func TestTruncateColumns(t *testing.T) {
 		{"\x1b[31måäöxy\x1b[0m", "\x1b[31måäö…\x1b[0m"},
 	} {
 		t.Run(fmt.Sprint(tt), func(t *testing.T) {
-			assert.Equal(t, tt.out, string(text(tt.in).truncateColumns(4)))
+			assert.Equal(t, tt.out, string(Text(tt.in).TruncateColumns(4)))
 		})
 	}
 }
@@ -65,7 +65,7 @@ func TestBeforeNewline(t *testing.T) {
 		{"abc\ndef\nghi", "abc"},
 	} {
 		t.Run(fmt.Sprint(tt), func(t *testing.T) {
-			assert.Equal(t, tt.want, string(text(tt.in).beforeNewline()))
+			assert.Equal(t, tt.want, string(Text(tt.in).BeforeNewline()))
 		})
 	}
 }
@@ -85,7 +85,7 @@ func TestWidthUnicode(t *testing.T) {
 		{"\u754c\u0308", 2},                // wide rune plus combining mark
 	} {
 		t.Run(tt.in, func(t *testing.T) {
-			assert.Equal(t, tt.want, text(tt.in).width())
+			assert.Equal(t, tt.want, Text(tt.in).Width())
 		})
 	}
 }
@@ -112,7 +112,7 @@ func TestTruncationResetsSGR(t *testing.T) {
 		{"abc\x1b[31mdef", "ab…"},                              // styles after the cut are dropped
 	} {
 		t.Run(tt.in, func(t *testing.T) {
-			assert.Equal(t, tt.out, string(text(tt.in).truncateColumns(3)))
+			assert.Equal(t, tt.out, string(Text(tt.in).TruncateColumns(3)))
 		})
 	}
 }
@@ -127,7 +127,7 @@ func TestTruncationClosesHyperlink(t *testing.T) {
 		{"\x1b[31m\x1b]8;;http://a\x07abcdef", "\x1b[31m\x1b]8;;http://a\x07ab…\x1b]8;;\x1b\\\x1b[0m"},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
-			assert.Equal(t, tt.out, string(text(tt.in).truncateColumns(3)))
+			assert.Equal(t, tt.out, string(Text(tt.in).TruncateColumns(3)))
 		})
 	}
 }
@@ -141,7 +141,7 @@ func TestTruncationDropsControls(t *testing.T) {
 		{"a\u0085b", "ab"},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
-			assert.Equal(t, tt.out, string(text(tt.in).truncateColumns(3)))
+			assert.Equal(t, tt.out, string(Text(tt.in).TruncateColumns(3)))
 		})
 	}
 }
@@ -167,76 +167,76 @@ func TestTruncateVisible(t *testing.T) {
 		{"e\u0301e\u0301e\u0301", 3, ' ', "e\u0301… "},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
-			assert.Equal(t, tt.out, string(text(tt.in).truncateVisible(tt.maxLen, tt.tailer)))
+			assert.Equal(t, tt.out, string(Text(tt.in).TruncateVisible(tt.maxLen, tt.tailer)))
 		})
 	}
 }
 
-func withText(flags segment, text []byte, width int) segment {
-	flags.text, flags.width = text, width
+func withText(flags Segment, text []byte, width int) Segment {
+	flags.Text, flags.Width = text, width
 	return flags
 }
 
 func TestScan(t *testing.T) {
 	for _, tt := range []struct {
 		in    string
-		kind  segment // only the flags
+		kind  Segment // only the flags
 		size  int
 		width int
 	}{
-		{"a", segment{}, 1, 1},
-		{"ab", segment{}, 1, 1},
-		{"\n", segment{isControl: true}, 1, 0},
-		{"\t", segment{isControl: true}, 1, 0},
-		{"\x7f", segment{isControl: true}, 1, 0},
-		{"\u009bx", segment{isControl: true}, 2, 0}, // C1 is not CSI
-		{"\x1b", segment{isIncomplete: true}, 1, 0},
-		{"\x1bx", segment{isEscape: true}, 2, 0},       // two-byte
-		{"\x1b\x1b[0m", segment{isBroken: true}, 1, 0}, // a lone ESC
-		{"\x1b\u754c", segment{isBroken: true}, 1, 0},
-		{"\x1b[31m", segment{isEscape: true}, 5, 0},
-		{"\x1b[?25h", segment{isEscape: true}, 6, 0},
-		{"\x1b[31", segment{isIncomplete: true}, 4, 0},
-		{"\x1b[31\nx", segment{isBroken: true}, 4, 0}, // malformed, ends before \n
-		{"\x1b(B", segment{isEscape: true}, 3, 0},
-		{"\x1b(", segment{isIncomplete: true}, 2, 0},
-		{"\x1b]0;title\x07x", segment{isEscape: true}, 10, 0},
-		{"\x1b]8;;http://a\x1b\\x", segment{isEscape: true}, 15, 0},
-		{"\x1b]8;;http://a", segment{isIncomplete: true}, 13, 0},
-		{"\x1b]8;;http://a\x1b", segment{isIncomplete: true}, 14, 0},
-		{"\x1b]8;;a\x1b[0m", segment{isBroken: true}, 6, 0},   // ESC cancels a string
-		{"\x1b]t\nx", segment{isBroken: true}, 3, 0},          // so does a line break
-		{"\x1bPdata\x07x", segment{isIncomplete: true}, 8, 0}, // BEL ends only OSC
-		{"\xff", segment{isInvalid: true}, 1, 1},
-		{"\xffa", segment{isInvalid: true}, 1, 1},
-		{"\xe4", segment{isInvalid: true}, 1, 1},
-		{"\xe4\xb8", segment{isInvalid: true}, 1, 1},
-		{"\u754c", segment{}, 3, 2},
-		{"é", segment{}, 2, 1},
-		{"e\u0301", segment{}, 3, 1},
-		{"e\u0301\u0302x", segment{}, 5, 1},
-		{"\u0301", segment{}, 2, 0},        // an orphan mark
-		{"1\ufe0f\u20e3", segment{}, 7, 2}, // keycap
-		{"❤", segment{}, 3, 1},
-		{"❤\ufe0f", segment{}, 6, 2},     // emoji presentation
-		{"☝\U0001F3FD", segment{}, 7, 2}, // narrow base with a skin tone
-		{"👍🏽", segment{}, 8, 2},
-		{"👨\u200d👩\u200d👧", segment{}, 18, 2},
-		{"❤\ufe0f\u200d🔥", segment{}, 13, 2},
-		{"a\u200d🔥", segment{}, 4, 1}, // ZWJ after a non-emoji
-		{"🇺🇦", segment{}, 8, 2},
-		{"🇺🇦🇺", segment{}, 8, 2}, // the third indicator starts a new flag
-		{"🇺", segment{}, 4, 1},
-		{"🏴\U000E0067\U000E0062\U000E007F", segment{}, 16, 2}, // tag sequence
-		{"각", segment{}, 3, 2},
-		{"\u1100\u1161\u11a8", segment{}, 9, 2}, // L V T jamo
-		{"한", segment{}, 3, 2},
-		{"ｱ", segment{}, 3, 1}, // halfwidth katakana
-		{"Ａ", segment{}, 3, 2}, // fullwidth
-		{"\u00ad", segment{}, 2, 0},
+		{"a", Segment{}, 1, 1},
+		{"ab", Segment{}, 1, 1},
+		{"\n", Segment{IsControl: true}, 1, 0},
+		{"\t", Segment{IsControl: true}, 1, 0},
+		{"\x7f", Segment{IsControl: true}, 1, 0},
+		{"\u009bx", Segment{IsControl: true}, 2, 0}, // C1 is not CSI
+		{"\x1b", Segment{IsIncomplete: true}, 1, 0},
+		{"\x1bx", Segment{IsEscape: true}, 2, 0},       // two-byte
+		{"\x1b\x1b[0m", Segment{IsBroken: true}, 1, 0}, // a lone ESC
+		{"\x1b\u754c", Segment{IsBroken: true}, 1, 0},
+		{"\x1b[31m", Segment{IsEscape: true}, 5, 0},
+		{"\x1b[?25h", Segment{IsEscape: true}, 6, 0},
+		{"\x1b[31", Segment{IsIncomplete: true}, 4, 0},
+		{"\x1b[31\nx", Segment{IsBroken: true}, 4, 0}, // malformed, ends before \n
+		{"\x1b(B", Segment{IsEscape: true}, 3, 0},
+		{"\x1b(", Segment{IsIncomplete: true}, 2, 0},
+		{"\x1b]0;title\x07x", Segment{IsEscape: true}, 10, 0},
+		{"\x1b]8;;http://a\x1b\\x", Segment{IsEscape: true}, 15, 0},
+		{"\x1b]8;;http://a", Segment{IsIncomplete: true}, 13, 0},
+		{"\x1b]8;;http://a\x1b", Segment{IsIncomplete: true}, 14, 0},
+		{"\x1b]8;;a\x1b[0m", Segment{IsBroken: true}, 6, 0},   // ESC cancels a string
+		{"\x1b]t\nx", Segment{IsBroken: true}, 3, 0},          // so does a line break
+		{"\x1bPdata\x07x", Segment{IsIncomplete: true}, 8, 0}, // BEL ends only OSC
+		{"\xff", Segment{IsInvalid: true}, 1, 1},
+		{"\xffa", Segment{IsInvalid: true}, 1, 1},
+		{"\xe4", Segment{IsInvalid: true}, 1, 1},
+		{"\xe4\xb8", Segment{IsInvalid: true}, 1, 1},
+		{"\u754c", Segment{}, 3, 2},
+		{"é", Segment{}, 2, 1},
+		{"e\u0301", Segment{}, 3, 1},
+		{"e\u0301\u0302x", Segment{}, 5, 1},
+		{"\u0301", Segment{}, 2, 0},        // an orphan mark
+		{"1\ufe0f\u20e3", Segment{}, 7, 2}, // keycap
+		{"❤", Segment{}, 3, 1},
+		{"❤\ufe0f", Segment{}, 6, 2},     // emoji presentation
+		{"☝\U0001F3FD", Segment{}, 7, 2}, // narrow base with a skin tone
+		{"👍🏽", Segment{}, 8, 2},
+		{"👨\u200d👩\u200d👧", Segment{}, 18, 2},
+		{"❤\ufe0f\u200d🔥", Segment{}, 13, 2},
+		{"a\u200d🔥", Segment{}, 4, 1}, // ZWJ after a non-emoji
+		{"🇺🇦", Segment{}, 8, 2},
+		{"🇺🇦🇺", Segment{}, 8, 2}, // the third indicator starts a new flag
+		{"🇺", Segment{}, 4, 1},
+		{"🏴\U000E0067\U000E0062\U000E007F", Segment{}, 16, 2}, // tag sequence
+		{"각", Segment{}, 3, 2},
+		{"\u1100\u1161\u11a8", Segment{}, 9, 2}, // L V T jamo
+		{"한", Segment{}, 3, 2},
+		{"ｱ", Segment{}, 3, 1}, // halfwidth katakana
+		{"Ａ", Segment{}, 3, 2}, // fullwidth
+		{"\u00ad", Segment{}, 2, 0},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
-			got := text(tt.in).scan()
+			got := Text(tt.in).Scan()
 			assert.Equal(t, withText(tt.kind, []byte(tt.in)[:tt.size], tt.width), got)
 		})
 	}
@@ -244,18 +244,18 @@ func TestScan(t *testing.T) {
 
 // regression: a segment sequence starts from the beginning every time it is iterated
 func TestTokensIterateTwice(t *testing.T) {
-	seq := text("a\x1b[31m\u754c").segments()
-	var first, second []segment
+	seq := Text("a\x1b[31m\u754c").Segments()
+	var first, second []Segment
 	for seg := range seq {
 		first = append(first, seg)
 	}
 	for seg := range seq {
 		second = append(second, seg)
 	}
-	assert.Equal(t, []segment{
-		{text: []byte("a"), width: 1},
-		{isEscape: true, text: []byte("\x1b[31m")},
-		{text: []byte("\u754c"), width: 2},
+	assert.Equal(t, []Segment{
+		{Text: []byte("a"), Width: 1},
+		{IsEscape: true, Text: []byte("\x1b[31m")},
+		{Text: []byte("\u754c"), Width: 2},
 	}, first)
 	assert.Equal(t, first, second)
 }
@@ -278,10 +278,10 @@ func TestIncompleteTail(t *testing.T) {
 		{"ab\xe4\xb8", 2},
 		{"ab\u754c", 0},
 		{"ab\xff", 0},
-		{"\x1b]" + strings.Repeat("x", maxHeldBytes), 0}, // never terminated
+		{"\x1b]" + strings.Repeat("x", MaxHeldBytes), 0}, // never terminated
 	} {
 		t.Run(tt.in, func(t *testing.T) {
-			assert.Equal(t, tt.want, text(tt.in).incompleteTail())
+			assert.Equal(t, tt.want, Text(tt.in).IncompleteTail())
 		})
 	}
 }
@@ -300,7 +300,7 @@ func TestWidthEmoji(t *testing.T) {
 		{"abc\xe4", 4}, // a rune cut by the end is invalid
 	} {
 		t.Run(tt.in, func(t *testing.T) {
-			assert.Equal(t, tt.want, text(tt.in).width())
+			assert.Equal(t, tt.want, Text(tt.in).Width())
 		})
 	}
 }
@@ -311,34 +311,34 @@ func FuzzScan(f *testing.F) {
 		f.Add([]byte(seed))
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
-		text := text(data)
+		text := Text(data)
 		total, i := 0, 0
-		for seg := range text.segments() {
-			if len(seg.text) == 0 || &seg.text[0] != &data[i] {
-				t.Fatalf("segment %q at %d of %q", seg.text, i, data)
+		for seg := range text.Segments() {
+			if len(seg.Text) == 0 || &seg.Text[0] != &data[i] {
+				t.Fatalf("segment %q at %d of %q", seg.Text, i, data)
 			}
-			if seg.width < 0 || seg.width > 2 {
-				t.Fatalf("segment width %d", seg.width)
+			if seg.Width < 0 || seg.Width > 2 {
+				t.Fatalf("segment width %d", seg.Width)
 			}
-			if !seg.isText() && !seg.isInvalid && seg.width != 0 {
-				t.Fatalf("%+v has width %d", seg, seg.width)
+			if !seg.IsText() && !seg.IsInvalid && seg.Width != 0 {
+				t.Fatalf("%+v has width %d", seg, seg.Width)
 			}
-			if seg.isText() && !utf8.Valid(seg.text) {
-				t.Fatalf("invalid cluster %q", seg.text)
+			if seg.IsText() && !utf8.Valid(seg.Text) {
+				t.Fatalf("invalid cluster %q", seg.Text)
 			}
-			if seg.isIncomplete && i+len(seg.text) != len(data) {
-				t.Fatalf("incomplete segment %q in the middle", seg.text)
+			if seg.IsIncomplete && i+len(seg.Text) != len(data) {
+				t.Fatalf("incomplete segment %q in the middle", seg.Text)
 			}
-			total += seg.width
-			i += len(seg.text)
+			total += seg.Width
+			i += len(seg.Text)
 		}
 		if i != len(data) {
 			t.Fatalf("segments cover %d of %d bytes", i, len(data))
 		}
-		if text.width() != total {
-			t.Fatalf("width %d != %d", text.width(), total)
+		if text.Width() != total {
+			t.Fatalf("width %d != %d", text.Width(), total)
 		}
-		if tail := text.incompleteTail(); tail > len(data) {
+		if tail := text.IncompleteTail(); tail > len(data) {
 			t.Fatalf("tail %d of %d", tail, len(data))
 		}
 	})
@@ -355,16 +355,16 @@ func FuzzTruncateVisible(f *testing.F) {
 		if newline {
 			tailer = '\n'
 		}
-		out := text(data).truncateVisible(int(maxLen), tailer)
+		out := Text(data).TruncateVisible(int(maxLen), tailer)
 		if !utf8.Valid(out) {
 			t.Fatalf("invalid UTF-8 %q from %q", out, data)
 		}
-		if got := out.width(); got > int(maxLen) {
+		if got := out.Width(); got > int(maxLen) {
 			t.Fatalf("width %d exceeds %d: %q from %q", got, maxLen, out, data)
 		}
-		for seg := range out.segments() {
-			if seg.isIncomplete || seg.isInvalid || seg.isBroken {
-				t.Fatalf("split sequence %q in %q from %q", seg.text, out, data)
+		for seg := range out.Segments() {
+			if seg.IsIncomplete || seg.IsInvalid || seg.IsBroken {
+				t.Fatalf("split sequence %q in %q from %q", seg.Text, out, data)
 			}
 		}
 		if bytes.ContainsAny(out, "\r") || (!newline && bytes.Contains(out[:max(len(out)-1, 0)], []byte{'\n'})) {
@@ -385,9 +385,9 @@ func TestStripBroken(t *testing.T) {
 		{"\x1b]0;t\x1b[0m", "\x1b[0m"},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
-			assert.Equal(t, tt.out, string(text(tt.in).stripBroken()))
+			assert.Equal(t, tt.out, string(Text(tt.in).StripBroken()))
 		})
 	}
 	clean := []byte("ab\x1b[31mc")
-	assert.True(t, &text(clean).stripBroken()[0] == &clean[0])
+	assert.True(t, &Text(clean).StripBroken()[0] == &clean[0])
 }

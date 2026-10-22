@@ -16,7 +16,7 @@ import (
 // hintMatches looks up prefix hints in the labels of items without drawing them.
 func (d *dropdown) hintMatches(items []any) func(string) ([]int, error) {
 	return func(hint string) ([]int, error) {
-		t := newTrie()
+		t := NewTrie()
 		for i, item := range items {
 			label, err := d.searchText(item)
 			if err != nil {
@@ -24,12 +24,12 @@ func (d *dropdown) hintMatches(items []any) func(string) ([]int, error) {
 			}
 			t.Add(label, i)
 		}
-		return hintFromTrie(t)(hint)
+		return HintFromTrie(t)(hint)
 	}
 }
 
 // searchText returns searchable item content without theme decoration.
-func (d *dropdown) searchText(item any) (text, error) {
+func (d *dropdown) searchText(item any) (Text, error) {
 	err := d.bindOnce()
 	if err != nil {
 		return nil, err
@@ -44,8 +44,8 @@ func (d *dropdown) setItem(i int, item any) error {
 		return err
 	}
 	d.trie.Add(search, i)
-	d.activeWidths[i] = d.active[i].width()
-	d.widths[i] = d.inactive[i].width()
+	d.activeWidths[i] = d.active[i].Width()
+	d.widths[i] = d.inactive[i].Width()
 	d.longest = max(d.longest, d.widths[i], d.activeWidths[i])
 	d.emit(dropdownAppendItem{
 		Item:  item,

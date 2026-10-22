@@ -11,25 +11,25 @@ import (
 	"unicode/utf8"
 )
 
-type trie struct {
-	m   map[rune]*trie
+type Trie struct {
+	m   map[rune]*Trie
 	idx []int
 }
 
-func newTrie() *trie {
-	return &trie{
-		m: map[rune]*trie{},
+func NewTrie() *Trie {
+	return &Trie{
+		m: map[rune]*Trie{},
 	}
 }
 
 // Add indexes the words in word, ignoring terminal controls and escapes.
-func (t *trie) Add(word text, i int) {
+func (t *Trie) Add(word Text, i int) {
 	r := t
-	for seg := range word.segments() {
-		if !seg.isText() {
+	for seg := range word.Segments() {
+		if !seg.IsText() {
 			continue // escape sequences with their payloads, and controls
 		}
-		for rest := seg.text; len(rest) > 0; {
+		for rest := seg.Text; len(rest) > 0; {
 			b, size := utf8.DecodeRune(rest)
 			rest = rest[size:]
 			if b == ' ' {
@@ -48,7 +48,7 @@ func (t *trie) Add(word text, i int) {
 			}
 			s, ok := r.m[b]
 			if !ok {
-				s = newTrie()
+				s = NewTrie()
 				r.m[b] = s
 			}
 			r = s
@@ -59,7 +59,7 @@ func (t *trie) Add(word text, i int) {
 
 // Prefix returns sorted indexes of items where every word of the prefix
 // is a prefix of some word of the item.
-func (t *trie) Prefix(prefix string) []int {
+func (t *Trie) Prefix(prefix string) []int {
 	var out []int
 	for i, word := range t.queryWords(prefix) {
 		found := t.wordPrefix(word)
@@ -82,7 +82,7 @@ func (t *trie) Prefix(prefix string) []int {
 
 // queryWords tokenizes the query the same way Add does: words are separated
 // by spaces, and other non-alphanumeric runes are dropped within a word.
-func (t *trie) queryWords(query string) (words []string) {
+func (t *Trie) queryWords(query string) (words []string) {
 	for field := range strings.SplitSeq(query, " ") {
 		word := strings.Map(func(r rune) rune {
 			if unicode.IsLetter(r) || unicode.IsDigit(r) {
@@ -97,7 +97,7 @@ func (t *trie) queryWords(query string) (words []string) {
 	return words
 }
 
-func (t *trie) wordPrefix(word string) []int {
+func (t *Trie) wordPrefix(word string) []int {
 	r := t
 	for _, b := range word {
 		s, ok := r.m[unicode.ToLower(b)]
@@ -112,7 +112,7 @@ func (t *trie) wordPrefix(word string) []int {
 }
 
 // intersect returns common elements of two sorted slices in linear time.
-func (t *trie) intersect(a, b []int) (out []int) {
+func (t *Trie) intersect(a, b []int) (out []int) {
 	i, j := 0, 0
 	for i < len(a) && j < len(b) {
 		switch {
@@ -129,14 +129,14 @@ func (t *trie) intersect(a, b []int) (out []int) {
 	return out
 }
 
-func (t *trie) Words() (out []string) {
+func (t *Trie) Words() (out []string) {
 	words := t.dfs("")
 	sort.Strings(words)
 	return words
 }
 
-func (t *trie) Indexes() (out []int) {
-	q := []*trie{t}
+func (t *Trie) Indexes() (out []int) {
+	q := []*Trie{t}
 	for len(q) > 0 {
 		r := q[0]
 		q = q[1:]
@@ -150,7 +150,7 @@ func (t *trie) Indexes() (out []int) {
 	return
 }
 
-func (t *trie) dfs(s string) []string {
+func (t *Trie) dfs(s string) []string {
 	var out []string
 	if len(t.idx) > 0 {
 		out = append(out, s)
@@ -161,9 +161,9 @@ func (t *trie) dfs(s string) []string {
 	return out
 }
 
-// hintFromTrie looks up a word-prefix hint. A hint without letters or digits
+// HintFromTrie looks up a word-prefix hint. A hint without letters or digits
 // would match everything, so it matches nothing.
-func hintFromTrie(t *trie) func(string) ([]int, error) {
+func HintFromTrie(t *Trie) func(string) ([]int, error) {
 	return func(s string) ([]int, error) {
 		if len(t.queryWords(s)) == 0 {
 			return nil, nil

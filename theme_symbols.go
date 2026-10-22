@@ -179,8 +179,8 @@ func (Symbols) singleColumn(s string) error {
 			return fmt.Errorf("%q: control character", s)
 		}
 	}
-	w := text(s).width()
-	if w != 1 || len(text(s).clusters()) != 1 {
+	w := Text(s).Width()
+	if w != 1 || len(Text(s).Clusters()) != 1 {
 		return fmt.Errorf("%q: want one display column, got %d", s, w)
 	}
 	return nil

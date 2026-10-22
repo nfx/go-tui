@@ -80,14 +80,14 @@ func TestThemeRoundTripKeepsTemplateSources(t *testing.T) {
 func TestRGBParse(t *testing.T) {
 	for _, tc := range []struct {
 		in   RGB
-		want sRGB
+		want SRGB
 	}{
-		{"#00ADD8", sRGB{0x00, 0xAD, 0xD8}},
-		{"#00add8", sRGB{0x00, 0xAD, 0xD8}},
-		{"#0AD", sRGB{0x00, 0xAA, 0xDD}},
-		{"#0ad", sRGB{0x00, 0xAA, 0xDD}},
-		{"#000000", sRGB{}},
-		{"#FFF", sRGB{255, 255, 255}},
+		{"#00ADD8", SRGB{0x00, 0xAD, 0xD8}},
+		{"#00add8", SRGB{0x00, 0xAD, 0xD8}},
+		{"#0AD", SRGB{0x00, 0xAA, 0xDD}},
+		{"#0ad", SRGB{0x00, 0xAA, 0xDD}},
+		{"#000000", SRGB{}},
+		{"#FFF", SRGB{255, 255, 255}},
 	} {
 		t.Run(string(tc.in), func(t *testing.T) {
 			got, err := tc.in.parse()
@@ -101,7 +101,7 @@ func TestRGBParse(t *testing.T) {
 func TestRGBEmptyIsUnset(t *testing.T) {
 	got, err := RGB("").parse()
 	assert.NoError(t, err)
-	assert.Equal(t, sRGB{}, got)
+	assert.Equal(t, SRGB{}, got)
 	assert.NoError(t, RGB("").Validate())
 }
 

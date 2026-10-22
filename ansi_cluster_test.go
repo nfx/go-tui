@@ -10,8 +10,8 @@ import (
 )
 
 func TestClusters(t *testing.T) {
-	got := text("ae\u0301\u754c\x1b[0m👍🏽").clusters()
-	assert.Equal(t, clusters{
+	got := Text("ae\u0301\u754c\x1b[0m👍🏽").Clusters()
+	assert.Equal(t, Clusters{
 		{0, 1, 1}, {1, 3, 1}, {3, 4, 2}, {4, 8, 0}, {8, 10, 2},
 	}, got)
 }

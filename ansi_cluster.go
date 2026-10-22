@@ -9,50 +9,50 @@ import (
 
 // cluster is a segment of text, measured in runes and columns.
 type cluster struct {
-	start, end int // rune offsets: [start, end)
-	width      int
+	Start, End int // rune offsets: [start, end)
+	Width      int
 }
 
-// clusters splits t into cursor and wrapping boundaries.
-type clusters []cluster
+// Clusters splits t into cursor and wrapping boundaries.
+type Clusters []cluster
 
-func (t text) clusters() clusters {
-	cells := make(clusters, 0, len(t))
+func (t Text) Clusters() Clusters {
+	cells := make(Clusters, 0, len(t))
 	offset := 0
-	for seg := range t.segments() {
-		runes := utf8.RuneCount(seg.text)
-		cells = append(cells, cluster{start: offset, end: offset + runes, width: seg.width})
+	for seg := range t.Segments() {
+		runes := utf8.RuneCount(seg.Text)
+		cells = append(cells, cluster{Start: offset, End: offset + runes, Width: seg.Width})
 		offset += runes
 	}
 	return cells
 }
 
-// width returns the terminal columns occupied by c.
-func (c clusters) width() int {
+// Width returns the terminal columns occupied by c.
+func (c Clusters) Width() int {
 	w := 0
 	for _, cell := range c {
-		w += cell.width
+		w += cell.Width
 	}
 	return w
 }
 
-// at returns the cluster containing cursor, or len(c) at the end.
-func (c clusters) at(cursor int) int {
+// At returns the cluster containing cursor, or len(c) At the end.
+func (c Clusters) At(cursor int) int {
 	for k, cell := range c {
-		if cursor < cell.end {
+		if cursor < cell.End {
 			return k
 		}
 	}
 	return len(c)
 }
 
-// runeOffset returns the rune offset at cluster k's start.
-func (c clusters) runeOffset(k int) int {
+// RuneOffset returns the rune offset at cluster k's start.
+func (c Clusters) RuneOffset(k int) int {
 	switch {
 	case k < len(c):
-		return c[k].start
+		return c[k].Start
 	case len(c) > 0:
-		return c[len(c)-1].end
+		return c[len(c)-1].End
 	default:
 		return 0
 	}

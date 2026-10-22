@@ -48,7 +48,7 @@ func (d *dropdown) renderChrome() (err error) {
 
 // themedItem caches both item rows and returns projected content for filtering.
 // The row slots get the renderer's focus mark.
-func (d *dropdown) themedItem(i int, item any) (text, error) {
+func (d *dropdown) themedItem(i int, item any) (Text, error) {
 	content, err := d.projectContent(d.slot.value, item)
 	if err != nil {
 		return nil, err
@@ -73,14 +73,14 @@ func (d *dropdown) themedItem(i int, item any) (text, error) {
 }
 
 // themedRow renders one state of an item on a single line.
-func (d *dropdown) themedRow(slot boundSlot, view choiceView) (text, error) {
+func (d *dropdown) themedRow(slot boundSlot, view choiceView) (Text, error) {
 	out, err := slot.render(view)
 	if err != nil {
 		return nil, err
 	}
-	mark := text("  ")
+	mark := Text("  ")
 	if view.Active {
-		mark = append(d.look.style(d.look.roles.accent, text(d.theme.source.Symbols.Focus)), ' ')
+		mark = append(d.look.style(d.look.roles.accent, Text(d.theme.source.Symbols.Focus)), ' ')
 	}
 	return append(mark, out...), nil
 }
@@ -96,7 +96,7 @@ func (d *dropdown) themedAnswer(label string, i int) error {
 	if err != nil {
 		return err
 	}
-	var content text
+	var content Text
 	if i < len(d.content) {
 		content = d.content[i]
 	} else if content, err = d.projectContent(d.slot.value, d.Items[i]); err != nil {
@@ -117,7 +117,7 @@ func (d *dropdown) retain(label, value string) error {
 		return err
 	}
 	out, err := d.slot.answer.render(answerView{Label: label, Value: value, Values: []string{value}, Count: 1})
-	if err != nil || out.width() == 0 {
+	if err != nil || out.Width() == 0 {
 		return err
 	}
 	_, err = d.out.Write(append(out, '\n'))
@@ -146,12 +146,12 @@ func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 		return d.longest, nil // already initialized
 	}
 	d.emit(dropdownInit{Label: d.Label})
-	d.trie = newTrie()
-	d.active = make([]text, len(d.Items))
+	d.trie = NewTrie()
+	d.active = make([]Text, len(d.Items))
 	d.activeWidths = make([]int, len(d.Items))
-	d.inactive = make([]text, len(d.Items))
+	d.inactive = make([]Text, len(d.Items))
 	d.widths = make([]int, len(d.Items))
-	d.content = make([]text, len(d.Items))
+	d.content = make([]Text, len(d.Items))
 	d.search = make([]string, len(d.Items))
 	d.relevant = make([]int, len(d.Items))
 	d.longest = 0
@@ -188,7 +188,7 @@ func (d *dropdown) renderInit(io *termIO) (longest int, err error) {
 
 // renderStates caches the active and inactive rows of item at i and returns
 // the text that filtering matches.
-func (d *dropdown) renderStates(i int, item any) (text, error) {
+func (d *dropdown) renderStates(i int, item any) (Text, error) {
 	return d.themedItem(i, item)
 }
 
@@ -212,13 +212,13 @@ func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
 	rows := make([]frameRow, 0, len(d.displayed)+4)
 	// Inline, the label leads the first row and indents the others, unless
 	// the widest row does not fit after it.
-	var lead, indent text
-	if d.label.width() > 0 {
+	var lead, indent Text
+	if d.label.Width() > 0 {
 		// the renderer owns the spacing after the label
-		lead = append(append(text{}, d.label...), ' ')
+		lead = append(append(Text{}, d.label...), ' ')
 	}
-	if g.inline && lead.width()+d.longest <= g.columns(nil) {
-		indent = text(strings.Repeat(" ", lead.width()))
+	if g.inline && lead.Width()+d.longest <= g.columns(nil) {
+		indent = Text(strings.Repeat(" ", lead.Width()))
 	} else {
 		lead = nil
 		rows = append(rows, frameRow{content: d.label, drop: 1})
@@ -231,7 +231,7 @@ func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
 		if k == 0 {
 			prefix = lead
 		}
-		rows = append(rows, frameRow{content: append(append(text{}, prefix...), row...), guided: true})
+		rows = append(rows, frameRow{content: append(append(Text{}, prefix...), row...), guided: true})
 	}
 	// on a short terminal, the hint with the count goes first, then the label
 	rows = append(rows, frameRow{content: hint, guided: true, drop: 2})
@@ -251,6 +251,6 @@ func (d *dropdown) render(io *termIO, buf *bytes.Buffer) error {
 
 // themedHint renders the key hints, led by the count of the rows below the
 // visible ones, if any.
-func (d *dropdown) themedHint() (text, error) {
+func (d *dropdown) themedHint() (Text, error) {
 	return themedHint(d.hint, d.dropdownKeys(d.theme.source.Symbols), len(d.relevant)-d.offset-len(d.displayed))
 }

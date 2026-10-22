@@ -125,7 +125,7 @@ func TestMultichoiceStateAndGeometry(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, line := range strings.Split(frame.String(), "\n") {
-			if !utf8.ValidString(line) || text(line).width() > width {
+			if !utf8.ValidString(line) || Text(line).Width() > width {
 				t.Fatalf("width %d: %q", width, line)
 			}
 		}

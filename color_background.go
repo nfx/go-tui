@@ -3,12 +3,12 @@
 
 package tui
 
-// background describes terminal appearance; zero means the dark fallback.
-type background struct {
-	// rgb is valid only when measured; otherwise use the variant's reference.
-	rgb sRGB
-	// light selects the variant, using an estimate when unmeasured.
-	light bool
-	// measured distinguishes terminal RGB from palette estimates.
-	measured bool
+// Background describes terminal appearance; zero means the dark fallback.
+type Background struct {
+	// RGB is valid only when measured; otherwise use the variant's reference.
+	RGB SRGB
+	// Light selects the variant, using an estimate when unmeasured.
+	Light bool
+	// Measured distinguishes terminal RGB from palette estimates.
+	Measured bool
 }

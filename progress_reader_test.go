@@ -75,7 +75,7 @@ func TestThemedFileProgressByteMetrics(t *testing.T) {
 		assert.NoError(t, err)
 		// the amount is the last metric to go
 		assert.Equal(t, tc.want, afterTrack(row))
-		assert.Equal(t, tc.width, row.width())
+		assert.Equal(t, tc.width, row.Width())
 	}
 
 	// without a total, the bytes read alone

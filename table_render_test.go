@@ -59,11 +59,11 @@ func TestThemedTableRoles(t *testing.T) {
 	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
 	assert.True(t, len(roles.foreground) > 0)
 	out := buf.String()
-	assert.Contains(t, out, bold+string(roles.foreground)+"NAME"+fgDefault+reset)
-	assert.Contains(t, out, string(roles.foreground)+"alpha"+fgDefault)
-	assert.Contains(t, out, string(roles.foreground)+"333"+fgDefault)
+	assert.Contains(t, out, Bold+string(roles.foreground)+"NAME"+FgDefault+Reset)
+	assert.Contains(t, out, string(roles.foreground)+"alpha"+FgDefault)
+	assert.Contains(t, out, string(roles.foreground)+"333"+FgDefault)
 	// ordinary data is neither an outcome nor a focus
-	for _, role := range []text{roles.accent, roles.success, roles.failure, roles.muted} {
+	for _, role := range []Text{roles.accent, roles.success, roles.failure, roles.muted} {
 		assert.NotContains(t, out, string(role))
 	}
 	assert.Equal(t, "NAME    AMOUNT NOTE   \nalpha        1 first  \n"+
@@ -122,8 +122,8 @@ func TestThemedTableSignedPercent(t *testing.T) {
 	assert.NoError(t, Table(buf, "", data, WithFloat64AsPercentPositiveColored()))
 	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
 	lines := strings.Split(buf.String(), "\n")
-	assert.Contains(t, lines[1], string(roles.success)+"5.87%"+fgDefault)
-	assert.Contains(t, lines[2], string(roles.failure)+"-99%"+fgDefault)
+	assert.Contains(t, lines[1], string(roles.success)+"5.87%"+FgDefault)
+	assert.Contains(t, lines[2], string(roles.failure)+"-99%"+FgDefault)
 	assert.NotContains(t, lines[3], string(roles.success))
 	assert.NotContains(t, lines[3], string(roles.failure))
 	// the fixed ANSI colors are gone
@@ -163,7 +163,7 @@ func TestThemedTableScaleBuckets(t *testing.T) {
 				line, value := lines[i+1], strings.TrimSpace(stripSGR(lines[i+1]))
 				if bucket < 0 {
 					// only the Cell slot's foreground
-					assert.Equal(t, "   "+string(look.roles.foreground)+value+fgDefault+reset+" ", line)
+					assert.Equal(t, "   "+string(look.roles.foreground)+value+FgDefault+Reset+" ", line)
 					continue
 				}
 				if reversed {
@@ -209,11 +209,11 @@ func TestThemedTableMultilineCarriesStyles(t *testing.T) {
 		WithMultilineCells()))
 	// every line closes its style before the next column; continuation
 	// lines reopen it, except the empty one
-	assert.Equal(t, bold+"NOTE"+reset+"  "+bold+"NAME"+reset+"  \n"+
-		underline+"one"+reset+"   x     \n"+
-		underline+"two"+reset+"         \n"+
+	assert.Equal(t, Bold+"NOTE"+Reset+"  "+Bold+"NAME"+Reset+"  \n"+
+		Underline+"one"+Reset+"   x     \n"+
+		Underline+"two"+Reset+"         \n"+
 		"            \n"+
-		underline+"four"+reset+"        \n", buf.String())
+		Underline+"four"+Reset+"        \n", buf.String())
 }
 
 func TestThemedTableStyle(t *testing.T) {
@@ -277,7 +277,7 @@ func TestThemedTableRowTemplateHelpersBindToWriter(t *testing.T) {
 	buf.Reset()
 	assert.NoError(t, Table(buf, tmpl, themedRows[:1]))
 	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), buf, nil).roles
-	assert.Contains(t, buf.String(), underline+"alpha")
+	assert.Contains(t, buf.String(), Underline+"alpha")
 	assert.Contains(t, buf.String(), string(roles.success)+"alpha")
 	assert.Contains(t, buf.String(), "\x1b[38;2;255;0;0malpha")
 }
@@ -333,9 +333,9 @@ func TestThemedTableIterMatchesTable(t *testing.T) {
 	roles := defaultIO.bindTheme(t.Context(), defaultIO.currentTheme(), &bytes.Buffer{}, nil).roles
 	buf := &bytes.Buffer{}
 	assert.NoError(t, TableIter(buf, "", iterate(data[:1])))
-	fg := func(s string) string { return string(roles.foreground) + s + fgDefault }
-	assert.Equal(t, bold+fg("NAME")+reset+"   "+bold+fg("AMOUNT")+reset+" "+bold+fg("NOTE")+reset+"  \n"+
-		fg("n00")+reset+"         "+fg("0")+reset+"       \n", buf.String())
+	fg := func(s string) string { return string(roles.foreground) + s + FgDefault }
+	assert.Equal(t, Bold+fg("NAME")+Reset+"   "+Bold+fg("AMOUNT")+Reset+" "+Bold+fg("NOTE")+Reset+"  \n"+
+		fg("n00")+Reset+"         "+fg("0")+Reset+"       \n", buf.String())
 }
 
 func TestThemedTableIterKeepsOneSnapshot(t *testing.T) {
@@ -416,7 +416,7 @@ func TestThemedTableIterScaleRanksSeenSoFar(t *testing.T) {
 	for i, bucket := range want {
 		line, value := out[i+1], strings.TrimSpace(stripSGR(out[i+1]))
 		if bucket < 0 {
-			assert.Equal(t, "    "+string(look.roles.foreground)+value+fgDefault+reset+" ", line)
+			assert.Equal(t, "    "+string(look.roles.foreground)+value+FgDefault+Reset+" ", line)
 			continue
 		}
 		assert.Contains(t, line, string(scale[bucket])+value)
