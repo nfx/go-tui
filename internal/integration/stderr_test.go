@@ -1,10 +1,11 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package integration
 
 import (
 	"bytes"
+	tui "github.com/nfx/go-tui"
 	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"os"
@@ -23,14 +24,14 @@ func TestStderrReturnsRawWriterWithoutTTY(t *testing.T) {
 	t.Cleanup(func() {
 		term.WriterChecker = prevTTY
 		term.GetSize = prevSize
-		SetDefaultIO(prevIn, prevOut)
+		term.Default.SetIO(prevIn, prevOut)
 	})
 	in := bytes.NewBufferString("in")
 	out := &bytes.Buffer{}
 	term.WriterChecker = func(int) bool { return false }
-	SetDefaultIO(in, out)
+	term.Default.SetIO(in, out)
 
-	assert.Equal(t, out, Stderr())
+	assert.Equal(t, out, tui.Stderr())
 	_, defaultOut := term.DefaultStreams(t.Context())
 	assert.Equal(t, out, defaultOut)
 }
@@ -43,15 +44,15 @@ func TestStderrReturnsCoordinatedWriterOnTTY(t *testing.T) {
 	t.Cleanup(func() {
 		term.WriterChecker = prevTTY
 		term.GetSize = prevSize
-		SetDefaultIO(prevIn, prevOut)
+		term.Default.SetIO(prevIn, prevOut)
 	})
 	in := bytes.NewBufferString("in")
 	out := &terst.MockDescriptor{Writer: &bytes.Buffer{}, FD: 42}
 	term.WriterChecker = func(int) bool { return true }
 	term.GetSize = func(int) (int, int, error) { return 80, 24, nil }
-	SetDefaultIO(in, out)
+	term.Default.SetIO(in, out)
 
-	stderr := Stderr()
+	stderr := tui.Stderr()
 	fdw, ok := stderr.(interface{ Fd() uintptr })
 	assert.True(t, ok)
 	assert.Equal(t, uintptr(42), fdw.Fd())
@@ -71,14 +72,14 @@ func TestStderrReturnsRawWriterOnTTYInCI(t *testing.T) {
 	prevSize := term.GetSize
 	t.Cleanup(func() {
 		term.GetSize = prevSize
-		SetDefaultIO(prevIn, prevOut)
+		term.Default.SetIO(prevIn, prevOut)
 	})
 	terst.WithEnv(t, "CI=true")
 	out := terst.TTYWriter(t)
 	term.GetSize = func(int) (int, int, error) { return 80, 24, nil }
-	SetDefaultIO(bytes.NewBufferString("in"), out)
+	term.Default.SetIO(bytes.NewBufferString("in"), out)
 
-	assert.Equal(t, out, Stderr())
+	assert.Equal(t, out, tui.Stderr())
 	_, defaultOut := term.DefaultStreams(t.Context())
 	assert.Equal(t, out, defaultOut)
 	assert.True(t, term.Default.Arbiter == nil)
@@ -88,7 +89,7 @@ func TestConfirmAndStderrShareDefaultTerminal(t *testing.T) {
 	prevIn := term.Default.Input()
 	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() {
-		SetDefaultIO(prevIn, prevOut)
+		term.Default.SetIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 40, 6)
 	inputR, inputW, err := os.Pipe()
@@ -97,15 +98,15 @@ func TestConfirmAndStderrShareDefaultTerminal(t *testing.T) {
 		assert.NoError(t, inputR.Close())
 		assert.NoError(t, inputW.Close())
 	})
-	SetDefaultIO(&terst.FDByteReader{F: inputR}, cio)
+	term.Default.SetIO(&terst.FDByteReader{F: inputR}, cio)
 
 	result := make(chan bool, 1)
 	go func() {
-		result <- Confirm(t.Context(), "Are you sure?")
+		result <- tui.Confirm(t.Context(), "Are you sure?")
 	}()
 
 	terst.WaitOutputContains(t, stdout.C, "Are you sure?")
-	_, err = Stderr().Write([]byte("INF foo bar=baz\n"))
+	_, err = tui.Stderr().Write([]byte("INF foo bar=baz\n"))
 	assert.NoError(t, err)
 	terst.WaitOutputContains(t, stdout.C, "INF foo bar=baz", "Are you sure?")
 	_, err = inputW.Write([]byte{term.KeyEnter})
@@ -119,18 +120,18 @@ func TestInputAndStderrShareDefaultTerminal(t *testing.T) {
 	prevIn := term.Default.Input()
 	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() {
-		SetDefaultIO(prevIn, prevOut)
+		term.Default.SetIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 60, 8)
 	reader := terst.NewBlockingByteReader(3)
 	t.Cleanup(reader.Close)
 	input := &terst.MockDescriptor{Reader: reader, FD: 0}
-	SetDefaultIO(input, cio)
+	term.Default.SetIO(input, cio)
 
 	result := make(chan string, 1)
 	errs := make(chan error, 1)
 	go func() {
-		value, err := Input(t.Context(), "PROMPT")
+		value, err := tui.Input(t.Context(), "PROMPT")
 		if err != nil {
 			errs <- err
 			return
@@ -139,7 +140,7 @@ func TestInputAndStderrShareDefaultTerminal(t *testing.T) {
 	}()
 
 	terst.WaitOutputContains(t, stdout.C, "PROMPT")
-	_, err := Stderr().Write([]byte("INF background\n"))
+	_, err := tui.Stderr().Write([]byte("INF background\n"))
 	assert.NoError(t, err)
 	logged := terst.WaitOutputContains(t, stdout.C, "PROMPT", "INF background")
 	assert.Equal(t, 1, strings.Count(logged, "PROMPT"))
@@ -160,7 +161,7 @@ func TestStderrWritesUseNativeHistoryWhilePromptActive(t *testing.T) {
 	prevIn := term.Default.Input()
 	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() {
-		SetDefaultIO(prevIn, prevOut)
+		term.Default.SetIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 60, 8)
 	inputR, inputW, err := os.Pipe()
@@ -169,20 +170,20 @@ func TestStderrWritesUseNativeHistoryWhilePromptActive(t *testing.T) {
 		assert.NoError(t, inputR.Close())
 		assert.NoError(t, inputW.Close())
 	})
-	SetDefaultIO(&terst.FDByteReader{F: inputR}, cio)
+	term.Default.SetIO(&terst.FDByteReader{F: inputR}, cio)
 
 	done := make(chan bool, 1)
 	go func() {
-		done <- Confirm(t.Context(), "scrollback")
+		done <- tui.Confirm(t.Context(), "scrollback")
 	}()
 
 	terst.WaitOutputContains(t, stdout.C, "scrollback")
-	_, err = Stderr().Write([]byte("INF first\n"))
+	_, err = tui.Stderr().Write([]byte("INF first\n"))
 	assert.NoError(t, err)
 	first := terst.WaitOutputContains(t, stdout.C, "INF first", "scrollback")
 	assert.Equal(t, 1, strings.Count(first, "INF first"))
 
-	_, err = Stderr().Write([]byte("INF second\n"))
+	_, err = tui.Stderr().Write([]byte("INF second\n"))
 	assert.NoError(t, err)
 	second := terst.WaitOutputContains(t, stdout.C, "INF second", "scrollback")
 	assert.Equal(t, 0, strings.Count(second, "INF first"))
@@ -197,12 +198,12 @@ func TestStderrNormalizesLoneLFWithoutOverlay(t *testing.T) {
 	prevIn := term.Default.Input()
 	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() {
-		SetDefaultIO(prevIn, prevOut)
+		term.Default.SetIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 60, 8)
-	SetDefaultIO(prevIn, cio)
+	term.Default.SetIO(prevIn, cio)
 
-	_, err := Stderr().Write([]byte("one\ntwo\n"))
+	_, err := tui.Stderr().Write([]byte("one\ntwo\n"))
 	assert.NoError(t, err)
 	assert.Equal(t, "one\r\ntwo\r\n", <-stdout.C)
 }
@@ -211,16 +212,16 @@ func TestStderrPreservesCRLFAcrossChunkBoundary(t *testing.T) {
 	prevIn := term.Default.Input()
 	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() {
-		SetDefaultIO(prevIn, prevOut)
+		term.Default.SetIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 60, 8)
-	SetDefaultIO(prevIn, cio)
+	term.Default.SetIO(prevIn, cio)
 
-	_, err := Stderr().Write([]byte("one\r"))
+	_, err := tui.Stderr().Write([]byte("one\r"))
 	assert.NoError(t, err)
 	assert.Equal(t, "one\r", <-stdout.C)
 
-	_, err = Stderr().Write([]byte("\ntwo\n"))
+	_, err = tui.Stderr().Write([]byte("\ntwo\n"))
 	assert.NoError(t, err)
 	assert.Equal(t, "\ntwo\r\n", <-stdout.C)
 }

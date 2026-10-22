@@ -1,12 +1,13 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package integration
 
 import (
 	"bytes"
 	"context"
 	"errors"
+	tui "github.com/nfx/go-tui"
 	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"os"
@@ -21,18 +22,18 @@ func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
 	prevIn := term.Default.Input()
 	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() {
-		SetDefaultIO(prevIn, prevOut)
+		term.Default.SetIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 60, 8)
 	reader := terst.NewBlockingByteReader(8)
 	t.Cleanup(reader.Close)
 	input := &terst.MockDescriptor{Reader: reader, FD: 0}
-	SetDefaultIO(input, cio)
+	term.Default.SetIO(input, cio)
 
 	result := make(chan string, 1)
 	errs := make(chan error, 1)
 	go func() {
-		value, err := Input(t.Context(), "PROMPT")
+		value, err := tui.Input(t.Context(), "PROMPT")
 		if err != nil {
 			errs <- err
 			return
@@ -67,14 +68,14 @@ func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
 	t.Cleanup(func() {
 		term.WriterChecker = prevTTY
 		term.GetSize = prevSize
-		SetDefaultIO(prevIn, prevOut)
+		term.Default.SetIO(prevIn, prevOut)
 	})
 	in := bytes.NewBufferString("in")
 	out := &terst.MockDescriptor{Writer: &bytes.Buffer{}, FD: 7}
 	term.WriterChecker = func(int) bool { return true }
 	term.GetSize = func(int) (int, int, error) { return 80, 24, nil }
-	SetDefaultIO(in, out)
-	_ = Stderr()
+	term.Default.SetIO(in, out)
+	_ = tui.Stderr()
 
 	_, defaultOut := term.DefaultStreams(t.Context())
 	cio, ok := defaultOut.(*term.ChanIO)
@@ -86,18 +87,18 @@ func TestSetDefaultIO(t *testing.T) {
 	prevIn := term.Default.Input()
 	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() {
-		SetDefaultIO(prevIn, prevOut)
+		term.Default.SetIO(prevIn, prevOut)
 	})
 	in := bytes.NewBufferString("in")
 	out := &bytes.Buffer{}
-	SetDefaultIO(in, out)
+	tui.SetDefaultIO(in, out) //nolint:staticcheck // tests the deprecated API
 
 	assert.Equal(t, in, term.Default.Input())
 	assert.Equal(t, out, term.Default.RawOutput())
 }
 
 func TestSpinnersCloseNil(t *testing.T) {
-	var s *Spinners
+	var s *tui.Spinners
 	s.Close()
 }
 
@@ -105,18 +106,18 @@ func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
 	prevIn := term.Default.Input()
 	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() {
-		SetDefaultIO(prevIn, prevOut)
+		term.Default.SetIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 60, 8)
 	reader := terst.NewBlockingByteReader(32)
 	t.Cleanup(reader.Close)
 	input := &terst.MockDescriptor{Reader: reader, FD: 0}
-	SetDefaultIO(input, cio)
+	term.Default.SetIO(input, cio)
 
 	result := make(chan string, 1)
 	errs := make(chan error, 1)
 	go func() {
-		value, err := Input(t.Context(), "PROMPT", WithDefault("apple"))
+		value, err := tui.Input(t.Context(), "PROMPT", tui.WithDefault("apple"))
 		if err != nil {
 			errs <- err
 			return
@@ -131,7 +132,7 @@ func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
 	reader.SendByte(0x1b)
 	reader.SendByte(0x5b)
 	reader.SendByte(0x44)
-	_, err := Stderr().Write([]byte("INF background\n"))
+	_, err := tui.Stderr().Write([]byte("INF background\n"))
 	assert.NoError(t, err)
 	terst.WaitOutputContains(t, stdout.C, "INF background", "PROMPT", "apple")
 	reader.SendByte(0x1b)
@@ -163,7 +164,7 @@ func TestNewIOWithTTY(t *testing.T) {
 	})
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio, err := NewIO(ctx)
+	cio, err := tui.NewIO(ctx) //nolint:staticcheck // tests the deprecated API
 	if err != nil {
 		t.Fatalf("NewIO failed: %v", err)
 	}
@@ -176,7 +177,7 @@ func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
 	prevIn := term.Default.Input()
 	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() {
-		SetDefaultIO(prevIn, prevOut)
+		term.Default.SetIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 40, 6)
 	input := &terst.MockDescriptor{
@@ -187,12 +188,12 @@ func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
 		}},
 		FD: 0,
 	}
-	SetDefaultIO(input, cio)
+	term.Default.SetIO(input, cio)
 
 	result := make(chan string, 1)
 	errs := make(chan error, 1)
 	go func() {
-		value, err := Input(t.Context(), "Label")
+		value, err := tui.Input(t.Context(), "Label")
 		if err != nil {
 			errs <- err
 			return
@@ -216,10 +217,10 @@ func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
 func TestDefaultStreamsArePairedUnderSetDefaultIO(t *testing.T) {
 	prevIn := term.Default.Input()
 	prevOut := term.Default.RawOutput()
-	t.Cleanup(func() { SetDefaultIO(prevIn, prevOut) })
+	t.Cleanup(func() { term.Default.SetIO(prevIn, prevOut) })
 	in1, out1 := bytes.NewBufferString("1"), &bytes.Buffer{}
 	in2, out2 := bytes.NewBufferString("2"), &bytes.Buffer{}
-	SetDefaultIO(in1, out1)
+	term.Default.SetIO(in1, out1)
 
 	stop := make(chan struct{})
 	swapped := make(chan struct{})
@@ -231,8 +232,8 @@ func TestDefaultStreamsArePairedUnderSetDefaultIO(t *testing.T) {
 				return
 			default:
 			}
-			SetDefaultIO(in2, out2)
-			SetDefaultIO(in1, out1)
+			term.Default.SetIO(in2, out2)
+			term.Default.SetIO(in1, out1)
 		}
 	}()
 	for range 1000 {
@@ -253,11 +254,11 @@ func TestNewIOWithStubError(t *testing.T) {
 	t.Cleanup(func() { term.GetSize = orig })
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	_, err := NewIO(ctx)
+	_, err := tui.NewIO(ctx) //nolint:staticcheck // tests the deprecated API
 	if err == nil {
 		t.Fatalf("expected error")
 	}
-	if !errors.Is(err, ErrNoTTY) {
+	if !errors.Is(err, tui.ErrNoTTY) {
 		t.Fatalf("expected ErrNoTTY, got %v", err)
 	}
 }
@@ -268,7 +269,7 @@ func TestNewIOWithStubSize(t *testing.T) {
 	t.Cleanup(func() { term.GetSize = orig })
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	cio, err := NewIO(ctx)
+	cio, err := tui.NewIO(ctx) //nolint:staticcheck // tests the deprecated API
 	if err != nil {
 		t.Fatalf("NewIO failed: %v", err)
 	}
@@ -281,7 +282,7 @@ func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {
 	prevIn := term.Default.Input()
 	prevOut := term.Default.RawOutput()
 	t.Cleanup(func() {
-		SetDefaultIO(prevIn, prevOut)
+		term.Default.SetIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 40, 6)
 	reader := terst.NewBlockingByteReader(2)
@@ -290,11 +291,11 @@ func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {
 		Reader: reader,
 		FD:     0,
 	}
-	SetDefaultIO(input, cio)
+	term.Default.SetIO(input, cio)
 
 	result := make(chan bool, 1)
 	go func() {
-		result <- Confirm(t.Context(), "Are you sure?")
+		result <- tui.Confirm(t.Context(), "Are you sure?")
 	}()
 
 	initial := terst.WaitOutputContains(t, stdout.C, "Are you sure?", "Yes", "No")
@@ -308,7 +309,7 @@ func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {
 func TestNewIOReturnsOrErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	_, err := NewIO(ctx)
+	_, err := tui.NewIO(ctx) //nolint:staticcheck // tests the deprecated API
 	if err != nil {
 		return
 	}

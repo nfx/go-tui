@@ -352,3 +352,22 @@ func TestChanIOReleasedViewportKeepsLastFrameInScrollback(t *testing.T) {
 	assert.True(t, strings.HasSuffix(out, "\n"))
 	assert.Equal(t, 0, managedViewports(cio))
 }
+
+// failingWriter fails every write with err.
+type failingWriter struct{ err error }
+
+func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
+
+func TestChanIOFlushAndCloseReportWriteFailure(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cio := NewUnstartedIO(ctx, 80, 24, 0)
+	go cio.HandleViewports(ctx)
+	go cio.ForwardTo(ctx, failingWriter{io.ErrShortWrite})
+	tio := &Terminal{Arbiter: cio, Cancel: cancel}
+
+	_, err := cio.Write([]byte("lost\n"))
+	assert.NoError(t, err) // queueing is asynchronous
+	assert.ErrorIs(t, cio.Flush(), io.ErrShortWrite)
+	assert.ErrorIs(t, tio.Flush(), io.ErrShortWrite)
+	assert.ErrorIs(t, tio.Close(), io.ErrShortWrite)
+}

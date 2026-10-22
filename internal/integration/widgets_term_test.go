@@ -1,12 +1,13 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package integration
 
 import (
 	"bytes"
 	"context"
 	"errors"
+	tui "github.com/nfx/go-tui"
 	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"os"
@@ -19,8 +20,8 @@ import (
 
 func TestInput_ScriptedReaderAndWriter(t *testing.T) {
 	var out bytes.Buffer
-	value, err := Input(context.Background(), "Name",
-		WithInput(strings.NewReader("alice\r")), WithOutput(&out))
+	value, err := tui.Input(context.Background(), "Name",
+		tui.WithInput(strings.NewReader("alice\r")), tui.WithOutput(&out))
 	assert.NoError(t, err)
 	assert.Equal(t, "alice", value)
 	assert.Contains(t, out.String(), "Name")
@@ -51,7 +52,12 @@ func TestSharedInputState_CancelledClosedReaderReleased(t *testing.T) {
 }
 
 func TestInput_ScriptedInputDefaultOutput(t *testing.T) {
-	value, err := Input(context.Background(), "Name", WithInput(strings.NewReader("bob\r")), WithOutput(io.Discard))
+	value, err := tui.Input(
+		context.Background(),
+		"Name",
+		tui.WithInput(strings.NewReader("bob\r")),
+		tui.WithOutput(io.Discard),
+	)
 	assert.NoError(t, err)
 	assert.Equal(t, "bob", value)
 }
@@ -59,44 +65,44 @@ func TestInput_ScriptedInputDefaultOutput(t *testing.T) {
 func TestDropdown_ScriptedReaderAndWriter(t *testing.T) {
 	var out bytes.Buffer
 	// Down, Enter
-	value, err := Dropdown(context.Background(), "Pick", []string{"a", "b", "c"},
-		WithInput(strings.NewReader("\x1b[B\r")), WithOutput(&out))
+	value, err := tui.Dropdown(context.Background(), "Pick", []string{"a", "b", "c"},
+		tui.WithInput(strings.NewReader("\x1b[B\r")), tui.WithOutput(&out))
 	assert.NoError(t, err)
 	assert.Equal(t, "b", value)
 }
 
 func TestConfirm_ScriptedReaderAndWriter(t *testing.T) {
 	var out bytes.Buffer
-	ok := Confirm(context.Background(), "Proceed",
-		WithInput(strings.NewReader("\r")), WithOutput(&out))
+	ok := tui.Confirm(context.Background(), "Proceed",
+		tui.WithInput(strings.NewReader("\r")), tui.WithOutput(&out))
 	assert.True(t, ok)
 }
 
 func TestRoutingWrapperInputBufferOutput(t *testing.T) {
 	terst.StrictOutput(t)
 	var out bytes.Buffer
-	got, err := Input(t.Context(), "Name",
-		WithInput(strings.NewReader("typed\r")), WithOutput(&out), WithDefault("dflt"))
+	got, err := tui.Input(t.Context(), "Name",
+		tui.WithInput(strings.NewReader("typed\r")), tui.WithOutput(&out), tui.WithDefault("dflt"))
 	assert.NoError(t, err)
 	assert.Equal(t, "dflt", got)
 	assert.Equal(t, "", out.String())
 
-	_, err = Input(t.Context(), "Name", WithInput(strings.NewReader("typed\r")), WithOutput(&out))
-	assert.ErrorIs(t, err, ErrNoTTY)
+	_, err = tui.Input(t.Context(), "Name", tui.WithInput(strings.NewReader("typed\r")), tui.WithOutput(&out))
+	assert.ErrorIs(t, err, tui.ErrNoTTY)
 
 	f, ferr := os.CreateTemp(t.TempDir(), "out")
 	assert.NoError(t, ferr)
 	defer f.Close() //nolint:errcheck
-	_, err = Dropdown(t.Context(), "Pick", []string{"a"}, WithOutput(f), WithInput(f))
-	assert.ErrorIs(t, err, ErrNoTTY)
+	_, err = tui.Dropdown(t.Context(), "Pick", []string{"a"}, tui.WithOutput(f), tui.WithInput(f))
+	assert.ErrorIs(t, err, tui.ErrNoTTY)
 }
 
 func TestInteractiveStillWorksOnManagedOutput(t *testing.T) {
 	// production classification: a managed terminal with scripted input
 	terst.StrictOutput(t)
 	cio := terst.StartChanIO(t.Context(), 80, 24)
-	got, err := Input(t.Context(), "Name", WithInput(strings.NewReader("bob\r")), WithOutput(cio))
-	if errors.Is(err, ErrNoTTY) {
+	got, err := tui.Input(t.Context(), "Name", tui.WithInput(strings.NewReader("bob\r")), tui.WithOutput(cio))
+	if errors.Is(err, tui.ErrNoTTY) {
 		t.Fatal("managed terminal must stay interactive")
 	}
 	_ = got

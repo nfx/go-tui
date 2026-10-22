@@ -1,11 +1,12 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package tui
+package integration
 
 import (
 	"errors"
 	"fmt"
+	tui "github.com/nfx/go-tui"
 	"github.com/nfx/go-tui/internal/color"
 	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/internal/term"
@@ -69,7 +70,7 @@ func TestConcurrentInstall(t *testing.T) {
 
 func TestWithFnRegistersForFutureOperations(t *testing.T) {
 	before := terst.KeepTheme(t)
-	WithFn("shout", func(s string) string { return strings.ToUpper(s) + "!" })
+	tui.WithFn("shout", func(s string) string { return strings.ToUpper(s) + "!" })
 
 	assert.Equal(t, "HI!", execute(t, installedFuncs(), `{{ shout "hi" }}`))
 	_, ok := before.Funcs(color.ProfilePlain, render.Roles{})["shout"]
@@ -77,13 +78,13 @@ func TestWithFnRegistersForFutureOperations(t *testing.T) {
 	_, ok = term.Default.CurrentTheme().Editable().Funcs["shout"]
 	assert.True(t, ok)
 
-	WithFn("shout", func(s string) string { return s + "?" })
+	tui.WithFn("shout", func(s string) string { return s + "?" })
 	assert.Equal(t, "hi?", execute(t, installedFuncs(), `{{ shout "hi" }}`))
 }
 
 func TestWithFnReachesWidgetTemplates(t *testing.T) {
 	terst.KeepTheme(t)
-	WithFn("shout", strings.ToUpper)
+	tui.WithFn("shout", strings.ToUpper)
 	funcs := installedFuncs()
 	assert.Equal(t, "A", execute(t, funcs, `{{ shout "a" }}`))
 	assert.Equal(t, "x", execute(t, funcs, `{{ label "x" }}`))
@@ -122,7 +123,7 @@ func TestWithFnPanicsAndKeepsInstalled(t *testing.T) {
 				assert.Contains(t, err.Error(), "tui.WithFn: theme.Funcs."+name+":")
 				assert.True(t, term.Default.CurrentTheme() == installed)
 			}()
-			WithFn(name, fn)
+			tui.WithFn(name, fn)
 		})
 	}
 }
@@ -130,7 +131,7 @@ func TestWithFnPanicsAndKeepsInstalled(t *testing.T) {
 func TestWithFnAcceptsErrorResult(t *testing.T) {
 	terst.KeepTheme(t)
 	boom := errors.New("boom")
-	WithFn("fails", func() (string, error) { return "", boom })
+	tui.WithFn("fails", func() (string, error) { return "", boom })
 	tmpl, err := template.New("t").Funcs(installedFuncs()).Parse(`{{ fails }}`)
 	assert.NoError(t, err)
 	assert.ErrorIs(t, tmpl.Execute(&strings.Builder{}, nil), boom)
@@ -140,7 +141,7 @@ func TestConcurrentWithFnLosesNothing(t *testing.T) {
 	terst.KeepTheme(t)
 	var wg sync.WaitGroup
 	for i := range 16 {
-		wg.Go(func() { WithFn(fmt.Sprintf("fn%d", i), strings.ToUpper) })
+		wg.Go(func() { tui.WithFn(fmt.Sprintf("fn%d", i), strings.ToUpper) })
 	}
 	wg.Wait()
 	funcs := term.Default.CurrentTheme().Editable().Funcs
@@ -152,7 +153,7 @@ func TestConcurrentWithFnLosesNothing(t *testing.T) {
 
 func TestInstallReplacesFuncs(t *testing.T) {
 	terst.KeepTheme(t)
-	WithFn("forgotten", strings.ToUpper)
+	tui.WithFn("forgotten", strings.ToUpper)
 	th := theme.New()
 	th.Funcs = template.FuncMap{"kept": strings.ToLower}
 	assert.NoError(t, term.Default.InstallTheme(th))
@@ -164,8 +165,8 @@ func TestInstallReplacesFuncs(t *testing.T) {
 
 func TestSetDefaultThemePublishesAndKeepsPreviousOnError(t *testing.T) {
 	terst.KeepTheme(t)
-	WithFn("shout", strings.ToUpper)
-	th := DefaultTheme()
+	tui.WithFn("shout", strings.ToUpper)
+	th := tui.DefaultTheme()
 	// unset colors stay unset, so they keep adapting
 	assert.Equal(t, theme.RGB(""), th.Palette.Dark.Foreground)
 	_, ok := th.Funcs["shout"]
@@ -173,24 +174,24 @@ func TestSetDefaultThemePublishesAndKeepsPreviousOnError(t *testing.T) {
 
 	th.Palette.Accent = "#0AD"
 	th.Inline = true
-	assert.NoError(t, SetDefaultTheme(th))
+	assert.NoError(t, tui.SetDefaultTheme(th))
 	th.Palette.Accent = "#FF0000" // later edits do not reach the installed copy
-	installed := DefaultTheme()
+	installed := tui.DefaultTheme()
 	assert.Equal(t, theme.RGB("#00AADD"), installed.Palette.Accent)
 	assert.True(t, installed.Inline)
 
-	bad := DefaultTheme()
+	bad := tui.DefaultTheme()
 	bad.Palette.Error = "red"
-	err := SetDefaultTheme(bad)
+	err := tui.SetDefaultTheme(bad)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Error")
-	assert.Equal(t, theme.RGB("#00AADD"), DefaultTheme().Palette.Accent)
+	assert.Equal(t, theme.RGB("#00AADD"), tui.DefaultTheme().Palette.Accent)
 }
 
 func TestRemovedColorNamesFailWithTemplatePath(t *testing.T) {
 	th := theme.New()
 	th.Templates.Prompt.Label = `{{ red .Label }}`
-	err := SetDefaultTheme(th)
+	err := tui.SetDefaultTheme(th)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "theme.Templates.Prompt.Label")
 	assert.Contains(t, err.Error(), `function "red" not defined`)
@@ -224,4 +225,19 @@ func TestSpinnerFramesAreCopied(t *testing.T) {
 	theme.New().Symbols.Spinner[0] = "?"
 	assert.Equal(t, "▘", theme.New().Symbols.Spinner[0])
 	assert.Equal(t, "▘", theme.New().Symbols.Spinner[0])
+}
+
+// installedFuncs are the helpers of the installed theme, for a plain destination.
+func installedFuncs() template.FuncMap {
+	return term.Default.CurrentTheme().Funcs(color.ProfilePlain, render.Roles{})
+}
+
+// execute renders src with funcs and fails the test on any error.
+func execute(t *testing.T, funcs template.FuncMap, src string) string {
+	t.Helper()
+	tmpl, err := template.New("t").Funcs(funcs).Parse(src)
+	assert.NoError(t, err)
+	var b strings.Builder
+	assert.NoError(t, tmpl.Execute(&b, nil))
+	return b.String()
 }
