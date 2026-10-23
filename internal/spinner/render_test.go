@@ -22,7 +22,7 @@ import (
 )
 
 func TestThemedSpinnerStates(t *testing.T) {
-	s, frames, tick, restored := themedSpinners(t, terst.ASCIITheme(false), 40)
+	s, frames, tick, restored := themedSpinners(t, terst.ASCIITheme(), 40)
 	build, err := s.Add(t.Context(), WithPrefixf("build"), WithKeep())
 	assert.NoError(t, err)
 	lint, err := s.Add(t.Context(), WithPrefixf("lint"))
@@ -33,7 +33,7 @@ func TestThemedSpinnerStates(t *testing.T) {
 	lint.Update("checking")
 	docs.Update("writing")
 	tick()
-	assert.Equal(t, "\r- build: compiling\n\r\r\\ lint: checking\n\r\r| writing\n\r", <-frames)
+	assert.Equal(t, "\r- build: compiling\n\r\r\\ lint: checking\n\r\r| writing\n\r", frames.Next())
 
 	// kept after Close is stopped, not a success; failed stays; the rest goes
 	assert.NoError(t, build.Close())
@@ -41,10 +41,10 @@ func TestThemedSpinnerStates(t *testing.T) {
 	assert.NoError(t, docs.Close())
 	tick()
 	rows := "\r- build: compiling\n\r\r! lint: 3 problems\n\r"
-	assert.Equal(t, "\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"+rows, <-frames)
+	assert.Equal(t, "\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"+rows, frames.Next())
 	// ended spinners no longer animate
 	tick()
-	assert.Equal(t, "\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r"+rows, <-frames)
+	assert.Equal(t, "\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r"+rows, frames.Next())
 
 	go s.Close()
 	assert.Equal(t, "\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r", untilStopped(t, s, frames))
@@ -52,7 +52,7 @@ func TestThemedSpinnerStates(t *testing.T) {
 }
 
 func TestThemedSpinnerFramesAndGroupTheme(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Symbols.Spinner = []string{"a", "b"}
 	s, frames, tick, _ := themedSpinners(t, th, 40)
 	first, err := s.Add(t.Context())
@@ -60,7 +60,7 @@ func TestThemedSpinnerFramesAndGroupTheme(t *testing.T) {
 	first.Update("theme")
 
 	// a theme installed later reaches neither the group nor its later spinners
-	later := terst.ASCIITheme(false)
+	later := terst.ASCIITheme()
 	later.Symbols.Spinner = []string{"x"}
 	later.Spinner.Running = `changed`
 	assert.NoError(t, term.Default.InstallTheme(later))
@@ -68,11 +68,11 @@ func TestThemedSpinnerFramesAndGroupTheme(t *testing.T) {
 	assert.NoError(t, err)
 	added.Update("later")
 	tick()
-	assert.Equal(t, "\ra theme\n\r\rb later\n\r", <-frames)
+	assert.Equal(t, "\ra theme\n\r\rb later\n\r", frames.Next())
 }
 
 func TestThemedSpinnerSlotsAndView(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Spinner.Running = `{{ .State }} {{ .Frame }} {{ .Prefix }}={{ .Message }}`
 	th.Spinner.Failed = `{{ .State }} {{ .Frame }} {{ .Message }}`
 	th.Symbols.Spinner = []string{"."}
@@ -81,25 +81,25 @@ func TestThemedSpinnerSlotsAndView(t *testing.T) {
 	assert.NoError(t, err)
 	sp.Update("line\none\ttab\x1b[2K")
 	tick()
-	assert.Equal(t, "\rrunning . p=line one tab\n\r", <-frames)
+	assert.Equal(t, "\rrunning . p=line one tab\n\r", frames.Next())
 	sp.Fail(errors.New("bad"))
 	tick()
 	// the failed row shows the frame it stopped at
-	assert.Equal(t, "\x1b[1A\r\x1b[K\rfailed . bad\n\r", <-frames)
+	assert.Equal(t, "\x1b[1A\r\x1b[K\rfailed . bad\n\r", frames.Next())
 }
 
 func TestThemedSpinnerClipsBeforeLastColumn(t *testing.T) {
-	s, frames, tick, _ := themedSpinners(t, terst.ASCIITheme(false), 10)
+	s, frames, tick, _ := themedSpinners(t, terst.ASCIITheme(), 10)
 	sp, err := s.Add(t.Context())
 	assert.NoError(t, err)
 	sp.Update("a long message")
 	tick()
-	assert.Equal(t, "\r- a long…\n\r", <-frames)
+	assert.Equal(t, "\r- a long…\n\r", frames.Next())
 }
 
 func TestThemedSpinnerRoles(t *testing.T) {
 	terst.WithEnv(t, "FORCE_COLOR=3")
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Light = true
 	th.Symbols.Spinner = []string{"*"}
 	s, frames, tick, _ := themedSpinners(t, th, 40)
@@ -113,7 +113,7 @@ func TestThemedSpinnerRoles(t *testing.T) {
 	assert.NoError(t, err)
 	failed.Fail(errors.New("no"))
 	tick()
-	out := <-frames
+	out := frames.Next()
 	roles := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), s.Out, nil).Roles
 	assert.True(t, len(roles.Accent) > 0 && len(roles.Muted) > 0 && len(roles.Failure) > 0)
 	assert.Contains(t, out, string(roles.Accent)+"*")
@@ -124,7 +124,7 @@ func TestThemedSpinnerRoles(t *testing.T) {
 }
 
 func TestThemedSpinnerRenderErrorEndsGroup(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
 	th.Spinner.Running = `{{ if eq .Message "bad" }}{{ boom }}{{ end }}{{ .Message }}`
 	s, frames, tick, restored := themedSpinners(t, th, 40)
@@ -132,7 +132,7 @@ func TestThemedSpinnerRenderErrorEndsGroup(t *testing.T) {
 	assert.NoError(t, err)
 	sp.Update("ok")
 	tick()
-	assert.Equal(t, "\rok\n\r", <-frames)
+	assert.Equal(t, "\rok\n\r", frames.Next())
 
 	sp.Update("bad")
 	tick()
@@ -150,7 +150,7 @@ func TestThemedSpinnerRenderErrorEndsGroup(t *testing.T) {
 func TestThemedSpinnerWriteErrorEndsGroup(t *testing.T) {
 	gone := errors.New("terminal gone")
 	var released atomic.Bool
-	s, frames, tick, _ := themedSpinners(t, terst.ASCIITheme(false), 40, option.OpT(func(s *Spinners) error {
+	s, frames, tick, _ := themedSpinners(t, terst.ASCIITheme(), 40, option.OpT(func(s *Spinners) error {
 		s.makeTermIO = func(in io.Reader, _ io.Writer) (*term.IO, error) {
 			return &term.IO{
 				In:     in,
@@ -179,16 +179,12 @@ func TestThemedSpinnerInterval(t *testing.T) {
 		s.ticks = s.ticker.C
 		return nil
 	})
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Spinner.Interval = time.Millisecond
 	s, frames, _, _ := themedSpinners(t, th, 40, realTicks)
 	_, err := s.Add(t.Context())
 	assert.NoError(t, err)
-	select {
-	case <-frames:
-	case <-time.After(time.Second):
-		t.Fatal("no frame at the theme interval")
-	}
+	frames.Next() // a frame at the theme interval
 	go s.Close()
 	untilStopped(t, s, frames)
 
@@ -196,15 +192,12 @@ func TestThemedSpinnerInterval(t *testing.T) {
 	s, frames, _, _ = themedSpinners(t, th, 40, realTicks)
 	_, err = s.Add(t.Context())
 	assert.NoError(t, err)
-	select {
-	case out := <-frames:
-		t.Fatalf("frame before the theme interval: %q", out)
-	case <-time.After(300 * time.Millisecond): // three legacy intervals
-	}
+	time.Sleep(300 * time.Millisecond) // three legacy intervals
+	assert.Equal(t, "", frames.Unread())
 }
 
 func TestThemedSpinnerLogsWithoutTerminal(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
 	th.Spinner.Running = `{{ boom }}`
 	th.Spinner.Failed = `{{ boom }}`

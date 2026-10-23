@@ -120,7 +120,7 @@ func TestThemedFileProgressHint(t *testing.T) {
 		{20, amount},
 		{13, ""},
 	} {
-		rows, err := themedBar(t, terst.ASCIITheme(false), halfFile(now)).rows(tc.width, 0, now)
+		rows, err := themedBar(t, terst.ASCIITheme(), halfFile(now)).rows(tc.width, 0, now)
 		assert.NoError(t, err)
 		// the bar keeps its geometry, whatever the hint shows
 		assert.Equal(t, "build  50%  ", rows[0][:12].String())
@@ -146,7 +146,7 @@ func TestThemedFileProgressHint(t *testing.T) {
 		state := halfFile(now)
 		state.showEstimate, state.showElapsed = false, false
 		tc.state(&state)
-		rows, err := themedBar(t, terst.ASCIITheme(false), state).rows(80, 0, now)
+		rows, err := themedBar(t, terst.ASCIITheme(), state).rows(80, 0, now)
 		assert.NoError(t, err)
 		assert.Equal(t, tc.want, rows[1].String())
 	}
@@ -154,14 +154,14 @@ func TestThemedFileProgressHint(t *testing.T) {
 
 func TestThemedFileProgressFinalEOF(t *testing.T) {
 	src := &scriptedFile{size: 4 << 20, reads: []fileRead{{1 << 20, nil}, {3 << 20, io.EOF}}}
-	r, ft := themedFile(t, terst.ASCIITheme(false), src)
+	r, ft := themedFile(t, terst.ASCIITheme(), src)
 	buf := make([]byte, 4<<20)
 	n, err := r.Read(buf)
 	assert.Equal(t, 1<<20, n)
 	assert.NoError(t, err)
 	ft.tick(time.Second)
 	assert.Equal(t, frameOf("build  25%  "+strings.Repeat("=", 11)+">"+strings.Repeat("-", 35),
-		"1.0 / 4.0 MiB | 1.0 MiB/s | 3s left"), <-ft.frames)
+		"1.0 / 4.0 MiB | 1.0 MiB/s | 3s left"), ft.frames.Next())
 	// the last bytes come with EOF, exactly as read
 	n, err = r.Read(buf)
 	assert.Equal(t, 3<<20, n)
@@ -176,7 +176,7 @@ func TestThemedFileProgressFinalEOF(t *testing.T) {
 
 func TestThemedFileProgressEarlyEOF(t *testing.T) {
 	src := &scriptedFile{size: 100, reads: []fileRead{{30, io.EOF}}}
-	r, ft := themedFile(t, terst.ASCIITheme(false), src)
+	r, ft := themedFile(t, terst.ASCIITheme(), src)
 	n, err := r.Read(make([]byte, 100))
 	assert.Equal(t, 30, n)
 	assert.ErrorIs(t, err, io.EOF)
@@ -190,7 +190,7 @@ func TestThemedFileProgressEarlyEOF(t *testing.T) {
 func TestThemedFileProgressReadError(t *testing.T) {
 	broken := errors.New("broken")
 	src := &scriptedFile{size: 100, reads: []fileRead{{30, nil}, {10, broken}}}
-	r, ft := themedFile(t, terst.ASCIITheme(false), src)
+	r, ft := themedFile(t, terst.ASCIITheme(), src)
 	buf := make([]byte, 100)
 	_, err := r.Read(buf)
 	assert.NoError(t, err)
@@ -201,7 +201,7 @@ func TestThemedFileProgressReadError(t *testing.T) {
 	ft.tick(time.Second)
 	// the partial bytes count; the error is the caller's to report
 	assert.Equal(t, frameOf("build  40%  "+strings.Repeat("=", 18)+">"+strings.Repeat("-", 28),
-		"40 / 100 B | 40 B/s | 1s left"), <-ft.frames)
+		"40 / 100 B | 40 B/s | 1s left"), ft.frames.Next())
 	closed := make(chan error)
 	go func() { closed <- r.Close() }()
 	assert.Equal(t, erased(t, 2), untilProgressStopped(t, r.p, ft.frames))
@@ -212,10 +212,10 @@ func TestThemedFileProgressReadError(t *testing.T) {
 
 func TestThemedFileProgressZeroSize(t *testing.T) {
 	src := &scriptedFile{size: 0}
-	r, ft := themedFile(t, terst.ASCIITheme(false), src)
+	r, ft := themedFile(t, terst.ASCIITheme(), src)
 	ft.tick(time.Second)
 	// an empty file has no completion to show
-	assert.Equal(t, frameOf("build  ?    "+strings.Repeat("-", 47), "0 B | 0 B/s"), <-ft.frames)
+	assert.Equal(t, frameOf("build  ?    "+strings.Repeat("-", 47), "0 B | 0 B/s"), ft.frames.Next())
 	n, err := r.Read(make([]byte, 8))
 	assert.Equal(t, 0, n)
 	assert.ErrorIs(t, err, io.EOF)

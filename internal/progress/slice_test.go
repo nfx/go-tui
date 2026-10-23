@@ -4,10 +4,8 @@
 package progress
 
 import (
-	"context"
 	"errors"
 	"io"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"text/template"
@@ -23,19 +21,11 @@ import (
 )
 
 func TestNewSliceProgressBar(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-
-	cio := &term.ChanIO{
-		Ctx: ctx,
-		In:  make(chan string),
-		Out: make(chan string, 2),
-	}
+	terst.UseFrames(t)
 	ticks := make(chan time.Time, 1)
 	var seen *Progressbar
 
 	items := []int{1, 2, 3}
-	terst.UseIO(t, cio, cio)
 	seq := NewSliceProgressBar(t.Context(), "items", items,
 		option.OpT(func(pb *Progressbar) error {
 			seen = pb
@@ -44,15 +34,7 @@ func TestNewSliceProgressBar(t *testing.T) {
 			pb.increments = make(chan int64, 8)
 			pb.now = func() time.Time { return time.Now() }
 			pb.redrawAt = pb.now()
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-				return &term.IO{
-					In:      in,
-					Out:     out,
-					Width:   30,
-					Height:  1,
-					Restore: func() error { return nil },
-				}, nil
-			}
+			pb.makeTermIO = terst.FixedTermIO(30, 1)
 			return nil
 		}),
 	)
@@ -113,8 +95,8 @@ func TestNewSliceProgressBarReturnsError(t *testing.T) {
 }
 
 func TestThemedSliceProgress(t *testing.T) {
-	terst.UseTheme(t, terst.ASCIITheme(false))
-	frames := make(terst.FrameWriter, 16)
+	terst.UseASCII(t)
+	frames := terst.NewOutput(t)
 	ticks := make(chan time.Time)
 	var clock atomic.Int64
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
@@ -135,17 +117,12 @@ func TestThemedSliceProgress(t *testing.T) {
 			clock.Store(int64(time.Second))
 			ticks <- time.Time{}
 			// two items done; too few for a rate, so no estimate
-			assert.Equal(t, frameOf("items  50%  ========>--------", "2 / 4 items | 0.00 items/s"), <-frames)
+			assert.Equal(t, frameOf("items  50%  ========>--------", "2 / 4 items | 0.00 items/s"), frames.Next())
 		}
 	}
 	assert.Equal(t, items, got)
 	// the iterator closed the bar, which erased its rows
-	close(frames)
-	var rest strings.Builder
-	for f := range frames {
-		rest.WriteString(f)
-	}
-	assert.Equal(t, erased(t, 2), rest.String())
+	assert.Equal(t, erased(t, 2), frames.Unread())
 }
 
 func TestThemedSliceProgressReturnsRenderError(t *testing.T) {

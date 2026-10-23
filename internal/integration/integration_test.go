@@ -21,25 +21,25 @@ func TestWidgetsShareTerminal(t *testing.T) {
 	p, err := tui.NewMaxProgressBar(t.Context(), "Download", 4)
 	assert.NoError(t, err)
 	p.Add(1)
-	term.waitRows(t, "Download  25%  ...", "1 / 4 items...")
+	term.AwaitVisible("Download  25%  ...", "1 / 4 items...")
 
 	res := prompt(func() (string, error) {
 		return tui.Dropdown(t.Context(), "Pick", []string{"a", "b"})
 	})
 	// the background overlay stays above the prompt that started later
-	term.waitRows(t, "Download  25%  ...", "1 / 4 items...", "? Pick", "| > a", "|   b", "| ^v move...")
+	term.AwaitVisible("Download  25%  ...", "1 / 4 items...", "? Pick", "| > a", "|   b", "| ^v move...")
 
 	// log output goes above both overlays
 	_, err = fmt.Fprintln(tui.Stderr(), "log line")
 	assert.NoError(t, err)
-	term.waitRows(t, "log line", "Download  25%  ...", "1 / 4 items...", "? Pick", "| > a", "|   b", "| ^v move...")
+	term.AwaitVisible("log line", "Download  25%  ...", "1 / 4 items...", "? Pick", "| > a", "|   b", "| ^v move...")
 
 	term.press(t, keyEnter)
 	assert.Equal(t, "a", answer(t, res))
-	term.waitRows(t, "log line", "+ Pick · a", "Download  25%  ...", "1 / 4 items...")
+	term.AwaitVisible("log line", "+ Pick · a", "Download  25%  ...", "1 / 4 items...")
 
 	p.Add(3) // completes the bar, which then disappears
-	term.waitRows(t, "log line", "+ Pick · a")
+	term.AwaitVisible("log line", "+ Pick · a")
 	assert.NoError(t, p.Close())
 
 	// the next prompt reads from the same keyboard and draws on the same screen
@@ -49,7 +49,7 @@ func TestWidgetsShareTerminal(t *testing.T) {
 	term.press(t, "x")
 	term.press(t, keyEnter)
 	assert.Equal(t, "x", answer(t, res))
-	term.waitRows(t, "log line", "+ Pick · a", "+ Name · x")
+	term.AwaitVisible("log line", "+ Pick · a", "+ Name · x")
 }
 
 type scoredRow struct {

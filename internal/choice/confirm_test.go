@@ -36,15 +36,7 @@ func TestDefaultConfirmRunnerReturnsTrue(t *testing.T) {
 	in := bytes.NewBuffer([]byte{term.KeyEnter})
 	out := &bytes.Buffer{}
 	opt := option.OpT(func(d *dropdown) error {
-		d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-			return &term.IO{
-				In:      in,
-				Out:     out,
-				Width:   20,
-				Height:  6,
-				Restore: func() error { return nil },
-			}, nil
-		}
+		d.makeTermIO = terst.FixedTermIO(20, 6)
 		return nil
 	})
 	terst.UseIO(t, in, out)
@@ -82,7 +74,7 @@ func TestConfirmDefaults(t *testing.T) {
 }
 
 func TestThemedConfirmGuidedFrameAndYes(t *testing.T) {
-	o, out, restored := themedDropdownOpt(t, terst.ASCIITheme(false), 40, "\r")
+	o, out, restored := themedDropdownOpt(t, terst.ASCIITheme(), 40, "\r")
 	assert.True(t, Confirm(t.Context(), "Sure?", o))
 	assert.True(t, *restored)
 	assert.Equal(t, ""+
@@ -92,20 +84,22 @@ func TestThemedConfirmGuidedFrameAndYes(t *testing.T) {
 }
 
 func TestThemedConfirmNoIsNormalAnswer(t *testing.T) {
-	o, out, _ := themedDropdownOpt(t, terst.ASCIITheme(false), 40, "\x1b[B", "\r")
+	o, out, _ := themedDropdownOpt(t, terst.ASCIITheme(), 40, "\x1b[B", "\r")
 	assert.True(t, !Confirm(t.Context(), "Sure?", o))
 	// No is retained with the completion mark, not as an error
 	assert.True(t, strings.HasSuffix(out.String(), "\x1b[3A\r+ Sure? · No\n"))
 	assert.True(t, !strings.Contains(out.String(), "!"))
 
-	o, out, _ = themedDropdownOpt(t, terst.ASCIITheme(true), 40, "n", "\r")
+	inline := terst.ASCIITheme()
+	inline.Inline = true
+	o, out, _ = themedDropdownOpt(t, inline, 40, "n", "\r")
 	assert.True(t, !Confirm(t.Context(), "Sure?", o))
 	assert.True(t, strings.HasPrefix(out.String(), "\r? Sure? > Yes\n\r          No\n"))
 	assert.True(t, strings.HasSuffix(out.String(), "+ Sure? · No\n"))
 }
 
 func TestThemedConfirmfFormatsLabel(t *testing.T) {
-	o, out, _ := themedDropdownOpt(t, terst.ASCIITheme(false), 40, "\r")
+	o, out, _ := themedDropdownOpt(t, terst.ASCIITheme(), 40, "\r")
 	prev := confirmRunner
 	t.Cleanup(func() { confirmRunner = prev })
 	confirmRunner = func(ctx context.Context, action string, _ ...option.Opt) bool {
@@ -117,7 +111,7 @@ func TestThemedConfirmfFormatsLabel(t *testing.T) {
 }
 
 func TestThemedConfirmSlotPrecedence(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Prompt.Answer = `{{ .Label }} {{ .Value }}/{{ .Count }}`
 	th.Choice.Inactive = `-{{ .Value }}`
 	th.Dropdown.Active = `dropdown {{ .Value }}`
@@ -133,7 +127,7 @@ func TestThemedConfirmSlotPrecedence(t *testing.T) {
 }
 
 func TestThemedConfirmHiddenAnswer(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Confirm.Answer = theme.Hidden
 	o, out, _ := themedDropdownOpt(t, th, 40, "\r")
 	assert.True(t, Confirm(t.Context(), "Sure?", o))
@@ -142,7 +136,7 @@ func TestThemedConfirmHiddenAnswer(t *testing.T) {
 
 func TestThemedConfirmDefaultsWithoutTerminal(t *testing.T) {
 	boom := errors.New("boom")
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
 	// without a terminal only the projection runs, never a presentation slot
 	th.Prompt.Label = `{{ fails .Label }}`
@@ -171,7 +165,7 @@ func TestThemedConfirmDefaultsWithoutTerminal(t *testing.T) {
 
 func TestThemedConfirmHelperErrorIsFalseAndRestoresTerminal(t *testing.T) {
 	boom := errors.New("boom")
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
 	th.Confirm.Inactive = `{{ fails .Value }}`
 	o, out, restored := themedDropdownOpt(t, th, 40, "\r")
@@ -187,7 +181,7 @@ func TestThemedConfirmHelperErrorIsFalseAndRestoresTerminal(t *testing.T) {
 
 func TestThemedConfirmRolesMarkYesAndNoAsCompleted(t *testing.T) {
 	terst.WithEnv(t, "FORCE_COLOR=3")
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Light = true
 	for _, keys := range [][]string{{"\r"}, {"\x1b[B", "\r"}} {
 		o, out, _ := themedDropdownOpt(t, th, 40, keys...)

@@ -241,24 +241,23 @@ func lazySeq(values ...string) iter.Seq2[string, error] {
 }
 
 func TestDropdownLazySelectsItem(t *testing.T) {
-	cio, opts := testIOforDropdown(t, 20, 6)
+	in, out, opts := testIOforDropdown(t, 20, 6)
 	itemsLoaded, ready := notifyItemsLoaded(3)
 	opts = option.WithOptions(opts, itemsLoaded)
-	out := captureOutput(cio)
 	resCh := make(chan struct {
 		value string
 		err   error
 	}, 1)
 	go func() {
-		value, err := DropdownLazy(cio.Ctx, "Select", lazySeq("red", "green", "blue"), opts)
+		value, err := DropdownLazy(t.Context(), "Select", lazySeq("red", "green", "blue"), opts)
 		resCh <- struct {
 			value string
 			err   error
 		}{value, err}
 	}()
 	waitForItems(t, ready)
-	cio.In <- "\x0d" // enter
-	final := waitForOutputContaining(t, out, "+ Select · red", 2*time.Second)
+	in.Send(terst.KeyEnter)
+	final := out.AwaitOutput("+ Select · red")
 	res := <-resCh
 	assert.NoError(t, res.err)
 	assert.Equal(t, "red", res.value)
@@ -273,15 +272,7 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 	terst.UseIO(t, in, io.Discard)
 	opts := option.WithOptions(
 		option.OpT(func(d *dropdown) error {
-			d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-				return &term.IO{
-					In:      in,
-					Out:     out,
-					Width:   20,
-					Height:  6,
-					Restore: func() error { return nil },
-				}, nil
-			}
+			d.makeTermIO = terst.FixedTermIO(20, 6)
 			return nil
 		}),
 		itemsLoaded,
@@ -324,15 +315,7 @@ func TestDropdownLazyDoesNotStartProducerWhenContextAlreadyCanceled(t *testing.T
 	terst.UseIO(t, in, io.Discard)
 	opts := option.WithOptions(
 		option.OpT(func(d *dropdown) error {
-			d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-				return &term.IO{
-					In:      in,
-					Out:     out,
-					Width:   20,
-					Height:  6,
-					Restore: func() error { return nil },
-				}, nil
-			}
+			d.makeTermIO = terst.FixedTermIO(20, 6)
 			return nil
 		}),
 	)
@@ -368,15 +351,7 @@ func TestDropdownLazyCtrlCNotLostAfterPreviousLazyExit(t *testing.T) {
 	terst.UseIO(t, in, io.Discard)
 	opts := option.WithOptions(
 		option.OpT(func(d *dropdown) error {
-			d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-				return &term.IO{
-					In:      in,
-					Out:     out,
-					Width:   20,
-					Height:  6,
-					Restore: func() error { return nil },
-				}, nil
-			}
+			d.makeTermIO = terst.FixedTermIO(20, 6)
 			return nil
 		}),
 		itemsLoaded,
@@ -393,12 +368,8 @@ func TestDropdownLazyCtrlCNotLostAfterPreviousLazyExit(t *testing.T) {
 	waitForItems(t, ready)
 	_, err = writer.Write([]byte{term.KeyCtrlC})
 	assert.NoError(t, err)
-	select {
-	case err = <-resCh:
-		assert.ErrorIs(t, err, io.EOF)
-	case <-time.After(2 * time.Second):
-		t.Fatal("second dropdown did not receive Ctrl+C")
-	}
+	err = terst.Recv(t, resCh)
+	assert.ErrorIs(t, err, io.EOF)
 }
 
 func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
@@ -418,15 +389,7 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 	terst.UseIO(t, in, io.Discard)
 	opts := option.WithOptions(
 		option.OpT(func(d *dropdown) error {
-			d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-				return &term.IO{
-					In:      in,
-					Out:     out,
-					Width:   20,
-					Height:  6,
-					Restore: func() error { return nil },
-				}, nil
-			}
+			d.makeTermIO = terst.FixedTermIO(20, 6)
 			return nil
 		}),
 		itemsLoaded,
@@ -452,24 +415,19 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	_, err = writer.Write([]byte{term.KeyEnter})
 	assert.NoError(t, err)
-	select {
-	case res := <-resCh:
-		assert.NoError(t, res.err)
-		assert.Equal(t, "b", res.value)
-	case <-time.After(2 * time.Second):
-		t.Fatal("second dropdown did not process down+enter")
-	}
+	res := terst.Recv(t, resCh)
+	assert.NoError(t, res.err)
+	assert.Equal(t, "b", res.value)
 }
 
 func TestDropdownLazyEmptySequence(t *testing.T) {
-	cio, opts := testIOforDropdown(t, 20, 6)
-	captureOutput(cio)
+	_, _, opts := testIOforDropdown(t, 20, 6)
 	resCh := make(chan struct {
 		value string
 		err   error
 	}, 1)
 	go func() {
-		value, err := DropdownLazy(cio.Ctx, "Empty", func(yield func(string, error) bool) {}, opts)
+		value, err := DropdownLazy(t.Context(), "Empty", func(yield func(string, error) bool) {}, opts)
 		resCh <- struct {
 			value string
 			err   error
@@ -481,26 +439,21 @@ func TestDropdownLazyEmptySequence(t *testing.T) {
 }
 
 func TestDropdownLazyOneReturnSingleItem(t *testing.T) {
-	cio, opts := testIOforDropdown(t, 20, 6, WithOneReturn())
-	captureOutput(cio)
+	_, _, opts := testIOforDropdown(t, 20, 6, WithOneReturn())
 	resCh := make(chan struct {
 		value string
 		err   error
 	}, 1)
 	go func() {
-		value, err := DropdownLazy(cio.Ctx, "Single", lazySeq("only"), opts)
+		value, err := DropdownLazy(t.Context(), "Single", lazySeq("only"), opts)
 		resCh <- struct {
 			value string
 			err   error
 		}{value, err}
 	}()
-	select {
-	case res := <-resCh:
-		assert.NoError(t, res.err)
-		assert.Equal(t, "only", res.value)
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for single-item lazy OneReturn")
-	}
+	res := terst.Recv(t, resCh)
+	assert.NoError(t, res.err)
+	assert.Equal(t, "only", res.value)
 }
 
 func TestDropdownLazyAppendAfterFilter(t *testing.T) {
@@ -600,11 +553,7 @@ func TestDropdownLazyProducerStopsOnCancel(t *testing.T) {
 	time.Sleep(20 * time.Millisecond) // let the producer block on the full channel
 	d.itItems = nil                   // the dropdown clears its field when done
 	cancel()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("producer outlived its context")
-	}
+	terst.Recv(t, done)
 }
 
 func TestDropdownLazyStopsProducerAfterSelection(t *testing.T) {
@@ -625,11 +574,7 @@ func TestDropdownLazyStopsProducerAfterSelection(t *testing.T) {
 	_, err = DropdownLazy(t.Context(), "pick", seq,
 		fixedTermOpt())
 	assert.NoError(t, err)
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("producer outlived DropdownLazy")
-	}
+	terst.Recv(t, done)
 }
 
 func TestDropdownLazyDefaults(t *testing.T) {

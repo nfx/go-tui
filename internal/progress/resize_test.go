@@ -5,7 +5,6 @@ package progress
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"testing"
 	"time"
@@ -19,32 +18,17 @@ import (
 )
 
 func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-	cio := &term.ChanIO{
-		Ctx: ctx,
-		In:  make(chan string),
-		Out: make(chan string, 4),
-	}
+	_, frames := terst.UseFrames(t)
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
-	terst.UseIO(t, cio, cio)
 	p, err := newStartedProgressBar(t.Context(), "downloading files", 20,
 		option.OpT(func(pb *Progressbar) error {
 			pb.now = func() time.Time { return now }
 			pb.redrawAt = start
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-				return &term.IO{
-					In:      in,
-					Out:     out,
-					Width:   80,
-					Height:  1,
-					Restore: func() error { return nil },
-				}, nil
-			}
+			pb.makeTermIO = terst.FixedTermIO(80, 1)
 			return nil
 		}),
 	)
@@ -53,12 +37,12 @@ func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 	p.Add(10)
 	now = start.Add(time.Second)
 	terst.Send(t, ticks, now)
-	_ = terst.Recv(t, cio.Out)
+	frames.Next()
 	// shrink terminal width between ticks
 	p.io.Width = 20
 	now = start.Add(2 * time.Second)
 	terst.Send(t, ticks, now)
-	output := terst.Recv(t, cio.Out)
+	output := frames.Next()
 	// the frame ends with "\n\r"; the content starts after the last \r before it
 	raw := []byte(output)
 	body, ok := bytes.CutSuffix(raw, []byte("\n\r"))
@@ -75,15 +59,8 @@ func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 }
 
 func TestProgressbarTickOnResizeExitsWhenDone(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-	cio := &term.ChanIO{
-		Ctx: ctx,
-		In:  make(chan string),
-		Out: make(chan string, 4),
-	}
+	terst.UseFrames(t)
 	resizeCh := make(chan struct{})
-	terst.UseIO(t, cio, cio)
 	p, err := newStartedProgressBar(t.Context(), "downloading files", 10,
 		option.OpT(func(pb *Progressbar) error {
 			pb.ticks = make(chan time.Time)
@@ -106,17 +83,9 @@ func TestProgressbarTickOnResizeExitsWhenDone(t *testing.T) {
 
 	p.Add(10)
 
-	select {
-	case resizeCh <- struct{}{}:
-	case <-time.After(time.Second):
-		t.Fatal("failed to send resize event")
-	}
+	terst.Send(t, resizeCh, struct{}{})
 
-	select {
-	case <-p.stopped:
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("expected progressbar to stop after onResize when done")
-	}
+	terst.Recv(t, p.stopped)
 }
 
 func TestProgressbarTickTinyWidth(t *testing.T) {

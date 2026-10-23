@@ -17,15 +17,7 @@ import (
 )
 
 func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
-	prevIn := term.Default.Input()
-	prevOut := term.Default.RawOutput()
-	t.Cleanup(func() {
-		term.Default.SetIO(prevIn, prevOut)
-	})
-	cio, stdout := terst.ChainIOForTest(t, 60, 8)
-	reader := terst.NewKeys(t)
-	input := &terst.MockDescriptor{Reader: reader, FD: 0}
-	term.Default.SetIO(input, cio)
+	reader, stdout := terst.UseTerminal(t)
 
 	result := make(chan string, 1)
 	errs := make(chan error, 1)
@@ -38,9 +30,9 @@ func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
 		result <- value
 	}()
 
-	terst.WaitOutputContains(t, stdout.C, "PROMPT")
+	stdout.AwaitOutput("PROMPT")
 	reader.Send("a", "b", "c")
-	terst.WaitOutputContains(t, stdout.C, "PROMPT", "abc")
+	stdout.AwaitOutput("PROMPT", "abc")
 	reader.Send(terst.KeyLeft, "X", terst.KeyEnter)
 
 	select {
@@ -52,20 +44,11 @@ func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
 }
 
 func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
-	prevIn := term.Default.Input()
-	prevOut := term.Default.RawOutput()
-	prevTTY := term.WriterChecker
-	prevSize := term.GetSize
-	t.Cleanup(func() {
-		term.WriterChecker = prevTTY
-		term.GetSize = prevSize
-		term.Default.SetIO(prevIn, prevOut)
-	})
 	in := bytes.NewBufferString("in")
 	out := &terst.MockDescriptor{Writer: &bytes.Buffer{}, FD: 7}
-	term.WriterChecker = func(int) bool { return true }
-	term.GetSize = func(int) (int, int, error) { return 80, 24, nil }
-	term.Default.SetIO(in, out)
+	terst.Swap(t, &term.WriterChecker, func(int) bool { return true })
+	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 80, 24, nil })
+	terst.UseIO(t, in, out)
 	_ = tui.Stderr()
 
 	_, defaultOut := term.DefaultStreams(t.Context())
@@ -80,15 +63,7 @@ func TestSpinnersCloseNil(t *testing.T) {
 }
 
 func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
-	prevIn := term.Default.Input()
-	prevOut := term.Default.RawOutput()
-	t.Cleanup(func() {
-		term.Default.SetIO(prevIn, prevOut)
-	})
-	cio, stdout := terst.ChainIOForTest(t, 60, 8)
-	reader := terst.NewKeys(t)
-	input := &terst.MockDescriptor{Reader: reader, FD: 0}
-	term.Default.SetIO(input, cio)
+	reader, stdout := terst.UseTerminal(t)
 
 	result := make(chan string, 1)
 	errs := make(chan error, 1)
@@ -101,11 +76,11 @@ func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
 		result <- value
 	}()
 
-	terst.WaitOutputContains(t, stdout.C, "PROMPT", "apple")
+	stdout.AwaitOutput("PROMPT", "apple")
 	reader.Send(terst.KeyLeft, terst.KeyLeft)
 	_, err := tui.Stderr().Write([]byte("INF background\n"))
 	assert.NoError(t, err)
-	terst.WaitOutputContains(t, stdout.C, "INF background", "PROMPT", "apple")
+	stdout.AwaitOutput("INF background", "PROMPT", "apple")
 	reader.Send(terst.KeyLeft, "q", "q", "q", terst.KeyEnter)
 
 	select {
@@ -117,14 +92,8 @@ func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
 }
 
 func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
-	prevIn := term.Default.Input()
-	prevOut := term.Default.RawOutput()
-	t.Cleanup(func() {
-		term.Default.SetIO(prevIn, prevOut)
-	})
-	cio, stdout := terst.ChainIOForTest(t, 40, 6)
-	input := &terst.MockDescriptor{Reader: terst.NewKeys(t, "h", "i", terst.KeyEnter), FD: 0}
-	term.Default.SetIO(input, cio)
+	reader, _ := terst.UseTerminal(t)
+	reader.Send("h", "i", terst.KeyEnter)
 
 	result := make(chan string, 1)
 	errs := make(chan error, 1)
@@ -137,8 +106,8 @@ func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
 		result <- value
 	}()
 
-	// chunkReader delivers all keys at once, so intermediate frames may be
-	// coalesced; only the final result is deterministic.
+	// the keys are queued before the prompt reads, so intermediate frames may
+	// be coalesced; only the final result is deterministic.
 	select {
 	case err := <-errs:
 		assert.NoError(t, err)
@@ -147,16 +116,12 @@ func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for Input to return")
 	}
-	_ = stdout
 }
 
 func TestDefaultStreamsArePairedUnderSetDefaultIO(t *testing.T) {
-	prevIn := term.Default.Input()
-	prevOut := term.Default.RawOutput()
-	t.Cleanup(func() { term.Default.SetIO(prevIn, prevOut) })
 	in1, out1 := bytes.NewBufferString("1"), &bytes.Buffer{}
 	in2, out2 := bytes.NewBufferString("2"), &bytes.Buffer{}
-	term.Default.SetIO(in1, out1)
+	terst.UseIO(t, in1, out1)
 
 	stop := make(chan struct{})
 	swapped := make(chan struct{})
@@ -185,27 +150,16 @@ func TestDefaultStreamsArePairedUnderSetDefaultIO(t *testing.T) {
 }
 
 func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {
-	prevIn := term.Default.Input()
-	prevOut := term.Default.RawOutput()
-	t.Cleanup(func() {
-		term.Default.SetIO(prevIn, prevOut)
-	})
-	cio, stdout := terst.ChainIOForTest(t, 40, 6)
-	reader := terst.NewKeys(t)
-	input := &terst.MockDescriptor{
-		Reader: reader,
-		FD:     0,
-	}
-	term.Default.SetIO(input, cio)
+	reader, stdout := terst.UseTerminal(t)
 
 	result := make(chan bool, 1)
 	go func() {
 		result <- tui.Confirm(t.Context(), "Are you sure?")
 	}()
 
-	initial := terst.WaitOutputContains(t, stdout.C, "Are you sure?", "Yes", "No")
+	initial := stdout.AwaitOutput("Are you sure?", "Yes", "No")
 	reader.Send(terst.KeyDown)
-	updated := terst.WaitOutputContains(t, stdout.C, "Are you sure?", "Yes", "No")
+	updated := stdout.AwaitOutput("Are you sure?", "Yes", "No")
 	assert.True(t, initial != updated)
 	reader.Send(terst.KeyEnter)
 	assert.True(t, !<-result)

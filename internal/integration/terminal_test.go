@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/nfx/go-tui/internal/terst"
 )
@@ -15,12 +14,12 @@ import (
 // ttyWriter is the terminal output: it is a real terminal to check and to
 // measure, but each write goes to the screen in one piece.
 type ttyWriter struct {
-	fd     uintptr
-	screen *screen
+	fd  uintptr
+	out *terst.Output
 }
 
 func (w *ttyWriter) Write(p []byte) (int, error) {
-	return w.screen.Write(p)
+	return w.out.Write(p)
 }
 
 func (w *ttyWriter) Fd() uintptr {
@@ -29,7 +28,7 @@ func (w *ttyWriter) Fd() uintptr {
 
 type terminal struct {
 	*keyboard
-	*screen
+	*terst.Output
 	tty *os.File
 }
 
@@ -39,8 +38,10 @@ func newTerminal(t *testing.T, height int) *terminal {
 	t.Helper()
 	const width = 40
 	tty := openTTY(t, width, height)
-	term := &terminal{keyboard: newKeyboard(t), screen: newScreen(width), tty: tty}
-	terst.UseIO(t, term.keyboard, &ttyWriter{fd: tty.Fd(), screen: term.screen})
+	term := &terminal{keyboard: newKeyboard(t), Output: terst.NewOutput(t), tty: tty}
+	// rows below the bottom stay on the screen, as in the scrollback
+	term.Resize(width, 0)
+	terst.UseIO(t, term.keyboard, &ttyWriter{fd: tty.Fd(), out: term.Output})
 	return term
 }
 
@@ -53,7 +54,7 @@ func (term *terminal) resize(t *testing.T, width, height int) {
 // marked with ">" and the answer line starts with "+".
 func newASCIITerminal(t *testing.T) *terminal {
 	t.Helper()
-	terst.UseTheme(t, terst.ASCIITheme(false))
+	terst.UseASCII(t)
 	return newTerminal(t, 12)
 }
 
@@ -61,19 +62,8 @@ func newASCIITerminal(t *testing.T) *terminal {
 // A probe may block on the keyboard before it writes its query.
 func (term *terminal) waitQueries(t *testing.T, n int) {
 	t.Helper()
-	timeout := time.After(failsafe)
-	for {
-		term.screen.mu.Lock()
-		got, changed := strings.Count(string(term.raw), backgroundQuery), term.changed
-		term.screen.mu.Unlock()
-		if got == n {
-			return
-		}
-		select {
-		case <-changed:
-		case <-timeout:
-			t.Fatalf("timed out waiting for %d background queries, got %d", n, got)
-		}
+	for strings.Count(term.String(), backgroundQuery) < n {
+		term.AwaitOutput(backgroundQuery)
 	}
 }
 

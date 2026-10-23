@@ -43,26 +43,13 @@ func TestMultichoiceClampRowsKeepsActiveItemVisible(t *testing.T) {
 	}
 }
 
-func waitBufferContains(t *testing.T, out *terst.SyncBuffer, part string) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for !strings.Contains(out.String(), part) {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for output containing %q, got %q", part, out.String())
-		}
-		time.Sleep(time.Millisecond)
-	}
-}
-
 // newPipeMultichoice isolates reader handoff tests from real terminal setup.
 func newPipeMultichoice(ctx context.Context, in io.Reader) *multichoice {
 	m := newMultichoice(ctx)
 	m.Items = []any{"one", "two", "three"}
 	m.in = in
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{In: in, Out: out, Width: 40, Height: 8, Restore: func() error { return nil }}, nil
-	}
+	m.makeTermIO = terst.FixedTermIO(40, 8)
 	return m
 }
 
@@ -283,13 +270,9 @@ func TestMultichoiceFilePendingKeysReachFreshPrompt(t *testing.T) {
 		m := newPipeMultichoice(t.Context(), input)
 		done := make(chan error, 1)
 		go func() { done <- m.run(m.Ctx) }()
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Fatal(err)
-			}
-		case <-time.After(time.Second):
-			t.Fatal("lost pending file keys")
+		err := terst.Recv(t, done)
+		if err != nil {
+			t.Fatal(err)
 		}
 		if m.count != 1 {
 			t.Fatal(m.count)
@@ -357,11 +340,11 @@ func TestMultichoiceIndependentReaders(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	first := newPipeMultichoice(ctx, firstInput)
-	out := &terst.SyncBuffer{}
+	out := terst.NewOutput(t)
 	first.out = out
 	done := make(chan error, 1)
 	go func() { done <- first.run(first.Ctx) }()
-	waitBufferContains(t, out, "○ one")
+	out.AwaitOutput("○ one")
 	terst.UseIO(t, strings.NewReader(" \r"), io.Discard)
 	got, err := Multichoice(
 		t.Context(),
@@ -372,13 +355,9 @@ func TestMultichoiceIndependentReaders(t *testing.T) {
 		t.Fatal(got, err)
 	}
 	cancel()
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatal(err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("first prompt did not cancel")
+	err = terst.Recv(t, done)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
 	}
 	if first.count != 0 {
 		t.Fatal("selection crossed readers")
@@ -554,11 +533,7 @@ func (r *promptReadNotifier) Read(p []byte) (int, error) {
 // waitPromptRead synchronizes tests at source-read boundaries.
 func waitPromptRead(t *testing.T, in *promptReadNotifier) {
 	t.Helper()
-	select {
-	case <-in.reads:
-	case <-time.After(time.Second):
-		t.Fatal("prompt did not reach the next source read")
-	}
+	terst.Recv(t, in.reads)
 }
 
 // cancelPromptRead leaves a blocked public-prompt read for its successor.
@@ -570,13 +545,9 @@ func cancelPromptRead(t *testing.T, in *promptReadNotifier, run func(context.Con
 	go func() { done <- run(ctx) }()
 	waitPromptRead(t, in)
 	cancel()
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatal(err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("cancelled prompt did not return")
+	err := terst.Recv(t, done)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
 	}
 }
 
@@ -689,20 +660,14 @@ func acquireDefaultMultichoice(t *testing.T) *multichoice {
 func TestMultichoiceDefaultStreams(t *testing.T) {
 	for _, tty := range []bool{false, true} {
 		t.Run(strconv.FormatBool(tty), func(t *testing.T) {
-			prevIn, prevOut := term.Default.Input(), term.Default.RawOutput()
-			prevTTY, prevSize := term.WriterChecker, term.GetSize
-			t.Cleanup(func() {
-				term.WriterChecker, term.GetSize = prevTTY, prevSize
-				term.Default.SetIO(prevIn, prevOut)
-			})
 			in := bytes.NewBufferString("in")
 			var out io.Writer = &bytes.Buffer{}
 			if tty {
 				out = &terst.MockDescriptor{Writer: &bytes.Buffer{}, FD: 7}
 			}
-			term.WriterChecker = func(int) bool { return tty }
-			term.GetSize = func(int) (int, int, error) { return 80, 24, nil }
-			term.Default.SetIO(in, out)
+			terst.Swap(t, &term.WriterChecker, func(int) bool { return tty })
+			terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 80, 24, nil })
+			terst.UseIO(t, in, out)
 			wantOut := out
 			if tty {
 				_ = term.Default.StderrWriter()

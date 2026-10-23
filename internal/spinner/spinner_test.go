@@ -15,7 +15,7 @@ import (
 )
 
 func TestSpinnerUpdate(t *testing.T) {
-	s, cio, tick := spinnersForTest(t)
+	s, frames, tick := spinnersForTest(t)
 	defer s.Close()
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -26,19 +26,19 @@ func TestSpinnerUpdate(t *testing.T) {
 
 	spinner.Update("test message")
 	tick()
-	out := <-cio.Out
+	out := frames.Next()
 	assert.Contains(t, out, "test")
 	assert.Contains(t, out, "\r")
 
 	spinner.Updatef("formatted %s %d", "message", 42)
 	tick()
-	out = <-cio.Out
+	out = frames.Next()
 	assert.Contains(t, out, "forma")
 	assert.Contains(t, out, "\x1b[1A\r\x1b[K")
 }
 
 func TestSpinnerFail(t *testing.T) {
-	s, cio, tick := spinnersForTest(t)
+	s, frames, tick := spinnersForTest(t)
 	defer s.Close()
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -50,12 +50,12 @@ func TestSpinnerFail(t *testing.T) {
 	testErr := errors.New("test error")
 	spinner.Fail(testErr)
 	tick()
-	out := <-cio.Out
+	out := frames.Next()
 	assert.Contains(t, out, "test")
 }
 
 func TestSpinnerWithPrefix(t *testing.T) {
-	s, cio, tick := spinnersForTest(t)
+	s, frames, tick := spinnersForTest(t)
 	defer s.Close()
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -66,12 +66,12 @@ func TestSpinnerWithPrefix(t *testing.T) {
 
 	spinner.Update("running")
 	tick()
-	out := <-cio.Out
+	out := frames.Next()
 	assert.Contains(t, out, "task-")
 }
 
 func TestSpinnerWithKeep(t *testing.T) {
-	s, cio, tick := spinnersForTest(t)
+	s, frames, tick := spinnersForTest(t)
 	defer s.Close()
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -82,23 +82,23 @@ func TestSpinnerWithKeep(t *testing.T) {
 
 	spinner.Update("kept spinner")
 	tick()
-	out := <-cio.Out
+	out := frames.Next()
 	assert.Contains(t, out, "kept")
 
 	err = spinner.Close()
 	assert.NoError(t, err)
 
 	tick()
-	output := <-cio.Out
+	output := frames.Next()
 	assert.Contains(t, output, "kept")
 	assert.Contains(t, output, "\x1b[1A\r\x1b[K")
 }
 
 func TestSpinnerWithCustomFrames(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Symbols.Spinner = []string{"a", "b", "c", "d"}
 	terst.UseTheme(t, th)
-	s, cio, tick := spinnersForTest(t)
+	s, frames, tick := spinnersForTest(t)
 	defer s.Close()
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -109,7 +109,7 @@ func TestSpinnerWithCustomFrames(t *testing.T) {
 
 	spinner.Update("custom")
 	tick()
-	assert.Equal(t, "\rc custom\n\r", <-cio.Out)
+	assert.Equal(t, "\rc custom\n\r", frames.Next())
 }
 
 func TestSpinnerStateNext(t *testing.T) {
@@ -129,7 +129,7 @@ func TestSpinnerStateNext(t *testing.T) {
 }
 
 func TestSpinnerUpdateAfterStop(t *testing.T) {
-	s, cio, tick := spinnersForTest(t)
+	s, frames, tick := spinnersForTest(t)
 	defer s.Close()
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -145,16 +145,11 @@ func TestSpinnerUpdateAfterStop(t *testing.T) {
 	spinner.Update("after close")
 	tick()
 	// Should not output anything since spinner is stopped
-	select {
-	case <-cio.Out:
-		t.Fatal("should not receive output from stopped spinner")
-	default:
-		// expected - no output
-	}
+	assert.Equal(t, "", frames.Unread())
 }
 
 func TestSpinnerFailedState(t *testing.T) {
-	s, cio, tick := spinnersForTest(t)
+	s, frames, tick := spinnersForTest(t)
 	defer s.Close()
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -166,13 +161,13 @@ func TestSpinnerFailedState(t *testing.T) {
 	testErr := errors.New("failure")
 	spinner.Fail(testErr)
 	tick()
-	assert.Equal(t, "\r✖ failure\n\r", <-cio.Out)
+	assert.Equal(t, "\r✖ failure\n\r", frames.Next())
 
 	// Failed spinner should remain visible even after close
 	err = spinner.Close()
 	assert.NoError(t, err)
 	tick()
-	output := <-cio.Out
+	output := frames.Next()
 	assert.Contains(t, output, "failure")
 	assert.Contains(t, output, "\x1b[1A\r\x1b[K")
 }
