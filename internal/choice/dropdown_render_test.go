@@ -13,20 +13,21 @@ import (
 	"text/template"
 
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestDropdownRenderInitAndItems(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"alpha", "beta", "gamma"}
 	d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return terst.FixedTermIO(20, 6).IO(), nil
+		return tcommon.FixedTermIO(20, 6).IO(), nil
 	}
-	io := terst.FixedTermIO(20, 6).IO()
+	io := tcommon.FixedTermIO(20, 6).IO()
 
 	assert.NoError(t, d.parseTemplates())
 	longest, err := d.renderInit(io)
@@ -41,7 +42,7 @@ func TestDropdownRenderInitEmitsEvents(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"alpha", "beta"}
 	assert.NoError(t, d.parseTemplates())
-	io := terst.FixedTermIO(20, 6).IO()
+	io := tcommon.FixedTermIO(20, 6).IO()
 	var events []dropdownOutputEvent
 	d.eventSink = func(ev dropdownOutputEvent) {
 		events = append(events, ev)
@@ -75,7 +76,7 @@ func TestDropdownRenderRemembersLongestWidth(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"short", "a considerably longer item"}
 	bindDropdown(t, d)
-	tio := terst.FixedTermIO(40, 6).IO()
+	tio := tcommon.FixedTermIO(40, 6).IO()
 	first, err := d.renderInit(tio)
 	assert.NoError(t, err)
 	second, err := d.renderInit(tio)

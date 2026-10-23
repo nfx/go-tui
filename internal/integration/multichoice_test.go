@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/theme"
 	"io"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -18,7 +17,7 @@ import (
 
 	tui "github.com/nfx/go-tui"
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 	"golang.org/x/term"
 )
 
@@ -277,8 +276,7 @@ func TestMultichoiceSequentialReaders(t *testing.T) {
 }
 
 func ExampleMultichoice() {
-	tui.SetDefaultIO(strings.NewReader(" \x1b[B \r"), io.Discard)
-	defer tui.SetDefaultIO(os.Stdin, os.Stderr)
+	defer useExampleIO(strings.NewReader(" \x1b[B \r"), io.Discard)()
 	selected, err := tui.Multichoice(
 		context.Background(),
 		"Instances",
@@ -290,8 +288,7 @@ func ExampleMultichoice() {
 }
 
 func ExampleMultichoiceKVK() {
-	tui.SetDefaultIO(strings.NewReader("\r"), io.Discard)
-	defer tui.SetDefaultIO(os.Stdin, os.Stderr)
+	defer useExampleIO(strings.NewReader("\r"), io.Discard)()
 	selected, err := tui.MultichoiceKVK(
 		context.Background(),
 		"Protocols",
@@ -303,8 +300,7 @@ func ExampleMultichoiceKVK() {
 }
 
 func ExampleMultichoiceKVV() {
-	tui.SetDefaultIO(strings.NewReader("\r"), io.Discard)
-	defer tui.SetDefaultIO(os.Stdin, os.Stderr)
+	defer useExampleIO(strings.NewReader("\r"), io.Discard)()
 	selected, err := tui.MultichoiceKVV(
 		context.Background(),
 		"Protocols",
@@ -482,8 +478,7 @@ func (s *lazyExampleIO) Read(p []byte) (int, error) { <-s.ready; p[0] = '\r'; re
 
 func ExampleMultichoiceLazy() {
 	stream := &lazyExampleIO{ready: make(chan struct{})}
-	tui.SetDefaultIO(stream, stream)
-	defer tui.SetDefaultIO(os.Stdin, os.Stderr)
+	defer useExampleIO(stream, stream)()
 	selected, err := tui.MultichoiceLazy(
 		context.Background(),
 		"Components",

@@ -13,15 +13,16 @@ import (
 
 	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestNewSliceProgressBar(t *testing.T) {
-	terst.UseFrames(t)
+	tcommon.UseFrames(t)
 	ticks := make(chan time.Time, 1)
 	var seen *Progressbar
 
@@ -34,7 +35,7 @@ func TestNewSliceProgressBar(t *testing.T) {
 			pb.increments = make(chan int64, 8)
 			pb.now = func() time.Time { return time.Now() }
 			pb.redrawAt = pb.now()
-			pb.makeTermIO = terst.FixedTermIO(30, 1)
+			pb.makeTermIO = tcommon.FixedTermIO(30, 1)
 			return nil
 		}),
 	)

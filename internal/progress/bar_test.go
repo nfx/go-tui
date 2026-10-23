@@ -21,11 +21,12 @@ import (
 	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestProgressbarLinesToClearShrinks(t *testing.T) {
@@ -62,7 +63,7 @@ func (p *Progressbar) row(width int, now time.Time) (ansi.Text, error) {
 }
 
 func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
-	_, frames := terst.UseFrames(t)
+	_, frames := tcommon.UseFrames(t)
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
@@ -73,7 +74,7 @@ func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
 			pb.redrawAt = start
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = terst.FixedTermIO(40, 1)
+			pb.makeTermIO = tcommon.FixedTermIO(40, 1)
 			return nil
 		}),
 	)
@@ -93,7 +94,7 @@ func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
 }
 
 func TestProgressbarTickRenders(t *testing.T) {
-	_, frames := terst.UseFrames(t)
+	_, frames := tcommon.UseFrames(t)
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
@@ -104,7 +105,7 @@ func TestProgressbarTickRenders(t *testing.T) {
 			pb.redrawAt = start
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = terst.FixedTermIO(40, 1)
+			pb.makeTermIO = tcommon.FixedTermIO(40, 1)
 			return nil
 		}),
 	)
@@ -137,7 +138,7 @@ func TestProgressbarTickRenders(t *testing.T) {
 }
 
 func TestProgressbarEmitsStructuredEvents(t *testing.T) {
-	_, frames := terst.UseFrames(t)
+	_, frames := tcommon.UseFrames(t)
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
@@ -152,7 +153,7 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 			pb.redrawAt = start
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = terst.FixedTermIO(40, 1)
+			pb.makeTermIO = tcommon.FixedTermIO(40, 1)
 			return nil
 		}),
 	)
@@ -180,7 +181,7 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 }
 
 func TestProgressbarDoneEmitsClosed(t *testing.T) {
-	_, frames := terst.UseFrames(t)
+	_, frames := tcommon.UseFrames(t)
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
@@ -195,7 +196,7 @@ func TestProgressbarDoneEmitsClosed(t *testing.T) {
 			pb.redrawAt = start
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = terst.FixedTermIO(40, 1)
+			pb.makeTermIO = tcommon.FixedTermIO(40, 1)
 			return nil
 		}),
 	)
@@ -268,7 +269,7 @@ func (r *statReader) Stat() (os.FileInfo, error) {
 }
 
 func TestNewFileProgressReader(t *testing.T) {
-	terst.UseFrames(t)
+	tcommon.UseFrames(t)
 	ticks := make(chan time.Time, 1)
 	applied := false
 
@@ -280,7 +281,7 @@ func TestNewFileProgressReader(t *testing.T) {
 			pb.increments = make(chan int64, 8)
 			pb.now = func() time.Time { return time.Now() }
 			pb.redrawAt = pb.now()
-			pb.makeTermIO = terst.FixedTermIO(30, 1)
+			pb.makeTermIO = tcommon.FixedTermIO(30, 1)
 			return nil
 		}),
 	)
@@ -766,7 +767,7 @@ type fakeTerminal struct {
 func newFakeTerminal(t *testing.T, width int) fakeTerminal {
 	t.Helper()
 	ft := fakeTerminal{restored: &atomic.Bool{}}
-	_, ft.frames = terst.UseFrames(t)
+	_, ft.frames = tcommon.UseFrames(t)
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	clock := &atomic.Int64{}

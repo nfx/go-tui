@@ -15,12 +15,13 @@ import (
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/internal/trie"
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 type dropdownHeuristicLabelItem struct {
@@ -73,10 +74,10 @@ type dropdownSubjectLabelItem struct {
 func testIOforDropdown(t *testing.T, width, height int, o ...option.Opt) (*terst.Keys, *terst.Output, option.Opt) {
 	t.Helper()
 	terst.UseASCII(t)
-	keys, out := terst.UseFrames(t)
+	keys, out := tcommon.UseFrames(t)
 	return keys, out, option.WithOptions(append(option.Opts{
 		option.OpT(func(d *dropdown) error {
-			d.makeTermIO = terst.FixedTermIO(width, height)
+			d.makeTermIO = tcommon.FixedTermIO(width, height)
 			return nil
 		}),
 	}, o...,
@@ -361,7 +362,7 @@ func TestDropdownRunSelectsWithArrow(t *testing.T) {
 	d.Items = []any{"one", "two"}
 	d.in = reader
 	d.out = &bytes.Buffer{}
-	d.makeTermIO = terst.FixedTermIO(20, 6)
+	d.makeTermIO = tcommon.FixedTermIO(20, 6)
 	idx, err := d.dropdownIndex(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, idx)
@@ -373,7 +374,7 @@ func TestDropdownRunIgnoresSpecialKeys(t *testing.T) {
 	d.Items = []any{"one", "two"}
 	d.in = reader
 	d.out = &bytes.Buffer{}
-	d.makeTermIO = terst.FixedTermIO(20, 6)
+	d.makeTermIO = tcommon.FixedTermIO(20, 6)
 	idx, err := d.dropdownIndex(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, idx)
@@ -389,7 +390,7 @@ func TestDropdownRunConsumesInputEvents(t *testing.T) {
 	input <- dropdownInputConfirmed{Index: 1}
 	close(input)
 	d.input = input
-	d.makeTermIO = terst.FixedTermIO(20, 6)
+	d.makeTermIO = tcommon.FixedTermIO(20, 6)
 	idx, err := d.dropdownIndex(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, idx)
@@ -402,7 +403,7 @@ func TestDropdownRunOneReturn(t *testing.T) {
 	d.OneReturn = true
 	d.in = reader
 	d.out = &bytes.Buffer{}
-	d.makeTermIO = terst.FixedTermIO(20, 6)
+	d.makeTermIO = tcommon.FixedTermIO(20, 6)
 	idx, err := d.dropdownIndex(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, idx)
@@ -542,7 +543,7 @@ func TestDropdownRunMainConsumesInputChannel(t *testing.T) {
 	input := make(chan dropdownInputEvent, 1)
 	input <- dropdownInputConfirmed{Index: 0}
 	d.input = input
-	io := terst.FixedTermIO(10, 4).IO()
+	io := tcommon.FixedTermIO(10, 4).IO()
 	frame := bytes.NewBuffer(nil)
 	i, err := d.runMain(d.Ctx, io, frame, 1, 1)
 	assert.NoError(t, err)
@@ -557,7 +558,7 @@ func TestDropdownRunMainRejectsInvalidConfirmedIndex(t *testing.T) {
 	input := make(chan dropdownInputEvent, 1)
 	input <- dropdownInputConfirmed{Index: 5}
 	d.input = input
-	io := terst.FixedTermIO(10, 4).IO()
+	io := tcommon.FixedTermIO(10, 4).IO()
 	frame := bytes.NewBuffer(nil)
 	i, err := d.runMain(d.Ctx, io, frame, 1, 1)
 	assert.NoError(t, err)
@@ -580,7 +581,7 @@ func TestDropdownRunRenderLoadsItem(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"seed"}
 	bindDropdown(t, d)
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := bytes.NewBuffer(nil)
 	ch := make(chan itPair, 1)
 	ch <- itPair{item: "next"}
@@ -592,7 +593,7 @@ func TestDropdownRunRenderLoadsItem(t *testing.T) {
 
 func TestDropdownLoadItemDone(t *testing.T) {
 	d := newDropdown(t.Context())
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := bytes.NewBuffer(nil)
 	d.itItems = make(chan itPair)
 	err := d.loadItem(tio, frame, itPair{}, false, 1)
@@ -605,7 +606,7 @@ func TestDropdownAddItemEmitsAppendEvent(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"seed"}
 	bindDropdown(t, d)
-	tio := terst.FixedTermIO(20, 2).IO()
+	tio := tcommon.FixedTermIO(20, 2).IO()
 	_, err := d.renderInit(tio)
 	assert.NoError(t, err)
 	var events []dropdownOutputEvent
@@ -624,7 +625,7 @@ func TestDropdownAddItemEmitsAppendEvent(t *testing.T) {
 
 func TestDropdownLoadItemError(t *testing.T) {
 	d := newDropdown(t.Context())
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := bytes.NewBuffer(nil)
 	err := d.loadItem(tio, frame, itPair{err: io.EOF}, true, 1)
 	assert.ErrorIs(t, err, io.EOF)
@@ -634,7 +635,7 @@ func TestDropdownLoadItemWriteError(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"seed"}
 	assert.NoError(t, d.parseTemplates())
-	initIO := terst.FixedTermIO(20, 6).IO()
+	initIO := tcommon.FixedTermIO(20, 6).IO()
 	_, err := d.renderInit(initIO)
 	assert.NoError(t, err)
 	tio := &term.IO{
@@ -732,7 +733,7 @@ func TestDropdownRunRenderContextDone(t *testing.T) {
 func TestDropdownAddItemDeduplicatesLazyRelevantIndexes(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, d.parseTemplates())
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	_, err := d.renderInit(tio)
 	assert.NoError(t, err)
 	err = d.addItem(tio.Height, "alpha beta")
@@ -786,7 +787,7 @@ func assertNoWaitersFor(t *testing.T, r *terst.Keys, d time.Duration) {
 
 func fixedTermOpt() option.Opt {
 	return option.OpT(func(d *dropdown) error {
-		d.makeTermIO = terst.FixedTermIO(20, 6)
+		d.makeTermIO = tcommon.FixedTermIO(20, 6)
 		return nil
 	})
 }
@@ -808,7 +809,7 @@ func TestDropdownFilterEventsIgnoreRankingOrder(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, option.WithDefault("ap")(d))
 	bindDropdown(t, d)
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	for _, item := range []string{"banana", "apricot", "apple"} {
 		_, _, err := d.handleLazyItem(tio, frame, 0, itPair{item: item}, true)
@@ -833,7 +834,7 @@ func TestDropdownFilterEventsIgnoreRankingOrder(t *testing.T) {
 func TestDropdownEagerRedrawsOnResizeWhileIdle(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	keys, out := terst.UseFrames(t)
+	keys, out := tcommon.UseFrames(t)
 	resize := make(chan struct{})
 	resCh := make(chan string, 1)
 	go func() {
@@ -1059,10 +1060,10 @@ func (s *scriptedTerminal) makeTermIO(in io.Reader, out io.Writer) (*term.IO, er
 
 func TestDropdownConfirmClearsFrameOnce(t *testing.T) {
 	terst.UseASCII(t)
-	keys, out := terst.UseFrames(t)
+	keys, out := tcommon.UseFrames(t)
 	keys.Send(terst.KeyEnter)
 	_, err := Dropdown(t.Context(), "Fruit", fruits, option.OpT(func(d *dropdown) error {
-		d.makeTermIO = terst.FixedTermIO(40, 10)
+		d.makeTermIO = tcommon.FixedTermIO(40, 10)
 		return nil
 	}))
 	assert.NoError(t, err)

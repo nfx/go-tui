@@ -16,10 +16,11 @@ import (
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/color"
 	"github.com/nfx/go-tui/internal/render"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestPrettyJSONColor(t *testing.T) {
@@ -239,7 +240,7 @@ func TestPrettyJSONScalarsAtRootAndInArrays(t *testing.T) {
 
 func TestPrettyJSONAttrsOnlyHasNoColor(t *testing.T) {
 	terst.WithEnv(t, "NO_COLOR=1")
-	w := terst.TTYWriter(t)
+	w := tcommon.TTYWriter(t)
 	assert.NoError(t, PrettyJSON(w, `{"a":1}`))
 	out := w.Writer.(*bytes.Buffer).String() //nolint:errcheck,forcetypeassert // test writer
 	assert.Contains(t, out, ansi.Bold)
@@ -388,7 +389,7 @@ func TestThemedPrettyJSONDestinations(t *testing.T) {
 
 	// attributes only on a NO_COLOR terminal
 	terst.WithEnv(t, "NO_COLOR=1")
-	w := terst.TTYWriter(t)
+	w := tcommon.TTYWriter(t)
 	assert.NoError(t, PrettyJSON(w, `{"a":1}`))
 	out := w.Writer.(*bytes.Buffer).String() //nolint:errcheck,forcetypeassert // test writer
 	assert.Equal(

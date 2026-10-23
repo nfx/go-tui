@@ -14,7 +14,7 @@ import (
 	"github.com/nfx/go-tui/internal/render"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestTableHeadersFollowProfile(t *testing.T) {

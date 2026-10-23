@@ -13,9 +13,10 @@ import (
 
 	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/tcommon"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestInputWithDefault(t *testing.T) {
@@ -53,7 +54,7 @@ func runValidated(t *testing.T, password bool, keys string, o ...option.Opt) (st
 	i.In = in
 	var out bytes.Buffer
 	i.Out = &out
-	i.makeTermIO = terst.FixedTermIO(40, 3)
+	i.makeTermIO = tcommon.FixedTermIO(40, 3)
 	if err := option.Opts(o).Apply(i); err != nil {
 		return "", "", err
 	}

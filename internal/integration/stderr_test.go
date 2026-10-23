@@ -6,19 +6,20 @@ package integration
 import (
 	"bytes"
 	tui "github.com/nfx/go-tui"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"strings"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestStderrReturnsRawWriterWithoutTTY(t *testing.T) {
 	in := bytes.NewBufferString("in")
 	out := &bytes.Buffer{}
-	terst.Swap(t, &term.WriterChecker, func(int) bool { return false })
+	tcommon.Swap(t, &term.WriterChecker, func(int) bool { return false })
 	terst.UseIO(t, in, out)
 
 	assert.Equal(t, out, tui.Stderr())
@@ -28,9 +29,9 @@ func TestStderrReturnsRawWriterWithoutTTY(t *testing.T) {
 
 func TestStderrReturnsCoordinatedWriterOnTTY(t *testing.T) {
 	in := bytes.NewBufferString("in")
-	out := &terst.MockDescriptor{Writer: &bytes.Buffer{}, FD: 42}
-	terst.Swap(t, &term.WriterChecker, func(int) bool { return true })
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 80, 24, nil })
+	out := &tcommon.MockDescriptor{Writer: &bytes.Buffer{}, FD: 42}
+	tcommon.Swap(t, &term.WriterChecker, func(int) bool { return true })
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 80, 24, nil })
 	terst.UseIO(t, in, out)
 
 	stderr := tui.Stderr()
@@ -49,8 +50,8 @@ func TestStderrReturnsCoordinatedWriterOnTTY(t *testing.T) {
 
 func TestStderrReturnsRawWriterOnTTYInCI(t *testing.T) {
 	terst.WithEnv(t, "CI=true")
-	out := terst.TTYWriter(t)
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 80, 24, nil })
+	out := tcommon.TTYWriter(t)
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 80, 24, nil })
 	terst.UseIO(t, bytes.NewBufferString("in"), out)
 
 	assert.Equal(t, out, tui.Stderr())
@@ -154,9 +155,9 @@ func TestStderrPreservesCRLFAcrossChunkBoundary(t *testing.T) {
 
 func TestTerminalStderrImplementsCloser(t *testing.T) {
 	var out bytes.Buffer
-	outW := &terst.MockDescriptor{Writer: &out, FD: 7}
-	terst.Swap(t, &term.WriterChecker, func(int) bool { return true })
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 80, 24, nil })
+	outW := &tcommon.MockDescriptor{Writer: &out, FD: 7}
+	tcommon.Swap(t, &term.WriterChecker, func(int) bool { return true })
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 80, 24, nil })
 
 	tioInst := &term.Terminal{Reader: bytes.NewBufferString(""), Writer: outW}
 	stderr := tioInst.StderrWriter()
@@ -173,9 +174,9 @@ func TestTerminalStderrImplementsCloser(t *testing.T) {
 
 func TestTerminalStderrSyncFlushesWithoutClosing(t *testing.T) {
 	var out bytes.Buffer
-	outW := &terst.MockDescriptor{Writer: &out, FD: 7}
-	terst.Swap(t, &term.WriterChecker, func(int) bool { return true })
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 80, 24, nil })
+	outW := &tcommon.MockDescriptor{Writer: &out, FD: 7}
+	tcommon.Swap(t, &term.WriterChecker, func(int) bool { return true })
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 80, 24, nil })
 
 	tioInst := &term.Terminal{Reader: bytes.NewBufferString(""), Writer: outW}
 	stderr := tioInst.StderrWriter()

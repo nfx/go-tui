@@ -17,7 +17,7 @@ import (
 	"text/template"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestInstallAtomicAndIsolation(t *testing.T) {

@@ -16,17 +16,18 @@ import (
 
 	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestMultichoiceRenderInitializes(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two"}
-	io := terst.FixedTermIO(20, 6).IO()
+	io := tcommon.FixedTermIO(20, 6).IO()
 
 	frame := &bytes.Buffer{}
 	assert.NoError(t, m.prepare(nil))
@@ -39,7 +40,7 @@ func TestMultichoiceRenderMoreItems(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"short", "veryverylong", "mid", "tail"}
 	m.active = 0
-	io := terst.FixedTermIO(5, 4).IO()
+	io := tcommon.FixedTermIO(5, 4).IO()
 	frame := &bytes.Buffer{}
 	assert.NoError(t, m.prepare(nil))
 	assert.NoError(t, m.bindRun(t.Context(), io))

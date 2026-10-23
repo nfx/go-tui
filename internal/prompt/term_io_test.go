@@ -7,18 +7,19 @@ import (
 	"io"
 	"testing"
 
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestThemedInputProbesBeforeReadingKeys(t *testing.T) {
 	terst.WithEnv(t, "FORCE_COLOR=3")
 	terst.UseTheme(t, theme.New())
 	// keys typed during the probe stay with the prompt
-	tt, rt := terst.ProbeTermIO(t, terst.OSCReply+"a\r")
+	tt, rt := tcommon.ProbeTermIO(t, tcommon.OSCReply+"a\r")
 	tt.Restore = func() error { return nil }
 	i := newInput(t.Context(), "Label")
 	i.In, i.Out = tt.In, tt.Out
