@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nfx/go-tui/theme"
 	"regexp"
 	"slices"
 	"strconv"
@@ -15,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nfx/go-tui/theme"
 
 	tui "github.com/nfx/go-tui"
 	"github.com/nfx/go-tui/internal/assert"
@@ -248,11 +249,7 @@ const (
 	blackBackground = "\x1b]11;rgb:0000/0000/0000\x1b\\"
 )
 
-var foreground = regexp.MustCompile(`\x1b\[38;2;[0-9;]+m`)
-
-// textColor is the truecolor SGR right before the last text in out, or "".
-// The last one is the settled rendering: a prompt may draw its active row
-// before it is answered, in another color.
+// textColor is the truecolor SGR right before text in out, or "".
 func textColor(out, text string) string {
 	all := regexp.MustCompile(`(\x1b\[38;2;[0-9;]+m)`+regexp.QuoteMeta(text)).FindAllStringSubmatch(out, -1)
 	if len(all) == 0 {
