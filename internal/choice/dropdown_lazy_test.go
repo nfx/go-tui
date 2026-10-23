@@ -266,12 +266,9 @@ func TestDropdownLazySelectsItem(t *testing.T) {
 }
 
 func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
-	in := terst.NewBlockingByteReader(0)
+	in := terst.NewKeys(t)
 	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(func() {
-		cancel()
-		in.Close()
-	})
+	t.Cleanup(cancel)
 	itemsLoaded, ready := notifyItemsLoaded(2)
 	terst.UseIO(t, in, io.Discard)
 	opts := option.WithOptions(
@@ -308,7 +305,7 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	in.SendByte(byte(term.KeyEnter))
+	in.Send(terst.KeyEnter)
 	res := <-resCh
 	assert.NoError(t, res.err)
 	assert.Equal(t, "red", res.value)
@@ -316,10 +313,9 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 }
 
 func TestDropdownLazyDoesNotStartProducerWhenContextAlreadyCanceled(t *testing.T) {
-	in := terst.NewBlockingByteReader(0)
+	in := terst.NewKeys(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	t.Cleanup(in.Close)
 	var started atomic.Bool
 	release := make(chan struct{})
 	t.Cleanup(func() {

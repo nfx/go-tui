@@ -82,15 +82,7 @@ func TestMultichoiceRunNoSpace(t *testing.T) {
 }
 
 func TestMultichoiceRunHandlesKeys(t *testing.T) {
-	reader := &terst.ChunkReader{Chunks: [][]byte{
-		{0x1b, 0x5b, 0x42},
-		{' '},
-		{'z'},
-		{'o'},
-		{0x7f},
-		{0x1b, 0x5b, 0x41},
-		{term.KeyEnter},
-	}}
+	reader := terst.NewKeys(t, terst.KeyDown, " ", "z", "o", terst.KeyBackspace, terst.KeyUp, terst.KeyEnter)
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two", "three"}
 	m.in = reader
@@ -108,13 +100,7 @@ func TestMultichoiceRunHandlesKeys(t *testing.T) {
 }
 
 func TestMultichoiceRunIgnoresSpecialKeys(t *testing.T) {
-	reader := &terst.ChunkReader{Chunks: [][]byte{
-		[]byte("\x1b[3~"),
-		[]byte("\x1bx"),
-		{0x1b, 0x1b, 0x5b, 0x42}, // Esc, then down
-		{' '},
-		{term.KeyEnter},
-	}}
+	reader := terst.NewKeys(t, "\x1b[3~", "\x1bx", terst.KeyEsc+terst.KeyDown, " ", terst.KeyEnter)
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two", "three"}
 	m.in = reader
@@ -137,7 +123,7 @@ func TestMultichoiceRunContextDone(t *testing.T) {
 	cancel()
 	m := newMultichoice(ctx)
 	m.Items = []any{"one"}
-	m.in = &terst.ChunkReader{Chunks: [][]byte{{byte(term.KeyEnter)}}}
+	m.in = terst.NewKeys(t, terst.KeyEnter)
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 		return &term.IO{
@@ -155,7 +141,7 @@ func TestMultichoiceRunContextDone(t *testing.T) {
 func TestMultichoiceRunCoalescedKeys(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one"}
-	m.in = &terst.ChunkReader{Chunks: [][]byte{{'a', 'b'}, {byte(term.KeyEnter)}}}
+	m.in = terst.NewKeys(t, "ab", terst.KeyEnter)
 	m.out = &bytes.Buffer{}
 	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 		return &term.IO{

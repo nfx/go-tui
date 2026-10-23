@@ -23,8 +23,7 @@ func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
 		term.Default.SetIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 60, 8)
-	reader := terst.NewBlockingByteReader(8)
-	t.Cleanup(reader.Close)
+	reader := terst.NewKeys(t)
 	input := &terst.MockDescriptor{Reader: reader, FD: 0}
 	term.Default.SetIO(input, cio)
 
@@ -40,15 +39,9 @@ func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
 	}()
 
 	terst.WaitOutputContains(t, stdout.C, "PROMPT")
-	reader.SendByte('a')
-	reader.SendByte('b')
-	reader.SendByte('c')
+	reader.Send("a", "b", "c")
 	terst.WaitOutputContains(t, stdout.C, "PROMPT", "abc")
-	reader.SendByte(0x1b)
-	reader.SendByte(0x5b)
-	reader.SendByte(0x44)
-	reader.SendByte('X')
-	reader.SendByte(term.KeyEnter)
+	reader.Send(terst.KeyLeft, "X", terst.KeyEnter)
 
 	select {
 	case err := <-errs:
@@ -93,8 +86,7 @@ func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
 		term.Default.SetIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 60, 8)
-	reader := terst.NewBlockingByteReader(32)
-	t.Cleanup(reader.Close)
+	reader := terst.NewKeys(t)
 	input := &terst.MockDescriptor{Reader: reader, FD: 0}
 	term.Default.SetIO(input, cio)
 
@@ -110,22 +102,11 @@ func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
 	}()
 
 	terst.WaitOutputContains(t, stdout.C, "PROMPT", "apple")
-	reader.SendByte(0x1b)
-	reader.SendByte(0x5b)
-	reader.SendByte(0x44)
-	reader.SendByte(0x1b)
-	reader.SendByte(0x5b)
-	reader.SendByte(0x44)
+	reader.Send(terst.KeyLeft, terst.KeyLeft)
 	_, err := tui.Stderr().Write([]byte("INF background\n"))
 	assert.NoError(t, err)
 	terst.WaitOutputContains(t, stdout.C, "INF background", "PROMPT", "apple")
-	reader.SendByte(0x1b)
-	reader.SendByte(0x5b)
-	reader.SendByte(0x44)
-	reader.SendByte('q')
-	reader.SendByte('q')
-	reader.SendByte('q')
-	reader.SendByte(term.KeyEnter)
+	reader.Send(terst.KeyLeft, "q", "q", "q", terst.KeyEnter)
 
 	select {
 	case err := <-errs:
@@ -142,14 +123,7 @@ func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
 		term.Default.SetIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 40, 6)
-	input := &terst.MockDescriptor{
-		Reader: &terst.ChunkReader{Chunks: [][]byte{
-			{'h'},
-			{'i'},
-			{term.KeyEnter},
-		}},
-		FD: 0,
-	}
+	input := &terst.MockDescriptor{Reader: terst.NewKeys(t, "h", "i", terst.KeyEnter), FD: 0}
 	term.Default.SetIO(input, cio)
 
 	result := make(chan string, 1)
@@ -217,8 +191,7 @@ func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {
 		term.Default.SetIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 40, 6)
-	reader := terst.NewBlockingByteReader(2)
-	t.Cleanup(reader.Close)
+	reader := terst.NewKeys(t)
 	input := &terst.MockDescriptor{
 		Reader: reader,
 		FD:     0,
@@ -231,9 +204,9 @@ func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {
 	}()
 
 	initial := terst.WaitOutputContains(t, stdout.C, "Are you sure?", "Yes", "No")
-	reader.SendBytes([]byte{0x1b, 0x5b, 0x42})
+	reader.Send(terst.KeyDown)
 	updated := terst.WaitOutputContains(t, stdout.C, "Are you sure?", "Yes", "No")
 	assert.True(t, initial != updated)
-	reader.SendByte(term.KeyEnter)
+	reader.Send(terst.KeyEnter)
 	assert.True(t, !<-result)
 }

@@ -96,12 +96,7 @@ func TestInputOptWrongType(t *testing.T) {
 
 func TestInputRunEmitsLifecycleEvents(t *testing.T) {
 	i := newInput(t.Context(), "Label")
-	i.In = &terst.ChunkReader{
-		Chunks: [][]byte{
-			{'x'},
-			{term.KeyEnter},
-		},
-	}
+	i.In = terst.NewKeys(t, "x", terst.KeyEnter)
 	var out bytes.Buffer
 	i.Out = &out
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
@@ -198,12 +193,7 @@ func TestInputRunWithNonEmptyIgnoresEmptyConfirmation(t *testing.T) {
 // regression: readEvents goroutine must not exit on pasteTextError
 func TestInputRunPasteFollowedByEnter(t *testing.T) {
 	i := newInput(t.Context(), "Label")
-	i.In = &terst.ChunkReader{
-		Chunks: [][]byte{
-			{'h', 'i'},
-			{term.KeyEnter},
-		},
-	}
+	i.In = terst.NewKeys(t, "hi", terst.KeyEnter)
 	var out bytes.Buffer
 	i.Out = &out
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
@@ -223,14 +213,7 @@ func TestInputRunPasteFollowedByEnter(t *testing.T) {
 // regression: multiple paste chunks interleaved with single keys
 func TestInputRunTypeAndPaste(t *testing.T) {
 	i := newInput(t.Context(), "Label")
-	i.In = &terst.ChunkReader{
-		Chunks: [][]byte{
-			{'h'},
-			{'e', 'l'},
-			{'l', 'o'},
-			{term.KeyEnter},
-		},
-	}
+	i.In = terst.NewKeys(t, "h", "el", "lo", terst.KeyEnter)
 	var out bytes.Buffer
 	i.Out = &out
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
@@ -504,13 +487,13 @@ func runInputOn(t *testing.T, in io.Reader, opts ...option.Opt) (string, error) 
 
 // regression: a, b, Backspace and Enter typed together must submit "a"
 func TestInputRunBufferedKeystrokes(t *testing.T) {
-	got, err := runInputOn(t, &terst.ChunkReader{Chunks: [][]byte{[]byte("ab\x7f\r")}})
+	got, err := runInputOn(t, terst.NewKeys(t, "ab\x7f\r"))
 	assert.NoError(t, err)
 	assert.Equal(t, "a", got)
 }
 
 func TestInputRunBufferedKeysInTheMiddle(t *testing.T) {
-	in := &terst.ChunkReader{Chunks: [][]byte{[]byte("\x1b[Da\x1b[Cé\x1b[D\x1b[D"), []byte("é\r")}}
+	in := terst.NewKeys(t, "\x1b[Da\x1b[Cé\x1b[D\x1b[D", "é\r")
 	got, err := runInputOn(t, in, option.WithDefault("\u65e5\u672c"))
 	assert.NoError(t, err)
 	assert.Equal(t, "\u65e5aé\u672cé", got)
@@ -518,7 +501,7 @@ func TestInputRunBufferedKeysInTheMiddle(t *testing.T) {
 
 // regression: keys after a confirming Enter stay for the next prompt
 func TestInputRunKeepsKeysAfterEnter(t *testing.T) {
-	in := &terst.ChunkReader{Chunks: [][]byte{[]byte("a\rbc\r")}}
+	in := terst.NewKeys(t, "a\rbc\r")
 	got, err := runInputOn(t, in)
 	assert.NoError(t, err)
 	assert.Equal(t, "a", got)
@@ -629,7 +612,7 @@ func TestInputRejectionClearsOnEditAndKeepsText(t *testing.T) {
 
 func TestInputNeedsTwoRowsForFeedback(t *testing.T) {
 	i := newInput(t.Context(), "Label")
-	i.In = &terst.ChunkReader{Chunks: [][]byte{{'a'}, {term.KeyEnter}}}
+	i.In = terst.NewKeys(t, "a", terst.KeyEnter)
 	i.Out = &bytes.Buffer{}
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 		return &term.IO{In: in, Out: out, Width: 20, Height: 1, Restore: func() error { return nil }}, nil
