@@ -250,13 +250,15 @@ const (
 
 var foreground = regexp.MustCompile(`\x1b\[38;2;[0-9;]+m`)
 
-// textColor is the truecolor SGR right before text in out, or "".
+// textColor is the truecolor SGR right before the last text in out, or "".
+// The last one is the settled rendering: a prompt may draw its active row
+// before it is answered, in another color.
 func textColor(out, text string) string {
-	m := regexp.MustCompile(`(\x1b\[38;2;[0-9;]+m)` + regexp.QuoteMeta(text)).FindStringSubmatch(out)
-	if m == nil {
+	all := regexp.MustCompile(`(\x1b\[38;2;[0-9;]+m)` + regexp.QuoteMeta(text)).FindAllStringSubmatch(out, -1)
+	if len(all) == 0 {
 		return ""
 	}
-	return m[1]
+	return all[len(all)-1][1]
 }
 
 func TestThemedRouteSharesDetection(t *testing.T) {
