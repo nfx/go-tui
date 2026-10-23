@@ -64,7 +64,7 @@ func TestSpinnerUpdatesAfterCompletion(t *testing.T) {
 	th := theme.New()
 	th.Symbols.Spinner = []string{"-"}
 	terst.UseTheme(t, th)
-	s, err := tui.NewSpinners(t.Context())
+	s, err := tui.NewSpinners(t.Context(), tui.WithNoElapsed())
 	assert.NoError(t, err)
 	t.Cleanup(s.Close)
 	failed, err := s.Add(t.Context(), tui.WithPrefixf("fetch"))
@@ -80,5 +80,30 @@ func TestSpinnerUpdatesAfterCompletion(t *testing.T) {
 	// spinners apply changes in order, so a frame with this one has all of them
 	_, err = s.Add(context.Background(), tui.WithPrefixf("sentinel"))
 	assert.NoError(t, err)
-	term.AwaitVisible("✖ fetch: timeout", "■ build: done", "- sentinel:")
+	term.AwaitVisible("✖ fetch: timeout", "■ build: done", "- sentinel")
+}
+
+// A terminal that does not join emoji draws a ZWJ family wider than the two
+// columns it is measured at, so a clipped row overflows. It must not wrap, or
+// each redraw leaves the top row of the last frame on the screen.
+func TestSpinnerWideClusterLeavesNoStaleRows(t *testing.T) {
+	term := newTerminal(t, 6)
+	th := theme.New()
+	th.Symbols.Spinner = []string{"-"}
+	terst.UseTheme(t, th)
+	s, err := tui.NewSpinners(t.Context(), tui.WithNoElapsed())
+	assert.NoError(t, err)
+	t.Cleanup(s.Close)
+	build, err := s.Add(t.Context(), tui.WithPrefixf("build"))
+	assert.NoError(t, err)
+	web, err := s.Add(t.Context(), tui.WithPrefixf("web"))
+	assert.NoError(t, err)
+	web.Update("\U0001F468\u200d\U0001F469\u200d\U0001F467 restarting the service with a long tail")
+	for i := range 3 {
+		build.Updatef("building %d", i)
+		term.AwaitVisible(
+			fmt.Sprintf("- build: building %d", i),
+			"- web: \U0001F468\u200d\U0001F469\u200d\U0001F467 restarting...",
+		)
+	}
 }

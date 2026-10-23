@@ -17,8 +17,9 @@ type spinnerGroupInit struct {
 
 type spinnerAdded struct {
 	spinnerEventMarker
-	Name  string
-	Index int
+	Name   string
+	Index  int
+	Parent int // -1 for a top-level spinner
 }
 
 type spinnerUpdated struct {

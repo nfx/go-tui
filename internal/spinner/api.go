@@ -66,9 +66,9 @@ func NewSpinners(ctx context.Context, opt ...option.Opt) (*Spinners, error) {
 	return s, nil
 }
 
-// WithPrefixf sets the text shown next to a spinner added with [Spinners.Add].
+// WithPrefixf sets the label of a spinner added with [Spinners.Add]. The label is
+// formatted as in [fmt.Sprintf] and shown before the message.
 func WithPrefixf(prefix string, args ...any) option.Opt {
-	// TODO: decide if we expose text/template or fmt. This is a bit of a mess
 	return option.OpT(func(cs *createSpinner) error {
 		cs.prefix = fmt.Sprintf(prefix, args...)
 		return nil
@@ -79,6 +79,25 @@ func WithPrefixf(prefix string, args ...any) option.Opt {
 func WithKeep() option.Opt {
 	return option.OpT(func(cs *createSpinner) error {
 		cs.keep = true
+		return nil
+	})
+}
+
+// elapsedSetter is the option target of [WithNoElapsed]: a group, for the
+// spinners it adds, or one spinner being created.
+type elapsedSetter interface{ setElapsed(on bool) }
+
+func (s *Spinners) setElapsed(on bool)       { s.elapsed = on }
+func (cs *createSpinner) setElapsed(on bool) { cs.elapsed = on }
+
+// WithNoElapsed hides the time a spinner has been running on a terminal. A
+// group applies it to every spinner it adds, and a spinner to itself. The time
+// is on by default, and it never reaches the logs written without a terminal.
+//
+// Experimental: this API may change in the future.
+func WithNoElapsed() option.Opt {
+	return option.OpT(func(t elapsedSetter) error {
+		t.setElapsed(false)
 		return nil
 	})
 }

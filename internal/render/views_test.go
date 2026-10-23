@@ -24,6 +24,8 @@ type fakeSpinnerView struct {
 	Prefix  string
 	Message string
 	State   string
+	Elapsed string
+	Depth   int
 }
 
 type fakeColumnView struct {

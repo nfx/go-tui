@@ -31,6 +31,9 @@ var (
 	ErrWrongWidget         = errs.ErrWrongWidget
 	// ErrNoTTY is returned when a prompt needs a terminal and there is none.
 	ErrNoTTY = errs.ErrNoTTY
+	// ErrSpinnerStopped is returned when a child is added to a spinner that has
+	// stopped or failed.
+	ErrSpinnerStopped = spinner.ErrSpinnerStopped
 	// ErrNoSpace is returned when the terminal is too small to draw the widget.
 	ErrNoSpace = errs.ErrNoSpace
 	// ErrEmptyLazyResult is empty lazy result.
@@ -375,7 +378,8 @@ func NewSpinners(ctx context.Context, opt ...option.Opt) (*Spinners, error) {
 	return spinner.NewSpinners(ctx, opt...)
 }
 
-// WithPrefixf sets the text shown next to a spinner added with [Spinners.Add].
+// WithPrefixf sets the label of a spinner added with [Spinners.Add]. The label is
+// formatted as in [fmt.Sprintf] and shown before the message.
 func WithPrefixf(prefix string, args ...any) option.Opt {
 	return spinner.WithPrefixf(prefix, args...)
 }
@@ -383,6 +387,15 @@ func WithPrefixf(prefix string, args ...any) option.Opt {
 // WithKeep will keep the spinner displayed after it's done.
 func WithKeep() option.Opt {
 	return spinner.WithKeep()
+}
+
+// WithNoElapsed hides the time a spinner has been running on a terminal. A
+// group applies it to every spinner it adds, and a spinner to itself. The time
+// is on by default, and it never reaches the logs written without a terminal.
+//
+// Experimental: this API may change in the future.
+func WithNoElapsed() option.Opt {
+	return spinner.WithNoElapsed()
 }
 
 // Spinners shows a group of spinners that share a terminal region.

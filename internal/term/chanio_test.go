@@ -343,7 +343,7 @@ func TestChanIOReleasedViewportKeepsLastFrameInScrollback(t *testing.T) {
 
 	cio.releaseViewport(kept)
 	// the released frame ends its line and the live overlay is redrawn below it
-	out := waitOutputContains(t, stdout.C, "\raborted\n\rlive")
+	out := waitOutputContains(t, stdout.C, "\raborted\n\x1b[?7l\rlive\x1b[?7h")
 	assert.True(t, !strings.HasSuffix(out, "\n"))
 	assert.Equal(t, 1, managedViewports(cio))
 
@@ -370,4 +370,39 @@ func TestChanIOFlushAndCloseReportWriteFailure(t *testing.T) {
 	assert.ErrorIs(t, cio.Flush(), io.ErrShortWrite)
 	assert.ErrorIs(t, tio.Flush(), io.ErrShortWrite)
 	assert.ErrorIs(t, tio.Close(), io.ErrShortWrite)
+}
+
+// cutWriter is a terminal that receives the first n bytes of the first write
+// before it fails, and every later write whole.
+type cutWriter struct {
+	got bytes.Buffer
+	n   int
+	cut bool
+}
+
+func (w *cutWriter) Write(p []byte) (int, error) {
+	if w.cut {
+		return w.got.Write(p)
+	}
+	w.cut = true
+	n, _ := w.got.Write(p[:min(w.n, len(p))])
+	return n, io.ErrShortWrite
+}
+
+func TestChanIORestoresAutowrapAfterFailedFrame(t *testing.T) {
+	out := &cutWriter{n: len(AutowrapOff)}
+	cio := startChanIOTo(t.Context(), out)
+	vp, err := cio.PushViewport()
+	assert.NoError(t, err)
+	assert.NoError(t, vp.WriteAndWait([]byte("row")))
+	assert.ErrorIs(t, cio.Flush(), io.ErrShortWrite)
+	assert.Equal(t, AutowrapOff+AutowrapOn, out.got.String())
+}
+
+func TestIOWriteRestoresAutowrapAfterFailedFrame(t *testing.T) {
+	out := &cutWriter{n: len(AutowrapOff)}
+	tio := &IO{Out: out}
+	_, err := tio.Write([]byte(AutowrapOff + "\rrow\n\r" + AutowrapOn))
+	assert.ErrorIs(t, err, io.ErrShortWrite)
+	assert.Equal(t, AutowrapOff+AutowrapOn, out.got.String())
 }

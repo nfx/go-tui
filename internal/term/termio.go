@@ -227,7 +227,11 @@ func (t *IO) Write(p []byte) (n int, err error) {
 		// propagate current width so the viewport wraps correctly after resize
 		return t.Vp.writeWithWidth(p, t.Width)
 	}
-	return t.Out.Write(p)
+	n, err = t.Out.Write(p)
+	if err != nil || n < len(p) {
+		restoreAutowrap(t.Out, p)
+	}
+	return n, err
 }
 
 // ReadKey reads a single byte and returns it as a rune,

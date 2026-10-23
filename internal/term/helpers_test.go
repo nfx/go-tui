@@ -48,11 +48,11 @@ func (b *syncBuffer) String() string {
 }
 
 func startChanIO(ctx context.Context) *ChanIO {
-	return startChanIOTo(ctx, io.Discard, 80, 24)
+	return startChanIOTo(ctx, io.Discard)
 }
 
-func startChanIOTo(ctx context.Context, out io.Writer, width, height int) *ChanIO {
-	cio := NewUnstartedIO(ctx, width, height, 0)
+func startChanIOTo(ctx context.Context, out io.Writer) *ChanIO {
+	cio := NewUnstartedIO(ctx, 80, 24, 0)
 	go cio.HandleViewports(ctx)
 	go cio.ForwardTo(ctx, out)
 	return cio

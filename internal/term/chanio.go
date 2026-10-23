@@ -500,7 +500,10 @@ func (i *ChanIO) redrawManaged(w io.Writer, prevH int, released *Viewport) (int,
 }
 
 // writeManaged renders managed viewports within the terminal height budget
-// and records row widths and the final caret offset for clearing.
+// and records row widths and the final caret offset for clearing. A terminal
+// may draw a cluster wider than it is measured, and a row that wraps would
+// leave the top row below the next clear, so the rows are drawn with autowrap
+// off and the terminal clips them instead.
 func (i *ChanIO) writeManaged(w io.Writer) (int, error) {
 	i.ChainMu.Lock()
 	defer i.ChainMu.Unlock()
@@ -510,6 +513,7 @@ func (i *ChanIO) writeManaged(w io.Writer) (int, error) {
 		return 0, nil
 	}
 	var totalLines int
+	var rows bytes.Buffer
 	curr := i.Head
 	_, budget := i.size()
 	height := 0 // the head keeps its own height
@@ -517,7 +521,7 @@ func (i *ChanIO) writeManaged(w io.Writer) (int, error) {
 		if !i.isManagedViewport(curr) {
 			break
 		}
-		res, err := i.writeViewport(curr, w, height)
+		res, err := i.writeViewport(curr, &rows, height)
 		if err != nil {
 			return totalLines, err
 		}
@@ -531,14 +535,17 @@ func (i *ChanIO) writeManaged(w io.Writer) (int, error) {
 		curr, height = curr.Next, budget
 		if res.up > 0 && curr != nil && i.isManagedViewport(curr) {
 			// return from the caret row, so the next viewport starts below this one
-			if _, err := fmt.Fprintf(w, "\x1b[%dB", res.up); err != nil {
-				return totalLines, err
-			}
+			fmt.Fprintf(&rows, "\x1b[%dB", res.up)
 			i.cursorUp = 0
 		}
 	}
-	i.trimTrailingNewline(w)
-	return totalLines, nil
+	i.trimTrailingNewline(&rows)
+	if rows.Len() == 0 {
+		i.trimTrailingNewline(w)
+		return totalLines, nil
+	}
+	_, err := fmt.Fprint(w, AutowrapOff, rows.String(), AutowrapOn)
+	return totalLines, err
 }
 
 func (i *ChanIO) wrappedRows(widths []int, termWidth int) int {
