@@ -273,9 +273,8 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 		in.Close()
 	})
 	itemsLoaded, ready := notifyItemsLoaded(2)
+	terst.UseIO(t, in, io.Discard)
 	opts := option.WithOptions(
-		option.WithInput(in),
-		option.WithOutput(io.Discard),
 		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 				return &term.IO{
@@ -326,9 +325,8 @@ func TestDropdownLazyDoesNotStartProducerWhenContextAlreadyCanceled(t *testing.T
 	t.Cleanup(func() {
 		close(release)
 	})
+	terst.UseIO(t, in, io.Discard)
 	opts := option.WithOptions(
-		option.WithInput(in),
-		option.WithOutput(io.Discard),
 		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 				return &term.IO{
@@ -371,9 +369,8 @@ func TestDropdownLazyCtrlCNotLostAfterPreviousLazyExit(t *testing.T) {
 		}
 	})
 	itemsLoaded, ready := notifyItemsLoaded(2)
+	terst.UseIO(t, in, io.Discard)
 	opts := option.WithOptions(
-		option.WithInput(in),
-		option.WithOutput(io.Discard),
 		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 				return &term.IO{
@@ -422,9 +419,8 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 		}
 	})
 	itemsLoaded, ready := notifyItemsLoaded(2)
+	terst.UseIO(t, in, io.Discard)
 	opts := option.WithOptions(
-		option.WithInput(in),
-		option.WithOutput(io.Discard),
 		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 				return &term.IO{
@@ -584,8 +580,8 @@ func TestDropdownLazyStopsProducerOnEarlyError(t *testing.T) {
 		for i := 0; yield(i, nil); i++ {
 		}
 	}
+	terst.UseIO(t, bytes.NewBuffer(nil), io.Discard)
 	_, err := DropdownLazy(t.Context(), "pick", seq,
-		option.WithInput(bytes.NewBuffer(nil)), option.WithOutput(io.Discard),
 		fixedTermOpt(), WithTemplate("{{"))
 	assert.Error(t, err)
 	time.Sleep(50 * time.Millisecond)
@@ -629,8 +625,9 @@ func TestDropdownLazyStopsProducerAfterSelection(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		w.Write([]byte{term.KeyEnter}) //nolint:errcheck // test helper
 	}()
+	terst.UseIO(t, in, io.Discard)
 	_, err = DropdownLazy(t.Context(), "pick", seq,
-		option.WithInput(in), option.WithOutput(io.Discard), fixedTermOpt())
+		fixedTermOpt())
 	assert.NoError(t, err)
 	select {
 	case <-done:
@@ -640,38 +637,42 @@ func TestDropdownLazyStopsProducerAfterSelection(t *testing.T) {
 }
 
 func TestDropdownLazyDefaults(t *testing.T) {
-	io := terst.Quiet(t)
+	terst.Quiet(t)
 	ctx := t.Context()
 	var started bool
 
-	_, err := DropdownLazy(ctx, "Pick", seq(&started, nil, "a", "b"), io)
+	_, err := DropdownLazy(ctx, "Pick", seq(&started, nil, "a", "b"))
 	assert.ErrorIs(t, err, errs.ErrNoTTY)
 	assert.True(t, !started)
 
-	got, err := DropdownLazy(ctx, "Pick", seq(&started, nil, "alpha", "beta"), io, option.WithDefault("beta"))
+	got, err := DropdownLazy(ctx, "Pick", seq(&started, nil, "alpha", "beta"), option.WithDefault("beta"))
 	assert.NoError(t, err)
 	assert.Equal(t, "beta", got)
 
 	// a late second match is ambiguous
-	_, err = DropdownLazy(ctx, "Pick", seq(&started, nil, "a", "b", "a"), io, option.WithDefault("a"))
+	_, err = DropdownLazy(ctx, "Pick", seq(&started, nil, "a", "b", "a"), option.WithDefault("a"))
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 
 	late := errors.New("late")
-	_, err = DropdownLazy(ctx, "Pick", seq(&started, late, "a"), io, option.WithDefault("a"))
+	_, err = DropdownLazy(ctx, "Pick", seq(&started, late, "a"), option.WithDefault("a"))
 	assert.ErrorIs(t, err, late)
 
-	_, err = DropdownLazy(ctx, "Pick", seq[string](&started, nil), io, option.WithDefault("a"))
+	_, err = DropdownLazy(ctx, "Pick", seq[string](&started, nil), option.WithDefault("a"))
 	assert.ErrorIs(t, err, errs.ErrEmptyLazyResult)
 
-	got, err = DropdownLazy(ctx, "Pick", seq(&started, nil, "only"), io, WithOneReturn())
+	got, err = DropdownLazy(ctx, "Pick", seq(&started, nil, "only"), WithOneReturn())
 	assert.NoError(t, err)
 	assert.Equal(t, "only", got)
 	// a singleton at first is not final
-	_, err = DropdownLazy(ctx, "Pick", seq(&started, nil, "a", "b"), io, WithOneReturn())
+	_, err = DropdownLazy(ctx, "Pick", seq(&started, nil, "a", "b"), WithOneReturn())
 	assert.ErrorIs(t, err, errs.ErrNoTTY)
 
-	typed, err := DropdownLazy(ctx, "Pick", seq(&started, nil, server{"a", 1}, server{"b", 2}), io,
-		option.WithDefault(server{"b", 2}))
+	typed, err := DropdownLazy(
+		ctx,
+		"Pick",
+		seq(&started, nil, server{"a", 1}, server{"b", 2}),
+		option.WithDefault(server{"b", 2}),
+	)
 	assert.NoError(t, err)
 	assert.Equal(t, server{"b", 2}, typed)
 
@@ -679,7 +680,7 @@ func TestDropdownLazyDefaults(t *testing.T) {
 	_, err = DropdownLazy(cctx, "Pick", func(yield func(string, error) bool) {
 		cancel()
 		yield("a", nil)
-	}, io, option.WithDefault("a"))
+	}, option.WithDefault("a"))
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
@@ -708,8 +709,9 @@ func TestDropdownLazyAutomaticAnswerCancelsWhileProducerBlocked(t *testing.T) {
 		<-release
 	}
 	done := make(chan error, 1)
+	terst.UseIO(t, nil, &bytes.Buffer{})
 	go func() {
-		_, err := DropdownLazy(ctx, "Pick", seq, option.WithDefault("a"), option.WithOutput(&bytes.Buffer{}))
+		_, err := DropdownLazy(ctx, "Pick", seq, option.WithDefault("a"))
 		done <- err
 	}()
 	cancel()

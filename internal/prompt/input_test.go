@@ -75,7 +75,8 @@ func TestInputReadOptionError(t *testing.T) {
 }
 
 func TestInputReadRunError(t *testing.T) {
-	_, err := Input(t.Context(), "Label", option.WithOutput(io.Discard), option.OpT(func(i *input) error {
+	terst.UseIO(t, nil, io.Discard)
+	_, err := Input(t.Context(), "Label", option.OpT(func(i *input) error {
 		i.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) {
 			return nil, io.EOF
 		}
@@ -265,7 +266,8 @@ func TestInputTypesMultiByteFromPipe(t *testing.T) {
 	_, err = w.WriteString("héllo\x1b[D\x1b[D\x1b[D\x7fж\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Input(t.Context(), "Label", option.WithInput(&terst.FDByteReader{F: r}), option.WithOutput(cio))
+	terst.UseIO(t, &terst.FDByteReader{F: r}, cio)
+	got, err := Input(t.Context(), "Label")
 	assert.NoError(t, err)
 	assert.Equal(t, "hжllo", got)
 }
@@ -280,7 +282,8 @@ func TestInputReadsFromPipe(t *testing.T) {
 	_, err = w.WriteString("hi\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Input(t.Context(), "Label", option.WithInput(&terst.FDByteReader{F: r}), option.WithOutput(cio))
+	terst.UseIO(t, &terst.FDByteReader{F: r}, cio)
+	got, err := Input(t.Context(), "Label")
 	assert.NoError(t, err)
 	assert.Equal(t, "hi", got)
 }
@@ -300,12 +303,11 @@ func TestInputReadsMultipleLeftArrowsFromPipe(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
+	terst.UseIO(t, &terst.FDByteReader{F: r}, cio)
 	got, err := Input(
 		t.Context(),
 		"Label",
 		option.WithDefault("apple"),
-		option.WithInput(&terst.FDByteReader{F: r}),
-		option.WithOutput(cio),
 	)
 	assert.NoError(t, err)
 	assert.Equal(t, "apqqqple", got)
@@ -321,7 +323,8 @@ func TestInputIgnoresSpecialKeysFromPipe(t *testing.T) {
 	_, err = w.WriteString("a\x1b[3~b\x1b[Hc\x1bxd\x1b\x1bOPe\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Input(t.Context(), "Label", option.WithInput(&terst.FDByteReader{F: r}), option.WithOutput(cio))
+	terst.UseIO(t, &terst.FDByteReader{F: r}, cio)
+	got, err := Input(t.Context(), "Label")
 	assert.NoError(t, err)
 	assert.Equal(t, "abcde", got)
 }
@@ -341,7 +344,8 @@ func TestInputThenPasswordWithPasteDoesNotLoseBytes(t *testing.T) {
 	// step 1: feed login, run Input.
 	_, err = w.WriteString("alice\r")
 	assert.NoError(t, err)
-	gotLogin, err := Input(t.Context(), "Login", option.WithInput(r), option.WithOutput(cio))
+	terst.UseIO(t, r, cio)
+	gotLogin, err := Input(t.Context(), "Login")
 	assert.NoError(t, err)
 	assert.Equal(t, "alice", gotLogin)
 	// step 2: only after Input has returned, feed the password paste.
@@ -350,7 +354,8 @@ func TestInputThenPasswordWithPasteDoesNotLoseBytes(t *testing.T) {
 	wantPassword := "0123456789abcdefghijklmnopqrstuv"
 	_, err = w.WriteString(wantPassword + "\r")
 	assert.NoError(t, err)
-	gotPassword, err := Password(t.Context(), "Password", option.WithInput(r), option.WithOutput(cio))
+	terst.UseIO(t, r, cio)
+	gotPassword, err := Password(t.Context(), "Password")
 	assert.NoError(t, err)
 	assert.Equal(t, wantPassword, gotPassword)
 }

@@ -157,55 +157,55 @@ func TestInputRegexMalformedOrBlankMessage(t *testing.T) {
 }
 
 func TestInputDefaults(t *testing.T) {
-	io := terst.Quiet(t)
+	terst.Quiet(t)
 	ctx := t.Context()
 
-	got, err := Input(ctx, "Name", io, option.WithDefault("bob"))
+	got, err := Input(ctx, "Name", option.WithDefault("bob"))
 	assert.NoError(t, err)
 	assert.Equal(t, "bob", got)
 
-	got, err = Input(ctx, "Name", io, option.WithDefault(""))
+	got, err = Input(ctx, "Name", option.WithDefault(""))
 	assert.NoError(t, err)
 	assert.Equal(t, "", got)
 
-	got, err = Input(ctx, "Name", io, option.WithDefault(0))
+	got, err = Input(ctx, "Name", option.WithDefault(0))
 	assert.NoError(t, err)
 	assert.Equal(t, "0", got)
 
-	got, err = Input(ctx, "Name", io, option.WithDefault(nil))
+	got, err = Input(ctx, "Name", option.WithDefault(nil))
 	assert.NoError(t, err)
 	assert.Equal(t, "<nil>", got)
 
-	got, err = Input(ctx, "Name", io, option.WithDefault("first"), option.WithDefault("last"))
+	got, err = Input(ctx, "Name", option.WithDefault("first"), option.WithDefault("last"))
 	assert.NoError(t, err)
 	assert.Equal(t, "last", got)
 
-	_, err = Input(ctx, "Name", io)
+	_, err = Input(ctx, "Name")
 	assert.ErrorIs(t, err, errs.ErrNoTTY)
 }
 
 func TestInputDefaultValidation(t *testing.T) {
-	io := terst.Quiet(t)
+	terst.Quiet(t)
 	ctx := t.Context()
 
-	_, err := Input(ctx, "Name", io, WithNonEmpty(), option.WithDefault(""))
+	_, err := Input(ctx, "Name", WithNonEmpty(), option.WithDefault(""))
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 
 	cause := errors.New("nope")
-	_, err = Input(ctx, "Name", io, option.WithDefault("x"),
+	_, err = Input(ctx, "Name", option.WithDefault("x"),
 		WithValidation(func(context.Context, string) error { return cause }))
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 	assert.ErrorIs(t, err, cause)
 
-	_, err = Input(ctx, "Name", io, option.WithDefault("abc"), WithRegex(`\d+`, "digits"))
+	_, err = Input(ctx, "Name", option.WithDefault("abc"), WithRegex(`\d+`, "digits"))
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 
-	got, err := Input(ctx, "Name", io, option.WithDefault("123"), WithRegex(`\d+`, "digits"))
+	got, err := Input(ctx, "Name", option.WithDefault("123"), WithRegex(`\d+`, "digits"))
 	assert.NoError(t, err)
 	assert.Equal(t, "123", got)
 
 	cctx, cancel := context.WithCancel(ctx)
-	_, err = Input(cctx, "Name", io, option.WithDefault("x"),
+	_, err = Input(cctx, "Name", option.WithDefault("x"),
 		WithValidation(func(context.Context, string) error { cancel(); return nil }))
 	assert.ErrorIs(t, err, context.Canceled)
 }

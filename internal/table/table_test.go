@@ -288,7 +288,7 @@ func TestTableRejectsOptionsOfOtherWidgets(t *testing.T) {
 	assert.ErrorIs(t, err, errs.ErrWrongWidget)
 	assert.Contains(t, err.Error(), "need option.Prompt, got *table.table")
 
-	err = TableAuto(&bytes.Buffer{}, data, option.WithOutput(&bytes.Buffer{}))
+	err = TableAuto(&bytes.Buffer{}, data, option.WithDefault("a"))
 	assert.ErrorIs(t, err, errs.ErrWrongWidget)
 }
 

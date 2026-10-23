@@ -83,12 +83,6 @@ func newMultichoice(ctx context.Context) *multichoice {
 	}
 }
 
-// SetReader supplies the input used when the prompt acquires its terminal.
-func (m *multichoice) SetReader(r io.Reader) { m.in = r }
-
-// SetWriter supplies the output used when the prompt acquires its terminal.
-func (m *multichoice) SetWriter(w io.Writer) { m.out = w }
-
 // SetHide suppresses the final answer while retaining the interactive prompt.
 func (m *multichoice) SetHide() { m.Hide = true }
 

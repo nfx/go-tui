@@ -90,8 +90,8 @@ func TestNumberNativeWidth(t *testing.T) {
 func runNumber[T Numeric](t *testing.T, keys string, opts ...option.Opt) (T, string, error) {
 	t.Helper()
 	var out bytes.Buffer
-	v, err := Number[T](t.Context(), "Count:", append(opts,
-		option.WithInput(strings.NewReader(keys)), option.WithOutput(&out))...)
+	terst.UseIO(t, strings.NewReader(keys), &out)
+	v, err := Number[T](t.Context(), "Count:", opts...)
 	return v, out.String(), err
 }
 
@@ -194,7 +194,8 @@ func TestNumberErrorsReturnZero(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	f, err := Number[float64](ctx, "x", option.WithInput(strings.NewReader("1\r")), option.WithOutput(io.Discard))
+	terst.UseIO(t, strings.NewReader("1\r"), io.Discard)
+	f, err := Number[float64](ctx, "x")
 	assert.Error(t, err)
 	assert.Equal(t, 0.0, f)
 }
@@ -202,30 +203,30 @@ func TestNumberErrorsReturnZero(t *testing.T) {
 func TestNumberSharesReaderWithInput(t *testing.T) {
 	in := strings.NewReader("7\rhello\r")
 	var out bytes.Buffer
-	n, err := Number[int](t.Context(), "n", option.WithInput(in), option.WithOutput(&out))
+	terst.UseIO(t, in, &out)
+	n, err := Number[int](t.Context(), "n")
 	assert.NoError(t, err)
 	assert.Equal(t, 7, n)
-	s, err := Input(t.Context(), "s", option.WithInput(in), option.WithOutput(&out))
+	terst.UseIO(t, in, &out)
+	s, err := Input(t.Context(), "s")
 	assert.NoError(t, err)
 	assert.Equal(t, "hello", s)
 }
 
 func TestInputIgnoresArrows(t *testing.T) {
 	var out bytes.Buffer
+	terst.UseIO(t, strings.NewReader("a"+keyUp+keyDown+"b\r"), &out)
 	s, err := Input(
 		t.Context(),
 		"s",
-		option.WithInput(strings.NewReader("a"+keyUp+keyDown+"b\r")),
-		option.WithOutput(&out),
 	)
 	assert.NoError(t, err)
 	assert.Equal(t, "ab", s)
 	assert.NotContains(t, out.String(), "Error")
+	terst.UseIO(t, strings.NewReader("a"+keyUp+"b\r"), io.Discard)
 	p, err := Password(
 		t.Context(),
 		"p",
-		option.WithInput(strings.NewReader("a"+keyUp+"b\r")),
-		option.WithOutput(io.Discard),
 	)
 	assert.NoError(t, err)
 	assert.Equal(t, "ab", p)
@@ -234,52 +235,52 @@ func TestInputIgnoresArrows(t *testing.T) {
 type tcpPort int
 
 func TestNumberDefaults(t *testing.T) {
-	io := terst.Quiet(t)
+	terst.Quiet(t)
 	ctx := t.Context()
 
-	got, err := Number[int](ctx, "Port", io, option.WithDefault(8080))
+	got, err := Number[int](ctx, "Port", option.WithDefault(8080))
 	assert.NoError(t, err)
 	assert.Equal(t, 8080, got)
 
-	named, err := Number[tcpPort](ctx, "Port", io, option.WithDefault(tcpPort(80)))
+	named, err := Number[tcpPort](ctx, "Port", option.WithDefault(tcpPort(80)))
 	assert.NoError(t, err)
 	assert.Equal(t, tcpPort(80), named)
 
-	big, err := Number[int64](ctx, "Big", io, option.WithDefault(int64(9007199254740993)))
+	big, err := Number[int64](ctx, "Big", option.WithDefault(int64(9007199254740993)))
 	assert.NoError(t, err)
 	assert.Equal(t, int64(9007199254740993), big)
 
-	f, err := Number[float64](ctx, "Float", io, option.WithDefault(1e21))
+	f, err := Number[float64](ctx, "Float", option.WithDefault(1e21))
 	assert.NoError(t, err)
 	assert.Equal(t, 1e21, f)
 
-	f32, err := Number[float32](ctx, "Float", io, option.WithDefault(float32(0.1)))
+	f32, err := Number[float32](ctx, "Float", option.WithDefault(float32(0.1)))
 	assert.NoError(t, err)
 	assert.Equal(t, float32(0.1), f32)
 
-	text, err := Number[int](ctx, "Port", io, option.WithDefault("42"))
+	text, err := Number[int](ctx, "Port", option.WithDefault("42"))
 	assert.NoError(t, err)
 	assert.Equal(t, 42, text)
 
-	zero, err := Number[int8](ctx, "Small", io, option.WithDefault(300))
+	zero, err := Number[int8](ctx, "Small", option.WithDefault(300))
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 	assert.Equal(t, int8(0), zero)
 
-	_, err = Number[int](ctx, "Port", io, option.WithDefault("abc"))
+	_, err = Number[int](ctx, "Port", option.WithDefault("abc"))
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 
-	_, err = Number[int](ctx, "Port", io, option.WithDefault(5), WithAtLeast(10))
+	_, err = Number[int](ctx, "Port", option.WithDefault(5), WithAtLeast(10))
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
-	got, err = Number[int](ctx, "Port", io, option.WithDefault(10), WithAtLeast(10), WithAtMost(10))
+	got, err = Number[int](ctx, "Port", option.WithDefault(10), WithAtLeast(10), WithAtMost(10))
 	assert.NoError(t, err)
 	assert.Equal(t, 10, got)
 
-	_, err = Number[int](ctx, "Port", io)
+	_, err = Number[int](ctx, "Port")
 	assert.ErrorIs(t, err, errs.ErrNoTTY)
 
 	cctx, cancel := context.WithCancel(ctx)
 	cancel()
-	_, err = Number[int](cctx, "Port", io, option.WithDefault(1))
+	_, err = Number[int](cctx, "Port", option.WithDefault(1))
 	assert.ErrorIs(t, err, context.Canceled)
 }
 

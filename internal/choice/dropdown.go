@@ -235,16 +235,6 @@ func (d *dropdown) SetDefault(v any) {
 	d.rankHint = hint
 }
 
-// implements [withIO].
-func (d *dropdown) SetReader(r io.Reader) {
-	d.in = r
-}
-
-// implements [withIO].
-func (d *dropdown) SetWriter(w io.Writer) {
-	d.out = w
-}
-
 func (d *dropdown) height() int {
 	return d.rows
 }

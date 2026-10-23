@@ -13,6 +13,7 @@ import (
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/term"
+	"github.com/nfx/go-tui/internal/terst"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
@@ -28,9 +29,8 @@ func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
+	terst.UseIO(t, cio, cio)
 	p, err := newStartedProgressBar(t.Context(), "downloading files", 20,
-		option.WithInput(cio),
-		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			pb.now = func() time.Time { return now }
 			pb.redrawAt = start
@@ -83,9 +83,8 @@ func TestProgressbarTickOnResizeExitsWhenDone(t *testing.T) {
 		Out: make(chan string, 4),
 	}
 	resizeCh := make(chan struct{})
+	terst.UseIO(t, cio, cio)
 	p, err := newStartedProgressBar(t.Context(), "downloading files", 10,
-		option.WithInput(cio),
-		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			pb.ticks = make(chan time.Time)
 			pb.ticker = time.NewTicker(time.Hour)
