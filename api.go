@@ -58,15 +58,6 @@ func Stderr() io.Writer {
 	return term.Default.StderrWriter()
 }
 
-// SetDefaultIO overrides package-wide default input/output used by widgets that
-// were not explicitly configured with [WithInput] or [WithOutput].
-//
-// Deprecated: prefer the package defaults plus [Stderr] for normal CLI + TUI
-// integration. This remains for tests and explicit advanced overrides.
-func SetDefaultIO(in io.Reader, out io.Writer) {
-	term.Default.SetIO(in, out)
-}
-
 // Deprecated: use [Stderr].
 func NewIO(ctx context.Context) (*term.ChanIO, error) {
 	return term.StartIO(ctx, os.Stderr)
