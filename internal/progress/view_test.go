@@ -419,7 +419,7 @@ func TestThemedProgressWriteErrorEndsBar(t *testing.T) {
 	p, err := NewMaxProgressBar(t.Context(), "build", 10, option.OpT(func(pb *Progressbar) error {
 		pb.ticks = time.After(0)
 		pb.makeTermIO = func(in io.Reader, _ io.Writer) (*term.IO, error) {
-			return &term.IO{In: in, Out: errWriterPB{}, Width: 40, Height: 1, Restore: func() error {
+			return &term.IO{In: in, Out: terst.FailingWriter{Err: io.EOF}, Width: 40, Height: 1, Restore: func() error {
 				restored = true
 				return nil
 			}}, nil

@@ -52,13 +52,13 @@ func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, p.Close()) })
 	p.Add(10)
 	now = start.Add(time.Second)
-	sendTickOrFatal(t, ticks, now)
-	_ = receiveOutputOrFatal(t, cio.Out, "no progress output")
+	terst.Send(t, ticks, now)
+	_ = terst.Recv(t, cio.Out)
 	// shrink terminal width between ticks
 	p.io.Width = 20
 	now = start.Add(2 * time.Second)
-	sendTickOrFatal(t, ticks, now)
-	output := receiveOutputOrFatal(t, cio.Out, "no progress output after shrink")
+	terst.Send(t, ticks, now)
+	output := terst.Recv(t, cio.Out)
 	// the frame ends with "\n\r"; the content starts after the last \r before it
 	raw := []byte(output)
 	body, ok := bytes.CutSuffix(raw, []byte("\n\r"))
@@ -180,25 +180,5 @@ func TestProgressbarLabelTruncation(t *testing.T) {
 	for _, line := range lines {
 		w := ansi.Text(line).Width()
 		assert.True(t, w <= 14)
-	}
-}
-
-func sendTickOrFatal(t *testing.T, ticks chan time.Time, now time.Time) {
-	t.Helper()
-	select {
-	case ticks <- now:
-	case <-time.After(time.Second):
-		t.Fatalf("tick not delivered")
-	}
-}
-
-func receiveOutputOrFatal(t *testing.T, out <-chan string, msg string) string {
-	t.Helper()
-	select {
-	case output := <-out:
-		return output
-	case <-time.After(time.Second):
-		t.Fatalf("%s", msg)
-		return ""
 	}
 }

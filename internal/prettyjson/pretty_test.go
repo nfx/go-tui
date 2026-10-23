@@ -159,7 +159,7 @@ func TestPrettyJSONStrippedColorIsEquivalent(t *testing.T) {
 	for _, env := range []string{"FORCE_COLOR=1", "FORCE_COLOR=2", "FORCE_COLOR=3", "CLICOLOR_FORCE=1"} {
 		colored := renderJSON(t, env, jsonSample)
 		assert.True(t, colored != plain)
-		assert.Equal(t, plain, terst.RegexpSGR.ReplaceAllString(colored, ""))
+		assert.Equal(t, plain, terst.StripSGR(colored))
 	}
 	assert.True(t, json.Valid([]byte(plain)))
 }
@@ -233,7 +233,7 @@ func TestPrettyJSONScalarsAtRootAndInArrays(t *testing.T) {
 	for _, in := range []string{`42`, `true`, `"s"`, `[1,false,"x",[null]]`} {
 		out := renderJSON(t, "FORCE_COLOR=3", in)
 		assert.True(t, strings.HasSuffix(out, ansi.Reset+"\n"))
-		assert.Equal(t, renderJSON(t, "FORCE_COLOR=0", in), terst.RegexpSGR.ReplaceAllString(out, ""))
+		assert.Equal(t, renderJSON(t, "FORCE_COLOR=0", in), terst.StripSGR(out))
 	}
 }
 
@@ -286,7 +286,7 @@ func TestThemedPrettyJSONIndentation(t *testing.T) {
 		for _, env := range []string{"FORCE_COLOR=1", "FORCE_COLOR=3"} {
 			colored := themedJSON(t, th, env, src)
 			assert.True(t, colored != plain)
-			assert.Equal(t, plain, terst.RegexpSGR.ReplaceAllString(colored, ""))
+			assert.Equal(t, plain, terst.StripSGR(colored))
 		}
 		assert.True(t, json.Valid([]byte(plain)))
 	}
@@ -416,6 +416,6 @@ func TestPrettyJSONLevels(t *testing.T) {
 	assert.NotContains(t, attrs, "38;5;")
 	assert.Contains(t, render("FORCE_COLOR=2"), "38;5;")
 	assert.Contains(t, render("FORCE_COLOR=3"), "38;2;")
-	stripped := terst.RegexpSGR.ReplaceAllString(render("FORCE_COLOR=1"), "")
+	stripped := terst.StripSGR(render("FORCE_COLOR=1"))
 	assert.Equal(t, "{\n  \"a\": {\n    \"b\": \"c\"\n  }\n}\n", stripped)
 }

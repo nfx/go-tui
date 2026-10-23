@@ -419,12 +419,7 @@ func TestThemedProbeCancellationIsNotRemembered(t *testing.T) {
 	assert.True(t, textColor(out, "z") != "")
 }
 
-// failingWriter is a destination that rejects every write.
-type failingWriter struct{}
-
 var errRejected = errors.New("rejected")
-
-func (failingWriter) Write([]byte) (int, error) { return 0, errRejected }
 
 func TestThemedFailuresStayWithTheirOwner(t *testing.T) {
 	terst.WithEnv(t, "FORCE_COLOR=1")
@@ -469,9 +464,9 @@ func TestThemedFailuresStayWithTheirOwner(t *testing.T) {
 	err = tui.TableAuto(tui.Stderr(), []struct{ Name string }{{"ok"}, {"fail"}})
 	assert.ErrorIs(t, err, errBoom)
 	// a failing destination fails only its own output
-	err = tui.TableAuto(failingWriter{}, []struct{ Name string }{{"ok"}})
+	err = tui.TableAuto(terst.FailingWriter{Err: errRejected}, []struct{ Name string }{{"ok"}})
 	assert.ErrorIs(t, err, errRejected)
-	err = tui.PrettyJSON(failingWriter{}, map[string]int{"k": 1})
+	err = tui.PrettyJSON(terst.FailingWriter{Err: errRejected}, map[string]int{"k": 1})
 	assert.ErrorIs(t, err, errRejected)
 
 	// a spinner group whose row fails ends alone, clearing its rows

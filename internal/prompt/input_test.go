@@ -249,7 +249,7 @@ func TestInputRunTypeAndPaste(t *testing.T) {
 
 func TestInputClearError(t *testing.T) {
 	i := &input{}
-	tio := &term.IO{Out: &failingBuffer{}}
+	tio := &term.IO{Out: terst.FailingWriter{Err: io.EOF}}
 	err := i.clear(tio)
 	assert.Error(t, err)
 }

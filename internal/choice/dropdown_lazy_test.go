@@ -147,7 +147,7 @@ func TestDropdownRenderLazyFrameWriteError(t *testing.T) {
 	bindDropdown(t, d)
 	tio := &term.IO{
 		In:      bytes.NewBuffer(nil),
-		Out:     errWriterDropdown{},
+		Out:     terst.FailingWriter{Err: io.EOF},
 		Width:   20,
 		Height:  6,
 		Restore: func() error { return nil },

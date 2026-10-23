@@ -76,18 +76,6 @@ func spinnersForTest(t *testing.T) (*Spinners, *term.ChanIO, func()) {
 	return s, cio, tick
 }
 
-func mustReceiveSpinnerEvent(t *testing.T, ch <-chan spinnerEvent) spinnerEvent {
-	t.Helper()
-
-	select {
-	case ev := <-ch:
-		return ev
-	case <-time.After(1 * time.Second):
-		t.Fatal("timed out waiting for spinner event")
-		return nil
-	}
-}
-
 func testLongRunningWithNewSpinners(t *testing.T, cb func(context.Context, ...option.Opt) (*Spinners, error)) {
 	t.Helper()
 	prev := longRunningNewSpinners
@@ -278,7 +266,7 @@ func TestSpinnersEmitStructuredEvents(t *testing.T) {
 	assert.NoError(t, err)
 	defer s.Close()
 
-	_, ok := mustReceiveSpinnerEvent(t, events).(spinnerGroupInit)
+	_, ok := terst.Recv(t, events).(spinnerGroupInit)
 	assert.True(t, ok)
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -286,38 +274,38 @@ func TestSpinnersEmitStructuredEvents(t *testing.T) {
 	first, err := s.Add(ctx, WithPrefixf("task-1"))
 	assert.NoError(t, err)
 
-	added, ok := mustReceiveSpinnerEvent(t, events).(spinnerAdded)
+	added, ok := terst.Recv(t, events).(spinnerAdded)
 	assert.True(t, ok)
 	assert.Equal(t, "task-1", added.Name)
 	assert.Equal(t, 0, added.Index)
 
 	first.Update("running")
-	updated, ok := mustReceiveSpinnerEvent(t, events).(spinnerUpdated)
+	updated, ok := terst.Recv(t, events).(spinnerUpdated)
 	assert.True(t, ok)
 	assert.Equal(t, 0, updated.Index)
 	assert.Equal(t, "running", updated.Message)
 
 	err = first.Close()
 	assert.NoError(t, err)
-	removed, ok := mustReceiveSpinnerEvent(t, events).(spinnerRemoved)
+	removed, ok := terst.Recv(t, events).(spinnerRemoved)
 	assert.True(t, ok)
 	assert.Equal(t, 0, removed.Index)
 
 	second, err := s.Add(ctx, WithPrefixf("task-2"))
 	assert.NoError(t, err)
-	added, ok = mustReceiveSpinnerEvent(t, events).(spinnerAdded)
+	added, ok = terst.Recv(t, events).(spinnerAdded)
 	assert.True(t, ok)
 	assert.Equal(t, "task-2", added.Name)
 	assert.Equal(t, 1, added.Index)
 
 	second.Fail(errors.New("boom"))
-	failed, ok := mustReceiveSpinnerEvent(t, events).(spinnerFailed)
+	failed, ok := terst.Recv(t, events).(spinnerFailed)
 	assert.True(t, ok)
 	assert.Equal(t, 1, failed.Index)
 	assert.Equal(t, "boom", failed.Error)
 
 	s.Close()
-	_, ok = mustReceiveSpinnerEvent(t, events).(spinnerGroupClosed)
+	_, ok = terst.Recv(t, events).(spinnerGroupClosed)
 	assert.True(t, ok)
 }
 

@@ -117,18 +117,6 @@ func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
 	assert.Equal(t, 39, ansi.Text(output).Width())
 }
 
-func mustReceiveProgressEvent(t *testing.T, ch <-chan progressEvent) progressEvent {
-	t.Helper()
-
-	select {
-	case ev := <-ch:
-		return ev
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for progress event")
-		return nil
-	}
-}
-
 func TestProgressbarTickRenders(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
@@ -245,7 +233,7 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 	)
 	assert.NoError(t, err)
 
-	initEv, ok := mustReceiveProgressEvent(t, events).(progressInit)
+	initEv, ok := terst.Recv(t, events).(progressInit)
 	assert.True(t, ok)
 	assert.Equal(t, "download", initEv.Label)
 	assert.Equal(t, int64(20), initEv.Max)
@@ -263,13 +251,13 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatalf("no progress output")
 	}
-	metrics, ok := mustReceiveProgressEvent(t, events).(progressUpdate)
+	metrics, ok := terst.Recv(t, events).(progressUpdate)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), metrics.Remaining)
 	assert.Equal(t, int64(1), metrics.Elapsed)
 
 	assert.NoError(t, p.Close())
-	closed, ok := mustReceiveProgressEvent(t, events).(progressClosed)
+	closed, ok := terst.Recv(t, events).(progressClosed)
 	assert.True(t, ok)
 	assert.Equal(t, "download", closed.Label)
 }
@@ -312,7 +300,7 @@ func TestProgressbarDoneEmitsClosed(t *testing.T) {
 	)
 	assert.NoError(t, err)
 
-	_, ok := mustReceiveProgressEvent(t, events).(progressInit)
+	_, ok := terst.Recv(t, events).(progressInit)
 	assert.True(t, ok)
 
 	p.Add(2)
@@ -328,9 +316,9 @@ func TestProgressbarDoneEmitsClosed(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatalf("no progress output")
 	}
-	_, ok = mustReceiveProgressEvent(t, events).(progressUpdate)
+	_, ok = terst.Recv(t, events).(progressUpdate)
 	assert.True(t, ok)
-	closed, ok := mustReceiveProgressEvent(t, events).(progressClosed)
+	closed, ok := terst.Recv(t, events).(progressClosed)
 	assert.True(t, ok)
 	assert.Equal(t, "sync", closed.Label)
 }
@@ -722,12 +710,6 @@ func TestProgressbarTickShowsElapsed(t *testing.T) {
 	assert.Contains(t, terst.StripSGR(out.String()), "2s elapsed")
 }
 
-type errWriterPB struct{}
-
-func (errWriterPB) Write(p []byte) (int, error) {
-	return 0, io.EOF
-}
-
 func TestProgressbarTickWriteError(t *testing.T) {
 	p := withLook(t, &Progressbar{
 		progressState: progressState{
@@ -738,7 +720,7 @@ func TestProgressbarTickWriteError(t *testing.T) {
 		},
 		label: ansi.Text("test"),
 		io: &term.IO{
-			Out:     errWriterPB{},
+			Out:     terst.FailingWriter{Err: io.EOF},
 			Width:   40,
 			Height:  1,
 			Restore: func() error { return nil },

@@ -70,7 +70,7 @@ func TestRenderWriteError(t *testing.T) {
 	}
 
 	// Mock a failing writer
-	failingWriter := &failingBuffer{}
+	failingWriter := terst.FailingWriter{Err: io.EOF}
 	tio := &term.IO{Out: failingWriter}
 	bindInput(t, i, tio)
 
@@ -78,13 +78,6 @@ func TestRenderWriteError(t *testing.T) {
 	err := i.render(tio, frame)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, io.EOF)
-}
-
-// Helper struct for testing write errors.
-type failingBuffer struct{}
-
-func (f *failingBuffer) Write(p []byte) (n int, err error) {
-	return 0, io.EOF
 }
 
 func TestInputRendersPastedControlsSafely(t *testing.T) {

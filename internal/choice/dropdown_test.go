@@ -595,12 +595,6 @@ func TestDropdownShowAnswerUsesResolvedLabel(t *testing.T) {
 	assert.NotContains(t, out.String(), "{")
 }
 
-type errWriterDropdown struct{}
-
-func (errWriterDropdown) Write(p []byte) (int, error) {
-	return 0, io.EOF
-}
-
 func TestDropdownParseTemplatesError(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, WithTemplate("{{")(d))
@@ -611,7 +605,7 @@ func TestDropdownShowAnswerWriteError(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"Value"}
 	bindDropdown(t, d)
-	d.out = errWriterDropdown{}
+	d.out = terst.FailingWriter{Err: io.EOF}
 	assert.Error(t, d.themedAnswer("Label", 0))
 }
 
@@ -722,7 +716,7 @@ func TestDropdownLoadItemWriteError(t *testing.T) {
 	assert.NoError(t, err)
 	tio := &term.IO{
 		In:      bytes.NewBuffer(nil),
-		Out:     errWriterDropdown{},
+		Out:     terst.FailingWriter{Err: io.EOF},
 		Width:   20,
 		Height:  6,
 		Restore: func() error { return nil },
@@ -738,7 +732,7 @@ func TestDropdownRunRenderWriteError(t *testing.T) {
 	bindDropdown(t, d)
 	tio := &term.IO{
 		In:      bytes.NewBuffer([]byte{term.KeyEnter}),
-		Out:     errWriterDropdown{},
+		Out:     terst.FailingWriter{Err: io.EOF},
 		Width:   20,
 		Height:  6,
 		Restore: func() error { return nil },
@@ -952,23 +946,6 @@ func TestDropdownFilterEventsIgnoreRankingOrder(t *testing.T) {
 	assert.Equal(t, []int(nil), events[1].Added)
 }
 
-type lockedBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (l *lockedBuffer) Write(p []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.buf.Write(p)
-}
-
-func (l *lockedBuffer) Len() int {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.buf.Len()
-}
-
 func TestDropdownEagerRedrawsOnResizeWhileIdle(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	reader, writer := io.Pipe()
@@ -977,7 +954,7 @@ func TestDropdownEagerRedrawsOnResizeWhileIdle(t *testing.T) {
 		_ = reader.Close() //nolint:errcheck // test cleanup
 		_ = writer.Close() //nolint:errcheck // test cleanup
 	})
-	out := &lockedBuffer{}
+	out := &terst.SyncBuffer{}
 	resize := make(chan struct{})
 	resCh := make(chan string, 1)
 	terst.UseIO(t, reader, out)

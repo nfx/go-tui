@@ -8,7 +8,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -100,8 +99,6 @@ func waitOutputContains(t *testing.T, out <-chan string, parts ...string) string
 	}
 }
 
-var regexpSGR = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
 func chainIOforTest(t *testing.T, height int) (*ChanIO, *WriteC) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -172,19 +169,9 @@ func probeTermIO(t *testing.T, reply string) (*IO, *replyingTerminal) {
 	return &IO{In: &mockDescriptor{Reader: pr, fd: 7}, Out: rt, Fd: 2}, rt
 }
 
-// strictOutput restores production terminal classification for a test, where
-// writers without terminal capabilities are not terminals.
-func strictOutput(t *testing.T) {
-	t.Helper()
-	prev := OutputIsTerminal
-	OutputIsTerminal = HostsTerminal
-	t.Cleanup(func() { OutputIsTerminal = prev })
-}
-
 // Most tests drive interactive widgets through in-memory writers, so the test
-// binary treats them as a terminal. Tests of the production routing call
-// [strictOutput]. Environment fixtures read the same on every platform, and
-// the suite drives terminals the same in a CI job.
+// binary treats them as a terminal. Environment fixtures read the same on
+// every platform, and the suite drives terminals the same in a CI job.
 func TestMain(m *testing.M) {
 	LegacyConsoles = false
 	Default.Env.Ci = false
