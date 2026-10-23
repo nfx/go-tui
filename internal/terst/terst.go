@@ -335,6 +335,23 @@ func (k *Keys) AwaitRead() {
 	Recv(k.t, k.reads)
 }
 
+// NextKey reads the next key through a fresh terminal, the way the next
+// prompt on the same input would after a cancelled one.
+func (k *Keys) NextKey() rune {
+	k.t.Helper()
+	ctx, cancel := context.WithTimeout(k.t.Context(), time.Second)
+	defer cancel()
+	tio := &term.IO{In: k, Input: term.SharedInputState(k), Width: 20, Height: 2}
+	permits := make(chan struct{}, 1)
+	permits <- struct{}{}
+	keys := tio.ReadEvents(ctx, permits)
+	defer tio.AwaitReader()
+	defer cancel()
+	ev := <-keys
+	assert.NoError(k.t, ev.Err)
+	return ev.Key
+}
+
 func (k *Keys) Read(p []byte) (int, error) {
 	select {
 	case k.reads <- struct{}{}:
@@ -394,23 +411,6 @@ func NewNotifyingReader(f *os.File) *NotifyingReader {
 func (r *NotifyingReader) Read(p []byte) (int, error) {
 	r.once.Do(func() { close(r.Started) })
 	return r.File.Read(p[:1])
-}
-
-// NextKey reads the next key of in through a fresh terminal, the way the next
-// prompt on the same input would after a cancelled one.
-func NextKey(t *testing.T, in io.Reader) rune {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-	defer cancel()
-	tio := &term.IO{In: in, Input: term.SharedInputState(in), Width: 20, Height: 2}
-	permits := make(chan struct{}, 1)
-	permits <- struct{}{}
-	keys := tio.ReadEvents(ctx, permits)
-	defer tio.AwaitReader()
-	defer cancel()
-	ev := <-keys
-	assert.NoError(t, ev.Err)
-	return ev.Key
 }
 
 // UseIO makes in and out the default input and output for the test, like the

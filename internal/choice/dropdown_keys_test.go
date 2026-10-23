@@ -6,7 +6,6 @@ package choice
 import (
 	"bytes"
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -21,11 +20,7 @@ import (
 )
 
 func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
-	pr, pw, err := os.Pipe()
-	assert.NoError(t, err)
-	defer pr.Close() //nolint:errcheck // test cleanup
-	defer pw.Close() //nolint:errcheck // test cleanup
-	in := terst.NewNotifyingReader(pr)
+	in := terst.NewKeys(t)
 	d := newDropdown(t.Context())
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -36,11 +31,7 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 		_, err := d.pressKey(d.Ctx, tio, &bytes.Buffer{}, 1, 1)
 		finished <- err
 	}()
-	select {
-	case <-in.Started:
-	case <-time.After(time.Second):
-		t.Fatal("dropdown did not start reading")
-	}
+	in.AwaitRead()
 	cancel()
 	select {
 	case err := <-finished:
@@ -48,9 +39,8 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("cancelled dropdown did not return")
 	}
-	_, err = pw.Write([]byte{'x', term.KeyEnter})
-	assert.NoError(t, err)
-	assert.Equal(t, 'x', terst.NextKey(t, in))
+	in.Send("x", terst.KeyEnter)
+	assert.Equal(t, 'x', in.NextKey())
 }
 
 func TestDropdownPressKeyRuneAndRenderMore(t *testing.T) {
