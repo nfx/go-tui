@@ -17,7 +17,7 @@ func main() {
 	th.Palette.Accent = "#00ADD8"
 	th.Inline = len(os.Args) > 1 && os.Args[1] == "inline"
 	th.Funcs = map[string]any{"shout": strings.ToUpper}
-	th.Templates.Prompt.Label = `{{ accent (symbol "Prompt") }} {{ bold (shout .Label) }}`
+	th.Prompt.Label = `{{ accent (symbol "Prompt") }} {{ bold (shout .Label) }}`
 	if err := tui.SetDefaultTheme(th); err != nil {
 		panic(err)
 	}

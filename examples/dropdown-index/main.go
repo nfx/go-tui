@@ -13,8 +13,8 @@ func main() {
 
 	// the theme owns the label and the answer line
 	theme := tui.DefaultTheme()
-	theme.Templates.Dropdown.Label = `{{ "🎨" }} {{ .Label | bold | underline }}`
-	theme.Templates.Dropdown.Answer = `{{ success "✔ " }}{{ .Label }} is {{ .Value | bold }}`
+	theme.Dropdown.Label = `{{ "🎨" }} {{ .Label | bold | underline }}`
+	theme.Dropdown.Answer = `{{ success "✔ " }}{{ .Label }} is {{ .Value | bold }}`
 	if err := tui.SetDefaultTheme(theme); err != nil {
 		panic(err)
 	}

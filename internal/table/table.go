@@ -249,7 +249,7 @@ func (t *table) cellText(line ansi.Text) ansi.Text {
 func (t *table) cellOutput(slot render.BoundSlot, out ansi.Text) error {
 	for seg := range out.Segments() {
 		if !t.cellSegment(seg) {
-			return fmt.Errorf("theme.Templates.%s: %q: want text, SGR and hyperlinks only", slot.Tmpl.Name(), seg.Text)
+			return fmt.Errorf("theme.%s: %q: want text, SGR and hyperlinks only", slot.Tmpl.Name(), seg.Text)
 		}
 	}
 	return nil

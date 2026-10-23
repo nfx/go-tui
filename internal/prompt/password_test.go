@@ -119,8 +119,8 @@ func TestThemedPasswordRejectionIsSecretIndependent(t *testing.T) {
 	var seen []string
 	th := terst.ASCIITheme(false)
 	th.Funcs = map[string]any{"spy": func(s string) string { seen = append(seen, s); return s }}
-	th.Templates.Password.Label = `{{ spy .Label }}`
-	th.Templates.Password.Feedback = `{{ error (spy .Message) }}`
+	th.Password.Label = `{{ spy .Label }}`
+	th.Password.Feedback = `{{ error (spy .Message) }}`
 	for _, tc := range []struct {
 		name string
 		opts []option.Opt
@@ -155,11 +155,11 @@ func TestThemedPasswordShowsBuiltInRuleMessages(t *testing.T) {
 func TestThemedPasswordFailingFeedbackKeepsSecretOut(t *testing.T) {
 	th := terst.ASCIITheme(false)
 	th.Funcs = map[string]any{"fails": func(s string) (string, error) { return "", fmt.Errorf("cannot show %q", s) }}
-	th.Templates.Password.Feedback = `{{ fails .Message }}`
+	th.Password.Feedback = `{{ fails .Message }}`
 	leak := WithValidation(func(_ context.Context, s string) error { return errors.New(s) })
 	i, out := themedPassword(t, th, "hunter2", "\r")
 	_, err := i.read(t.Context(), leak)
-	assert.Contains(t, err.Error(), "theme.Templates.Password.Feedback")
+	assert.Contains(t, err.Error(), "theme.Password.Feedback")
 	assert.Contains(t, err.Error(), `cannot show "Invalid value"`)
 	assert.True(t, !strings.Contains(err.Error(), "hunter2"))
 	assert.True(t, !strings.Contains(out.String(), "hunter2"))

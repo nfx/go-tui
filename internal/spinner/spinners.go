@@ -347,6 +347,13 @@ func (s *Spinners) redraw(prevActive int) (int, error) {
 	if _, err := frame.WriteTo(s.io); err != nil {
 		return currActive, fmt.Errorf("write: %w", err)
 	}
+	if currActive == 0 && prevActive > 0 && s.io.Vp != nil {
+		// an empty frame writes nothing, so a viewport still holds the last
+		// rows, and stopping would keep them in the scrollback
+		if err := s.io.Clear(prevActive, s.io); err != nil {
+			return currActive, fmt.Errorf("clear: %w", err)
+		}
+	}
 	return currActive, nil
 }
 

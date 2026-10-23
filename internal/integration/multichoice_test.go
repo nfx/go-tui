@@ -66,7 +66,7 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 	type service struct{ Name, Region string }
 	items := []service{{"api", "eu"}, {"worker", "us"}}
 	th := theme.New()
-	th.Templates.Multichoice.Answer = `ANSWER {{ .Count }}{{ range .Values }} {{ . }}{{ else }} none{{ end }}`
+	th.Multichoice.Answer = `ANSWER {{ .Count }}{{ range .Values }} {{ . }}{{ else }} none{{ end }}`
 	terst.UseTheme(t, th)
 	var out bytes.Buffer
 	got, err := tui.Multichoice(t.Context(), "Services", items,
@@ -145,7 +145,7 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 func TestMultichoiceMapProjections(t *testing.T) {
 	values := map[string][]int{"beta": {1}, "alpha": {1}, "gamma": {3}}
 	th := theme.New()
-	th.Templates.Multichoice.Answer = `ANSWER {{ .Count }}{{ range .Values }} {{ . }}{{ end }}`
+	th.Multichoice.Answer = `ANSWER {{ .Count }}{{ range .Values }} {{ . }}{{ end }}`
 	terst.UseTheme(t, th)
 	var out bytes.Buffer
 	keys, err := tui.MultichoiceKVK(

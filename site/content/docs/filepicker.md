@@ -82,14 +82,14 @@ path, err := tui.FilePicker(ctx, "Pick file",
 
 ## Presentation
 
-`FilePicker` draws with the `Templates.FilePicker` slots of the theme, which
+`FilePicker` draws with the `FilePicker` slots of the theme, which
 inherit from the dropdown and choice slots. See
 [Presentation](dropdowns.md#presentation).
 
 ```go
 th := tui.DefaultTheme()
-th.Templates.FilePicker.Label = `{{ accent "file:" }} {{ .Label }}`
-th.Templates.FilePicker.Answer = `{{ success "picked:" }} {{ .Value }}`
+th.FilePicker.Label = `{{ accent "file:" }} {{ .Label }}`
+th.FilePicker.Answer = `{{ success "picked:" }} {{ .Value }}`
 if err := tui.SetDefaultTheme(th); err != nil {
 	return err
 }

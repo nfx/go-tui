@@ -152,7 +152,7 @@ func TestThemedSliceProgress(t *testing.T) {
 func TestThemedSliceProgressReturnsRenderError(t *testing.T) {
 	th := theme.New()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
-	th.Templates.Progress.Hint = `{{ boom }}`
+	th.Progress.Hint = `{{ boom }}`
 	terst.UseTheme(t, th)
 	ticks := make(chan time.Time)
 	seq := NewSliceProgressBar(t.Context(), "items", []int{1, 2}, option.OpT(func(pb *Progressbar) error {
@@ -170,5 +170,5 @@ func TestThemedSliceProgressReturnsRenderError(t *testing.T) {
 		errs = append(errs, err)
 	}
 	assert.Equal(t, 3, len(errs))
-	assert.Contains(t, errs[2].Error(), "theme.Templates.Progress.Hint")
+	assert.Contains(t, errs[2].Error(), "theme.Progress.Hint")
 }

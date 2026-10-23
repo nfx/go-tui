@@ -37,8 +37,8 @@ func literalInputs(t *testing.T) {
 	terst.WithEnv(t)
 	th := theme.New()
 	th.Inline = true
-	th.Templates.Input.Label = `{{ .Label }}`
-	th.Templates.Input.Answer = `{{ .Value }}`
+	th.Input.Label = `{{ .Label }}`
+	th.Input.Answer = `{{ .Value }}`
 	terst.UseTheme(t, th)
 }
 

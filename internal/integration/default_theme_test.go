@@ -190,10 +190,10 @@ func TestSetDefaultThemePublishesAndKeepsPreviousOnError(t *testing.T) {
 
 func TestRemovedColorNamesFailWithTemplatePath(t *testing.T) {
 	th := theme.New()
-	th.Templates.Prompt.Label = `{{ red .Label }}`
+	th.Prompt.Label = `{{ red .Label }}`
 	err := tui.SetDefaultTheme(th)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "theme.Templates.Prompt.Label")
+	assert.Contains(t, err.Error(), "theme.Prompt.Label")
 	assert.Contains(t, err.Error(), `function "red" not defined`)
 }
 

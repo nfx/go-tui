@@ -334,7 +334,7 @@ func TestThemedParallelProgressCancel(t *testing.T) {
 func TestThemedParallelProgressRenderError(t *testing.T) {
 	th := theme.New()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
-	th.Templates.Progress.Label = `{{ if eq .Current 1 }}{{ boom }}{{ end }}{{ .Label }}`
+	th.Progress.Label = `{{ if eq .Current 1 }}{{ boom }}{{ end }}{{ .Label }}`
 	terst.UseTheme(t, th)
 	items := make([]int, 64)
 	for i := range items {
@@ -361,7 +361,7 @@ func TestThemedParallelProgressRenderError(t *testing.T) {
 	assert.True(t, r.restored.Load())
 	// why rendering ended, not that it cancelled the workers
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "redraw: theme.Templates.Progress.Label")
+	assert.Contains(t, err.Error(), "redraw: theme.Progress.Label")
 	assert.Contains(t, err.Error(), "boom")
 	assert.True(t, !errors.Is(err, context.Canceled))
 	assert.True(t, processed.Load() < int64(len(items)))

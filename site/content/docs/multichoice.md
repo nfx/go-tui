@@ -101,7 +101,7 @@ cancellation. Bracketed-paste terminal mode is enabled only during this prompt.
 ## Templates
 
 Multichoice accepts the same `WithTemplate` as dropdown. Its label, rows, count
-and answer line come from the `Templates.Multichoice` theme slots.
+and answer line come from the `Multichoice` theme slots.
 `WithOneReturn` is unsupported; direct use returns `ErrWrongWidget`. `WithOptions`
 keeps its usual skip semantics for unsupported members.
 
@@ -115,7 +115,7 @@ selected, err := tui.Multichoice(ctx, "Services", services,
 Item-content templates receive the raw item. The inactive main content supplies
 search and default ranking text; active details do not affect matching. Focus
 and checkbox decoration remain outside those templates. The theme slot
-`Templates.Multichoice.Row` adds them, with `.Value`, `.Selected`, `.Active`,
+`Multichoice.Row` adds them, with `.Value`, `.Selected`, `.Active`,
 and the original `.Index`; see [Themes](themes.md). Rows and multiline details are clipped at whole ANSI/Unicode
 text boundaries and indicate omitted content with an ellipsis.
 

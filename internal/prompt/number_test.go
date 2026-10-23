@@ -372,7 +372,7 @@ func TestThemedNumberHintSlots(t *testing.T) {
 
 	// a shared hint reaches Number, which passes its actual key bindings
 	th := terst.ASCIITheme(false)
-	th.Templates.Prompt.Hint = `{{ range . }}[{{ .Left }}={{ .Right }}]{{ end }}`
+	th.Prompt.Hint = `{{ range . }}[{{ .Left }}={{ .Right }}]{{ end }}`
 	assert.Contains(t, frame(th, number), "\n\r| [^v=adjust]\x1b[K")
 	// Input and Password handle no keys beyond editing, so they show no hint
 	assert.Equal(t, "\r? Count\x1b[K\n\r| 1\x1b[K", frame(th, func() *input { return newInput(t.Context(), "Count") }))
@@ -384,13 +384,13 @@ func TestThemedNumberHintSlots(t *testing.T) {
 
 	// a Number override stays local, and Hidden reserves no row
 	th = terst.ASCIITheme(false)
-	th.Templates.Number.Hint = `number hint`
+	th.Number.Hint = `number hint`
 	assert.Contains(t, frame(th, number), "\n\r| number hint\x1b[K")
-	th.Templates.Number.Hint = theme.Hidden
+	th.Number.Hint = theme.Hidden
 	assert.Equal(t, "\r? Count\x1b[K\n\r| 1\x1b[K", frame(th, number))
 	// Number inherits an Input hint
 	th = terst.ASCIITheme(false)
-	th.Templates.Input.Hint = `input hint`
+	th.Input.Hint = `input hint`
 	assert.Contains(t, frame(th, number), "\n\r| input hint\x1b[K")
 }
 
@@ -411,7 +411,7 @@ func TestThemedNumberStepsAndRetainsExactDraft(t *testing.T) {
 
 	// bounds stop the arrows through the Number feedback slot
 	th := terst.ASCIITheme(false)
-	th.Templates.Number.Feedback = `number: {{ .Message }}`
+	th.Number.Feedback = `number: {{ .Message }}`
 	b, out, _ := themedNumber[int](t, th, 40, 5, keyUp, "\r")
 	i, err := b.read(t.Context(), option.WithDefault(10), WithAtMost(10))
 	assert.NoError(t, err)
@@ -438,11 +438,11 @@ func TestThemedNumberKeepsOptionSet(t *testing.T) {
 func TestThemedNumberHintErrorRestoresTerminal(t *testing.T) {
 	th := terst.ASCIITheme(false)
 	th.Funcs = map[string]any{"fails": func() (string, error) { return "", errors.New("boom") }}
-	th.Templates.Number.Hint = `{{ fails }}`
+	th.Number.Hint = `{{ fails }}`
 	n, out, restored := themedNumber[int](t, th, 30, 5, "1", "\r")
 	_, err := n.read(t.Context())
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "theme.Templates.Number.Hint")
+	assert.Contains(t, err.Error(), "theme.Number.Hint")
 	assert.True(t, *restored)
 	assert.Equal(t, "", out.String())
 

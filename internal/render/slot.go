@@ -26,7 +26,7 @@ func compileSlot(in templated[theme.Template, *Slot], optional bool) (*Slot, err
 		return in.Parent, nil
 	case theme.Hidden:
 		if !optional {
-			return nil, fmt.Errorf("theme.Templates.%s: empty source is not allowed", in.Name)
+			return nil, fmt.Errorf("theme.%s: empty source is not allowed", in.Name)
 		}
 		return &Slot{hidden: true}, nil
 	}
@@ -35,7 +35,7 @@ func compileSlot(in templated[theme.Template, *Slot], optional bool) (*Slot, err
 		err = colorLiterals(tmpl)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("theme.Templates.%s: %w", in.Name, err)
+		return nil, fmt.Errorf("theme.%s: %w", in.Name, err)
 	}
 	return &Slot{tmpl: tmpl}, nil
 }
@@ -124,7 +124,7 @@ func (s *Slot) Bind(Bind template.FuncMap) (BoundSlot, error) {
 	}
 	tmpl, err := s.tmpl.Clone()
 	if err != nil {
-		return BoundSlot{}, fmt.Errorf("theme.Templates.%s: %w", s.tmpl.Name(), err)
+		return BoundSlot{}, fmt.Errorf("theme.%s: %w", s.tmpl.Name(), err)
 	}
 	return BoundSlot{Tmpl: tmpl.Funcs(Bind)}, nil
 }
@@ -154,7 +154,7 @@ func (b BoundSlot) Execute(data any) (ansi.Text, error) {
 	var out ansi.Text
 	err := b.Tmpl.Execute(&out, data)
 	if err != nil {
-		return nil, fmt.Errorf("theme.Templates.%s: %w", b.Tmpl.Name(), err)
+		return nil, fmt.Errorf("theme.%s: %w", b.Tmpl.Name(), err)
 	}
 	return out, nil
 }
@@ -162,7 +162,7 @@ func (b BoundSlot) Execute(data any) (ansi.Text, error) {
 // Styled reports slot output that is not only text and SGR.
 func (b BoundSlot) Styled(out ansi.Text) error {
 	if seg, ok := out.Unstyled(); ok {
-		return fmt.Errorf("theme.Templates.%s: %q: want text and SGR only", b.Tmpl.Name(), seg.Text)
+		return fmt.Errorf("theme.%s: %q: want text and SGR only", b.Tmpl.Name(), seg.Text)
 	}
 	return nil
 }

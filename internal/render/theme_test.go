@@ -314,14 +314,14 @@ func TestPaletteErrorIsPathQualified(t *testing.T) {
 }
 
 func TestThemeRoundTripKeepsTemplateSources(t *testing.T) {
-	c, err := compileTemplates(t, func(th *theme.Theme) { th.Templates.Choice.Empty = theme.Hidden })
+	c, err := compileTemplates(t, func(th *theme.Theme) { th.Choice.Empty = theme.Hidden })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := c.Editable().Templates.Choice.Empty; got != theme.Hidden {
+	if got := c.Editable().Choice.Empty; got != theme.Hidden {
 		t.Fatalf("explicit empty lost in round trip: %+v", got)
 	}
-	if c.Editable().Templates.Choice.Inactive != "" {
+	if c.Editable().Choice.Inactive != "" {
 		t.Fatal("inherited slot became explicit")
 	}
 }

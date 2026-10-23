@@ -19,7 +19,7 @@ recolor every template at once; see [Themes](themes.md).
 Example:
 
 ```go
-th.Templates.Dropdown.Label = `{{ accent "Select:" }} {{ .Label | bold }}`
+th.Dropdown.Label = `{{ accent "Select:" }} {{ .Label | bold }}`
 ```
 
 ## Exact colors
@@ -33,7 +33,7 @@ adapted to the terminal's color support.
 Example:
 
 ```go
-th.Templates.Dropdown.Active = `{{ bg "#005F87" " " }} {{ fg "#FFFFFF" .Value }}`
+th.Dropdown.Active = `{{ bg "#005F87" " " }} {{ fg "#FFFFFF" .Value }}`
 ```
 
 The fixed 16-color names (`red`, `green`, `brightCyan`, `bgBlue`, and so on)
@@ -51,7 +51,7 @@ defined` and the path of the template, when it is installed or parsed.
 Example:
 
 ```go
-th.Templates.Dropdown.Answer = `{{ dim "selected:" }} {{ bold .Value }}`
+th.Dropdown.Answer = `{{ dim "selected:" }} {{ bold .Value }}`
 ```
 
 ## Time formatter
@@ -77,7 +77,7 @@ Dropdown and multichoice templates also expose:
 Example:
 
 ```go
-th.Templates.Dropdown.Active = `{{ accent "> " .Value }}`
+th.Dropdown.Active = `{{ accent "> " .Value }}`
 ```
 
 ## Input feedback templates
@@ -87,7 +87,7 @@ The `Feedback` slot of `Input` and `Password` contains only
 Color and style helpers work here too:
 
 ```go
-th.Templates.Input.Feedback = `{{ error (bold "Check: ") .Message }}`
+th.Input.Feedback = `{{ error (bold "Check: ") .Message }}`
 ```
 
 Feedback occupies one row. See [Input and Password](input.md#feedback-row)

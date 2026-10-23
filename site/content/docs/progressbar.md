@@ -165,13 +165,13 @@ too short for both rows gets the compact row. A bar on its own terminal
 through `WithOutput` also keeps a row below them for the cursor, so it needs
 three.
 
-The hint row is the `Templates.Progress.Hint` slot. Like a prompt's key
+The hint row is the `Progress.Hint` slot. Like a prompt's key
 hint, it receives a list of entries, each with `.Left` and `.Right`, such as
-`6.2` and `MiB/s`. It does not inherit from `Templates.Prompt.Hint`.
+`6.2` and `MiB/s`. It does not inherit from `Prompt.Hint`.
 
 ```go
 th := theme.New()
-th.Templates.Progress.Hint = `{{ range . }}[{{ .Left }} {{ .Right }}] {{ end }}`
+th.Progress.Hint = `{{ range . }}[{{ .Left }} {{ .Right }}] {{ end }}`
 ```
 
 Set it to `theme.Hidden` to keep only the bar row.
@@ -185,18 +185,18 @@ as earlier versions did, and drops metrics from the end to keep the bar:
 Download 62%  ━━━━━━━╸──── 6.2 MiB/s · 12s remaining
 ```
 
-In the stacked layout, `Templates.Progress.Frame` receives an empty
+In the stacked layout, `Progress.Frame` receives an empty
 `.Metrics`. A custom frame that shows `.Metrics` after the bar keeps
 working once it selects the compact layout:
 
 ```go
 th := theme.New()
 th.Progress.Compact = true
-th.Templates.Progress.Frame = `{{ .Label }} [{{ .Bar }}] {{ .Metrics }}`
+th.Progress.Frame = `{{ .Label }} [{{ .Bar }}] {{ .Metrics }}`
 ```
 
-`Templates.Progress.Metrics` applies to the compact layout only, and
-`Templates.Progress.Hint` to the stacked layout only.
+`Progress.Metrics` applies to the compact layout only, and
+`Progress.Hint` to the stacked layout only.
 
 ## Behavior notes
 

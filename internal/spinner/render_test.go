@@ -62,7 +62,7 @@ func TestThemedSpinnerFramesAndGroupTheme(t *testing.T) {
 	// a theme installed later reaches neither the group nor its later spinners
 	later := terst.ASCIITheme(false)
 	later.Symbols.Spinner = []string{"x"}
-	later.Templates.Spinner.Running = `changed`
+	later.Spinner.Running = `changed`
 	assert.NoError(t, term.Default.InstallTheme(later))
 	added, err := s.Add(t.Context())
 	assert.NoError(t, err)
@@ -73,8 +73,8 @@ func TestThemedSpinnerFramesAndGroupTheme(t *testing.T) {
 
 func TestThemedSpinnerSlotsAndView(t *testing.T) {
 	th := terst.ASCIITheme(false)
-	th.Templates.Spinner.Running = `{{ .State }} {{ .Frame }} {{ .Prefix }}={{ .Message }}`
-	th.Templates.Spinner.Failed = `{{ .State }} {{ .Frame }} {{ .Message }}`
+	th.Spinner.Running = `{{ .State }} {{ .Frame }} {{ .Prefix }}={{ .Message }}`
+	th.Spinner.Failed = `{{ .State }} {{ .Frame }} {{ .Message }}`
 	th.Symbols.Spinner = []string{"."}
 	s, frames, tick, _ := themedSpinners(t, th, 40)
 	sp, err := s.Add(t.Context(), WithPrefixf("p"))
@@ -126,7 +126,7 @@ func TestThemedSpinnerRoles(t *testing.T) {
 func TestThemedSpinnerRenderErrorEndsGroup(t *testing.T) {
 	th := terst.ASCIITheme(false)
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
-	th.Templates.Spinner.Running = `{{ if eq .Message "bad" }}{{ boom }}{{ end }}{{ .Message }}`
+	th.Spinner.Running = `{{ if eq .Message "bad" }}{{ boom }}{{ end }}{{ .Message }}`
 	s, frames, tick, restored := themedSpinners(t, th, 40)
 	sp, err := s.Add(t.Context())
 	assert.NoError(t, err)
@@ -140,7 +140,7 @@ func TestThemedSpinnerRenderErrorEndsGroup(t *testing.T) {
 	assert.Equal(t, "\x1b[1A\r\x1b[K", untilStopped(t, s, frames))
 	assert.True(t, restored.Load())
 	_, err = s.Add(t.Context())
-	assert.Contains(t, err.Error(), "theme.Templates.Spinner.Running")
+	assert.Contains(t, err.Error(), "theme.Spinner.Running")
 	assert.Contains(t, err.Error(), "boom")
 	err = sp.Close()
 	assert.Contains(t, err.Error(), "boom")
@@ -206,8 +206,8 @@ func TestThemedSpinnerInterval(t *testing.T) {
 func TestThemedSpinnerLogsWithoutTerminal(t *testing.T) {
 	th := terst.ASCIITheme(false)
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
-	th.Templates.Spinner.Running = `{{ boom }}`
-	th.Templates.Spinner.Failed = `{{ boom }}`
+	th.Spinner.Running = `{{ boom }}`
+	th.Spinner.Failed = `{{ boom }}`
 	terst.UseTheme(t, th)
 	var logs bytes.Buffer
 	previous := slog.Default()

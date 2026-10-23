@@ -438,9 +438,9 @@ func TestThemedFailuresStayWithTheirOwner(t *testing.T) {
 		}
 		return s, nil
 	}}
-	th.Templates.Prompt.Label = `{{ accent (symbol "Prompt") }} {{ bold (text (check .Label)) }}`
-	th.Templates.Spinner.Running = `{{ accent .Frame }} {{ text (check .Message) }}`
-	th.Templates.Table.Cell = `{{ text (check .Value) }}`
+	th.Prompt.Label = `{{ accent (symbol "Prompt") }} {{ bold (text (check .Label)) }}`
+	th.Spinner.Running = `{{ accent .Frame }} {{ text (check .Message) }}`
+	th.Table.Cell = `{{ text (check .Value) }}`
 	terst.UseTheme(t, th)
 
 	group, err := tui.NewSpinners(t.Context())
@@ -555,9 +555,9 @@ func TestThemedConcurrentInstallationAndRendering(t *testing.T) {
 	themes := map[string]theme.Theme{}
 	for name, gap := range map[string]int{"A": 2, "B": 5} {
 		th := l0.theme()
-		th.Templates.Prompt.Label = theme.Template(name + " {{ .Label }}")
-		th.Templates.Prompt.Answer = theme.Template(name + " {{ .Label }} · {{ .Value }}")
-		th.Templates.Table.Header = theme.Template(name + "{{ .Header }}")
+		th.Prompt.Label = theme.Template(name + " {{ .Label }}")
+		th.Prompt.Answer = theme.Template(name + " {{ .Label }} · {{ .Value }}")
+		th.Table.Header = theme.Template(name + "{{ .Header }}")
 		th.Table.ColumnGap = gap
 		themes[name] = th
 	}

@@ -11,92 +11,73 @@ type Template string
 // Hidden deliberately hides a slot. It is a sentinel, not template text.
 const Hidden Template = "\x00hidden"
 
-// Templates are the typed presentation slots of a theme. An unset slot
-// inherits from its parent family and finally from the built-in default, so a
-// shared edit still reaches every family that has not overridden it.
-type Templates struct {
-	Prompt PromptTemplates
-	Choice ChoiceTemplates
-
-	Input    PromptTemplates
-	Password SecretTemplates
-	Number   SecretTemplates
-
-	Dropdown    SelectTemplates
-	Multichoice MultichoiceTemplates
-	Confirm     SelectTemplates
-	FilePicker  SelectTemplates
-	Spinner     SpinnerTemplates
-	Progress    ProgressTemplates
-	Table       TableTemplates
-}
-
-// PromptTemplates are the presentation slots shared by all prompts.
-type PromptTemplates struct {
-	Label    Template
-	Answer   Template
-	Hint     Template
+// Prompt holds the slots shared by all prompts. An unset slot of Input,
+// Dropdown and the other widgets inherits from here, and finally from the
+// built-in default, so a shared edit still reaches every widget that has not
+// overridden it.
+type Prompt struct {
+	// Label is the question row.
+	Label Template
+	// Answer is the line kept after the prompt is answered.
+	Answer Template
+	// Hint is the row of key hints.
+	Hint Template
+	// Feedback is the validation error row.
 	Feedback Template
 }
 
-// SecretTemplates are the slots of prompts that retain no answer line.
-type SecretTemplates struct {
-	Label    Template
-	Hint     Template
-	Feedback Template
-}
-
-// ChoiceTemplates are the presentation slots shared by choice lists.
-type ChoiceTemplates struct {
-	Value    Template // projection of a raw item; replaced by WithTemplate
-	Details  Template // active-only details
-	Active   Template
+// Choice holds the slots shared by choice lists.
+type Choice struct {
+	// Value projects a raw item to its text; replaced by WithTemplate.
+	Value Template
+	// Details is the extra text of the active item.
+	Details Template
+	// Active is the row of the active item.
+	Active Template
+	// Inactive is the row of any other item.
 	Inactive Template
-	Empty    Template
+	// Empty is the row shown when no item matches.
+	Empty Template
 }
 
-// SelectTemplates specialize both the shared prompt and choice slots.
-type SelectTemplates struct {
-	PromptTemplates
-	ChoiceTemplates
+// Input holds the slots of text input prompts, inheriting from [Prompt].
+type Input Prompt
+
+// Password holds the slots of password prompts, inheriting from [Input]. A
+// password retains no answer line, so it has no Answer slot.
+type Password struct {
+	// Label is the question row.
+	Label Template
+	// Hint is the row of key hints.
+	Hint Template
+	// Feedback is the validation error row.
+	Feedback Template
 }
 
-// MultichoiceTemplates add the row and collection body to a choice family.
-type MultichoiceTemplates struct {
-	SelectTemplates
-	Row         Template
+// Number holds the slots of number prompts, inheriting from [Input]. Its
+// answer line is [Input.Answer].
+type Number Password
+
+// Dropdown specializes both the shared [Prompt] and [Choice] slots.
+type Dropdown struct {
+	Prompt
+	Choice
+}
+
+// Confirm specializes both the shared [Prompt] and [Choice] slots.
+type Confirm Dropdown
+
+// FilePicker specializes both the shared [Prompt] and [Choice] slots. Its
+// Value is the file projection, which a shared [Choice.Value] replaces.
+type FilePicker Dropdown
+
+// Multichoice specializes the shared [Prompt] and [Choice] slots, and adds the
+// row and the collection body.
+type Multichoice struct {
+	Prompt
+	Choice
+	// Row is the row of one item with its checkbox.
+	Row Template
+	// AnswerValue is the collection of selected values in the answer.
 	AnswerValue Template
-}
-
-// SpinnerTemplates are the rows of a spinner in each state of its lifecycle.
-type SpinnerTemplates struct {
-	Running Template
-	Stopped Template // closed and kept with [WithKeep]; not a success
-	Failed  Template
-}
-
-// ProgressTemplates are the rows of a progress bar. Label and Metrics render
-// first; Frame then places their output around the bar, which it must insert
-// exactly once, as a top-level {{ .Bar }} that nothing else refers to, so
-// that the bar can take the columns the rest of the row leaves.
-//
-// Metrics is the end of the bar row of [ProgressStyle.Compact] bars. Other
-// bars show the metrics in the Hint row below the bar instead, and their
-// Frame receives an empty .Metrics. Hint renders the [hint] pairs of the metrics,
-// each with .Left and .Right, such as "6.2" and "MiB/s".
-type ProgressTemplates struct {
-	Label   Template
-	Metrics Template
-	Hint    Template
-	Frame   Template
-}
-
-// TableTemplates are the header and the cells of tables, and the keys and
-// values of facts. A hidden Header drops the header row, or the keys. Cell
-// wraps each formatted value of an automatic row template, one physical line
-// at a time, after any column template, formatter or scale; an explicit row
-// template keeps its own presentation.
-type TableTemplates struct {
-	Header Template
-	Cell   Template
 }

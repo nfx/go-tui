@@ -40,7 +40,7 @@ type fakeCellView struct {
 type fakeProgressView struct {
 	// Label is the caller label on one line; in Frame, the Label slot.
 	Label string
-	// Metrics is the Metrics slot, in the Frame of [ProgressStyle.Compact]
+	// Metrics is the Metrics slot, in the Frame of [theme.Progress.Compact]
 	// bars only.
 	Metrics string
 	// Bar is the bar, sized to the row, in Frame only.

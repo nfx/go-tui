@@ -41,7 +41,7 @@ func TestSpanHelperHandlesTypes(t *testing.T) {
 func TestThemeFuncsReachSlotsAndAreValidated(t *testing.T) {
 	c, err := compileTemplates(t, func(th *theme.Theme) {
 		th.Funcs = template.FuncMap{"shout": strings.ToUpper}
-		th.Templates.Prompt.Label = `{{ shout .Label }}`
+		th.Prompt.Label = `{{ shout .Label }}`
 	})
 	assert.NoError(t, err)
 	b, err := c.Templates.Input.Label.Bind(c.Funcs(color.ProfilePlain, Roles{}))

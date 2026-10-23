@@ -25,7 +25,7 @@ import (
 type progressView struct {
 	// Label is the caller label on one line; in Frame, the Label slot.
 	Label string
-	// Metrics is the Metrics slot, in the Frame of [ProgressStyle.Compact]
+	// Metrics is the Metrics slot, in the Frame of [theme.Progress.Compact]
 	// bars only.
 	Metrics string
 	// Bar is the bar, sized to the row, in Frame only.
@@ -288,7 +288,7 @@ const progressBarMark = "\x00"
 // progressLook is the theme of one bar, bound to its destination.
 type progressLook struct {
 	binding                     render.Binding
-	style                       theme.ProgressStyle
+	style                       theme.Progress
 	symbols                     theme.Symbols
 	label, metrics, hint, frame render.BoundSlot
 }
@@ -364,7 +364,7 @@ func (l *progressLook) around(v progressView, label, metrics ansi.Text) (before,
 	}
 	before, after, ok := bytes.Cut(out, []byte(progressBarMark))
 	if !ok || bytes.Contains(after, []byte(progressBarMark)) {
-		return nil, nil, fmt.Errorf("theme.Templates.%s: want the bar once", l.frame.Tmpl.Name())
+		return nil, nil, fmt.Errorf("theme.%s: want the bar once", l.frame.Tmpl.Name())
 	}
 	for _, part := range [][]byte{before, after} {
 		if err := l.frame.Styled(part); err != nil {
