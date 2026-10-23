@@ -487,7 +487,7 @@ func ExampleMultichoiceLazy() {
 func TestMultichoicePTYKeyboardResizeAndRestore(t *testing.T) {
 	for _, abort := range []bool{false, true} {
 		t.Run(map[bool]string{false: "confirm", true: "cancel"}[abort], func(t *testing.T) {
-			asciiTheme(t)
+			terst.UseTheme(t, terst.ASCIITheme(false))
 			master, tty, err := openPty()
 			if err != nil {
 				t.Skipf("no pseudo-terminal: %v", err)

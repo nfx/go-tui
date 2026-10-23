@@ -8,7 +8,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -173,7 +172,28 @@ func WaitOutputContains(t *testing.T, out <-chan string, parts ...string) string
 	}
 }
 
-var RegexpSGR = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+// Recv returns the next value from ch, failing the test after a second.
+func Recv[T any](t *testing.T, ch <-chan T) T {
+	t.Helper()
+	select {
+	case v := <-ch:
+		return v
+	case <-time.After(time.Second):
+		var zero T
+		t.Fatalf("timed out receiving %T", zero)
+		return zero
+	}
+}
+
+// Send delivers v on ch, failing the test after a second.
+func Send[T any](t *testing.T, ch chan<- T, v T) {
+	t.Helper()
+	select {
+	case ch <- v:
+	case <-time.After(time.Second):
+		t.Fatalf("timed out sending %T", v)
+	}
+}
 
 func ChainIOForTest(t *testing.T, width, height int) (*term.ChanIO, *term.WriteC) {
 	t.Helper()

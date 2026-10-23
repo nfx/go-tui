@@ -47,7 +47,7 @@ func TestProgressbarUpdatesAfterCompletion(t *testing.T) {
 func TestProgressbarStacksOnTwoRowTerminal(t *testing.T) {
 	term := newTerminal(t, 2)
 	term.height = 2
-	asciiTheme(t)
+	terst.UseTheme(t, terst.ASCIITheme(false))
 	// through the managed viewport, two rows hold the bar and its hint
 	p, err := tui.NewMaxProgressBar(t.Context(), "Copy", 4)
 	assert.NoError(t, err)

@@ -4,7 +4,6 @@
 package integration
 
 import (
-	"github.com/nfx/go-tui/theme"
 	"os"
 	"strings"
 	"testing"
@@ -54,16 +53,8 @@ func (term *terminal) resize(t *testing.T, width, height int) {
 // marked with ">" and the answer line starts with "+".
 func newASCIITerminal(t *testing.T) *terminal {
 	t.Helper()
-	asciiTheme(t)
+	terst.UseTheme(t, terst.ASCIITheme(false))
 	return newTerminal(t, 12)
-}
-
-// asciiTheme installs the ASCII preset as the default theme for the test.
-func asciiTheme(t *testing.T) {
-	t.Helper()
-	th := theme.New()
-	th.Symbols = terst.ASCIISymbols
-	terst.UseTheme(t, th)
 }
 
 // waitQueries waits until the terminal has received n background queries.
