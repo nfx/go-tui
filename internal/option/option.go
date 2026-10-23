@@ -14,8 +14,7 @@ import (
 // returns an error wrapping [errs.ErrWrongWidget] when applied to any other.
 //
 // Widget entry points reject options they do not support, so a misplaced
-// option fails loudly instead of doing nothing. Use [WithOptions] to share
-// one set of options between different widgets.
+// option fails loudly instead of doing nothing.
 type Opt func(any) error
 
 type Opts []Opt

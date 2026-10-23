@@ -116,14 +116,16 @@ func (f *filePicker) step(
 }
 
 // nextDropdown configures the dropdown of the next directory. Options were
-// validated by newFilePicker, so the bundle may only skip the ones that
+// validated by newFilePicker, so the dropdown may only skip the ones that
 // configure the picker itself.
 func (f *filePicker) nextDropdown(ctx context.Context, o []option.Opt) (*dropdown, error) {
 	d := newDropdown(ctx)
 	f.adopt(d)
-	err := option.WithOptions(o...)(d)
-	if err != nil && !errors.Is(err, errs.ErrWrongWidget) {
-		return nil, err
+	for _, one := range o {
+		err := one(d)
+		if err != nil && !errors.Is(err, errs.ErrWrongWidget) {
+			return nil, err
+		}
 	}
 	return d, nil
 }

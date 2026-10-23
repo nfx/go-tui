@@ -135,19 +135,6 @@ returned. A directory seen twice is an error, not a loop. Without a default or
 [`WithOneReturn`](#withonereturn) the call fails with `ErrNoTTY` before listing anything;
 filesystem errors are returned.
 
-## WithOptions
-
-Bundles picker and forwarded dropdown options.
-
-```go
-common := tui.WithOptions(
-	tui.WithShowHidden(),
-	tui.WithTemplate(".Name"),
-)
-
-path, err := tui.FilePicker(ctx, "Pick file", common)
-```
-
 ## Option compatibility note
 
 `FilePicker` accepts:

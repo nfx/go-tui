@@ -153,18 +153,6 @@ value, err := tui.Input(ctx, "Project name",
 )
 ```
 
-## WithOptions
-
-Bundles common options.
-
-```go
-common := tui.WithOptions(
-	tui.WithOutput(os.Stderr),
-)
-
-value, err := tui.Input(ctx, "Project name", common)
-```
-
 ## Notes
 
 - Arrow-left/right and backspace editing are supported.

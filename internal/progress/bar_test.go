@@ -959,12 +959,6 @@ func themedFile(t *testing.T, th theme.Theme, src io.Reader) (*WrapReader, fakeT
 	return r, ft
 }
 
-func TestWithOptionsPropagatesInvalidValues(t *testing.T) {
-	err := option.WithOptions(WithWorkers(0))(newProgressbar(t.Context()))
-	assert.ErrorIs(t, err, errs.ErrInvalidState)
-	assert.True(t, !errors.Is(err, errs.ErrWrongWidget))
-}
-
 func TestNewProgressbarUsesDefaultIO(t *testing.T) {
 	terst.UseTerminalInput(t, nil)
 	in, out := term.DefaultStreams(t.Context())

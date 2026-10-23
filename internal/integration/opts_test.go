@@ -11,33 +11,10 @@ import (
 	"github.com/nfx/go-tui/internal/assert"
 )
 
-// optsDummy accepts a default and nothing else.
-type optsDummy struct {
-	def any
-}
-
-func (d *optsDummy) SetDefault(v any) { d.def = v }
-
 func TestOptTRejectsWrongWidget(t *testing.T) {
 	err := tui.WithDefault("x")("nope")
 	assert.ErrorIs(t, err, tui.ErrWrongWidget)
 	assert.Contains(t, err.Error(), "need option.Default, got string")
-}
-
-func TestWithOptionsSkipsUnsupportedMembers(t *testing.T) {
-	d := &optsDummy{}
-	err := tui.WithOptions(tui.WithHide(), tui.WithDefault("x"), tui.WithWorkers(2))(d)
-	assert.NoError(t, err)
-	assert.Equal(t, any("x"), d.def)
-}
-
-func TestWithOptionsFailsWhenNoMemberApplies(t *testing.T) {
-	err := tui.WithOptions(tui.WithHide(), tui.WithWorkers(2))(&optsDummy{})
-	assert.ErrorIs(t, err, tui.ErrWrongWidget)
-}
-
-func TestWithOptionsEmptyIsNoop(t *testing.T) {
-	assert.NoError(t, tui.WithOptions()(&optsDummy{}))
 }
 
 func TestEntryPointsRejectOptionsOfOtherWidgets(t *testing.T) {
