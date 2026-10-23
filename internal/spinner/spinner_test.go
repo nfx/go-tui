@@ -109,7 +109,7 @@ func TestSpinnerWithCustomFrames(t *testing.T) {
 
 	spinner.Update("custom")
 	tick()
-	assert.Equal(t, "\rc custom\n\r", frames.Next())
+	assert.Equal(t, clipped("\rc custom\n\r"), frames.Next())
 }
 
 func TestSpinnerStateNext(t *testing.T) {
@@ -161,7 +161,7 @@ func TestSpinnerFailedState(t *testing.T) {
 	testErr := errors.New("failure")
 	spinner.Fail(testErr)
 	tick()
-	assert.Equal(t, "\r✖ failure\n\r", frames.Next())
+	assert.Equal(t, clipped("\r✖ failure\n\r"), frames.Next())
 
 	// Failed spinner should remain visible even after close
 	err = spinner.Close()

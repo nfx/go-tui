@@ -26,6 +26,8 @@ import (
 	"github.com/nfx/go-tui/terst"
 )
 
+var testEpoch = time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+
 // testIOforSpinners provides frames for spinners at a fixed terminal size,
 // with manual ticks.
 func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*terst.Output, func(), option.Opt) {
@@ -42,13 +44,14 @@ func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*terst
 		}, option.OpT(func(s *Spinners) error {
 			s.ticks = ticks
 			s.makeTermIO = tcommon.FixedTermIO(width, height)
+			s.now = func() time.Time { return testEpoch } // a frozen clock, unless o sets one
 			return option.Opts(o).Apply(s)
 		})
 }
 
 func spinnersForTest(t *testing.T) (*Spinners, *terst.Output, func()) {
 	t.Helper()
-	frames, tick, opts := testIOforSpinners(t, 12, 4)
+	frames, tick, opts := testIOforSpinners(t, 12, 4, WithNoElapsed())
 	s, err := NewSpinners(t.Context(), opts)
 	assert.NoError(t, err)
 	return s, frames, tick
@@ -156,11 +159,11 @@ func TestSpinnersDrainQueues(t *testing.T) {
 	s.creates = make(chan createSpinner, 1)
 	s.updates = make(chan updateOffset, 1)
 	s.stops = make(chan int, 1)
-	reply := make(chan int, 1)
 	s.creates <- createSpinner{
-		cancel:      func() {},
-		frames:      []string{"."},
-		replyOffset: reply,
+		cancel: func() {},
+		frames: []string{"."},
+		reply:  make(chan createResult, 1),
+		parent: -1,
 	}
 	s.drainQueues()
 	if len(s.state) != 1 {
@@ -406,6 +409,9 @@ func themedSpinners(
 	t.Cleanup(s.Close)
 	return s, frames, tick, restored
 }
+
+// clipped is a frame of rows as the group draws them, with autowrap off.
+func clipped(rows string) string { return "\x1b[?7l" + rows + "\x1b[?7h" }
 
 // untilStopped returns everything the group writes until its loop ends.
 func untilStopped(t *testing.T, s *Spinners, frames *terst.Output) string {

@@ -19,6 +19,7 @@ type screen struct {
 	cells    [][]rune
 	row, col int
 	wrap     bool   // the last column is written, the next rune goes on the next row
+	noWrap   bool   // autowrap is off: runes past the last column overwrite it
 	esc      []byte // an escape sequence that is not complete yet
 }
 
@@ -62,10 +63,11 @@ func (s *screen) put(r rune) {
 		s.col, s.wrap = 0, false
 	}
 	s.line(s.row)[s.col] = r
-	if s.col == s.width-1 {
-		s.wrap = true
-	} else {
+	switch {
+	case s.col < s.width-1:
 		s.col++
+	case !s.noWrap:
+		s.wrap = true
 	}
 }
 
@@ -96,7 +98,7 @@ func (s *screen) escape(b byte) {
 	if len(s.esc) < 3 || b < 0x40 || b > 0x7e {
 		return
 	}
-	params := strings.TrimPrefix(string(s.esc[2:len(s.esc)-1]), "?")
+	params, private := strings.CutPrefix(string(s.esc[2:len(s.esc)-1]), "?")
 	s.esc = nil
 	n, err := strconv.Atoi(strings.Split(params, ";")[0])
 	if err != nil {
@@ -104,6 +106,10 @@ func (s *screen) escape(b byte) {
 	}
 	s.wrap = false
 	switch b {
+	case 'h', 'l':
+		if private && n == 7 {
+			s.noWrap = b == 'l'
+		}
 	case 'A':
 		s.row = max(0, s.row-max(1, n))
 	case 'B':

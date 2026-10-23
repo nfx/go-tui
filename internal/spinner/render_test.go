@@ -33,14 +33,18 @@ func TestThemedSpinnerStates(t *testing.T) {
 	lint.Update("checking")
 	docs.Update("writing")
 	tick()
-	assert.Equal(t, "\r- build: compiling\n\r\r\\ lint: checking\n\r\r| writing\n\r", frames.Next())
+	assert.Equal(
+		t,
+		clipped("\r- build: compiling (0s)\n\r\r\\ lint: checking (0s)\n\r\r| writing (0s)\n\r"),
+		frames.Next(),
+	)
 
 	// kept after Close is stopped, not a success; failed stays; the rest goes
 	assert.NoError(t, build.Close())
 	lint.Fail(errors.New("3 problems"))
 	assert.NoError(t, docs.Close())
 	tick()
-	rows := "\r- build: compiling\n\r\r! lint: 3 problems\n\r"
+	rows := clipped("\r- build: compiling (0s)\n\r\r! lint: 3 problems (0s)\n\r")
 	assert.Equal(t, "\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"+rows, frames.Next())
 	// ended spinners no longer animate
 	tick()
@@ -68,7 +72,7 @@ func TestThemedSpinnerFramesAndGroupTheme(t *testing.T) {
 	assert.NoError(t, err)
 	added.Update("later")
 	tick()
-	assert.Equal(t, "\ra theme\n\r\rb later\n\r", frames.Next())
+	assert.Equal(t, clipped("\ra theme (0s)\n\r\rb later (0s)\n\r"), frames.Next())
 }
 
 func TestThemedSpinnerSlotsAndView(t *testing.T) {
@@ -81,11 +85,11 @@ func TestThemedSpinnerSlotsAndView(t *testing.T) {
 	assert.NoError(t, err)
 	sp.Update("line\none\ttab\x1b[2K")
 	tick()
-	assert.Equal(t, "\rrunning . p=line one tab\n\r", frames.Next())
+	assert.Equal(t, clipped("\rrunning . p=line one tab\n\r"), frames.Next())
 	sp.Fail(errors.New("bad"))
 	tick()
 	// the failed row shows the frame it stopped at
-	assert.Equal(t, "\x1b[1A\r\x1b[K\rfailed . bad\n\r", frames.Next())
+	assert.Equal(t, "\x1b[1A\r\x1b[K"+clipped("\rfailed . bad\n\r"), frames.Next())
 }
 
 func TestThemedSpinnerClipsBeforeLastColumn(t *testing.T) {
@@ -94,7 +98,28 @@ func TestThemedSpinnerClipsBeforeLastColumn(t *testing.T) {
 	assert.NoError(t, err)
 	sp.Update("a long message")
 	tick()
-	assert.Equal(t, "\r- a long…\n\r", frames.Next())
+	assert.Equal(t, clipped("\r- a long…\n\r"), frames.Next())
+}
+
+// A terminal that does not join emoji draws a ZWJ family wider than the two
+// columns it is measured at, and a clipped row then overflows. The overflow
+// must not wrap, or each redraw leaves the top row of the last frame behind.
+func TestThemedSpinnerWideClusterLeavesNoStaleRows(t *testing.T) {
+	th := terst.ASCIITheme()
+	th.Symbols.Spinner = []string{"."}
+	s, frames, tick, _ := themedSpinners(t, th, 20, WithNoElapsed())
+	frames.Resize(20, 10)
+	build, err := s.Add(t.Context(), WithPrefixf("build"))
+	assert.NoError(t, err)
+	web, err := s.Add(t.Context(), WithPrefixf("web"))
+	assert.NoError(t, err)
+	build.Update("building")
+	web.Update("\U0001F468\u200d\U0001F469\u200d\U0001F467 restarting the service")
+	for range 3 {
+		tick()
+		frames.Next()
+	}
+	assert.Equal(t, ". build: building\n. web: \U0001F468\u200d\U0001F469\u200d\U0001F467 restar…", frames.Visible())
 }
 
 func TestThemedSpinnerRoles(t *testing.T) {
@@ -132,7 +157,7 @@ func TestThemedSpinnerRenderErrorEndsGroup(t *testing.T) {
 	assert.NoError(t, err)
 	sp.Update("ok")
 	tick()
-	assert.Equal(t, "\rok\n\r", frames.Next())
+	assert.Equal(t, clipped("\rok\n\r"), frames.Next())
 
 	sp.Update("bad")
 	tick()

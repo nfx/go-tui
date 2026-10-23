@@ -24,6 +24,7 @@ func TestSpinnerRedrawTruncatesLongMessage(t *testing.T) {
 	s.state = []*spinnerState{
 		{
 			frames:  []string{"..."},
+			parent:  -1,
 			Message: ansi.Text("this is a very long spinner message that should be truncated"),
 			tick:    0,
 		},

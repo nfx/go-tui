@@ -14,10 +14,13 @@ import (
 // Symbols are the glyphs the built-in templates and renderers use. Every
 // symbol is a single display column. An empty field takes the Unicode preset.
 type Symbols struct { //nolint:recvcheck // fields hands out pointers into its receiver
-	Prompt    string
-	Focus     string
-	Guide     string
-	End       string
+	Prompt string
+	Focus  string
+	Guide  string
+	End    string
+	// Branch joins a row to its parent where more rows follow, as End joins the
+	// last one, in the tree of nested spinners.
+	Branch    string
 	Checked   string
 	Unchecked string
 	Success   string
@@ -50,6 +53,7 @@ var unicodeSymbols = Symbols{
 	Focus:     "❯",
 	Guide:     "│",
 	End:       "└",
+	Branch:    "├",
 	Checked:   "◉",
 	Unchecked: "○",
 	Success:   "✔",
@@ -74,6 +78,7 @@ var asciiSymbols = Symbols{
 	Focus:     ">",
 	Guide:     "|",
 	End:       "`",
+	Branch:    "|",
 	Checked:   "x",
 	Unchecked: "o",
 	Success:   "+",
@@ -111,6 +116,7 @@ func (s *Symbols) fields() []symbolField {
 		{"Focus", &s.Focus},
 		{"Guide", &s.Guide},
 		{"End", &s.End},
+		{"Branch", &s.Branch},
 		{"Checked", &s.Checked},
 		{"Unchecked", &s.Unchecked},
 		{"Success", &s.Success},

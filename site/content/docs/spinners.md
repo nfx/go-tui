@@ -9,6 +9,7 @@ APIs:
 - `(*Spinners).Add(ctx, opts...)`
 - `(*Spinners).MustAddBackground(opts...)`
 - `(*Spinners).Close()`
+- `(*Spinner).Add(ctx, opts...)`
 - `(*Spinner).Update(msg)`
 - `(*Spinner).Updatef(format, args...)`
 - `(*Spinner).Fail(err)`
@@ -62,12 +63,16 @@ stop. A stop can result from `Close` or context cancellation; it does not imply
 that the work succeeded. `WithKeep` affects terminal display only.
 
 The configured default logger controls the destination, format, and level
-filtering. Without this option, `NewSpinners` returns `ErrNoTTY` on non-TTY
-output. Other initialization errors are still returned with the option enabled.
+filtering. Other initialization errors are still returned. Nested spinners add
+`parent` (the spinner index of the parent) and `depth` to their records. The
+elapsed time is never logged.
 
 ## WithPrefixf
 
-Sets spinner prefix label (applies to `Add` and `MustAddBackground`).
+Sets spinner prefix label (applies to `Add` and `MustAddBackground`). The
+label is formatted as in `fmt.Sprintf` and drawn before the message in the accent color,
+for example `▘ deploy: updating services (12s)`. A spinner without a label shows
+the message alone.
 
 ```go
 sp, err := group.Add(context.Background(),
@@ -84,6 +89,60 @@ sp, err := group.Add(context.Background(),
 	tui.WithKeep(),
 )
 ```
+
+## WithNoElapsed
+
+Hides the time a spinner has been running. On a terminal each row ends with
+the elapsed time in whole seconds (`12s`, `1m05s`, `1h00m00s`), counted from the
+creation of the spinner until it stops or fails, so it freezes at the first
+ending. Pass it to `NewSpinners` for every spinner of the group, or to `Add`
+for one. Without a terminal there is no timer.
+
+```go
+group, err := tui.NewSpinners(ctx, tui.WithNoElapsed())
+```
+
+## Nested spinners
+
+`(*Spinner).Add` creates a spinner under another one. Children are drawn below
+their parent in the order they were added, hanging from branches drawn with
+`Theme.Symbols` (`Branch`, `End` and `Guide`).
+
+```go
+parent, err := group.Add(ctx, tui.WithPrefixf("deploy"))
+if err != nil {
+	return err
+}
+defer parent.Close()
+api, err := parent.Add(ctx, tui.WithPrefixf("api"))
+if err != nil {
+	return err
+}
+defer api.Close()
+api.Update("uploading image")
+```
+
+```text
+▘ deploy: updating services (12s)
+├ ▀ api: uploading image (8s)
+│ └ ▝ layers: pushing layer 3 (2s)
+└ ▐ web: restarting (3s)
+▗ checking configuration (0s)
+```
+
+- Closing, failing or canceling a spinner stops its running children too. A
+  child stopping or failing never affects its parent or siblings, and finishing
+  the last child does not finish the parent.
+- A stopped or failed spinner takes no children: `Add` returns
+  `ErrSpinnerStopped`.
+- A kept or failed child stays visible, and so do the stopped ancestors above
+  it, drawn as a neutral row.
+- The parent's time includes its children's work; it is not their sum.
+- Custom [spinner templates](themes.md) may print `.Elapsed` and `.Depth`; the
+  group draws the branches whatever the template prints.
+- Every spinner takes one row. When the rows do not fit the terminal, the last
+  visible row reads `… N more` and stands for the rows after it. They are not
+  scrolled, and they show again when the terminal grows or other rows end.
 
 ## WithInput
 

@@ -221,23 +221,37 @@ func compileMultichoice(in templated[theme.Multichoice, multichoiceTemplates],
 }
 
 // SpinnerSlots are the compiled spinner slots of [theme.Spinner].
-type SpinnerSlots struct{ Running, Stopped, Failed *Slot }
+type SpinnerSlots struct {
+	Running, Stopped, Failed *Slot
+	// Tree draws the branches in front of a nested row. It has no theme source.
+	Tree *Slot
+}
 
 // compileSpinner compiles the spinner rows over their built-ins. Spinner rows name
 // a [spinnerView]. Only a running spinner animates; a stopped one is neutral,
 // since closing it says nothing about success.
 func compileSpinner(in templated[theme.Spinner, struct{}]) (SpinnerSlots, error) {
 	return overBuiltin(in, theme.Spinner{
-		Running: `{{ accent .Frame }} {{ with .Prefix }}{{ text . }}{{ muted ":" }} {{ end }}{{ text .Message }}`,
-		Stopped: `{{ muted (symbol "Cancel") }} {{ with .Prefix }}{{ text . }}{{ muted ":" }} {{ end }}{{ text .Message }}`,
-		Failed:  `{{ error (symbol "Error") }} {{ with .Prefix }}{{ text . }}{{ muted ":" }} {{ end }}{{ text .Message }}`,
+		Running: spinnerRow(`{{ accent .Frame }}`, `accent`),
+		Stopped: spinnerRow(`{{ muted (symbol "Cancel") }}`, `text`),
+		Failed:  spinnerRow(`{{ error (symbol "Error") }}`, `error`),
 	}, compileSpinnerSlots)
+}
+
+// spinnerRow is a built-in spinner row: the frame, the prefix in the
+// given role, with a colon before a message, the message and the elapsed time. Empty parts leave no separator.
+func spinnerRow(frame, badge string) theme.Template {
+	return theme.Template(frame +
+		`{{ with .Prefix }} {{ ` + badge + ` . }}{{ if $.Message }}{{ muted ":" }}{{ end }}{{ end }}` +
+		`{{ with .Message }} {{ text . }}{{ end }}` +
+		`{{ with .Elapsed }} {{ muted (printf "(%s)" .) }}{{ end }}`)
 }
 
 // compileSpinnerSlots compiles the spinner rows, which have no cross-family parent and
 // cannot be hidden: a displayed spinner keeps its row.
 func compileSpinnerSlots(in templated[theme.Spinner, SpinnerSlots]) (out SpinnerSlots, _ error) {
-	var errs [3]error
+	var errs [4]error
+	out.Tree, errs[3] = compileSlot(in.nest("Tree", theme.Template(`{{ guide . }}`), in.Parent.Tree), false)
 	out.Running, errs[0] = compileSlot(in.nest("Running", in.Src.Running, in.Parent.Running), false)
 	out.Stopped, errs[1] = compileSlot(in.nest("Stopped", in.Src.Stopped, in.Parent.Stopped), false)
 	out.Failed, errs[2] = compileSlot(in.nest("Failed", in.Src.Failed, in.Parent.Failed), false)

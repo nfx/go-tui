@@ -343,7 +343,7 @@ func TestChanIOReleasedViewportKeepsLastFrameInScrollback(t *testing.T) {
 
 	cio.releaseViewport(kept)
 	// the released frame ends its line and the live overlay is redrawn below it
-	out := waitOutputContains(t, stdout.C, "\raborted\n\rlive")
+	out := waitOutputContains(t, stdout.C, "\raborted\n\x1b[?7l\rlive\x1b[?7h")
 	assert.True(t, !strings.HasSuffix(out, "\n"))
 	assert.Equal(t, 1, managedViewports(cio))
 

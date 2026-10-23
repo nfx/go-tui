@@ -288,9 +288,26 @@ func TestBuiltinSpinnerSlots(t *testing.T) {
 	}
 	tt := c.Templates.Spinner
 	assert.Equal(t, ".. job: m", render(tt.Running, fakeSpinnerView{Frame: "..", Prefix: "job", Message: "m"}))
+	assert.Equal(
+		t,
+		".. job: m (12s)",
+		render(tt.Running, fakeSpinnerView{Frame: "..", Prefix: "job", Message: "m", Elapsed: "12s"}),
+	)
 	assert.Equal(t, ".. m", render(tt.Running, fakeSpinnerView{Frame: "..", Message: "m"}))
-	assert.Equal(t, "- job: m", render(tt.Stopped, fakeSpinnerView{Frame: "..", Prefix: "job", Message: "m"}))
+	assert.Equal(t, ".. job", render(tt.Running, fakeSpinnerView{Frame: "..", Prefix: "job"}))
+	assert.Equal(t, ".. (1m00s)", render(tt.Running, fakeSpinnerView{Frame: "..", Elapsed: "1m00s"}))
+	assert.Equal(t, "-", render(tt.Stopped, fakeSpinnerView{Frame: ".."}))
+	assert.Equal(
+		t,
+		"- job: m (1s)",
+		render(tt.Stopped, fakeSpinnerView{Frame: "..", Prefix: "job", Message: "m", Elapsed: "1s"}),
+	)
 	assert.Equal(t, "! m", render(tt.Failed, fakeSpinnerView{Frame: "..", Message: "m"}))
+	assert.Equal(
+		t,
+		"! job: m (3s)",
+		render(tt.Failed, fakeSpinnerView{Frame: "..", Prefix: "job", Message: "m", Elapsed: "3s"}),
+	)
 }
 
 func TestSpinnerSlotsRejectHidden(t *testing.T) {

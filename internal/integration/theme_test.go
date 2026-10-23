@@ -158,7 +158,7 @@ func TestThemedWidgetsShareTerminal(t *testing.T) {
 // checking the screen at every step.
 func themedSession(t *testing.T, term *terminal, l themedLayout) {
 	t.Helper()
-	group, err := tui.NewSpinners(t.Context())
+	group, err := tui.NewSpinners(t.Context(), tui.WithNoElapsed())
 	assert.NoError(t, err)
 	spinner, err := group.Add(t.Context(), tui.WithPrefixf("fetch"))
 	assert.NoError(t, err)
@@ -265,24 +265,24 @@ func TestThemedRouteSharesDetection(t *testing.T) {
 	terst.UseTheme(t, l0.theme())
 
 	// activity started before the first prompt estimates the background
-	early, err := tui.NewSpinners(t.Context())
+	early, err := tui.NewSpinners(t.Context(), tui.WithNoElapsed())
 	assert.NoError(t, err)
 	defer early.Close()
 	_, err = early.Add(t.Context(), tui.WithPrefixf("early"))
 	assert.NoError(t, err)
-	term.AwaitVisible("~ early:")
+	term.AwaitVisible("~ early")
 
 	res := prompt(func() (string, error) { return tui.Input(t.Context(), "Name") })
 	term.answerProbe(t, 1, whiteBackground)
 	term.press(t, "x")
 	term.press(t, keyEnter)
 	assert.Equal(t, "x", answer(t, res))
-	term.AwaitVisible("✔ Name · x", "~ early:")
+	term.AwaitVisible("✔ Name · x", "~ early")
 	ink := textColor(term.String(), "x")
 	assert.True(t, ink != "") // measured: the draft is drawn in Foreground
 
 	// later work on the same route reuses the measurement without a query
-	late, err := tui.NewSpinners(t.Context())
+	late, err := tui.NewSpinners(t.Context(), tui.WithNoElapsed())
 	assert.NoError(t, err)
 	defer late.Close()
 	_, err = late.Add(t.Context(), tui.WithPrefixf("late"))
@@ -292,14 +292,14 @@ func TestThemedRouteSharesDetection(t *testing.T) {
 	res = prompt(func() (string, error) { return tui.Dropdown(t.Context(), "Pick", []string{"item"}) })
 	term.press(t, keyEnter)
 	assert.Equal(t, "item", answer(t, res))
-	term.AwaitVisible("✔ Name · x", "NAME", "cell", "{", `"k": "json"`, "}", "✔ Pick · item", "~ early:", "~ late:")
+	term.AwaitVisible("✔ Name · x", "NAME", "cell", "{", `"k": "json"`, "}", "✔ Pick · item", "~ early", "~ late")
 	out := term.String()
 	assert.Equal(t, 1, strings.Count(out, backgroundQuery))
-	for _, text := range []string{"late", "cell", `"json"`, "item"} {
+	for _, text := range []string{"cell", `"json"`, "item"} {
 		assert.Equal(t, ink, textColor(out, text))
 	}
 	// the measurement does not recolor activity bound before it
-	assert.Equal(t, "", textColor(out, "early"))
+	assert.True(t, textColor(out, "early") != textColor(out, "late"))
 	// nor reach a destination that is not the terminal
 	var buf strings.Builder
 	assert.NoError(t, tui.TableAuto(&buf, []struct{ Name string }{{"cell"}}))
@@ -354,12 +354,12 @@ func probingSession(t *testing.T) (*terminal, *tui.Spinners) {
 	tcommon.ProbingKeyboard(t, keyboardFd)
 	term := newTerminal(t, 20)
 	terst.UseTheme(t, l0.theme())
-	group, err := tui.NewSpinners(t.Context())
+	group, err := tui.NewSpinners(t.Context(), tui.WithNoElapsed())
 	assert.NoError(t, err)
 	t.Cleanup(group.Close)
 	_, err = group.Add(t.Context(), tui.WithPrefixf("work"))
 	assert.NoError(t, err)
-	term.AwaitVisible("~ work:")
+	term.AwaitVisible("~ work")
 	return term, group
 }
 
@@ -369,11 +369,11 @@ func TestThemedProbeTimeoutReplaysKeys(t *testing.T) {
 	read := term.blockedRead(t)
 	term.waitQueries(t, 1)
 	read <- "a" // typed while the terminal does not answer
-	term.AwaitVisible("~ work:", "◆ Name", "│ a")
+	term.AwaitVisible("~ work", "◆ Name", "│ a")
 	// a reply after the timeout is not typed text
 	term.press(t, whiteBackground)
 	term.press(t, "b")
-	term.AwaitVisible("~ work:", "◆ Name", "│ ab")
+	term.AwaitVisible("~ work", "◆ Name", "│ ab")
 	term.press(t, keyEnter)
 	assert.Equal(t, "ab", answer(t, res))
 
@@ -403,13 +403,13 @@ func TestThemedProbeCancellationIsNotRemembered(t *testing.T) {
 	case <-time.After(failsafe):
 		t.Fatal("cancel blocked")
 	}
-	term.AwaitVisible("~ work:")
+	term.AwaitVisible("~ work")
 	// a key typed after the cancellation stays with the next prompt, which
 	// asks again because a cancelled probe is not remembered
 	read <- "z"
 	res = prompt(func() (string, error) { return tui.Input(t.Context(), "Next") })
 	term.answerProbe(t, 2, whiteBackground)
-	term.AwaitVisible("~ work:", "◆ Next", "│ z")
+	term.AwaitVisible("~ work", "◆ Next", "│ z")
 	term.press(t, keyEnter)
 	assert.Equal(t, "z", answer(t, res))
 	group.Close()
@@ -438,7 +438,7 @@ func TestThemedFailuresStayWithTheirOwner(t *testing.T) {
 	th.Table.Cell = `{{ text (check .Value) }}`
 	terst.UseTheme(t, th)
 
-	group, err := tui.NewSpinners(t.Context())
+	group, err := tui.NewSpinners(t.Context(), tui.WithNoElapsed())
 	assert.NoError(t, err)
 	defer group.Close()
 	work, err := group.Add(t.Context())
@@ -470,7 +470,7 @@ func TestThemedFailuresStayWithTheirOwner(t *testing.T) {
 	assert.ErrorIs(t, err, errRejected)
 
 	// a spinner group whose row fails ends alone, clearing its rows
-	other, err := tui.NewSpinners(t.Context())
+	other, err := tui.NewSpinners(t.Context(), tui.WithNoElapsed())
 	assert.NoError(t, err)
 	defer other.Close()
 	broken, err := other.Add(t.Context())
@@ -498,7 +498,7 @@ func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
 	term := newTerminal(t, 20)
 	old := themedLayouts[1].theme() // Guided ASCII
 	terst.UseTheme(t, old)
-	group, err := tui.NewSpinners(t.Context())
+	group, err := tui.NewSpinners(t.Context(), tui.WithNoElapsed())
 	assert.NoError(t, err)
 	defer group.Close()
 	first, err := group.Add(t.Context(), tui.WithPrefixf("first"))
@@ -508,7 +508,7 @@ func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
 	bar.Add(1)
 	res := prompt(func() (string, error) { return tui.Dropdown(t.Context(), "Pick", []string{"a", "b"}) })
 	picking := []string{"? Pick", "| > a", "|   b", "| ^v move · type filter"}
-	term.AwaitVisible(append([]string{"~ first:", "Download  25%  =...", "1 / 4 items..."}, picking...)...)
+	term.AwaitVisible(append([]string{"~ first", "Download  25%  =...", "1 / 4 items..."}, picking...)...)
 
 	next := themedLayouts[0].theme() // Guided Unicode
 	next.Symbols.Spinner = []string{"*"}
@@ -520,20 +520,20 @@ func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
 	assert.NoError(t, err)
 	bar.Add(1)
 	term.press(t, keyDown)
-	running := []string{"~ first:", "~ second:", "Download  50%  =...", "2 / 4 items..."}
+	running := []string{"~ first", "~ second", "Download  50%  =...", "2 / 4 items..."}
 	term.AwaitVisible(append(running, "? Pick", "|   a", "| > b", "| ^v move · type filter")...)
 	term.press(t, keyEnter)
 	assert.Equal(t, "b", answer(t, res))
 
 	// new operations take the installed theme
-	fresh, err := tui.NewSpinners(t.Context())
+	fresh, err := tui.NewSpinners(t.Context(), tui.WithNoElapsed())
 	assert.NoError(t, err)
 	defer fresh.Close()
 	_, err = fresh.Add(t.Context(), tui.WithPrefixf("third"))
 	assert.NoError(t, err)
 	res = prompt(func() (string, error) { return tui.Input(t.Context(), "Name") })
 	term.press(t, "x")
-	term.AwaitVisible(append(append([]string{"+ Pick · b"}, running...), "* third:", "◆ Name", "│ x")...)
+	term.AwaitVisible(append(append([]string{"+ Pick · b"}, running...), "* third", "◆ Name", "│ x")...)
 	term.press(t, keyEnter)
 	assert.Equal(t, "x", answer(t, res))
 	assert.NoError(t, first.Close())
@@ -605,7 +605,7 @@ func TestThemedConcurrentInstallationAndRendering(t *testing.T) {
 				return
 			default:
 			}
-			group, err := tui.NewSpinners(t.Context())
+			group, err := tui.NewSpinners(t.Context(), tui.WithNoElapsed())
 			assert.NoError(t, err)
 			_, err = group.Add(t.Context(), tui.WithPrefixf("spin"))
 			assert.NoError(t, err)
