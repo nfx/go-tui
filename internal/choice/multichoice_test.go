@@ -20,11 +20,12 @@ import (
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestMultichoiceClampRowsKeepsActiveItemVisible(t *testing.T) {
@@ -49,7 +50,7 @@ func newPipeMultichoice(ctx context.Context, in io.Reader) *multichoice {
 	m.Items = []any{"one", "two", "three"}
 	m.in = in
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = terst.FixedTermIO(40, 8)
+	m.makeTermIO = tcommon.FixedTermIO(40, 8)
 	return m
 }
 
@@ -62,7 +63,7 @@ func preparedMultichoice(t *testing.T, items []any, o ...option.Opt) *multichoic
 		t.Fatal(err)
 	}
 	// binding projects the items and resolves the default, as run does
-	if err := m.bindRun(t.Context(), terst.FixedTermIO(60, 10).IO()); err != nil {
+	if err := m.bindRun(t.Context(), tcommon.FixedTermIO(60, 10).IO()); err != nil {
 		t.Fatal(err)
 	}
 	return m
@@ -109,7 +110,7 @@ func TestMultichoiceStateAndGeometry(t *testing.T) {
 			[]any{"\u6f22\u5b57", "👨‍👩‍👧 family", "e\u0301", "\x1b[31mred\x1b[0m", "first\nsecond"},
 		)
 		m.Label = "very long label"
-		tio := terst.FixedTermIO(width, 6).IO()
+		tio := tcommon.FixedTermIO(width, 6).IO()
 		var frame bytes.Buffer
 		err := m.render(tio, &frame)
 		if width <= 2 && errors.Is(err, errs.ErrNoSpace) {
@@ -126,10 +127,10 @@ func TestMultichoiceStateAndGeometry(t *testing.T) {
 	}
 	m = preparedMultichoice(t, []any{"one"})
 	var frame bytes.Buffer
-	if err := m.render(terst.FixedTermIO(0, 4).IO(), &frame); !errors.Is(err, errs.ErrNoSpace) {
+	if err := m.render(tcommon.FixedTermIO(0, 4).IO(), &frame); !errors.Is(err, errs.ErrNoSpace) {
 		t.Fatal(err)
 	}
-	if err := m.render(terst.FixedTermIO(20, 2).IO(), &frame); !errors.Is(err, errs.ErrNoSpace) {
+	if err := m.render(tcommon.FixedTermIO(20, 2).IO(), &frame); !errors.Is(err, errs.ErrNoSpace) {
 		t.Fatal(err)
 	}
 }
@@ -167,7 +168,7 @@ func TestMultichoicePreparationAndCapabilities(t *testing.T) {
 		// syntax fails preparation; templates run when the theme binds
 		err := invalid.prepare([]option.Opt{one})
 		if err == nil {
-			err = invalid.bindRun(t.Context(), terst.FixedTermIO(60, 10).IO())
+			err = invalid.bindRun(t.Context(), tcommon.FixedTermIO(60, 10).IO())
 		}
 		if err == nil {
 			t.Fatal("invalid preparation passed")
@@ -608,10 +609,10 @@ func TestMultichoiceDefaultStreams(t *testing.T) {
 			in := bytes.NewBufferString("in")
 			var out io.Writer = &bytes.Buffer{}
 			if tty {
-				out = &terst.MockDescriptor{Writer: &bytes.Buffer{}, FD: 7}
+				out = &tcommon.MockDescriptor{Writer: &bytes.Buffer{}, FD: 7}
 			}
-			terst.Swap(t, &term.WriterChecker, func(int) bool { return tty })
-			terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 80, 24, nil })
+			tcommon.Swap(t, &term.WriterChecker, func(int) bool { return tty })
+			tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 80, 24, nil })
 			terst.UseIO(t, in, out)
 			wantOut := out
 			if tty {

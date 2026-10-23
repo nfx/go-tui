@@ -11,14 +11,15 @@ import (
 
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
 
 func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
-	_, frames := terst.UseFrames(t)
+	_, frames := tcommon.UseFrames(t)
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
@@ -28,7 +29,7 @@ func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 			pb.redrawAt = start
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = terst.FixedTermIO(80, 1)
+			pb.makeTermIO = tcommon.FixedTermIO(80, 1)
 			return nil
 		}),
 	)
@@ -59,7 +60,7 @@ func TestProgressbarTickShrinksBetweenTicks(t *testing.T) {
 }
 
 func TestProgressbarTickOnResizeExitsWhenDone(t *testing.T) {
-	terst.UseFrames(t)
+	tcommon.UseFrames(t)
 	resizeCh := make(chan struct{})
 	p, err := newStartedProgressBar(t.Context(), "downloading files", 10,
 		option.OpT(func(pb *Progressbar) error {

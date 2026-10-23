@@ -1,13 +1,12 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package terst
+package tcommon
 
 import (
 	"io"
 	"os"
 	"sync"
-	"testing"
 )
 
 type FDByteReader struct {
@@ -28,19 +27,6 @@ func (r *FDByteReader) Read(p []byte) (int, error) {
 func (r *FDByteReader) Fd() uintptr {
 	return r.F.Fd()
 }
-
-// failReader fails the test when a prompt reads from it.
-type failReader struct{ t *testing.T }
-
-func (r failReader) Read([]byte) (int, error) {
-	r.t.Helper()
-	r.t.Error("automatic answer must not read input")
-	return 0, io.EOF
-}
-
-type FailingWriter struct{ Err error }
-
-func (w FailingWriter) Write([]byte) (int, error) { return 0, w.Err }
 
 type MockDescriptor struct {
 	io.Reader

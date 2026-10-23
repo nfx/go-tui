@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 // ttyWriter is the terminal output: it is a real terminal to check and to

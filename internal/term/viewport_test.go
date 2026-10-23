@@ -14,7 +14,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/fuzzseeds"
 )
 
 func TestViewport(t *testing.T) {
@@ -371,7 +370,7 @@ func TestCursorRowsUp(t *testing.T) {
 }
 
 func FuzzViewportWrap(f *testing.F) {
-	for _, seed := range fuzzseeds.Text {
+	for _, seed := range textSeeds {
 		f.Add([]byte(seed), []byte("tail"), uint8(5))
 		f.Add([]byte(seed), []byte("\x1b[0m\u0301"), uint8(2))
 	}

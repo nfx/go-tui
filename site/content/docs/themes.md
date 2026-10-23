@@ -100,7 +100,7 @@ itself are kept. These terminals count as lacking them:
 ## Previewing other terminals
 
 Color depth and symbols come from the environment, so a program can be previewed as it looks elsewhere without
-leaving your terminal. See [Testing in Other Terminals](testing.md) for the variables to set.
+leaving your terminal. See [Testing](testing.md) for the variables to set.
 
 ## Templates
 

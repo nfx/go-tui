@@ -16,11 +16,12 @@ import (
 
 	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/internal/trie"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestDropdownLazyClearsOnlyRenderedArea(t *testing.T) {
@@ -51,7 +52,7 @@ func TestDropdownLazyClearsOnlyRenderedArea(t *testing.T) {
 func TestDropdownHandleLazyItemEmpty(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, d.parseTemplates())
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyItem(tio, frame, 1, itPair{}, false)
 	assert.ErrorIs(t, err, errs.ErrEmptyLazyResult)
@@ -60,7 +61,7 @@ func TestDropdownHandleLazyItemEmpty(t *testing.T) {
 func TestDropdownHandleLazyItemError(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, d.parseTemplates())
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyItem(tio, frame, 1, itPair{err: io.EOF}, true)
 	assert.ErrorIs(t, err, io.EOF)
@@ -69,7 +70,7 @@ func TestDropdownHandleLazyItemError(t *testing.T) {
 func TestDropdownHandleLazyItemAdds(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, d.parseTemplates())
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, needsRender, err := d.handleLazyItem(tio, frame, 1, itPair{item: "item"}, true)
 	assert.NoError(t, err)
@@ -82,7 +83,7 @@ func TestDropdownHandleLazyItemOneReturnWhenDone(t *testing.T) {
 	d.Items = []any{"one"}
 	d.relevant = []int{0}
 	assert.NoError(t, d.parseTemplates())
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	var events []dropdownOutputEvent
 	d.eventSink = func(ev dropdownOutputEvent) {
@@ -100,7 +101,7 @@ func TestDropdownHandleLazyItemOneReturnWhenDone(t *testing.T) {
 
 func TestDropdownHandleLazyKeyEOF(t *testing.T) {
 	d := newDropdown(t.Context())
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyKey(tio, frame, 1, 1, term.KeyEvent{}, false)
 	assert.ErrorIs(t, err, io.EOF)
@@ -108,7 +109,7 @@ func TestDropdownHandleLazyKeyEOF(t *testing.T) {
 
 func TestDropdownHandleLazyKeyPasteIgnored(t *testing.T) {
 	d := newDropdown(t.Context())
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyKey(tio, frame, 1, 1, term.KeyEvent{Err: &term.PasteTextError{Buf: []byte("a")}}, true)
 	assert.NoError(t, err)
@@ -119,7 +120,7 @@ func TestDropdownHandleLazyKeyEnter(t *testing.T) {
 	d.Items = []any{"one"}
 	d.relevant = []int{0}
 	d.displayed = []int{0}
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	i, _, err := d.handleLazyKey(tio, frame, 1, 1, term.KeyEvent{Key: term.KeyEnter}, true)
 	assert.NoError(t, err)
@@ -130,7 +131,7 @@ func TestDropdownRenderLazyFrameClears(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"item"}
 	bindDropdown(t, d)
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := bytes.NewBuffer(nil)
 	space := 1
 	displayed := 0
@@ -160,7 +161,7 @@ func TestDropdownRenderLazyFrameWriteError(t *testing.T) {
 
 func TestDropdownHandleLazyKeyReadError(t *testing.T) {
 	d := newDropdown(t.Context())
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyKey(tio, frame, 1, 1, term.KeyEvent{Err: io.EOF}, true)
 	assert.ErrorIs(t, err, io.EOF)
@@ -170,7 +171,7 @@ func TestDropdownNextLazyActionItem(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"seed"}
 	assert.NoError(t, d.parseTemplates())
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	_, err := d.renderInit(tio)
 	assert.NoError(t, err)
 	frame := bytes.NewBuffer(nil)
@@ -187,7 +188,7 @@ func TestDropdownNextLazyActionKey(t *testing.T) {
 	d.relevant = []int{0}
 	d.displayed = []int{0}
 	assert.NoError(t, d.parseTemplates())
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := bytes.NewBuffer(nil)
 	keys := make(chan term.KeyEvent, 1)
 	keys <- term.KeyEvent{Key: term.KeyEnter}
@@ -202,7 +203,7 @@ func TestDropdownNextLazyActionContextDone(t *testing.T) {
 	cancel()
 	d := newDropdown(t.Context())
 	d.Ctx = ctx
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := bytes.NewBuffer(nil)
 	_, err := d.nextLazyAction(tio, frame, 1, 1, make(chan term.KeyEvent))
 	assert.Error(t, err)
@@ -212,7 +213,7 @@ func TestDropdownHandleLazyItemDoneWithItems(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"item"}
 	assert.NoError(t, d.parseTemplates())
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyItem(tio, frame, 1, itPair{}, false)
 	assert.NoError(t, err)
@@ -223,7 +224,7 @@ func TestDropdownHandleLazyItemAddError(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.mainTemplate = template.Must(template.New("content").Parse("{{call .}}"))
 	d.trie = trie.NewTrie()
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyItem(tio, frame, 1, itPair{item: "x"}, true)
 	assert.Error(t, err)
@@ -270,7 +271,7 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 	itemsLoaded, ready := notifyItemsLoaded(2)
 	opts := option.WithOptions(
 		option.OpT(func(d *dropdown) error {
-			d.makeTermIO = terst.FixedTermIO(20, 6)
+			d.makeTermIO = tcommon.FixedTermIO(20, 6)
 			return nil
 		}),
 		itemsLoaded,
@@ -306,7 +307,7 @@ func TestDropdownLazyDoesNotStartProducerWhenContextAlreadyCanceled(t *testing.T
 	})
 	opts := option.WithOptions(
 		option.OpT(func(d *dropdown) error {
-			d.makeTermIO = terst.FixedTermIO(20, 6)
+			d.makeTermIO = tcommon.FixedTermIO(20, 6)
 			return nil
 		}),
 	)
@@ -332,7 +333,7 @@ func TestDropdownLazyCtrlCNotLostAfterPreviousLazyExit(t *testing.T) {
 	itemsLoaded, ready := notifyItemsLoaded(2)
 	opts := option.WithOptions(
 		option.OpT(func(d *dropdown) error {
-			d.makeTermIO = terst.FixedTermIO(20, 6)
+			d.makeTermIO = tcommon.FixedTermIO(20, 6)
 			return nil
 		}),
 		itemsLoaded,
@@ -359,7 +360,7 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 	itemsLoaded, ready := notifyItemsLoaded(2)
 	opts := option.WithOptions(
 		option.OpT(func(d *dropdown) error {
-			d.makeTermIO = terst.FixedTermIO(20, 6)
+			d.makeTermIO = tcommon.FixedTermIO(20, 6)
 			return nil
 		}),
 		itemsLoaded,
@@ -423,7 +424,7 @@ func TestDropdownLazyOneReturnSingleItem(t *testing.T) {
 }
 
 func TestDropdownLazyAppendAfterFilter(t *testing.T) {
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	for _, matches := range []struct {
 		filter string
@@ -458,7 +459,7 @@ func TestDropdownLazyKeepsDefaultRanking(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, option.WithDefault("cat")(d))
 	bindDropdown(t, d)
-	tio := terst.FixedTermIO(20, 6).IO()
+	tio := tcommon.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	// empty lazy dropdown renders before any item arrives
 	_, err := d.renderInit(tio)
@@ -475,7 +476,7 @@ func TestDropdownLazyRankingKeepsSelectedItem(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, option.WithDefault("cat")(d))
 	bindDropdown(t, d)
-	tio := terst.FixedTermIO(20, 10).IO()
+	tio := tcommon.FixedTermIO(20, 10).IO()
 	frame := &bytes.Buffer{}
 	for _, item := range []string{"xxxx", "yyyy"} {
 		_, _, err := d.handleLazyItem(tio, frame, 0, itPair{item: item}, true)

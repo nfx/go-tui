@@ -21,7 +21,7 @@ import (
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestWithWorkersRejectsNonPositive(t *testing.T) {

@@ -1,29 +1,17 @@
 // Copyright 2026 Serge Smertin
 // SPDX-License-Identifier: MIT
 
-package terst
+package tcommon
 
 import (
 	"bytes"
 	"io"
-	"strings"
 	"testing"
 
 	xterm "golang.org/x/term"
 
 	"github.com/nfx/go-tui/internal/term"
 )
-
-// WithEnv installs an output environment fixture built from KEY=VALUE pairs.
-func WithEnv(t *testing.T, pairs ...string) {
-	t.Helper()
-	vars := map[string]string{}
-	for _, p := range pairs {
-		k, v, _ := strings.Cut(p, "=")
-		vars[k] = v
-	}
-	Swap(t, &term.Default.Env, term.ReadOutputEnv(func(k string) (string, bool) { v, ok := vars[k]; return v, ok }))
-}
 
 func TTYWriter(t *testing.T) *MockDescriptor {
 	t.Helper()
@@ -38,13 +26,6 @@ func Swap[T any](t *testing.T, p *T, v T) {
 	prev := *p
 	*p = v
 	t.Cleanup(func() { *p = prev })
-}
-
-// StrictOutput restores production terminal classification for a test, where
-// writers without terminal capabilities are not terminals.
-func StrictOutput(t *testing.T) {
-	t.Helper()
-	Swap(t, &term.OutputIsTerminal, term.HostsTerminal)
 }
 
 // ProbingKeyboard makes input on fd a terminal that answers background

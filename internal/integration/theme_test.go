@@ -18,7 +18,8 @@ import (
 
 	tui "github.com/nfx/go-tui"
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/internal/tcommon"
+	"github.com/nfx/go-tui/terst"
 )
 
 // themedProfiles are the five output profiles, from the environment.
@@ -260,7 +261,7 @@ func textColor(out, text string) string {
 
 func TestThemedRouteSharesDetection(t *testing.T) {
 	terst.WithEnv(t, "FORCE_COLOR=3")
-	terst.ProbingKeyboard(t, keyboardFd)
+	tcommon.ProbingKeyboard(t, keyboardFd)
 	term := newTerminal(t, 20)
 	terst.UseTheme(t, l0.theme())
 
@@ -324,7 +325,7 @@ func TestThemedRouteSharesDetection(t *testing.T) {
 
 func TestThemedExplicitAppearanceNeverProbes(t *testing.T) {
 	terst.WithEnv(t, "FORCE_COLOR=3")
-	terst.ProbingKeyboard(t, keyboardFd)
+	tcommon.ProbingKeyboard(t, keyboardFd)
 	term := newTerminal(t, 20)
 	th := l0.theme()
 	th.Light = true
@@ -351,7 +352,7 @@ var l0 = themedLayouts[0]
 func probingSession(t *testing.T) (*terminal, *tui.Spinners) {
 	t.Helper()
 	terst.WithEnv(t, "FORCE_COLOR=3")
-	terst.ProbingKeyboard(t, keyboardFd)
+	tcommon.ProbingKeyboard(t, keyboardFd)
 	term := newTerminal(t, 20)
 	terst.UseTheme(t, l0.theme())
 	group, err := tui.NewSpinners(t.Context())

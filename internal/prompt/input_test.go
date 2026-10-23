@@ -14,11 +14,12 @@ import (
 
 	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 // bindInput prepares a literal input as run does: the installed theme bound to tt.
@@ -99,7 +100,7 @@ func TestInputRunEmitsLifecycleEvents(t *testing.T) {
 	i.In = terst.NewKeys(t, "x", terst.KeyEnter)
 	var out bytes.Buffer
 	i.Out = &out
-	i.makeTermIO = terst.FixedTermIO(20, 2)
+	i.makeTermIO = tcommon.FixedTermIO(20, 2)
 	var events []inputOutgoing
 	i.eventSink = func(ev inputOutgoing) {
 		events = append(events, ev)
@@ -188,7 +189,7 @@ func TestInputRunPasteFollowedByEnter(t *testing.T) {
 	i.In = terst.NewKeys(t, "hi", terst.KeyEnter)
 	var out bytes.Buffer
 	i.Out = &out
-	i.makeTermIO = terst.FixedTermIO(20, 2)
+	i.makeTermIO = tcommon.FixedTermIO(20, 2)
 	got, err := i.run(i.Ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "hi", got)
@@ -200,7 +201,7 @@ func TestInputRunTypeAndPaste(t *testing.T) {
 	i.In = terst.NewKeys(t, "h", "el", "lo", terst.KeyEnter)
 	var out bytes.Buffer
 	i.Out = &out
-	i.makeTermIO = terst.FixedTermIO(20, 2)
+	i.makeTermIO = tcommon.FixedTermIO(20, 2)
 	got, err := i.run(i.Ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "hello", got)
@@ -222,7 +223,7 @@ func TestInputTypesMultiByteFromPipe(t *testing.T) {
 	_, err = w.WriteString("héllo\x1b[D\x1b[D\x1b[D\x7fж\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	terst.UseTerminalInput(t, &terst.FDByteReader{F: r})
+	terst.UseTerminalInput(t, &tcommon.FDByteReader{F: r})
 	got, err := Input(t.Context(), "Label")
 	assert.NoError(t, err)
 	assert.Equal(t, "hжllo", got)
@@ -235,7 +236,7 @@ func TestInputReadsFromPipe(t *testing.T) {
 	_, err = w.WriteString("hi\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	terst.UseTerminalInput(t, &terst.FDByteReader{F: r})
+	terst.UseTerminalInput(t, &tcommon.FDByteReader{F: r})
 	got, err := Input(t.Context(), "Label")
 	assert.NoError(t, err)
 	assert.Equal(t, "hi", got)
@@ -253,7 +254,7 @@ func TestInputReadsMultipleLeftArrowsFromPipe(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	terst.UseTerminalInput(t, &terst.FDByteReader{F: r})
+	terst.UseTerminalInput(t, &tcommon.FDByteReader{F: r})
 	got, err := Input(
 		t.Context(),
 		"Label",
@@ -270,7 +271,7 @@ func TestInputIgnoresSpecialKeysFromPipe(t *testing.T) {
 	_, err = w.WriteString("a\x1b[3~b\x1b[Hc\x1bxd\x1b\x1bOPe\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	terst.UseTerminalInput(t, &terst.FDByteReader{F: r})
+	terst.UseTerminalInput(t, &tcommon.FDByteReader{F: r})
 	got, err := Input(t.Context(), "Label")
 	assert.NoError(t, err)
 	assert.Equal(t, "abcde", got)
@@ -327,7 +328,7 @@ func TestInputRunCancelledReadKeepsNextKey(t *testing.T) {
 	assert.NoError(t, err)
 	defer pr.Close() //nolint:errcheck // test cleanup
 	defer pw.Close() //nolint:errcheck // test cleanup
-	mk := terst.FixedTermIO(20, 2)
+	mk := tcommon.FixedTermIO(20, 2)
 	ctx, cancel := context.WithCancel(context.Background())
 	i := newInput(t.Context(), "first")
 	i.Ctx, i.In, i.Out, i.makeTermIO = ctx, pr, &bytes.Buffer{}, mk
@@ -354,7 +355,7 @@ func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	assert.NoError(t, err)
 	defer pr.Close() //nolint:errcheck // test cleanup
 	defer pw.Close() //nolint:errcheck // test cleanup
-	in := terst.NewNotifyingReader(pr)
+	in := tcommon.NewNotifyingReader(pr)
 	mk := func(in io.Reader, out io.Writer) (*term.IO, error) {
 		return &term.IO{
 			In:      in,
@@ -396,12 +397,12 @@ func TestInputRunBufferedWrappedReader(t *testing.T) {
 	assert.NoError(t, err)
 	defer pr.Close() //nolint:errcheck // test cleanup
 	defer pw.Close() //nolint:errcheck // test cleanup
-	in := &terst.MockDescriptor{Reader: bytes.NewBufferString("x\r"), FD: pr.Fd()}
+	in := &tcommon.MockDescriptor{Reader: bytes.NewBufferString("x\r"), FD: pr.Fd()}
 	prompt := newInput(t.Context(), "buffered")
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	prompt.Ctx, prompt.In, prompt.Out = ctx, in, &bytes.Buffer{}
-	prompt.makeTermIO = terst.FixedTermIO(20, 2)
+	prompt.makeTermIO = tcommon.FixedTermIO(20, 2)
 	got, err := prompt.run(prompt.Ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
@@ -424,7 +425,7 @@ func runInputOn(t *testing.T, in io.Reader, opts ...option.Opt) (string, error) 
 	t.Helper()
 	i := newInput(t.Context(), "Label")
 	i.In, i.Out = in, &bytes.Buffer{}
-	i.makeTermIO = terst.FixedTermIO(20, 2)
+	i.makeTermIO = tcommon.FixedTermIO(20, 2)
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	i.Ctx = ctx
@@ -552,7 +553,7 @@ func TestInputNeedsTwoRowsForFeedback(t *testing.T) {
 	i := newInput(t.Context(), "Label")
 	i.In = terst.NewKeys(t, "a", terst.KeyEnter)
 	i.Out = &bytes.Buffer{}
-	i.makeTermIO = terst.FixedTermIO(20, 1)
+	i.makeTermIO = tcommon.FixedTermIO(20, 1)
 	assert.NoError(t, WithValidation(func(context.Context, string) error { return errors.New("no") })(i))
 	_, err := i.run(i.Ctx)
 	assert.ErrorIs(t, err, errs.ErrNoSpace)

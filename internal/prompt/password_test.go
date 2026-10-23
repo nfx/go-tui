@@ -15,10 +15,11 @@ import (
 
 	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestPasswordReadsFromPipe(t *testing.T) {
@@ -28,7 +29,7 @@ func TestPasswordReadsFromPipe(t *testing.T) {
 	_, err = w.WriteString("secret\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	terst.UseTerminalInput(t, &terst.FDByteReader{F: r})
+	terst.UseTerminalInput(t, &tcommon.FDByteReader{F: r})
 	got, err := Password(t.Context(), "Label")
 	assert.NoError(t, err)
 	assert.Equal(t, "secret", got)

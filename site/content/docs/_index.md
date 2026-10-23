@@ -19,5 +19,5 @@ Core guides:
 - [Pretty JSON](json.md)
 - [File Picker](filepicker.md)
 - [Text handling](text.md)
-- [Testing in Other Terminals](testing.md)
+- [Testing](testing.md)
 - [Alternatives](alternatives.md)

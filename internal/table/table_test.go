@@ -19,11 +19,12 @@ import (
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 type Pet struct {
@@ -645,7 +646,7 @@ func lines(out string) []string {
 // ttyWidth makes every writer report width columns.
 func ttyWidth(t *testing.T, width int) {
 	t.Helper()
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return width, 40, nil })
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return width, 40, nil })
 }
 
 type factsRow struct {

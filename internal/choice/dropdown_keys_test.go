@@ -10,12 +10,13 @@ import (
 	"testing"
 
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 
 	"io"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
@@ -126,7 +127,7 @@ func TestDropdownPressKeyReadsSharedPendingEnter(t *testing.T) {
 			name = "fresh terminal"
 		}
 		t.Run(name, func(t *testing.T) {
-			in := &terst.MockDescriptor{Reader: bytes.NewBufferString("\x1b[A\r"), FD: 0}
+			in := &tcommon.MockDescriptor{Reader: bytes.NewBufferString("\x1b[A\r"), FD: 0}
 			first := &term.IO{In: in, Out: &bytes.Buffer{}}
 			ev := <-first.ReadEvents(t.Context(), nil)
 			first.AwaitReader()

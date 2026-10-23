@@ -6,7 +6,7 @@ package table
 import (
 	"testing"
 
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestMain(m *testing.M) { terst.Main(m) }

@@ -48,14 +48,6 @@ func Stderr() io.Writer {
 	return term.Default.StderrWriter()
 }
 
-// SetDefaultIO replaces the input and output of all widgets, os.Stdin and
-// os.Stderr by default. A nil reader or writer keeps the current one. Call it
-// before widgets start: replacing the output stops the renderer that running
-// widgets share with [Stderr].
-func SetDefaultIO(in io.Reader, out io.Writer) {
-	term.Default.SetIO(in, out)
-}
-
 // WithOptions bundles options for reuse across widgets. Each member is applied
 // when the widget supports it and skipped otherwise. The bundle fails with
 // [ErrWrongWidget] only when the widget supports none of its members. Any

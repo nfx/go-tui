@@ -18,7 +18,7 @@ import (
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 // themedTable turns the theme gate on with th installed and clears the color

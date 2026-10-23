@@ -17,10 +17,11 @@ import (
 
 	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestMultichoiceBatchesQueuedArrivals(t *testing.T) {
@@ -68,7 +69,7 @@ func TestMultichoiceRunNoSpace(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one"}
 	m.out = io.Discard
-	m.makeTermIO = terst.FixedTermIO(10, 2)
+	m.makeTermIO = tcommon.FixedTermIO(10, 2)
 	err := m.run(m.Ctx)
 	assert.ErrorIs(t, err, errs.ErrNoSpace)
 }
@@ -79,7 +80,7 @@ func TestMultichoiceRunHandlesKeys(t *testing.T) {
 	m.Items = []any{"one", "two", "three"}
 	m.in = reader
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = terst.FixedTermIO(40, 6)
+	m.makeTermIO = tcommon.FixedTermIO(40, 6)
 	assert.NoError(t, m.run(m.Ctx))
 }
 
@@ -89,7 +90,7 @@ func TestMultichoiceRunIgnoresSpecialKeys(t *testing.T) {
 	m.Items = []any{"one", "two", "three"}
 	m.in = reader
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = terst.FixedTermIO(40, 6)
+	m.makeTermIO = tcommon.FixedTermIO(40, 6)
 	assert.NoError(t, m.run(m.Ctx))
 	assert.Equal(t, []bool{false, true, false}, m.selected)
 }
@@ -101,7 +102,7 @@ func TestMultichoiceRunContextDone(t *testing.T) {
 	m.Items = []any{"one"}
 	m.in = terst.NewKeys(t, terst.KeyEnter)
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = terst.FixedTermIO(40, 6)
+	m.makeTermIO = tcommon.FixedTermIO(40, 6)
 	err := m.run(m.Ctx)
 	assert.Error(t, err)
 }
@@ -111,7 +112,7 @@ func TestMultichoiceRunCoalescedKeys(t *testing.T) {
 	m.Items = []any{"one"}
 	m.in = terst.NewKeys(t, "ab", terst.KeyEnter)
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = terst.FixedTermIO(40, 6)
+	m.makeTermIO = tcommon.FixedTermIO(40, 6)
 	assert.NoError(t, m.run(m.Ctx))
 }
 
@@ -120,7 +121,7 @@ func TestMultichoiceRunReadError(t *testing.T) {
 	m.Items = []any{"one"}
 	m.in = bytes.NewBuffer(nil)
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = terst.FixedTermIO(40, 6)
+	m.makeTermIO = tcommon.FixedTermIO(40, 6)
 	err := m.run(m.Ctx)
 	assert.Error(t, err)
 }
@@ -299,7 +300,7 @@ func TestMultichoiceLazyDefaultState(t *testing.T) {
 			if err := m.prepare(nil); err != nil {
 				t.Fatal(err)
 			}
-			if err := m.bindRun(t.Context(), terst.FixedTermIO(60, 10).IO()); err != nil {
+			if err := m.bindRun(t.Context(), tcommon.FixedTermIO(60, 10).IO()); err != nil {
 				t.Fatal(err)
 			}
 			for _, item := range tc.items {
@@ -336,7 +337,7 @@ func TestMultichoiceLazyArrivalsAndFocus(t *testing.T) {
 	if err := m.prepare(nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.bindRun(t.Context(), terst.FixedTermIO(60, 10).IO()); err != nil {
+	if err := m.bindRun(t.Context(), tcommon.FixedTermIO(60, 10).IO()); err != nil {
 		t.Fatal(err)
 	}
 	for _, item := range []string{"xxxx", "yyyy", "bat"} {
@@ -475,10 +476,10 @@ func TestMultichoiceProducerStopsBlockedPublication(t *testing.T) {
 }
 
 func TestMultichoicePasteModeLifetime(t *testing.T) {
-	terst.Swap(t, &term.InputChecker, func(int) bool { return true })
+	tcommon.Swap(t, &term.InputChecker, func(int) bool { return true })
 	for _, keys := range []string{"\r", "\x03"} {
 		var out strings.Builder
-		in := &terst.MockDescriptor{Reader: strings.NewReader(keys), FD: 1}
+		in := &tcommon.MockDescriptor{Reader: strings.NewReader(keys), FD: 1}
 		m := newMultichoice(t.Context())
 		m.Items = []any{"one"}
 		m.in = in

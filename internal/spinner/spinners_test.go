@@ -18,18 +18,19 @@ import (
 
 	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 // testIOforSpinners provides frames for spinners at a fixed terminal size,
 // with manual ticks.
 func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*terst.Output, func(), option.Opt) {
 	t.Helper()
-	_, frames := terst.UseFrames(t)
+	_, frames := tcommon.UseFrames(t)
 	ticks := make(chan time.Time)
 	return frames, func() {
 			go func() {
@@ -41,7 +42,7 @@ func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*terst
 		}, option.WithOptions(append(option.Opts{
 			option.OpT(func(s *Spinners) error {
 				s.ticks = ticks
-				s.makeTermIO = terst.FixedTermIO(width, height)
+				s.makeTermIO = tcommon.FixedTermIO(width, height)
 				return nil
 			}),
 		}, o...,

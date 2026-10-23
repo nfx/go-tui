@@ -14,15 +14,16 @@ import (
 
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/color"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestFactsBasicRender(t *testing.T) {
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
 
 	type row struct {
 		Name string
@@ -41,7 +42,7 @@ func TestFactsBasicRender(t *testing.T) {
 }
 
 func TestFactsWrapsOnNarrowTTY(t *testing.T) {
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 14, 40, nil })
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 14, 40, nil })
 
 	type row struct {
 		Alpha string
@@ -68,7 +69,7 @@ func TestFactsWrapsOnNarrowTTY(t *testing.T) {
 }
 
 func TestFactsWithMaxWidthCapsWideTTY(t *testing.T) {
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
 
 	type row struct {
 		Alpha string
@@ -86,7 +87,7 @@ func TestFactsWithMaxWidthCapsWideTTY(t *testing.T) {
 }
 
 func TestFactsWithMaxWidthDoesNotWidenNarrowTTY(t *testing.T) {
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 14, 40, nil })
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 14, 40, nil })
 
 	type row struct {
 		Alpha string
@@ -103,7 +104,7 @@ func TestFactsWithMaxWidthDoesNotWidenNarrowTTY(t *testing.T) {
 }
 
 func TestFactsHonorsColumnOptions(t *testing.T) {
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
 
 	data := tableFormatRow{Name: "A", Rate: 0.1, Amount: 9}
 	buf := &bytes.Buffer{}
@@ -123,7 +124,7 @@ func TestFactsHonorsColumnOptions(t *testing.T) {
 }
 
 func TestFactsAlignsColumnStartsAcrossGroups(t *testing.T) {
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
 
 	type row struct {
 		Alpha string
@@ -149,7 +150,7 @@ func TestFactsAlignsColumnStartsAcrossGroups(t *testing.T) {
 }
 
 func TestFactsAddsTrailingBlankLine(t *testing.T) {
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
 
 	type row struct {
 		Name string
@@ -162,7 +163,7 @@ func TestFactsAddsTrailingBlankLine(t *testing.T) {
 }
 
 func TestFactsHonorsAlignRightMetadata(t *testing.T) {
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
 
 	type row struct {
 		Left  string
@@ -181,7 +182,7 @@ func TestFactsHonorsAlignRightMetadata(t *testing.T) {
 }
 
 func TestFactsInterfaceInputUsesDynamicType(t *testing.T) {
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
 
 	var data any = struct{ Name string }{"Alice"}
 	buf := &bytes.Buffer{}
@@ -197,7 +198,7 @@ func TestFactsInterfaceInputUsesDynamicType(t *testing.T) {
 }
 
 func TestFactsTabIsMeasured(t *testing.T) {
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 120, 40, nil })
 
 	type row struct {
 		A string

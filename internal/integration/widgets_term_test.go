@@ -8,13 +8,14 @@ import (
 	"context"
 	"errors"
 	tui "github.com/nfx/go-tui"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestInput_ScriptedReaderAndWriter(t *testing.T) {
@@ -31,7 +32,7 @@ func TestSharedInputState_CancelledClosedReaderReleased(t *testing.T) {
 	assert.NoError(t, err)
 	defer pr.Close() //nolint:errcheck // test cleanup
 	defer pw.Close() //nolint:errcheck // test cleanup
-	in := terst.NewNotifyingReader(pr)
+	in := tcommon.NewNotifyingReader(pr)
 	tio := &term.IO{In: in}
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()

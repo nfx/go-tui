@@ -6,14 +6,16 @@ package integration
 import (
 	"bytes"
 	"io"
+	"os"
 	"testing"
 	"time"
 
 	tui "github.com/nfx/go-tui"
+	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/terst"
+	"github.com/nfx/go-tui/terst"
 )
 
 func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
@@ -45,9 +47,9 @@ func TestInputLeftArrowMovesCursorWithSplitEscape(t *testing.T) {
 
 func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
 	in := bytes.NewBufferString("in")
-	out := &terst.MockDescriptor{Writer: &bytes.Buffer{}, FD: 7}
-	terst.Swap(t, &term.WriterChecker, func(int) bool { return true })
-	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return 80, 24, nil })
+	out := &tcommon.MockDescriptor{Writer: &bytes.Buffer{}, FD: 7}
+	tcommon.Swap(t, &term.WriterChecker, func(int) bool { return true })
+	tcommon.Swap(t, &term.GetSize, func(int) (int, int, error) { return 80, 24, nil })
 	terst.UseIO(t, in, out)
 	_ = tui.Stderr()
 
@@ -118,7 +120,7 @@ func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
 	}
 }
 
-func TestDefaultStreamsArePairedUnderSetDefaultIO(t *testing.T) {
+func TestDefaultStreamsArePairedUnderSetIO(t *testing.T) {
 	in1, out1 := bytes.NewBufferString("1"), &bytes.Buffer{}
 	in2, out2 := bytes.NewBufferString("2"), &bytes.Buffer{}
 	terst.UseIO(t, in1, out1)
@@ -147,6 +149,13 @@ func TestDefaultStreamsArePairedUnderSetDefaultIO(t *testing.T) {
 	}
 	close(stop)
 	<-swapped
+}
+
+// useExampleIO makes in and out the default IO for an example, which has no
+// test to restore it. The returned func restores os.Stdin and os.Stderr.
+func useExampleIO(in io.Reader, out io.Writer) (restore func()) {
+	term.Default.SetIO(in, out)
+	return func() { term.Default.SetIO(os.Stdin, os.Stderr) }
 }
 
 func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {

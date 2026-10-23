@@ -98,7 +98,7 @@ func newDefaultIO() *Terminal {
 }
 
 // DefaultStreams returns the default reader and writer as one snapshot, so a
-// concurrent [SetDefaultIO] cannot pair the old reader with the new writer.
+// concurrent [Terminal.SetIO] cannot pair the old reader with the new writer.
 func DefaultStreams(ctx context.Context) (io.Reader, io.Writer) {
 	return Default.streams(ctx)
 }
