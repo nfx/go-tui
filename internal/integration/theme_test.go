@@ -254,7 +254,7 @@ var foreground = regexp.MustCompile(`\x1b\[38;2;[0-9;]+m`)
 // The last one is the settled rendering: a prompt may draw its active row
 // before it is answered, in another color.
 func textColor(out, text string) string {
-	all := regexp.MustCompile(`(\x1b\[38;2;[0-9;]+m)` + regexp.QuoteMeta(text)).FindAllStringSubmatch(out, -1)
+	all := regexp.MustCompile(`(\x1b\[38;2;[0-9;]+m)`+regexp.QuoteMeta(text)).FindAllStringSubmatch(out, -1)
 	if len(all) == 0 {
 		return ""
 	}
