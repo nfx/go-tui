@@ -296,7 +296,7 @@ type progressLook struct {
 // bindLook binds the captured theme to the output of the bar. Output
 // only: without a lease, it never probes the terminal.
 func (p *Progressbar) bindLook(ctx context.Context) (err error) {
-	p.look, err = p.bind(term.Default.BindTheme(ctx, p.theme, p.Out, nil))
+	p.look, err = p.bind(term.Default.BindTheme(ctx, p.theme, p.out, nil))
 	return err
 }
 

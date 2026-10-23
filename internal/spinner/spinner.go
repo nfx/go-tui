@@ -80,7 +80,7 @@ func (s *Spinner) Fail(err error) {
 func (s *Spinner) monitor(ctx context.Context) {
 	defer s.Close() // we send the stop to the parent with the offset
 	select {        // whether parent or self context is done
-	case <-s.parent.Ctx.Done():
+	case <-s.parent.ctx.Done():
 		return // all spinners are done
 	case <-ctx.Done():
 		return // what created spinner is done

@@ -22,7 +22,7 @@ func TestThemedInputProbesBeforeReadingKeys(t *testing.T) {
 	tt, rt := tcommon.ProbeTermIO(t, tcommon.OSCReply+"a\r")
 	tt.Restore = func() error { return nil }
 	i := newInput(t.Context(), "Label")
-	i.In, i.Out = tt.In, tt.Out
+	i.in, i.out = tt.In, tt.Out
 	i.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) { return tt, nil }
 	got, err := i.read(t.Context())
 	assert.NoError(t, err)

@@ -18,7 +18,9 @@ import (
 )
 
 type input struct {
-	option.Config
+	ctx context.Context
+	in  io.Reader
+	out io.Writer
 
 	Label    string
 	Hide     bool
@@ -73,9 +75,9 @@ func (i *input) SetDefault(d any) {
 func newInput(ctx context.Context, label string) *input {
 	in, out := term.DefaultStreams(ctx)
 	return &input{
-		Ctx:        ctx,
-		Out:        out,
-		In:         in,
+		ctx:        ctx,
+		out:        out,
+		in:         in,
 		Label:      label,
 		theme:      term.Default.CurrentTheme(),
 		makeTermIO: term.MakePromptIO,
@@ -87,7 +89,7 @@ func (i *input) read(ctx context.Context, o ...option.Opt) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !term.OutputIsTerminal(i.Out) {
+	if !term.OutputIsTerminal(i.out) {
 		return i.answerFromDefault(ctx)
 	}
 	out, err := i.run(ctx)
@@ -133,7 +135,7 @@ func (i *input) showAnswer() error {
 	if err != nil {
 		return fmt.Errorf("answer: %w", err)
 	}
-	_, err = buf.WriteTo(i.Out)
+	_, err = buf.WriteTo(i.out)
 	if err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
@@ -142,7 +144,7 @@ func (i *input) showAnswer() error {
 
 // run renders the prompt and stops its event goroutine before restoring the terminal.
 func (p *input) run(ctx context.Context) (string, error) {
-	io, err := p.makeTermIO(p.In, p.Out)
+	io, err := p.makeTermIO(p.in, p.out)
 	if err != nil {
 		return "", err
 	}
@@ -205,12 +207,12 @@ func (p *input) handleNextEvent(
 	keys <-chan term.KeyEvent,
 ) (done, consumed bool, err error) {
 	select {
-	case <-p.Ctx.Done():
-		return false, false, errors.Join(p.Ctx.Err(), p.clear(tio))
+	case <-p.ctx.Done():
+		return false, false, errors.Join(p.ctx.Err(), p.clear(tio))
 	case ev, ok := <-keys:
-		if !ok && p.Ctx.Err() != nil {
+		if !ok && p.ctx.Err() != nil {
 			// the reader closed keys because of the cancellation
-			return false, false, errors.Join(p.Ctx.Err(), p.clear(tio))
+			return false, false, errors.Join(p.ctx.Err(), p.clear(tio))
 		}
 		// key press handlers has to be limited to state updates, not writes to the buffer.
 		done, err := p.handleKeyEvent(ctx, ev, ok)
@@ -355,11 +357,11 @@ func (p *input) applyInputChanged(ev inputChanged) {
 // the text and shows the reason; cancellation is reported by the event loop.
 func (p *input) confirmInput() bool {
 	for _, rule := range p.rules {
-		if p.Ctx.Err() != nil {
+		if p.ctx.Err() != nil {
 			return false
 		}
-		err := rule(p.Ctx, p.typed)
-		if p.Ctx.Err() != nil {
+		err := rule(p.ctx, p.typed)
+		if p.ctx.Err() != nil {
 			return false
 		}
 		if err != nil {

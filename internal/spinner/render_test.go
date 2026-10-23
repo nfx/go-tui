@@ -114,7 +114,7 @@ func TestThemedSpinnerRoles(t *testing.T) {
 	failed.Fail(errors.New("no"))
 	tick()
 	out := frames.Next()
-	roles := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), s.Out, nil).Roles
+	roles := term.Default.BindTheme(t.Context(), term.Default.CurrentTheme(), s.out, nil).Roles
 	assert.True(t, len(roles.Accent) > 0 && len(roles.Muted) > 0 && len(roles.Failure) > 0)
 	assert.Contains(t, out, string(roles.Accent)+"*")
 	assert.Contains(t, out, string(roles.Muted)+"-")

@@ -20,7 +20,9 @@ import (
 )
 
 type Spinners struct {
-	option.Config
+	ctx context.Context
+	in  io.Reader
+	out io.Writer
 	// cancel ends the group; a render failure is its cause.
 	cancel  context.CancelCauseFunc
 	io      *term.IO
@@ -50,9 +52,9 @@ func newSpinners(ctx context.Context) *Spinners {
 	ticker := time.NewTicker(theme.Source.Spinner.Interval)
 	in, out := term.DefaultStreams(ctx)
 	return &Spinners{
-		Ctx:        ctx,
-		In:         in,
-		Out:        out,
+		ctx:        ctx,
+		in:         in,
+		out:        out,
 		ticker:     ticker,
 		ticks:      ticker.C,
 		cancel:     cancel,
@@ -101,7 +103,7 @@ func (s *Spinners) Add(ctx context.Context, opt ...option.Opt) (*Spinner, error)
 	}
 	// when parent context is done, we can't create a spinner
 	select {
-	case <-s.Ctx.Done():
+	case <-s.ctx.Done():
 		cancel()
 		return nil, s.err()
 	case <-ctx.Done():
@@ -109,7 +111,7 @@ func (s *Spinners) Add(ctx context.Context, opt ...option.Opt) (*Spinner, error)
 		return nil, ctx.Err()
 	case s.creates <- req:
 		select {
-		case <-s.Ctx.Done(): // spinner group is done
+		case <-s.ctx.Done(): // spinner group is done
 			cancel()
 			return nil, s.err()
 		case <-ctx.Done(): // what created this spinner is done
@@ -128,7 +130,7 @@ func (s *Spinners) Add(ctx context.Context, opt ...option.Opt) (*Spinner, error)
 }
 
 // err is why the group ended: a render failure, or the cancellation.
-func (s *Spinners) err() error { return context.Cause(s.Ctx) }
+func (s *Spinners) err() error { return context.Cause(s.ctx) }
 
 func (s *Spinners) emit(ev spinnerEvent) {
 	if s.eventSink == nil {
@@ -212,12 +214,12 @@ func (s *Spinners) drainQueues() {
 // updateOffset is a concurrent client for [Spinners.updateSpinner].
 func (s *Spinners) updateOffset(offset int, message string, err error) {
 	select {
-	case <-s.Ctx.Done():
+	case <-s.ctx.Done():
 		return
 	default:
 	}
 	select {
-	case <-s.Ctx.Done():
+	case <-s.ctx.Done():
 		return
 	case s.updates <- updateOffset{
 		offset:  offset,
@@ -268,12 +270,12 @@ func (s *Spinners) stopOffset(offset int) error {
 	// select picks randomly among ready cases, so check ctx first to never
 	// enqueue once stopped.
 	select {
-	case <-s.Ctx.Done():
+	case <-s.ctx.Done():
 		return s.err()
 	default:
 	}
 	select {
-	case <-s.Ctx.Done():
+	case <-s.ctx.Done():
 		return s.err()
 	case s.stops <- offset:
 		return nil
@@ -461,7 +463,7 @@ func (s *Spinners) newSpinner(ns createSpinner) {
 		Index: offset,
 	})
 	select {
-	case <-s.Ctx.Done():
+	case <-s.ctx.Done():
 		return
 	case ns.replyOffset <- offset:
 	}
@@ -472,7 +474,7 @@ func (s *Spinners) logStage(level slog.Level, message string, offset int, status
 	if s.io != nil {
 		return
 	}
-	slog.Default().Log(s.Ctx, level, message,
+	slog.Default().Log(s.ctx, level, message,
 		"spinner", offset,
 		"prefix", s.state[offset].Prefix.String(),
 		"status", status,

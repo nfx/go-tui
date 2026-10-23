@@ -26,9 +26,9 @@ func newProgressbar(ctx context.Context) *Progressbar {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	in, out := term.DefaultStreams(ctx)
 	return &Progressbar{
-		Ctx:        ctx,
-		In:         in,
-		Out:        out,
+		ctx:        ctx,
+		in:         in,
+		out:        out,
 		theme:      term.Default.CurrentTheme(),
 		ticker:     ticker,
 		ticks:      ticker.C,
@@ -60,7 +60,7 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, o ...o
 	p.showEstimate = true
 	p.maxNum = size
 	p.label = ansi.Text(label)
-	p.io, err = p.makeTermIO(p.In, p.Out)
+	p.io, err = p.makeTermIO(p.in, p.out)
 	if errors.Is(err, errs.ErrNoTTY) {
 		return p, nil // logs milestones instead, see [Progressbar.logProgress]
 	} else if err != nil {
@@ -78,12 +78,14 @@ func newStartedProgressBar(ctx context.Context, label string, size int64, o ...o
 		Label: p.label.String(),
 		Max:   p.maxNum,
 	})
-	go p.start(p.Ctx) //nolint:contextcheck // p.ctx derives from ctx and is canceled by Close
+	go p.start(p.ctx) //nolint:contextcheck // p.ctx derives from ctx and is canceled by Close
 	return p, nil
 }
 
 type Progressbar struct {
-	option.Config
+	ctx context.Context
+	in  io.Reader
+	out io.Writer
 	progressState
 	label      ansi.Text
 	increments chan int64
@@ -114,13 +116,13 @@ type Progressbar struct {
 
 func (p *Progressbar) Add(num int64) {
 	if p.io == nil {
-		if p.Ctx.Err() == nil {
+		if p.ctx.Err() == nil {
 			p.logProgress(num, false)
 		}
 		return
 	}
 	select {
-	case <-p.Ctx.Done():
+	case <-p.ctx.Done():
 		return
 	case <-p.stopped: // renderer exited, nobody receives increments anymore
 		return
@@ -130,7 +132,7 @@ func (p *Progressbar) Add(num int64) {
 
 func (p *Progressbar) Close() error {
 	if p.io == nil {
-		if p.Ctx != nil && p.Ctx.Err() == nil {
+		if p.ctx != nil && p.ctx.Err() == nil {
 			p.logProgress(0, true)
 		}
 		if p.cancel != nil {
@@ -166,7 +168,7 @@ func (p *Progressbar) logProgress(n int64, end bool) {
 	}
 	p.loggedPercent = percent
 	if p.bytes {
-		slog.Default().InfoContext(p.Ctx, "file progress",
+		slog.Default().InfoContext(p.ctx, "file progress",
 			"label", p.label.String(),
 			"percent", percent,
 			"read", p.logged,
@@ -174,7 +176,7 @@ func (p *Progressbar) logProgress(n int64, end bool) {
 		)
 		return
 	}
-	slog.Default().InfoContext(p.Ctx, "progress",
+	slog.Default().InfoContext(p.ctx, "progress",
 		"label", p.label.String(),
 		"percent", percent,
 		"done", p.logged,

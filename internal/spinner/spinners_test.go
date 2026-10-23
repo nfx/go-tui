@@ -422,7 +422,7 @@ func TestNewSpinnersUsesDefaultIO(t *testing.T) {
 	in, out := term.DefaultStreams(t.Context())
 
 	s := newSpinners(t.Context())
-	assert.Equal(t, in, s.In)
-	assert.Equal(t, out, s.Out)
+	assert.Equal(t, in, s.in)
+	assert.Equal(t, out, s.out)
 	s.ticker.Stop()
 }

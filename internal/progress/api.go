@@ -80,7 +80,7 @@ func NewParallelProgressBar[T any](
 	if len(slice) == 0 {
 		return p.Close()
 	}
-	ctx, cancel := context.WithCancelCause(p.Ctx)
+	ctx, cancel := context.WithCancelCause(p.ctx)
 	runner := &parallelProgressRunner[T]{
 		ctx:    ctx,
 		cancel: cancel,
@@ -128,7 +128,7 @@ func NewFileProgressReader(ctx context.Context, r io.Reader, label string, o ...
 	p.showEstimate = true
 	p.maxNum = size
 	p.label = ansi.Text(label)
-	p.io, err = p.makeTermIO(p.In, p.Out)
+	p.io, err = p.makeTermIO(p.in, p.out)
 	if errors.Is(err, errs.ErrNoTTY) {
 		p.io = nil
 		p.ticker.Stop()
@@ -149,6 +149,6 @@ func NewFileProgressReader(ctx context.Context, r io.Reader, label string, o ...
 		Max:   p.maxNum,
 	})
 	started = true
-	go p.start(p.Ctx) //nolint:contextcheck // p.ctx derives from ctx and is canceled by Close
+	go p.start(p.ctx) //nolint:contextcheck // p.ctx derives from ctx and is canceled by Close
 	return wrap, nil
 }

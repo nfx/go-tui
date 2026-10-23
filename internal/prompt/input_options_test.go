@@ -51,14 +51,14 @@ func runValidated(t *testing.T, password bool, keys string, o ...option.Opt) (st
 		in.Send(string(k))
 	}
 	in.Close() // input ends after the script
-	i.In = in
+	i.in = in
 	var out bytes.Buffer
-	i.Out = &out
+	i.out = &out
 	i.makeTermIO = tcommon.FixedTermIO(40, 3)
 	if err := option.Opts(o).Apply(i); err != nil {
 		return "", "", err
 	}
-	got, err := i.run(i.Ctx)
+	got, err := i.run(i.ctx)
 	return got, out.String(), err
 }
 

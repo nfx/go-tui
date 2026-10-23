@@ -199,7 +199,7 @@ func themedInput(
 	out, restored = &bytes.Buffer{}, new(bool)
 	in := terst.NewKeys(t, keys...)
 	in.Close() // input ends after the keys
-	i.In, i.Out = in, out
+	i.in, i.out = in, out
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 		restore := func() error { *restored = true; return nil }
 		return &term.IO{In: in, Out: out, Width: width, Height: height, Restore: restore}, nil
@@ -451,7 +451,7 @@ func TestThemedInputDefaultWithoutTerminal(t *testing.T) {
 	terst.UseTheme(t, th)
 	i := newInput(t.Context(), "Label")
 	var out bytes.Buffer
-	i.Out = &out
+	i.out = &out
 	i.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) {
 		t.Fatal("acquired a terminal")
 		return nil, errs.ErrNoTTY
