@@ -12,19 +12,18 @@ import (
 	"github.com/nfx/go-tui/internal/term"
 )
 
-func NewTermIO(width, height int) *term.IO {
-	return &term.IO{
-		In:      bytes.NewBuffer(nil),
-		Out:     &bytes.Buffer{},
-		Width:   width,
-		Height:  height,
-		Restore: func() error { return nil },
-	}
+// TermIOFunc makes a widget terminal on the given streams, as the makeTermIO
+// seam of a widget does.
+type TermIOFunc func(io.Reader, io.Writer) (*term.IO, error)
+
+// IO is the terminal on empty buffers, for code that takes one directly.
+func (f TermIOFunc) IO() *term.IO {
+	tio, _ := f(bytes.NewBuffer(nil), &bytes.Buffer{}) //nolint:errcheck // a fixed terminal never fails
+	return tio
 }
 
-// FixedTermIO builds a widget terminal of a fixed size on the given streams,
-// for the makeTermIO seam of a widget.
-func FixedTermIO(width, height int) func(io.Reader, io.Writer) (*term.IO, error) {
+// FixedTermIO builds a widget terminal of a fixed size.
+func FixedTermIO(width, height int) TermIOFunc {
 	return func(in io.Reader, out io.Writer) (*term.IO, error) {
 		return &term.IO{In: in, Out: out, Width: width, Height: height, Restore: func() error { return nil }}, nil
 	}

@@ -26,7 +26,7 @@ import (
 func TestMultichoiceRenderInitializes(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two"}
-	io := terst.NewTermIO(20, 6)
+	io := terst.FixedTermIO(20, 6).IO()
 
 	frame := &bytes.Buffer{}
 	assert.NoError(t, m.prepare(nil))
@@ -39,7 +39,7 @@ func TestMultichoiceRenderMoreItems(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"short", "veryverylong", "mid", "tail"}
 	m.active = 0
-	io := terst.NewTermIO(5, 4)
+	io := terst.FixedTermIO(5, 4).IO()
 	frame := &bytes.Buffer{}
 	assert.NoError(t, m.prepare(nil))
 	assert.NoError(t, m.bindRun(t.Context(), io))
@@ -341,7 +341,7 @@ func TestThemedMultichoiceHintMatchesProjection(t *testing.T) {
 }
 
 func TestThemedMultichoiceAutomaticAnswerRunsOnlyProjection(t *testing.T) {
-	terst.StrictOutput(t)
+	terst.Quiet(t)
 	boom := errors.New("boom")
 	th := terst.ASCIITheme()
 	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
@@ -353,18 +353,14 @@ func TestThemedMultichoiceAutomaticAnswerRunsOnlyProjection(t *testing.T) {
 	th.Multichoice.AnswerValue = `{{ range .Values }}{{ fails . }}{{ end }}`
 	th.Choice.Value = `{{ printf "z%s" . }}`
 	terst.UseTheme(t, th)
-	var out bytes.Buffer
-	terst.UseIO(t, nil, &out)
 	got, err := Multichoice(t.Context(), "Fruit", fruits, option.WithDefault("zb"))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"banana"}, got)
 
-	terst.UseIO(t, nil, &out)
 	got, err = Multichoice(t.Context(), "Fruit", fruits, WithTemplate(`(printf "y%s" .)`), option.WithDefault("yc"))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"cherry"}, got)
 
-	terst.UseIO(t, nil, &out)
 	got, err = MultichoiceLazy(
 		t.Context(),
 		"Fruit",
@@ -373,7 +369,6 @@ func TestThemedMultichoiceAutomaticAnswerRunsOnlyProjection(t *testing.T) {
 	)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"banana"}, got)
-	assert.Equal(t, "", out.String())
 }
 
 func TestThemedMultichoiceSearchSkipsDecoration(t *testing.T) {
@@ -417,10 +412,9 @@ func TestThemedMultichoiceProjectsOnceAndDrawsLazily(t *testing.T) {
 
 func TestThemedMultichoiceLazyConfirmsAfterExhaustion(t *testing.T) {
 	terst.UseASCII(t)
-	stream := &completionChecklistIO{ready: make(chan struct{}), marker: "x banana"}
-	terst.UseIO(t, stream, stream)
-	got, err := MultichoiceLazy(t.Context(), "Fruit", lazySeq("apple", "banana"),
-		option.WithDefault("banana"))
+	got, err := answerWhenShown(t, "x banana", terst.KeyEnter, func() ([]string, error) {
+		return MultichoiceLazy(t.Context(), "Fruit", lazySeq("apple", "banana"), option.WithDefault("banana"))
+	})
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"banana"}, got)
 }

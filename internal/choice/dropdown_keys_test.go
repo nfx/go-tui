@@ -6,11 +6,11 @@ package choice
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"testing"
 
-	"github.com/nfx/go-tui/internal/ansi"
+	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/term"
-	"github.com/nfx/go-tui/internal/trie"
 
 	"io"
 
@@ -38,178 +38,85 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 	assert.Equal(t, 'x', in.NextKey())
 }
 
-func TestDropdownPressKeyRuneAndRenderMore(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.Items = []any{"alpha", "beta"}
-	d.relevant = []int{0, 1}
-	d.displayed = d.relevant
-	d.trie = trie.NewTrie()
-	d.trie.Add(ansi.Text("alpha"), 0)
-	d.trie.Add(ansi.Text("beta"), 1)
-
-	tio := terst.NewTermIO(20, 6)
-
-	assert.Equal(t, 0, d.pressKeyRune(tio, term.KeyEnter, len(d.displayed), 4))
-
-	d.selected = 1
-	d.pressKeyRune(tio, '↑', len(d.displayed), 4)
-	d.pressKeyRune(tio, '↓', len(d.displayed), 4)
-
-	d.typed = []rune("ab")
-	d.pressKeyRune(tio, 0x7f, len(d.displayed), 4)
-
-	d.OneReturn = true
-	d.typed = nil
-	d.trie = trie.NewTrie()
-	d.trie.Add(ansi.Text("abc"), 0)
-	d.Items = []any{"abc"}
-	d.relevant = []int{0}
-	d.displayed = d.relevant
-	assert.True(t, d.pressAny('a', len(d.displayed), 4))
-
-	var frame bytes.Buffer
-	assert.NoError(t, d.clearFrame(tio, &frame, 0))
+// pickAnswer is what a dropdown returned.
+type pickAnswer struct {
+	index int
+	err   error
 }
 
-func TestDropdownPressKeys(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.relevant = []int{0, 1, 2, 3}
-	d.displayed = []int{0, 1, 2}
-	d.selected = 1
-
-	d.pressDown(len(d.displayed))
-	assert.Equal(t, 1, d.offset)
-	d.pressUp(len(d.displayed))
-	assert.Equal(t, 0, d.selected)
-
-	d.typed = nil
-	d.trie = trie.NewTrie()
-	d.relevant = []int{0}
-	d.displayed = d.relevant
-	d.pressBackspace(terst.NewTermIO(10, 4))
-	assert.Equal(t, "", string(d.typed))
-	assert.True(t, !d.pressAny('z', len(d.displayed), 4))
+// startPick runs a dropdown of items on an ASCII test terminal, for keys typed
+// while it waits.
+func startPick(t *testing.T, items []any, o ...option.Opt) (*terst.Keys, *terst.Output, <-chan pickAnswer) {
+	t.Helper()
+	terst.UseASCII(t)
+	keys, out := terst.UseTerminal(t)
+	answer := make(chan pickAnswer, 1)
+	go func() {
+		i, err := DropdownIndex(t.Context(), "Pick", items, o...)
+		answer <- pickAnswer{i, err}
+	}()
+	return keys, out, answer
 }
 
-func TestDropdownClearFrame(t *testing.T) {
-	d := newDropdown(t.Context())
-	io := terst.NewTermIO(10, 4)
-	frame := &bytes.Buffer{}
-	assert.NoError(t, d.clearFrame(io, frame, 2))
-	buf, ok := io.Out.(*bytes.Buffer)
-	assert.True(t, ok)
-	assert.True(t, buf.Len() > 0)
+// pickFooter is the hint row below the items of a dropdown.
+const pickFooter = "| ^v move · type filter"
+
+func TestDropdownArrowsMoveAndEnterConfirms(t *testing.T) {
+	keys, out, answer := startPick(t, []any{"alpha", "beta", "gamma"})
+	out.AwaitVisible("? Pick", "| > alpha", "|   beta", "|   gamma", pickFooter)
+	keys.Type(terst.KeyDown)
+	out.AwaitVisible("? Pick", "|   alpha", "| > beta", "|   gamma", pickFooter)
+	keys.Type(terst.KeyUp)
+	out.AwaitVisible("? Pick", "| > alpha", "|   beta", "|   gamma", pickFooter)
+	keys.Type(terst.KeyDown + terst.KeyEnter)
+	got := terst.Recv(t, answer)
+	assert.NoError(t, got.err)
+	assert.Equal(t, 1, got.index)
+	// confirmation clears the frame and leaves the answer
+	out.AwaitVisible("+ Pick · beta")
 }
 
-func TestDropdownPressAnyOneReturn(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.OneReturn = true
-	d.trie = trie.NewTrie()
-	d.trie.Add(ansi.Text("ok"), 0)
-
-	assert.True(t, d.pressAny('o', 1, 1))
+func TestDropdownTypingFiltersAndBackspaceRestores(t *testing.T) {
+	keys, out, answer := startPick(t, []any{"alpha", "beta"})
+	out.AwaitVisible("? Pick", "| > alpha", "|   beta", pickFooter)
+	keys.Type("a")
+	out.AwaitVisible("? Pick", "| > alpha", pickFooter)
+	keys.Type(terst.KeyBackspace)
+	out.AwaitVisible("? Pick", "| > alpha", "|   beta", pickFooter)
+	// a key that matches nothing is not typed
+	keys.Type("z" + terst.KeyEnter)
+	got := terst.Recv(t, answer)
+	assert.NoError(t, got.err)
+	assert.Equal(t, 0, got.index)
 }
 
-func TestDropdownPressKeyRuneEnter(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.Items = []any{"a", "b"}
-	d.relevant = []int{0, 1}
-	d.displayed = []int{0, 1}
-	d.selected = 1
-	var events []dropdownOutputEvent
-	d.eventSink = func(ev dropdownOutputEvent) {
-		events = append(events, ev)
+func TestDropdownOneReturnConfirmsUniqueMatch(t *testing.T) {
+	keys, out, answer := startPick(t, []any{"alpha", "beta"}, WithOneReturn())
+	out.AwaitVisible("? Pick", "| > alpha", "|   beta", pickFooter)
+	keys.Type("b")
+	got := terst.Recv(t, answer)
+	assert.NoError(t, got.err)
+	assert.Equal(t, 1, got.index)
+	out.AwaitVisible("+ Pick · beta")
+}
+
+func TestDropdownDownScrollsBelowTheFrame(t *testing.T) {
+	items := make([]any, 30)
+	for i := range items {
+		items[i] = fmt.Sprintf("item-%02d", i)
 	}
-	io := terst.NewTermIO(10, 4)
-	assert.Equal(t, 1, d.pressKeyRune(io, term.KeyEnter, len(d.displayed), 4))
-	assert.Equal(t, 1, len(events))
-	confirmed, ok := events[0].(dropdownConfirmed)
-	assert.True(t, ok)
-	assert.Equal(t, 1, confirmed.Selected)
-}
-
-func TestDropdownPressKeyRuneBackspace(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.trie = trie.NewTrie()
-	d.trie.Add(ansi.Text("a"), 0)
-	d.relevant = []int{0}
-	d.displayed = []int{0}
-	d.Items = []any{"a"}
-	d.typed = []rune("a")
-	io := terst.NewTermIO(10, 4)
-	d.pressKeyRune(io, 0x7f, len(d.displayed), 4)
-	assert.Equal(t, 0, len(d.typed))
-}
-
-func TestDropdownPressKeyRuneArrows(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.relevant = []int{0, 1}
-	d.displayed = []int{0, 1}
-	d.selected = 0
-	io := terst.NewTermIO(10, 4)
-	d.pressKeyRune(io, '↓', len(d.displayed), 4)
-	assert.Equal(t, 1, d.selected)
-	d.pressKeyRune(io, '↑', len(d.displayed), 4)
-	assert.Equal(t, 0, d.selected)
-}
-
-func TestDropdownPressKeyRuneDefault(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.trie = trie.NewTrie()
-	d.trie.Add(ansi.Text("a"), 0)
-	d.Items = []any{"a"}
-	d.relevant = []int{0}
-	d.displayed = []int{0}
-	io := terst.NewTermIO(10, 4)
-	assert.Equal(t, -1, d.pressKeyRune(io, 'a', len(d.displayed), 4))
-	assert.Equal(t, "a", string(d.typed))
-}
-
-func TestDropdownPressKeyRuneEmitsStateEvents(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.trie = trie.NewTrie()
-	d.trie.Add(ansi.Text("alpha"), 0)
-	d.trie.Add(ansi.Text("beta"), 1)
-	d.Items = []any{"alpha", "beta"}
-	d.relevant = []int{0, 1}
-	d.displayed = []int{0, 1}
-	d.selected = 1
-	var events []dropdownOutputEvent
-	d.eventSink = func(ev dropdownOutputEvent) {
-		events = append(events, ev)
+	// the 24-row terminal shows twelve items from first, the top one selected
+	frame := func(first int) []string {
+		rows := []string{"? Pick", fmt.Sprintf("| > item-%02d", first)}
+		for i := first + 1; i < first+12; i++ {
+			rows = append(rows, fmt.Sprintf("|   item-%02d", i))
+		}
+		return append(rows, fmt.Sprintf("| %d more · ^v move · type filter", 30-12-first))
 	}
-	io := terst.NewTermIO(10, 4)
-	assert.Equal(t, -1, d.pressKeyRune(io, 'a', len(d.displayed), 4))
-	assert.Equal(t, 1, len(events))
-	filtered, ok := events[0].(dropdownFilterChanged)
-	assert.True(t, ok)
-	assert.Equal(t, "a", filtered.Prefix)
-	assert.Equal(t, 1, filtered.Matching)
-	assert.Equal(t, 0, len(filtered.Added))
-	assert.Equal(t, 1, len(filtered.Removed))
-	assert.Equal(t, 1, filtered.Removed[0])
-}
-
-func TestDropdownPressKeyRuneOneReturn(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.OneReturn = true
-	d.trie = trie.NewTrie()
-	d.trie.Add(ansi.Text("a"), 0)
-	d.Items = []any{"a"}
-	d.relevant = []int{0}
-	d.displayed = []int{0}
-	var events []dropdownOutputEvent
-	d.eventSink = func(ev dropdownOutputEvent) {
-		events = append(events, ev)
-	}
-	io := terst.NewTermIO(10, 4)
-	assert.Equal(t, 0, d.pressKeyRune(io, 'a', len(d.displayed), 4))
-	assert.Equal(t, 2, len(events))
-	_, ok := events[0].(dropdownFilterChanged)
-	assert.True(t, ok)
-	confirmed, ok := events[1].(dropdownConfirmed)
-	assert.True(t, ok)
-	assert.Equal(t, 0, confirmed.Selected)
+	keys, out, _ := startPick(t, items)
+	out.AwaitVisible(frame(0)...)
+	keys.Type(terst.KeyDown)
+	out.AwaitVisible(frame(1)...)
 }
 
 func TestDropdownPressKeyReadsSharedPendingEnter(t *testing.T) {

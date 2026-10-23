@@ -965,9 +965,8 @@ func TestWithOptionsPropagatesInvalidValues(t *testing.T) {
 }
 
 func TestNewProgressbarUsesDefaultIO(t *testing.T) {
-	in := bytes.NewBufferString("in")
-	out := &bytes.Buffer{}
-	terst.UseIO(t, in, out)
+	terst.UseTerminalInput(t, nil)
+	in, out := term.DefaultStreams(t.Context())
 
 	p := newProgressbar(t.Context())
 	assert.Equal(t, in, p.In)

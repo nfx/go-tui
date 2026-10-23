@@ -417,9 +417,8 @@ func untilStopped(t *testing.T, s *Spinners, frames *terst.Output) string {
 }
 
 func TestNewSpinnersUsesDefaultIO(t *testing.T) {
-	in := bytes.NewBufferString("in")
-	out := &bytes.Buffer{}
-	terst.UseIO(t, in, out)
+	terst.UseTerminalInput(t, nil)
+	in, out := term.DefaultStreams(t.Context())
 
 	s := newSpinners(t.Context())
 	assert.Equal(t, in, s.In)

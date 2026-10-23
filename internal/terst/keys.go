@@ -28,17 +28,21 @@ const (
 	KeyLeft      = "\x1b[D"
 )
 
-// Keys is scripted keyboard input: Read returns one chunk, blocking until one is sent.
+// Keys is scripted keyboard input: Read returns at most one chunk, blocking
+// until one is sent.
 type Keys struct {
 	t       *testing.T
 	ch      chan []byte
 	reads   chan struct{}
 	waiters atomic.Int32
 	closed  sync.Once
+	mu      sync.Mutex
+	rest    []byte // the unread tail of the last chunk
 }
 
 // NewKeys returns input that serves chunks, one per Read, and then blocks until
-// more are sent. It stays open until [Keys.Close] or the end of the test.
+// more are sent. A Read shorter than a chunk leaves its tail for the next Read,
+// as a pipe does. It stays open until [Keys.Close] or the end of the test.
 func NewKeys(t *testing.T, chunks ...string) *Keys {
 	t.Helper()
 	k := &Keys{t: t, ch: make(chan []byte, 256), reads: make(chan struct{}, 16)}
@@ -105,7 +109,8 @@ func (k *Keys) Waiters() int {
 	return int(k.waiters.Load())
 }
 
-// AwaitRead waits until a Read starts that has not been awaited yet.
+// AwaitRead waits until a Read starts waiting for a chunk, one that has not
+// been awaited yet.
 func (k *Keys) AwaitRead() {
 	k.t.Helper()
 	Recv(k.t, k.reads)
@@ -129,6 +134,14 @@ func (k *Keys) NextKey() rune {
 }
 
 func (k *Keys) Read(p []byte) (int, error) {
+	k.mu.Lock()
+	if len(k.rest) > 0 {
+		n := copy(p, k.rest)
+		k.rest = k.rest[n:]
+		k.mu.Unlock()
+		return n, nil
+	}
+	k.mu.Unlock()
 	select {
 	case k.reads <- struct{}{}:
 	default:
@@ -139,5 +152,9 @@ func (k *Keys) Read(p []byte) (int, error) {
 	if !ok {
 		return 0, io.EOF
 	}
-	return copy(p, chunk), nil
+	n := copy(p, chunk)
+	k.mu.Lock()
+	k.rest = chunk[n:]
+	k.mu.Unlock()
+	return n, nil
 }

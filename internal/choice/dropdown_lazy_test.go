@@ -9,7 +9,6 @@ import (
 	"errors"
 	"io"
 	"iter"
-	"os"
 	"sync/atomic"
 	"testing"
 	"text/template"
@@ -52,7 +51,7 @@ func TestDropdownLazyClearsOnlyRenderedArea(t *testing.T) {
 func TestDropdownHandleLazyItemEmpty(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, d.parseTemplates())
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyItem(tio, frame, 1, itPair{}, false)
 	assert.ErrorIs(t, err, errs.ErrEmptyLazyResult)
@@ -61,7 +60,7 @@ func TestDropdownHandleLazyItemEmpty(t *testing.T) {
 func TestDropdownHandleLazyItemError(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, d.parseTemplates())
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyItem(tio, frame, 1, itPair{err: io.EOF}, true)
 	assert.ErrorIs(t, err, io.EOF)
@@ -70,7 +69,7 @@ func TestDropdownHandleLazyItemError(t *testing.T) {
 func TestDropdownHandleLazyItemAdds(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, d.parseTemplates())
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, needsRender, err := d.handleLazyItem(tio, frame, 1, itPair{item: "item"}, true)
 	assert.NoError(t, err)
@@ -83,7 +82,7 @@ func TestDropdownHandleLazyItemOneReturnWhenDone(t *testing.T) {
 	d.Items = []any{"one"}
 	d.relevant = []int{0}
 	assert.NoError(t, d.parseTemplates())
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	var events []dropdownOutputEvent
 	d.eventSink = func(ev dropdownOutputEvent) {
@@ -101,7 +100,7 @@ func TestDropdownHandleLazyItemOneReturnWhenDone(t *testing.T) {
 
 func TestDropdownHandleLazyKeyEOF(t *testing.T) {
 	d := newDropdown(t.Context())
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyKey(tio, frame, 1, 1, term.KeyEvent{}, false)
 	assert.ErrorIs(t, err, io.EOF)
@@ -109,7 +108,7 @@ func TestDropdownHandleLazyKeyEOF(t *testing.T) {
 
 func TestDropdownHandleLazyKeyPasteIgnored(t *testing.T) {
 	d := newDropdown(t.Context())
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyKey(tio, frame, 1, 1, term.KeyEvent{Err: &term.PasteTextError{Buf: []byte("a")}}, true)
 	assert.NoError(t, err)
@@ -120,7 +119,7 @@ func TestDropdownHandleLazyKeyEnter(t *testing.T) {
 	d.Items = []any{"one"}
 	d.relevant = []int{0}
 	d.displayed = []int{0}
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	i, _, err := d.handleLazyKey(tio, frame, 1, 1, term.KeyEvent{Key: term.KeyEnter}, true)
 	assert.NoError(t, err)
@@ -131,7 +130,7 @@ func TestDropdownRenderLazyFrameClears(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"item"}
 	bindDropdown(t, d)
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	frame := bytes.NewBuffer(nil)
 	space := 1
 	displayed := 0
@@ -161,7 +160,7 @@ func TestDropdownRenderLazyFrameWriteError(t *testing.T) {
 
 func TestDropdownHandleLazyKeyReadError(t *testing.T) {
 	d := newDropdown(t.Context())
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyKey(tio, frame, 1, 1, term.KeyEvent{Err: io.EOF}, true)
 	assert.ErrorIs(t, err, io.EOF)
@@ -171,7 +170,7 @@ func TestDropdownNextLazyActionItem(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"seed"}
 	assert.NoError(t, d.parseTemplates())
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	_, err := d.renderInit(tio)
 	assert.NoError(t, err)
 	frame := bytes.NewBuffer(nil)
@@ -188,7 +187,7 @@ func TestDropdownNextLazyActionKey(t *testing.T) {
 	d.relevant = []int{0}
 	d.displayed = []int{0}
 	assert.NoError(t, d.parseTemplates())
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	frame := bytes.NewBuffer(nil)
 	keys := make(chan term.KeyEvent, 1)
 	keys <- term.KeyEvent{Key: term.KeyEnter}
@@ -203,7 +202,7 @@ func TestDropdownNextLazyActionContextDone(t *testing.T) {
 	cancel()
 	d := newDropdown(t.Context())
 	d.Ctx = ctx
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	frame := bytes.NewBuffer(nil)
 	_, err := d.nextLazyAction(tio, frame, 1, 1, make(chan term.KeyEvent))
 	assert.Error(t, err)
@@ -213,7 +212,7 @@ func TestDropdownHandleLazyItemDoneWithItems(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"item"}
 	assert.NoError(t, d.parseTemplates())
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyItem(tio, frame, 1, itPair{}, false)
 	assert.NoError(t, err)
@@ -224,7 +223,7 @@ func TestDropdownHandleLazyItemAddError(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.mainTemplate = template.Must(template.New("content").Parse("{{call .}}"))
 	d.trie = trie.NewTrie()
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	_, _, err := d.handleLazyItem(tio, frame, 1, itPair{item: "x"}, true)
 	assert.Error(t, err)
@@ -265,11 +264,10 @@ func TestDropdownLazySelectsItem(t *testing.T) {
 }
 
 func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
-	in := terst.NewKeys(t)
+	in := terst.UseKeys(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	itemsLoaded, ready := notifyItemsLoaded(2)
-	terst.UseIO(t, in, io.Discard)
 	opts := option.WithOptions(
 		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = terst.FixedTermIO(20, 6)
@@ -289,13 +287,7 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 		}{value, err}
 	}()
 	waitForItems(t, ready)
-	waiterDeadline := time.Now().Add(2 * time.Second)
-	for in.Waiters() == 0 {
-		if time.Now().After(waiterDeadline) {
-			t.Fatal("timed out waiting for dropdown reader")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	in.AwaitRead()
 	in.Send(terst.KeyEnter)
 	res := <-resCh
 	assert.NoError(t, res.err)
@@ -304,7 +296,7 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 }
 
 func TestDropdownLazyDoesNotStartProducerWhenContextAlreadyCanceled(t *testing.T) {
-	in := terst.NewKeys(t)
+	terst.UseKeys(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	var started atomic.Bool
@@ -312,7 +304,6 @@ func TestDropdownLazyDoesNotStartProducerWhenContextAlreadyCanceled(t *testing.T
 	t.Cleanup(func() {
 		close(release)
 	})
-	terst.UseIO(t, in, io.Discard)
 	opts := option.WithOptions(
 		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = terst.FixedTermIO(20, 6)
@@ -335,20 +326,10 @@ func TestDropdownLazyDoesNotStartProducerWhenContextAlreadyCanceled(t *testing.T
 }
 
 func TestDropdownLazyCtrlCNotLostAfterPreviousLazyExit(t *testing.T) {
-	in, writer, err := os.Pipe()
-	assert.NoError(t, err)
+	keys := terst.UseKeys(t)
 	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(func() {
-		cancel()
-		if closeErr := in.Close(); closeErr != nil {
-			t.Errorf("close reader: %v", closeErr)
-		}
-		if closeErr := writer.Close(); closeErr != nil {
-			t.Errorf("close writer: %v", closeErr)
-		}
-	})
+	t.Cleanup(cancel)
 	itemsLoaded, ready := notifyItemsLoaded(2)
-	terst.UseIO(t, in, io.Discard)
 	opts := option.WithOptions(
 		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = terst.FixedTermIO(20, 6)
@@ -356,7 +337,7 @@ func TestDropdownLazyCtrlCNotLostAfterPreviousLazyExit(t *testing.T) {
 		}),
 		itemsLoaded,
 	)
-	_, err = DropdownLazy(ctx, "First", func(yield func(string, error) bool) {
+	_, err := DropdownLazy(ctx, "First", func(yield func(string, error) bool) {
 		yield("", io.EOF)
 	}, opts)
 	assert.Error(t, err)
@@ -366,27 +347,16 @@ func TestDropdownLazyCtrlCNotLostAfterPreviousLazyExit(t *testing.T) {
 		resCh <- err
 	}()
 	waitForItems(t, ready)
-	_, err = writer.Write([]byte{term.KeyCtrlC})
-	assert.NoError(t, err)
+	keys.Send("\x03") // Ctrl-C
 	err = terst.Recv(t, resCh)
 	assert.ErrorIs(t, err, io.EOF)
 }
 
 func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
-	in, writer, err := os.Pipe()
-	assert.NoError(t, err)
+	keys := terst.UseKeys(t)
 	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(func() {
-		cancel()
-		if closeErr := in.Close(); closeErr != nil {
-			t.Errorf("close reader: %v", closeErr)
-		}
-		if closeErr := writer.Close(); closeErr != nil {
-			t.Errorf("close writer: %v", closeErr)
-		}
-	})
+	t.Cleanup(cancel)
 	itemsLoaded, ready := notifyItemsLoaded(2)
-	terst.UseIO(t, in, io.Discard)
 	opts := option.WithOptions(
 		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = terst.FixedTermIO(20, 6)
@@ -394,7 +364,7 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 		}),
 		itemsLoaded,
 	)
-	_, err = DropdownLazy(ctx, "First", func(yield func(string, error) bool) {
+	_, err := DropdownLazy(ctx, "First", func(yield func(string, error) bool) {
 		yield("", io.EOF)
 	}, opts)
 	assert.Error(t, err)
@@ -410,11 +380,7 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 		}{value, err}
 	}()
 	waitForItems(t, ready)
-	_, err = writer.Write([]byte{0x1b, 0x5b, 0x42}) // down arrow
-	assert.NoError(t, err)
-	time.Sleep(20 * time.Millisecond)
-	_, err = writer.Write([]byte{term.KeyEnter})
-	assert.NoError(t, err)
+	keys.Type(terst.KeyDown + terst.KeyEnter)
 	res := terst.Recv(t, resCh)
 	assert.NoError(t, res.err)
 	assert.Equal(t, "b", res.value)
@@ -457,7 +423,7 @@ func TestDropdownLazyOneReturnSingleItem(t *testing.T) {
 }
 
 func TestDropdownLazyAppendAfterFilter(t *testing.T) {
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	for _, matches := range []struct {
 		filter string
@@ -492,7 +458,7 @@ func TestDropdownLazyKeepsDefaultRanking(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, option.WithDefault("cat")(d))
 	bindDropdown(t, d)
-	tio := terst.NewTermIO(20, 6)
+	tio := terst.FixedTermIO(20, 6).IO()
 	frame := &bytes.Buffer{}
 	// empty lazy dropdown renders before any item arrives
 	_, err := d.renderInit(tio)
@@ -509,7 +475,7 @@ func TestDropdownLazyRankingKeepsSelectedItem(t *testing.T) {
 	d := newDropdown(t.Context())
 	assert.NoError(t, option.WithDefault("cat")(d))
 	bindDropdown(t, d)
-	tio := terst.NewTermIO(20, 10)
+	tio := terst.FixedTermIO(20, 10).IO()
 	frame := &bytes.Buffer{}
 	for _, item := range []string{"xxxx", "yyyy"} {
 		_, _, err := d.handleLazyItem(tio, frame, 0, itPair{item: item}, true)
@@ -563,17 +529,17 @@ func TestDropdownLazyStopsProducerAfterSelection(t *testing.T) {
 		for i := 0; yield(i, nil); i++ {
 		}
 	}
-	in, w, err := os.Pipe()
-	assert.NoError(t, err)
-	t.Cleanup(func() { in.Close(); w.Close() }) //nolint:errcheck // test cleanup
+	keys := terst.UseKeys(t)
+	itemsLoaded, ready := notifyItemsLoaded(2)
+	confirmed := make(chan error, 1)
 	go func() {
-		time.Sleep(50 * time.Millisecond)
-		w.Write([]byte{term.KeyEnter}) //nolint:errcheck // test helper
+		_, err := DropdownLazy(t.Context(), "pick", seq, fixedTermOpt(), itemsLoaded)
+		confirmed <- err
 	}()
-	terst.UseIO(t, in, io.Discard)
-	_, err = DropdownLazy(t.Context(), "pick", seq,
-		fixedTermOpt())
-	assert.NoError(t, err)
+	// Enter arrives while the producer is still running
+	waitForItems(t, ready)
+	keys.Send(terst.KeyEnter)
+	assert.NoError(t, terst.Recv(t, confirmed))
 	terst.Recv(t, done)
 }
 

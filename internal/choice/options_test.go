@@ -4,7 +4,6 @@
 package choice
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
@@ -34,69 +33,51 @@ func TestWithOneMatch_setsValue(t *testing.T) {
 }
 
 func TestWithOneMatch_singlePrefixMatchReturnsIndex(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.Items = []any{
+	terst.UseTerminalInput(t, nil)
+	i, err := DropdownIndex(t.Context(), "Pick", []any{
 		dropdownHeuristicLabelItem{ID: 1, Name: "alpha"},
 		dropdownHeuristicLabelItem{ID: 2, Name: "beta"},
-	}
-	err := option.WithDefault("beta")(d)
+	}, option.WithDefault("beta"))
 	assert.NoError(t, err)
-	bindDropdown(t, d)
-	_, err = d.renderInit(terst.NewTermIO(20, 6))
-	var oneMatch oneHatch
-	ok := errors.As(err, &oneMatch)
-	assert.True(t, ok)
-	// a unique prefix skips ranking, so the position is in item order
-	assert.Equal(t, 1, int(oneMatch))
-	assert.Equal(t, []int{0, 1}, d.relevant)
-	assert.Equal(t, "", d.oneMatch)
+	// a unique prefix answers without a frame, at its position in item order
+	assert.Equal(t, 1, i)
 }
 
 func TestWithOneMatch_noMatchKeepsDropdown(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.Items = []any{
+	keys, out, answer := startPick(t, []any{
 		dropdownHeuristicLabelItem{ID: 1, Name: "alpha"},
 		dropdownHeuristicLabelItem{ID: 2, Name: "beta"},
-	}
-	err := option.WithDefault("gamma")(d)
-	assert.NoError(t, err)
-	assert.NoError(t, d.parseTemplates())
-	_, err = d.renderInit(terst.NewTermIO(20, 6))
-	assert.NoError(t, err)
-	assert.Equal(t, 2, len(d.Items))
-	assert.Equal(t, "", d.oneMatch)
+	}, option.WithDefault("gamma"))
+	out.AwaitVisible("? Pick", "| > alpha", "|   beta", pickFooter)
+	keys.Type(terst.KeyEnter)
+	got := terst.Recv(t, answer)
+	assert.NoError(t, got.err)
+	assert.Equal(t, 0, got.index)
 }
 
 func TestWithOneMatch_sortsByLevensteinDistance(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.Items = []any{
+	keys, out, answer := startPick(t, []any{
 		dropdownHeuristicLabelItem{ID: 1, Name: "zeta"},
 		dropdownHeuristicLabelItem{ID: 2, Name: "alpha"},
 		dropdownHeuristicLabelItem{ID: 3, Name: "omega"},
-	}
-	err := option.WithDefault("alpa")(d)
-	assert.NoError(t, err)
-	bindDropdown(t, d)
-	_, err = d.renderInit(terst.NewTermIO(20, 6))
-	assert.NoError(t, err)
-	assert.Equal(t, []int{1, 0, 2}, d.relevant)
-	assert.Equal(t, []int{1, 0, 2}, d.displayed)
-	assert.Equal(t, "", d.oneMatch)
+	}, option.WithDefault("alpa"))
+	out.AwaitVisible("? Pick", "| > alpha", "|   zeta", "|   omega", pickFooter)
+	keys.Type(terst.KeyEnter)
+	got := terst.Recv(t, answer)
+	assert.NoError(t, got.err)
+	assert.Equal(t, 1, got.index)
 }
 
 func TestWithOneMatch_multipleMatchesKeepDropdown(t *testing.T) {
-	d := newDropdown(t.Context())
-	d.Items = []any{
+	keys, out, answer := startPick(t, []any{
 		dropdownHeuristicLabelItem{ID: 1, Name: "same"},
 		dropdownHeuristicLabelItem{ID: 2, Name: "same"},
-	}
-	err := option.WithDefault("same")(d)
-	assert.NoError(t, err)
-	assert.NoError(t, d.parseTemplates())
-	_, err = d.renderInit(terst.NewTermIO(20, 6))
-	assert.NoError(t, err)
-	assert.Equal(t, 2, len(d.Items))
-	assert.Equal(t, "", d.oneMatch)
+	}, option.WithDefault("same"))
+	out.AwaitVisible("? Pick", "| > same", "|   same", pickFooter)
+	keys.Type(terst.KeyEnter)
+	got := terst.Recv(t, answer)
+	assert.NoError(t, got.err)
+	assert.Equal(t, 0, got.index)
 }
 
 func TestDropdownRemovedColorNamesNameTheOption(t *testing.T) {

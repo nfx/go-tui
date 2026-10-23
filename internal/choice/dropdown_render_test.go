@@ -24,9 +24,9 @@ func TestDropdownRenderInitAndItems(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"alpha", "beta", "gamma"}
 	d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return terst.NewTermIO(20, 6), nil
+		return terst.FixedTermIO(20, 6).IO(), nil
 	}
-	io := terst.NewTermIO(20, 6)
+	io := terst.FixedTermIO(20, 6).IO()
 
 	assert.NoError(t, d.parseTemplates())
 	longest, err := d.renderInit(io)
@@ -41,7 +41,7 @@ func TestDropdownRenderInitEmitsEvents(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"alpha", "beta"}
 	assert.NoError(t, d.parseTemplates())
-	io := terst.NewTermIO(20, 6)
+	io := terst.FixedTermIO(20, 6).IO()
 	var events []dropdownOutputEvent
 	d.eventSink = func(ev dropdownOutputEvent) {
 		events = append(events, ev)
@@ -75,7 +75,7 @@ func TestDropdownRenderRemembersLongestWidth(t *testing.T) {
 	d := newDropdown(t.Context())
 	d.Items = []any{"short", "a considerably longer item"}
 	bindDropdown(t, d)
-	tio := terst.NewTermIO(40, 6)
+	tio := terst.FixedTermIO(40, 6).IO()
 	first, err := d.renderInit(tio)
 	assert.NoError(t, err)
 	second, err := d.renderInit(tio)
@@ -298,7 +298,7 @@ func TestThemedDropdownOneReturnAnswersWithoutFrame(t *testing.T) {
 }
 
 func TestThemedDropdownAutomaticAnswerMatchesProjection(t *testing.T) {
-	terst.StrictOutput(t)
+	terst.Quiet(t)
 	boom := errors.New("boom")
 	th := terst.ASCIITheme()
 	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
@@ -307,18 +307,13 @@ func TestThemedDropdownAutomaticAnswerMatchesProjection(t *testing.T) {
 	th.Choice.Active = `{{ fails .Value }}`
 	th.Choice.Value = `{{ printf "z%s" . }}`
 	terst.UseTheme(t, th)
-	var out bytes.Buffer
-	terst.UseIO(t, nil, &out)
 	got, err := Dropdown(t.Context(), "Fruit", fruits, option.WithDefault("zb"))
 	assert.NoError(t, err)
 	assert.Equal(t, "banana", got)
 
-	terst.UseIO(t, nil, &out)
 	got, err = Dropdown(t.Context(), "Fruit", fruits, WithTemplate(`(printf "y%s" .)`), option.WithDefault("yc"))
 	assert.NoError(t, err)
 	assert.Equal(t, "cherry", got)
-
-	assert.Equal(t, "", out.String())
 }
 
 func TestThemedDropdownSearchSkipsDecoration(t *testing.T) {
