@@ -62,7 +62,7 @@ func preparedMultichoice(t *testing.T, items []any, o ...option.Opt) *multichoic
 		t.Fatal(err)
 	}
 	// binding projects the items and resolves the default, as run does
-	if err := m.bindRun(t.Context(), terst.NewTermIO(60, 10)); err != nil {
+	if err := m.bindRun(t.Context(), terst.FixedTermIO(60, 10).IO()); err != nil {
 		t.Fatal(err)
 	}
 	return m
@@ -109,7 +109,7 @@ func TestMultichoiceStateAndGeometry(t *testing.T) {
 			[]any{"\u6f22\u5b57", "👨‍👩‍👧 family", "e\u0301", "\x1b[31mred\x1b[0m", "first\nsecond"},
 		)
 		m.Label = "very long label"
-		tio := terst.NewTermIO(width, 6)
+		tio := terst.FixedTermIO(width, 6).IO()
 		var frame bytes.Buffer
 		err := m.render(tio, &frame)
 		if width <= 2 && errors.Is(err, errs.ErrNoSpace) {
@@ -126,10 +126,10 @@ func TestMultichoiceStateAndGeometry(t *testing.T) {
 	}
 	m = preparedMultichoice(t, []any{"one"})
 	var frame bytes.Buffer
-	if err := m.render(terst.NewTermIO(0, 4), &frame); !errors.Is(err, errs.ErrNoSpace) {
+	if err := m.render(terst.FixedTermIO(0, 4).IO(), &frame); !errors.Is(err, errs.ErrNoSpace) {
 		t.Fatal(err)
 	}
-	if err := m.render(terst.NewTermIO(20, 2), &frame); !errors.Is(err, errs.ErrNoSpace) {
+	if err := m.render(terst.FixedTermIO(20, 2).IO(), &frame); !errors.Is(err, errs.ErrNoSpace) {
 		t.Fatal(err)
 	}
 }
@@ -167,7 +167,7 @@ func TestMultichoicePreparationAndCapabilities(t *testing.T) {
 		// syntax fails preparation; templates run when the theme binds
 		err := invalid.prepare([]option.Opt{one})
 		if err == nil {
-			err = invalid.bindRun(t.Context(), terst.NewTermIO(60, 10))
+			err = invalid.bindRun(t.Context(), terst.FixedTermIO(60, 10).IO())
 		}
 		if err == nil {
 			t.Fatal("invalid preparation passed")
@@ -280,29 +280,22 @@ func TestMultichoiceFilePendingKeysReachFreshPrompt(t *testing.T) {
 	}
 }
 
-type countedChecklistReader struct {
-	reader io.Reader
-	reads  int
-}
-
-// Read counts source access to detect reads started after confirmation.
-func (r *countedChecklistReader) Read(p []byte) (int, error) { r.reads++; return r.reader.Read(p) }
-
 func TestMultichoiceNoReadAfterEnterOrConsumedReplay(t *testing.T) {
-	in := &countedChecklistReader{reader: strings.NewReader(" \r")}
-	terst.UseIO(t, in, io.Discard)
+	keys := terst.UseKeys(t)
+	keys.Type(" \r")
 	got, err := Multichoice(t.Context(), "Pick", []string{"one"})
 	if err != nil || len(got) != 1 {
 		t.Fatal(got, err)
 	}
-	if in.reads != 1 {
-		t.Fatal("read started after Enter", in.reads)
+	if keys.Waiters() != 0 {
+		t.Fatal("read started after Enter")
 	}
-	terst.UseIO(t, in, io.Discard)
+	keys.Close()
 	got, err = Multichoice(t.Context(), "Next", []string{"two"})
 	if !errors.Is(err, io.EOF) || got != nil {
 		t.Fatal("consumed keys replayed", got, err)
 	}
+	in, _ := term.DefaultStreams(t.Context())
 	term.InputStates.Lock()
 	_, retained := term.InputStates.States[in]
 	term.InputStates.Unlock()
@@ -457,36 +450,24 @@ func TestMultichoiceManagedCleanupAndOutputFailure(t *testing.T) {
 	}
 }
 
-// completionChecklistIO waits for the unique default to be checked after
-// exhaustion, which a frame shows with marker, the checked glyph when empty.
-type completionChecklistIO struct {
-	ready  chan struct{}
-	sent   bool
-	keys   *strings.Reader
-	marker string
-}
-
-// Write releases input once the exhausted sequence renders its checked default.
-func (s *completionChecklistIO) Write(p []byte) (int, error) {
-	marker := s.marker
-	if marker == "" {
-		marker = "◉"
+// answerWhenShown runs a prompt on a test terminal and types script once the
+// output shows marker, such as the checked default after loading.
+func answerWhenShown[T any](t *testing.T, marker, script string, run func() (T, error)) (T, error) {
+	t.Helper()
+	keys, out := terst.UseTerminal(t)
+	type answer struct {
+		v   T
+		err error
 	}
-	if !s.sent && strings.Contains(string(p), marker) {
-		s.sent = true
-		close(s.ready)
-	}
-	return len(p), nil
-}
-
-// Read waits for the checked default before supplying confirmation keys.
-func (s *completionChecklistIO) Read(p []byte) (int, error) {
-	<-s.ready
-	if s.keys != nil {
-		return s.keys.Read(p)
-	}
-	p[0] = term.KeyEnter
-	return 1, nil
+	done := make(chan answer, 1)
+	go func() {
+		v, err := run()
+		done <- answer{v, err}
+	}()
+	out.AwaitOutput(marker)
+	keys.Type(script)
+	got := terst.Recv(t, done)
+	return got.v, got.err
 }
 
 func TestMultichoiceBurstyLazyPublicSmoke(t *testing.T) {
@@ -499,51 +480,22 @@ func TestMultichoiceBurstyLazyPublicSmoke(t *testing.T) {
 			}
 		}
 	}
-	stream := &completionChecklistIO{ready: make(chan struct{})}
-	terst.UseIO(t, stream, stream)
-	got, err := MultichoiceLazy(
-		ctx,
-		"Burst",
-		seq,
-		option.WithDefault("1999"),
-		option.WithHide(),
-	)
+	got, err := answerWhenShown(t, "◉", terst.KeyEnter, func() ([]int, error) {
+		return MultichoiceLazy(ctx, "Burst", seq, option.WithDefault("1999"), option.WithHide())
+	})
 	if err != nil || !reflect.DeepEqual(got, []int{1999}) {
 		t.Fatal(got, err)
 	}
 }
 
-// promptReadNotifier exposes source-read boundaries without changing buffering.
-type promptReadNotifier struct {
-	io.Reader
-	reads chan struct{}
-}
-
-// newPromptReadNotifier exposes read boundaries for deterministic handoff tests.
-func newPromptReadNotifier(in io.Reader) *promptReadNotifier {
-	return &promptReadNotifier{Reader: in, reads: make(chan struct{}, 16)}
-}
-
-// Read signals source access before blocking in the wrapped reader.
-func (r *promptReadNotifier) Read(p []byte) (int, error) {
-	r.reads <- struct{}{}
-	return r.Reader.Read(p)
-}
-
-// waitPromptRead synchronizes tests at source-read boundaries.
-func waitPromptRead(t *testing.T, in *promptReadNotifier) {
-	t.Helper()
-	terst.Recv(t, in.reads)
-}
-
 // cancelPromptRead leaves a blocked public-prompt read for its successor.
-func cancelPromptRead(t *testing.T, in *promptReadNotifier, run func(context.Context) error) {
+func cancelPromptRead(t *testing.T, keys *terst.Keys, run func(context.Context) error) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- run(ctx) }()
-	waitPromptRead(t, in)
+	keys.AwaitRead()
 	cancel()
 	err := terst.Recv(t, done)
 	if !errors.Is(err, context.Canceled) {
@@ -617,22 +569,15 @@ func TestMultichoiceBufferedEnterRetainsArrival(t *testing.T) {
 }
 
 func TestTermIOPasteTailRetainsFreshArrival(t *testing.T) {
-	pipe, typing := io.Pipe()
-	defer func() { assert.NoError(t, pipe.Close()) }()
-	defer func() { assert.NoError(t, typing.Close()) }()
-	in := newPromptReadNotifier(pipe)
+	in := terst.NewKeys(t)
 	old := &term.IO{In: in, SplitKeys: true, BracketedPaste: true}
 	read, accept := old.StartRead(t.Context())
-	waitPromptRead(t, in)
-	if _, err := typing.Write([]byte("\x1b[200~one")); err != nil {
-		t.Fatal(err)
-	}
+	in.AwaitRead()
+	in.Send("\x1b[200~one")
 	// The decoder has observed the opening frame and is waiting for its end.
-	waitPromptRead(t, in)
+	in.AwaitRead()
 	readyOrder := term.NextInputOrder()
-	if _, err := typing.Write([]byte("\x1b[201~\r")); err != nil {
-		t.Fatal(err)
-	}
+	in.Send("\x1b[201~\r")
 	<-read.Done
 	accept()
 	if !read.Event.Bracketed || read.Event.ReadOrder >= readyOrder {

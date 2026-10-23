@@ -25,7 +25,9 @@ func Quiet(t *testing.T) {
 
 // UseIO makes in and out the default input and output for the test, like the
 // stdin and stderr of a CLI. Cleanup closes the coordinated writer and
-// restores os.Stdin and os.Stderr.
+// restores os.Stdin and os.Stderr. It is for tests of how streams are routed,
+// such as descriptors, CI or a pseudo-terminal; widget tests use
+// [UseTerminal], [UseKeys], [UseFrames] or [Quiet].
 func UseIO(t *testing.T, in io.Reader, out io.Writer) {
 	t.Helper()
 	term.Default.SetIO(in, out)

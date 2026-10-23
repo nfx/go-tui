@@ -193,11 +193,12 @@ func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 }
 
 func TestMultichoiceBracketedPasteSplitsAndHandoff(t *testing.T) {
-	input := "\x1b[200~two\r\n\t\x03\x04\x1b[201~ \r \r"
-	for split := 1; split < len(input); split++ {
+	paste := "\x1b[200~two\r\n\t\x03\x04\x1b[201~"
+	for split := 1; split < len(paste); split++ {
 		t.Run(strconv.Itoa(split), func(t *testing.T) {
-			in := io.MultiReader(strings.NewReader(input[:split]), strings.NewReader(input[split:]))
-			terst.UseIO(t, in, io.Discard)
+			keys := terst.UseKeys(t)
+			keys.Send(paste[:split], paste[split:])
+			keys.Type(" \r \r")
 			first, err := Multichoice(
 				t.Context(),
 				"First",
@@ -206,7 +207,6 @@ func TestMultichoiceBracketedPasteSplitsAndHandoff(t *testing.T) {
 			if err != nil || !reflect.DeepEqual(first, []string{"two"}) {
 				t.Fatalf("%v, %v", first, err)
 			}
-			terst.UseIO(t, in, io.Discard)
 			next, err := Multichoice(
 				t.Context(),
 				"Next",
@@ -219,11 +219,11 @@ func TestMultichoiceBracketedPasteSplitsAndHandoff(t *testing.T) {
 	}
 	// A legacy event produced by a cancelled old decoder must replay ordinary
 	// keys, including the bytes after confirmation, through the shared decoder.
-	in := strings.NewReader(" \r \r")
+	terst.UseKeys(t).Type(" \r \r")
+	in, _ := term.DefaultStreams(t.Context())
 	old := &term.IO{In: in, Input: term.SharedInputState(in)}
 	read, _ := old.StartRead(t.Context())
 	<-read.Done
-	terst.UseIO(t, in, io.Discard)
 	first, err := Multichoice(
 		t.Context(),
 		"First",
@@ -232,7 +232,6 @@ func TestMultichoiceBracketedPasteSplitsAndHandoff(t *testing.T) {
 	if err != nil || len(first) != 1 {
 		t.Fatal(first, err)
 	}
-	terst.UseIO(t, in, io.Discard)
 	second, err := Multichoice(
 		t.Context(),
 		"Second",
@@ -244,25 +243,19 @@ func TestMultichoiceBracketedPasteSplitsAndHandoff(t *testing.T) {
 }
 
 func TestMultichoiceCancelledPasteDiscardsPartialUpdate(t *testing.T) {
-	input, typing := io.Pipe()
-	defer func() { assert.NoError(t, input.Close()) }()
-	defer func() { assert.NoError(t, typing.Close()) }()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	in := newPromptReadNotifier(input)
+	in := terst.NewKeys(t)
 	m := newPipeMultichoice(ctx, in)
 	m.out = terst.NewOutput(t)
 	done := make(chan error, 1)
 	go func() { done <- m.run(m.Ctx) }()
-	waitPromptRead(t, in)
-	_, err := typing.Write([]byte("\x1b[200~one"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	in.AwaitRead()
+	in.Send("\x1b[200~one")
 	// Wait until the opening frame is decoded and the payload read is blocked.
-	waitPromptRead(t, in)
+	in.AwaitRead()
 	cancel()
-	err = terst.Recv(t, done)
+	err := terst.Recv(t, done)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
@@ -273,10 +266,7 @@ func TestMultichoiceCancelledPasteDiscardsPartialUpdate(t *testing.T) {
 	next.Items = []any{"next"}
 	next.out = io.Discard
 	go func() { done <- next.run(next.Ctx) }()
-	_, err = typing.Write([]byte("\x1b[201~ \r"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	in.Send("\x1b[201~ \r")
 	err = terst.Recv(t, done)
 	if err != nil {
 		t.Fatal(err)
@@ -309,7 +299,7 @@ func TestMultichoiceLazyDefaultState(t *testing.T) {
 			if err := m.prepare(nil); err != nil {
 				t.Fatal(err)
 			}
-			if err := m.bindRun(t.Context(), terst.NewTermIO(60, 10)); err != nil {
+			if err := m.bindRun(t.Context(), terst.FixedTermIO(60, 10).IO()); err != nil {
 				t.Fatal(err)
 			}
 			for _, item := range tc.items {
@@ -346,7 +336,7 @@ func TestMultichoiceLazyArrivalsAndFocus(t *testing.T) {
 	if err := m.prepare(nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.bindRun(t.Context(), terst.NewTermIO(60, 10)); err != nil {
+	if err := m.bindRun(t.Context(), terst.FixedTermIO(60, 10).IO()); err != nil {
 		t.Fatal(err)
 	}
 	for _, item := range []string{"xxxx", "yyyy", "bat"} {
@@ -381,11 +371,8 @@ func TestMultichoiceLazyArrivalsAndFocus(t *testing.T) {
 }
 
 func TestMultichoiceLazyPublicLoading(t *testing.T) {
-	input, typing := io.Pipe()
-	defer func() { assert.NoError(t, input.Close()) }()
-	defer func() { assert.NoError(t, typing.Close()) }()
 	arrivals := make(chan string)
-	out := terst.NewOutput(t)
+	keys, out := terst.UseTerminal(t)
 	seq := func(yield func(string, error) bool) {
 		for item := range arrivals {
 			if !yield(item, nil) {
@@ -395,7 +382,6 @@ func TestMultichoiceLazyPublicLoading(t *testing.T) {
 	}
 	result := make(chan []string, 1)
 	failure := make(chan error, 1)
-	terst.UseIO(t, input, out)
 	go func() {
 		got, err := MultichoiceLazy(
 			t.Context(),
@@ -409,16 +395,9 @@ func TestMultichoiceLazyPublicLoading(t *testing.T) {
 	out.AwaitOutput("Lazy")
 	arrivals <- "api"
 	out.AwaitOutput("○ api")
-	if _, err := typing.Write([]byte{'\r'}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := typing.Write([]byte{'x'}); err != nil {
-		t.Fatal(err)
-	}
+	keys.Type("\rx")
 	out.AwaitOutput("No matches")
-	if _, err := typing.Write([]byte{0x7f}); err != nil {
-		t.Fatal(err)
-	}
+	keys.Type(terst.KeyBackspace)
 	out.AwaitOutput("○ api")
 	arrivals <- "worker"
 	close(arrivals)
@@ -428,9 +407,7 @@ func TestMultichoiceLazyPublicLoading(t *testing.T) {
 		t.Fatalf("queued Enter confirmed after loading: %v", err)
 	default:
 	}
-	if _, err := typing.Write([]byte{'\r'}); err != nil {
-		t.Fatal(err)
-	}
+	keys.Type(terst.KeyEnter)
 	err := terst.Recv(t, failure)
 	if err != nil {
 		t.Fatal(err)
@@ -458,10 +435,7 @@ func TestMultichoiceLazyPublicFailures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			input, typing := io.Pipe()
-			defer func() { assert.NoError(t, input.Close()) }()
-			defer func() { assert.NoError(t, typing.Close()) }()
-			terst.UseIO(t, input, io.Discard)
+			terst.UseKeys(t)
 			got, err := MultichoiceLazy(ctx, "Lazy", tc.seq)
 			if got != nil || !errors.Is(err, tc.want) {
 				t.Fatal(got, err)
@@ -534,7 +508,6 @@ func TestMultichoicePasteModeLifetime(t *testing.T) {
 }
 
 func TestMultichoiceLazyDuplicateAndNilProjection(t *testing.T) {
-	stream := &completionChecklistIO{ready: make(chan struct{}), keys: strings.NewReader(" \x1b[B \x1b[B \r")}
 	seq := func(yield func([]int, error) bool) {
 		for _, item := range [][]int{{1}, {1}, {2}} {
 			if !yield(item, nil) {
@@ -542,18 +515,12 @@ func TestMultichoiceLazyDuplicateAndNilProjection(t *testing.T) {
 			}
 		}
 	}
-	terst.UseIO(t, stream, stream)
-	got, err := MultichoiceLazy(
-		t.Context(),
-		"Equal",
-		seq,
-		option.WithDefault("[2]"),
-		option.WithHide(),
-	)
+	got, err := answerWhenShown(t, "◉", " \x1b[B \x1b[B \r", func() ([][]int, error) {
+		return MultichoiceLazy(t.Context(), "Equal", seq, option.WithDefault("[2]"), option.WithHide())
+	})
 	if err != nil || !reflect.DeepEqual(got, [][]int{{1}, {1}}) {
 		t.Fatal(got, err)
 	}
-	stream = &completionChecklistIO{ready: make(chan struct{}), keys: strings.NewReader(" \x1b[B \x1b[B \r")}
 	nils := []any{nil, (*int)(nil)}
 	anySeq := func(yield func(any, error) bool) {
 		for _, item := range append(nils, "ready") {
@@ -562,14 +529,9 @@ func TestMultichoiceLazyDuplicateAndNilProjection(t *testing.T) {
 			}
 		}
 	}
-	terst.UseIO(t, stream, stream)
-	values, err := MultichoiceLazy(
-		t.Context(),
-		"Nil",
-		anySeq,
-		option.WithDefault("ready"),
-		option.WithHide(),
-	)
+	values, err := answerWhenShown(t, "◉", " \x1b[B \x1b[B \r", func() ([]any, error) {
+		return MultichoiceLazy(t.Context(), "Nil", anySeq, option.WithDefault("ready"), option.WithHide())
+	})
 	if err != nil || !reflect.DeepEqual(values, nils) {
 		t.Fatal(values, err)
 	}
@@ -578,20 +540,14 @@ func TestMultichoiceLazyDuplicateAndNilProjection(t *testing.T) {
 func TestMultichoiceLegacyHandoffPreservesPasteFraming(t *testing.T) {
 	for _, payload := range []string{" ", " \r", " \x03", " \x04", "\r\x03\x04 "} {
 		t.Run(strconv.Quote(payload), func(t *testing.T) {
-			pipe, typing := io.Pipe()
-			defer func() { assert.NoError(t, pipe.Close()) }()
-			defer func() { assert.NoError(t, typing.Close()) }()
-			in := newPromptReadNotifier(pipe)
-			cancelPromptRead(t, in, func(ctx context.Context) error {
-				terst.UseIO(t, in, io.Discard)
+			keys, out := terst.UseTerminal(t)
+			cancelPromptRead(t, keys, func(ctx context.Context) error {
 				_, err := Dropdown(ctx, "Old", []string{"one"})
 				return err
 			})
 			ctx, stop := context.WithTimeout(t.Context(), time.Second)
 			defer stop()
-			out := terst.NewOutput(t)
 			done := make(chan promptChoiceResult, 1)
-			terst.UseIO(t, in, out)
 			go func() {
 				items, err := Multichoice(
 					ctx,
@@ -601,22 +557,17 @@ func TestMultichoiceLegacyHandoffPreservesPasteFraming(t *testing.T) {
 				done <- promptChoiceResult{items, err}
 			}()
 			out.AwaitOutput("○ one")
-			if _, err := typing.Write([]byte("\x1b[200~" + payload + "\x1b[201~")); err != nil {
-				t.Fatal(err)
-			}
+			keys.Send("\x1b[200~" + payload + "\x1b[201~")
 			// A new read proves the entire paste was accepted without confirming
 			// or treating Ctrl-C/D as EOF; no timing delay is needed.
+			keys.AwaitRead()
 			select {
 			case got := <-done:
 				t.Fatalf("paste ended the prompt: %v, %v", got.items, got.err)
-			case <-in.reads:
-			case <-ctx.Done():
-				t.Fatal("paste did not reach the successor")
+			default:
 			}
-			if _, err := typing.Write([]byte("\r")); err != nil {
-				t.Fatal(err)
-			}
-			got := <-done
+			keys.Send(terst.KeyEnter)
+			got := terst.Recv(t, done)
 			if got.err != nil || got.items == nil || len(got.items) != 0 {
 				t.Fatalf("pasted Space checked an item: %v, %v", got.items, got.err)
 			}
@@ -625,29 +576,21 @@ func TestMultichoiceLegacyHandoffPreservesPasteFraming(t *testing.T) {
 }
 
 func TestMultichoiceFreshPasteAfterCancelledRead(t *testing.T) {
-	pipe, typing := io.Pipe()
-	defer func() { assert.NoError(t, pipe.Close()) }()
-	defer func() { assert.NoError(t, typing.Close()) }()
-	in := newPromptReadNotifier(pipe)
-	cancelPromptRead(t, in, func(ctx context.Context) error {
-		terst.UseIO(t, in, io.Discard)
+	keys, out := terst.UseTerminal(t)
+	cancelPromptRead(t, keys, func(ctx context.Context) error {
 		_, err := Multichoice(ctx, "Old", []string{"old"})
 		return err
 	})
 	ctx, stop := context.WithTimeout(t.Context(), time.Second)
 	defer stop()
-	out := terst.NewOutput(t)
 	done := make(chan promptChoiceResult, 1)
-	terst.UseIO(t, in, out)
 	go func() {
 		items, err := Multichoice(ctx, "Next", []string{"one", "two"})
 		done <- promptChoiceResult{items, err}
 	}()
 	out.AwaitOutput("○ one")
-	if _, err := typing.Write([]byte("\x1b[200~two\x1b[201~ \r")); err != nil {
-		t.Fatal(err)
-	}
-	got := <-done
+	keys.Type("\x1b[200~two\x1b[201~ \r")
+	got := terst.Recv(t, done)
 	if got.err != nil || !reflect.DeepEqual(got.items, []string{"two"}) {
 		t.Fatalf("fresh paste was discarded: %v, %v", got.items, got.err)
 	}

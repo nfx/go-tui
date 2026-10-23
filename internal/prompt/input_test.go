@@ -559,9 +559,8 @@ func TestInputNeedsTwoRowsForFeedback(t *testing.T) {
 }
 
 func TestNewInputUsesDefaultIO(t *testing.T) {
-	in := bytes.NewBufferString("in")
-	out := &bytes.Buffer{}
-	terst.UseIO(t, in, out)
+	terst.UseTerminalInput(t, nil)
+	in, out := term.DefaultStreams(t.Context())
 
 	i := newInput(t.Context(), "label")
 	assert.Equal(t, in, i.In)
