@@ -23,6 +23,47 @@ import (
 	"github.com/nfx/go-tui/internal/terst"
 )
 
+func TestMultichoiceBatchesQueuedArrivals(t *testing.T) {
+	m := preparedMultichoice(t, []any{"initial"}, option.WithDefault("last"))
+	m.loading = true
+	arrivals := make(chan itPair, 2)
+	arrivals <- itPair{item: "middle"}
+	arrivals <- itPair{item: "last"}
+	close(arrivals)
+
+	// The first arrival and the full queue fit in one batch. The limit leaves
+	// exhaustion for the next turn, without dropping an item or checking early.
+	exhausted, err := m.addBatch(arrivals, itPair{item: "first"}, true)
+	assert.NoError(t, err)
+	assert.Equal(t, false, exhausted)
+	assert.Equal(t, []any{"initial", "first", "middle", "last"}, m.Items)
+	assert.Equal(t, true, m.loading)
+	assert.Equal(t, 0, m.count)
+
+	pair, more := <-arrivals
+	exhausted, err = m.addBatch(arrivals, pair, more)
+	assert.NoError(t, err)
+	assert.Equal(t, true, exhausted)
+	assert.Equal(t, false, m.loading)
+	assert.Equal(t, []int{3}, m.indices())
+	assert.True(t, m.readyOrder > 0)
+}
+
+func TestMultichoiceBatchStopsOnProducerError(t *testing.T) {
+	m := preparedMultichoice(t, []any{"initial"})
+	m.loading = true
+	boom := errors.New("producer failed")
+	arrivals := make(chan itPair, 2)
+	arrivals <- itPair{err: boom}
+	arrivals <- itPair{item: "unreachable"}
+
+	exhausted, err := m.addBatch(arrivals, itPair{item: "first"}, true)
+	assert.ErrorIs(t, err, boom)
+	assert.Equal(t, false, exhausted)
+	assert.Equal(t, []any{"initial", "first"}, m.Items)
+	assert.Equal(t, true, m.loading)
+}
+
 func TestMultichoiceRunNoSpace(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one"}
