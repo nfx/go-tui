@@ -44,12 +44,12 @@ func NewSpinners(ctx context.Context, opt ...option.Opt) (*Spinners, error) {
 		return nil, err
 	}
 	// output only: no lease, so no probe
-	look := term.Default.BindTheme(ctx, s.theme, s.Out, nil)
+	look := term.Default.BindTheme(ctx, s.theme, s.out, nil)
 	s.rows, err = bindSpinnerSlots(s.theme.Templates.Spinner, look.Funcs)
 	if err != nil {
 		return nil, err
 	}
-	s.io, err = s.makeTermIO(s.In, s.Out)
+	s.io, err = s.makeTermIO(s.in, s.out)
 	if err != nil {
 		if !errors.Is(err, errs.ErrNoTTY) {
 			return nil, err
@@ -62,7 +62,7 @@ func NewSpinners(ctx context.Context, opt ...option.Opt) (*Spinners, error) {
 	}
 	s.emit(spinnerGroupInit{})
 	started = true
-	go s.start(s.Ctx) //nolint:contextcheck // s.ctx derives from ctx and is canceled by Close
+	go s.start(s.ctx) //nolint:contextcheck // s.ctx derives from ctx and is canceled by Close
 	return s, nil
 }
 

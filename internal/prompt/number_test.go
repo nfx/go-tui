@@ -327,7 +327,7 @@ func themedNumber[T Numeric](
 	t.Helper()
 	i, out, restored := themedInput(t, th, width, height, keys...)
 	n = newNumber[T](t.Context(), "Count")
-	n.prompt.In, n.prompt.Out, n.prompt.makeTermIO = i.In, i.Out, i.makeTermIO
+	n.prompt.in, n.prompt.out, n.prompt.makeTermIO = i.in, i.out, i.makeTermIO
 	return n, out, restored
 }
 
@@ -484,7 +484,7 @@ func TestThemedNumberHintErrorRestoresTerminal(t *testing.T) {
 	// without a terminal, the default is the answer and no slot runs
 	terst.StrictOutput(t)
 	n, out, _ = themedNumber[int](t, th, 30, 5)
-	n.prompt.Out = out
+	n.prompt.out = out
 	n.prompt.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) {
 		t.Fatal("acquired a terminal")
 		return nil, errs.ErrNoTTY

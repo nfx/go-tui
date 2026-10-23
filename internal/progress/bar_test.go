@@ -363,7 +363,7 @@ func TestFileProgressReaderLogsWithoutTTY(t *testing.T) {
 			_, err = r.Read(buf)
 			assert.ErrorIs(t, err, io.EOF)
 			assert.NoError(t, r.Close())
-			assert.ErrorIs(t, r.p.Ctx.Err(), context.Canceled)
+			assert.ErrorIs(t, r.p.ctx.Err(), context.Canceled)
 			assert.Equal(t, tc.data, data.String())
 			var percentages []int
 			decoder := json.NewDecoder(&logs)
@@ -528,7 +528,7 @@ func TestProgressbarAddContextDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	p := &Progressbar{
-		Config:     option.Config{Ctx: ctx},
+		ctx:        ctx,
 		io:         &term.IO{},
 		increments: nil,
 	}
@@ -663,7 +663,7 @@ func TestProgressBarWithContextCancelBound(t *testing.T) {
 	assert.NoError(t, err)
 
 	select {
-	case <-p.Ctx.Done():
+	case <-p.ctx.Done():
 	default:
 		t.Fatal("expected p.ctx to be canceled after Close()")
 	}
@@ -699,7 +699,7 @@ func TestNewFileProgressReaderWithContextCancelBound(t *testing.T) {
 	assert.NoError(t, err)
 
 	select {
-	case <-w.p.Ctx.Done():
+	case <-w.p.ctx.Done():
 	default:
 		t.Fatal("expected w.p.ctx to be canceled after Close()")
 	}
@@ -710,7 +710,7 @@ func TestProgressbarAddAfterStoppedDoesNotBlock(t *testing.T) {
 	close(stopped)
 	p := &Progressbar{
 		io:         &term.IO{},
-		Ctx:        t.Context(),
+		ctx:        t.Context(),
 		stopped:    stopped,
 		increments: make(chan int64),
 	}
@@ -970,7 +970,7 @@ func TestNewProgressbarUsesDefaultIO(t *testing.T) {
 	in, out := term.DefaultStreams(t.Context())
 
 	p := newProgressbar(t.Context())
-	assert.Equal(t, in, p.In)
-	assert.Equal(t, out, p.Out)
+	assert.Equal(t, in, p.in)
+	assert.Equal(t, out, p.out)
 	p.ticker.Stop()
 }

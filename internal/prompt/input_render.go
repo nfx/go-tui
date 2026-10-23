@@ -50,7 +50,7 @@ func (p *input) slots() render.PromptSlots {
 // first frame: the helpers, the bound
 // slots, and the label and hint, which render once. tt is the terminal lease.
 func (p *input) bind(ctx context.Context, tt *term.IO) error {
-	p.look = term.Default.BindTheme(ctx, p.theme, p.Out, tt)
+	p.look = term.Default.BindTheme(ctx, p.theme, p.out, tt)
 	slots := p.slots()
 	var err error
 	if p.answer, err = slots.Answer.Bind(p.look.Funcs); err != nil {
