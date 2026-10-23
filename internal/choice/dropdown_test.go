@@ -606,16 +606,6 @@ func TestDropdownContextAndIOSetters(t *testing.T) {
 	assert.Equal(t, out, d.out)
 }
 
-func TestDropdownSetWriterUsesTuiViewport(t *testing.T) {
-	ctx := t.Context()
-	cio := term.NewUnstartedIO(ctx, 10, 2, 0)
-	tui := &term.Tui{Ctx: ctx, IO: &term.IO{Out: cio}}
-	d := newDropdown(t.Context())
-	d.SetWriter(tui)
-	_, ok := d.out.(*term.Viewport)
-	assert.True(t, ok)
-}
-
 type errWriterDropdown struct{}
 
 func (errWriterDropdown) Write(p []byte) (int, error) {

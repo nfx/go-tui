@@ -242,10 +242,6 @@ func (d *dropdown) SetReader(r io.Reader) {
 
 // implements [withIO].
 func (d *dropdown) SetWriter(w io.Writer) {
-	tui, ok := w.(*term.Tui)
-	if ok {
-		w = tui.PrependView(10) // TODO: height is properly available only after render, right?...
-	}
 	d.out = w
 }
 
