@@ -199,6 +199,42 @@ func TestThemedSpinnerWriteErrorEndsGroup(t *testing.T) {
 	assert.ErrorIs(t, err, gone)
 }
 
+// cutWriter is a terminal that receives the first n bytes of the first write
+// before it fails, and every later write whole.
+type cutWriter struct {
+	io.Writer
+	n   int
+	cut bool
+}
+
+func (w *cutWriter) Write(p []byte) (int, error) {
+	if w.cut {
+		return w.Writer.Write(p)
+	}
+	w.cut = true
+	n, _ := w.Writer.Write(p[:min(w.n, len(p))]) //nolint:errcheck // the write fails either way
+	return n, io.ErrShortWrite
+}
+
+// A frame that fails after turning autowrap off turns it back on, as the
+// group ends and draws no frame that would.
+func TestThemedSpinnerWriteErrorRestoresAutowrap(t *testing.T) {
+	frames := terst.NewOutput(t)
+	s, _, tick, _ := themedSpinners(t, terst.ASCIITheme(), 40, option.OpT(func(s *Spinners) error {
+		s.makeTermIO = func(in io.Reader, _ io.Writer) (*term.IO, error) {
+			cut := &cutWriter{Writer: frames, n: len(term.AutowrapOff)}
+			return &term.IO{In: in, Out: cut, Width: 40, Height: 10, Restore: func() error { return nil }}, nil
+		}
+		return nil
+	}))
+	_, err := s.Add(t.Context())
+	assert.NoError(t, err)
+	tick()
+	assert.Equal(t, term.AutowrapOff+term.AutowrapOn+"\x1b[1A\r\x1b[K", untilStopped(t, s, frames))
+	_, err = s.Add(t.Context())
+	assert.ErrorIs(t, err, io.ErrShortWrite)
+}
+
 func TestThemedSpinnerInterval(t *testing.T) {
 	realTicks := option.OpT(func(s *Spinners) error {
 		s.ticks = s.ticker.C

@@ -149,7 +149,7 @@ func TestTermIO_PasteWithControlReplyStaysPaste(t *testing.T) {
 
 func TestChanIO_WriteControlIsVerbatimAndNotReplayed(t *testing.T) {
 	out := &syncBuffer{}
-	cio := startChanIOTo(t.Context(), out, 80, 24)
+	cio := startChanIOTo(t.Context(), out)
 
 	vp, err := cio.PushViewport()
 	assert.NoError(t, err)
@@ -172,7 +172,7 @@ func TestChanIO_WriteControlIsVerbatimAndNotReplayed(t *testing.T) {
 
 func TestChanIO_WriteControlNotHeldBackByPartialLine(t *testing.T) {
 	out := &syncBuffer{}
-	cio := startChanIOTo(t.Context(), out, 80, 24)
+	cio := startChanIOTo(t.Context(), out)
 	vp, err := cio.PushViewport()
 	assert.NoError(t, err)
 	defer cio.releaseViewport(vp)

@@ -544,7 +544,7 @@ func (i *ChanIO) writeManaged(w io.Writer) (int, error) {
 		i.trimTrailingNewline(w)
 		return totalLines, nil
 	}
-	_, err := fmt.Fprintf(w, "\x1b[?7l%s\x1b[?7h", rows.Bytes())
+	_, err := fmt.Fprint(w, AutowrapOff, rows.String(), AutowrapOn)
 	return totalLines, err
 }
 

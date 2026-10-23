@@ -454,7 +454,7 @@ func (s *Spinners) redraw(prevActive int) (int, error) {
 func (s *Spinners) drawRows(frame *bytes.Buffer, lines []ansi.Text) {
 	clip := len(lines) > 0 && s.io.Vp == nil
 	if clip {
-		frame.WriteString("\x1b[?7l")
+		frame.WriteString(term.AutowrapOff)
 	}
 	for _, line := range lines {
 		frame.WriteByte('\r')
@@ -463,7 +463,7 @@ func (s *Spinners) drawRows(frame *bytes.Buffer, lines []ansi.Text) {
 		frame.WriteByte('\r')
 	}
 	if clip {
-		frame.WriteString("\x1b[?7h")
+		frame.WriteString(term.AutowrapOn)
 	}
 }
 

@@ -4,9 +4,26 @@
 package term
 
 import (
+	"bytes"
 	"context"
 	"io"
 )
+
+// AutowrapOff and AutowrapOn bracket rows that the terminal clips at its last
+// column instead of wrapping.
+const (
+	AutowrapOff = "\x1b[?7l"
+	AutowrapOn  = "\x1b[?7h"
+)
+
+// restoreAutowrap turns autowrap back on after a write of p to w failed, as
+// the terminal may have received an [AutowrapOff] of p without the
+// [AutowrapOn] after it. The write failure is already reported.
+func restoreAutowrap(w io.Writer, p []byte) {
+	if bytes.Contains(p, []byte(AutowrapOff)) {
+		_, _ = io.WriteString(w, AutowrapOn) //nolint:errcheck // best effort
+	}
+}
 
 // failWriter records the first error of the underlying terminal writer.
 type failWriter struct {
@@ -14,14 +31,18 @@ type failWriter struct {
 	err error
 }
 
-// Write retains the first output failure, treating incomplete writes as errors.
+// Write retains the first output failure, treating incomplete writes as
+// errors, and restores autowrap after any failure.
 func (f *failWriter) Write(p []byte) (int, error) {
 	n, err := f.w.Write(p)
 	if err == nil && n < len(p) {
 		err = io.ErrShortWrite
 	}
-	if err != nil && f.err == nil {
-		f.err = err
+	if err != nil {
+		restoreAutowrap(f.w, p)
+		if f.err == nil {
+			f.err = err
+		}
 	}
 	return n, err
 }

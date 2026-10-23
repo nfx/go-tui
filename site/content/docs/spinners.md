@@ -70,8 +70,8 @@ elapsed time is never logged.
 ## WithPrefixf
 
 Sets spinner prefix label (applies to `Add` and `MustAddBackground`). The
-label is formatted as in `fmt.Sprintf` and drawn before the message in the accent color,
-for example `▘ deploy: updating services (12s)`. A spinner without a label shows
+label is formatted as in `fmt.Sprintf` and drawn before the message, in the accent color
+while the spinner runs, for example `▘ deploy: updating services (12s)`. A spinner without a label shows
 the message alone.
 
 ```go
