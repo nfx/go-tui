@@ -237,21 +237,13 @@ func TestMultichoiceRunReadsPendingEnter(t *testing.T) {
 }
 
 func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
-	pr, pw, err := os.Pipe()
-	assert.NoError(t, err)
-	defer pr.Close() //nolint:errcheck // test cleanup
-	defer pw.Close() //nolint:errcheck // test cleanup
-	in := terst.NewNotifyingReader(pr)
+	in := terst.NewKeys(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	m := newPipeMultichoice(ctx, in)
 	finished := make(chan error, 1)
 	go func() { finished <- m.run(m.Ctx) }()
-	select {
-	case <-in.Started:
-	case <-time.After(time.Second):
-		t.Fatal("multichoice did not start reading")
-	}
+	in.AwaitRead()
 	cancel()
 	select {
 	case err := <-finished:
@@ -260,9 +252,8 @@ func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 		t.Fatal("cancelled multichoice did not return")
 	}
 	// the blocked read completes only now, after its prompt is gone
-	_, err = pw.Write([]byte{'x', term.KeyEnter})
-	assert.NoError(t, err)
-	assert.Equal(t, 'x', terst.NextKey(t, in))
+	in.Send("x", terst.KeyEnter)
+	assert.Equal(t, 'x', in.NextKey())
 }
 
 func TestMultichoiceBracketedPasteSplitsAndHandoff(t *testing.T) {
