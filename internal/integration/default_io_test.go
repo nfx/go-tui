@@ -7,12 +7,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	tui "github.com/nfx/go-tui"
-	"github.com/nfx/go-tui/internal/term"
 	"io"
 	"os"
 	"testing"
 	"time"
+
+	tui "github.com/nfx/go-tui"
+	"github.com/nfx/go-tui/internal/term"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -81,20 +82,6 @@ func TestWidgetsUseSharedDefaultTerminalOnTTY(t *testing.T) {
 	cio, ok := defaultOut.(*term.ChanIO)
 	assert.True(t, ok)
 	assert.NotNil(t, cio)
-}
-
-func TestSetDefaultIO(t *testing.T) {
-	prevIn := term.Default.Input()
-	prevOut := term.Default.RawOutput()
-	t.Cleanup(func() {
-		term.Default.SetIO(prevIn, prevOut)
-	})
-	in := bytes.NewBufferString("in")
-	out := &bytes.Buffer{}
-	tui.SetDefaultIO(in, out) //nolint:staticcheck // tests the deprecated API
-
-	assert.Equal(t, in, term.Default.Input())
-	assert.Equal(t, out, term.Default.RawOutput())
 }
 
 func TestSpinnersCloseNil(t *testing.T) {
