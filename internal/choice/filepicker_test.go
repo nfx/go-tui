@@ -372,7 +372,8 @@ func TestFilePickerSplitsOptionsBetweenParts(t *testing.T) {
 	_, writer := term.DefaultStreams(t.Context())
 	f, d, err := newFilePicker(t.Context(),
 		WithStartDir(t.TempDir()),
-		option.WithOptions(WithShowHidden(), option.WithHide()),
+		WithShowHidden(),
+		option.WithHide(),
 	)
 	assert.NoError(t, err)
 	assert.True(t, f.showHidden)

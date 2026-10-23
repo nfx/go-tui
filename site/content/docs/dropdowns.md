@@ -231,18 +231,6 @@ city, err := tui.Dropdown(ctx, "City", cities,
 )
 ```
 
-## WithOptions
-
-Bundles multiple options for reuse.
-
-```go
-opts := tui.WithOptions(
-	tui.WithHide(),
-)
-
-city, err := tui.Dropdown(ctx, "City", cities, opts)
-```
-
 ## Default appearance
 
 A dropdown draws through the installed theme:

@@ -48,12 +48,6 @@ func Stderr() io.Writer {
 	return term.Default.StderrWriter()
 }
 
-// WithOptions bundles options for reuse across widgets. Each member is applied
-// when the widget supports it and skipped otherwise. The bundle fails with
-// [ErrWrongWidget] only when the widget supports none of its members. Any
-// other error from a member, such as an invalid value, is returned as is.
-func WithOptions(o ...option.Opt) option.Opt { return option.WithOptions(o...) }
-
 // DefaultTheme returns an editable copy of the installed theme, preserving helpers and unset colors.
 func DefaultTheme() theme.Theme { return term.Default.CurrentTheme().Editable() }
 

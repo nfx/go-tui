@@ -39,14 +39,11 @@ func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*terst
 				case ticks <- time.Now():
 				}
 			}()
-		}, option.WithOptions(append(option.Opts{
-			option.OpT(func(s *Spinners) error {
-				s.ticks = ticks
-				s.makeTermIO = tcommon.FixedTermIO(width, height)
-				return nil
-			}),
-		}, o...,
-		)...)
+		}, option.OpT(func(s *Spinners) error {
+			s.ticks = ticks
+			s.makeTermIO = tcommon.FixedTermIO(width, height)
+			return option.Opts(o).Apply(s)
+		})
 }
 
 func spinnersForTest(t *testing.T) (*Spinners, *terst.Output, func()) {

@@ -126,18 +126,6 @@ p, err := tui.NewMaxProgressBar(ctx, "Upload", 100,
 )
 ```
 
-## WithOptions
-
-Composes multiple progress options.
-
-```go
-opts := tui.WithOptions(
-	tui.WithOutput(out),
-)
-
-p, err := tui.NewMaxProgressBar(ctx, "Upload", 100, opts)
-```
-
 ## Appearance
 
 By default, a bar has two rows: the label, the percentage and the bar, and a

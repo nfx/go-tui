@@ -75,13 +75,10 @@ func testIOforDropdown(t *testing.T, width, height int, o ...option.Opt) (*terst
 	t.Helper()
 	terst.UseASCII(t)
 	keys, out := tcommon.UseFrames(t)
-	return keys, out, option.WithOptions(append(option.Opts{
-		option.OpT(func(d *dropdown) error {
-			d.makeTermIO = tcommon.FixedTermIO(width, height)
-			return nil
-		}),
-	}, o...,
-	)...)
+	return keys, out, option.OpT(func(d *dropdown) error {
+		d.makeTermIO = tcommon.FixedTermIO(width, height)
+		return option.Opts(o).Apply(d)
+	})
 }
 
 func confirmForTest(t *testing.T) (in *terst.Keys, out *terst.Output, result chan bool) {
@@ -837,19 +834,18 @@ func TestDropdownEagerRedrawsOnResizeWhileIdle(t *testing.T) {
 	keys, out := tcommon.UseFrames(t)
 	resize := make(chan struct{})
 	resCh := make(chan string, 1)
+	withResize := option.OpT(func(d *dropdown) error {
+		d.makeTermIO = func(in io.Reader, w io.Writer) (*term.IO, error) {
+			return &term.IO{
+				In: in, Out: w, Width: 20, Height: 6,
+				Restore:  func() error { return nil },
+				OnResize: resize,
+			}, nil
+		}
+		return nil
+	})
 	go func() {
-		value, _ := Dropdown(ctx, "Pick", []string{"a", "b"}, option.WithOptions( //nolint:errcheck // test cleanup
-			option.OpT(func(d *dropdown) error {
-				d.makeTermIO = func(in io.Reader, w io.Writer) (*term.IO, error) {
-					return &term.IO{
-						In: in, Out: w, Width: 20, Height: 6,
-						Restore:  func() error { return nil },
-						OnResize: resize,
-					}, nil
-				}
-				return nil
-			}),
-		))
+		value, _ := Dropdown(ctx, "Pick", []string{"a", "b"}, withResize) //nolint:errcheck // test cleanup
 		resCh <- value
 	}()
 	out.Next()

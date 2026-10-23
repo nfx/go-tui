@@ -101,18 +101,6 @@ Overrides spinner output writer.
 group, err := tui.NewSpinners(tui.WithOutput(out))
 ```
 
-## WithOptions
-
-Composes group options for reuse.
-
-```go
-common := tui.WithOptions(
-	tui.WithOutput(out),
-)
-
-group, err := tui.NewSpinners(common)
-```
-
 ## Frames
 
 The frames are `Theme.Symbols.Spinner`. Each frame is a symbol: a single

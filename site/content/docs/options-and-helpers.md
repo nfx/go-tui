@@ -116,21 +116,6 @@ Use this when logs or other external terminal output should coexist with default
 - Only cooperating writers routed through `tui.Stderr()` participate in that
   coordination. Direct writes to raw `os.Stderr` bypass it.
 
-## WithOptions
-
-Composes multiple options into one that can be reused across widgets. Each
-member applies where the widget supports it and is skipped elsewhere. The bundle
-fails with `ErrWrongWidget` only when the widget supports none of its members.
-Invalid values, such as `WithWorkers(0)`, are always reported.
-
-```go
-common := tui.WithOptions(
-	tui.WithOutput(os.Stderr),
-)
-
-_, err := tui.Input(ctx, "Name", common)
-```
-
 ## WithFn
 
 Registers a global template helper function for operations started afterwards.

@@ -203,14 +203,10 @@ func TestNumberOptions(t *testing.T) {
 	assert.Equal(t, 5, v)
 
 	for _, o := range []option.Opt{WithNonEmpty(), option.WithHide(), WithValidation(func(context.Context, string) error { return nil }),
-		WithRegex(`[0-9]`, "one digit"), foreign, option.WithOptions(foreign)} {
+		WithRegex(`[0-9]`, "one digit"), foreign} {
 		_, _, err = runNumber[int](t, "5\r", o)
 		assert.ErrorIs(t, err, errs.ErrWrongWidget)
 	}
-	// a bundle applies the members that Number supports
-	v, _, err = runNumber[int](t, "\r", option.WithOptions(option.WithDefault("6"), option.WithHide()))
-	assert.NoError(t, err)
-	assert.Equal(t, 6, v)
 }
 
 func TestNumberErrorsReturnZero(t *testing.T) {

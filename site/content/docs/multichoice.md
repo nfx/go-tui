@@ -102,8 +102,7 @@ cancellation. Bracketed-paste terminal mode is enabled only during this prompt.
 
 Multichoice accepts the same `WithTemplate` as dropdown. Its label, rows, count
 and answer line come from the `Multichoice` theme slots.
-`WithOneReturn` is unsupported; direct use returns `ErrWrongWidget`. `WithOptions`
-keeps its usual skip semantics for unsupported members.
+`WithOneReturn` is unsupported and returns `ErrWrongWidget`.
 
 ```go
 type Service struct { Name, Region string }

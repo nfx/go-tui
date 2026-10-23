@@ -243,13 +243,12 @@ func lazySeq(values ...string) iter.Seq2[string, error] {
 func TestDropdownLazySelectsItem(t *testing.T) {
 	in, out, opts := testIOforDropdown(t, 20, 6)
 	itemsLoaded, ready := notifyItemsLoaded(3)
-	opts = option.WithOptions(opts, itemsLoaded)
 	resCh := make(chan struct {
 		value string
 		err   error
 	}, 1)
 	go func() {
-		value, err := DropdownLazy(t.Context(), "Select", lazySeq("red", "green", "blue"), opts)
+		value, err := DropdownLazy(t.Context(), "Select", lazySeq("red", "green", "blue"), opts, itemsLoaded)
 		resCh <- struct {
 			value string
 			err   error
@@ -269,19 +268,19 @@ func TestDropdownLazyDoesNotLeaveBlockedReaderAfterConfirm(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	itemsLoaded, ready := notifyItemsLoaded(2)
-	opts := option.WithOptions(
+	opts := option.Opts{
 		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = tcommon.FixedTermIO(20, 6)
 			return nil
 		}),
 		itemsLoaded,
-	)
+	}
 	resCh := make(chan struct {
 		value string
 		err   error
 	}, 1)
 	go func() {
-		value, err := DropdownLazy(ctx, "Select", lazySeq("red", "green"), opts)
+		value, err := DropdownLazy(ctx, "Select", lazySeq("red", "green"), opts...)
 		resCh <- struct {
 			value string
 			err   error
@@ -305,16 +304,16 @@ func TestDropdownLazyDoesNotStartProducerWhenContextAlreadyCanceled(t *testing.T
 	t.Cleanup(func() {
 		close(release)
 	})
-	opts := option.WithOptions(
+	opts := option.Opts{
 		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = tcommon.FixedTermIO(20, 6)
 			return nil
 		}),
-	)
+	}
 	_, err := DropdownLazy(ctx, "Select", func(yield func(string, error) bool) {
 		started.Store(true)
 		<-release
-	}, opts)
+	}, opts...)
 	assert.Error(t, err)
 	// keep polling briefly so delayed scheduling still gets caught.
 	deadline := time.Now().Add(200 * time.Millisecond)
@@ -331,20 +330,20 @@ func TestDropdownLazyCtrlCNotLostAfterPreviousLazyExit(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	itemsLoaded, ready := notifyItemsLoaded(2)
-	opts := option.WithOptions(
+	opts := option.Opts{
 		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = tcommon.FixedTermIO(20, 6)
 			return nil
 		}),
 		itemsLoaded,
-	)
+	}
 	_, err := DropdownLazy(ctx, "First", func(yield func(string, error) bool) {
 		yield("", io.EOF)
-	}, opts)
+	}, opts...)
 	assert.Error(t, err)
 	resCh := make(chan error, 1)
 	go func() {
-		_, err := DropdownLazy(ctx, "Second", lazySeq("a", "b"), opts)
+		_, err := DropdownLazy(ctx, "Second", lazySeq("a", "b"), opts...)
 		resCh <- err
 	}()
 	waitForItems(t, ready)
@@ -358,23 +357,23 @@ func TestDropdownLazyArrowAndEnterWorkAfterPreviousLazyExit(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	itemsLoaded, ready := notifyItemsLoaded(2)
-	opts := option.WithOptions(
+	opts := option.Opts{
 		option.OpT(func(d *dropdown) error {
 			d.makeTermIO = tcommon.FixedTermIO(20, 6)
 			return nil
 		}),
 		itemsLoaded,
-	)
+	}
 	_, err := DropdownLazy(ctx, "First", func(yield func(string, error) bool) {
 		yield("", io.EOF)
-	}, opts)
+	}, opts...)
 	assert.Error(t, err)
 	resCh := make(chan struct {
 		value string
 		err   error
 	}, 1)
 	go func() {
-		value, err := DropdownLazy(ctx, "Second", lazySeq("a", "b"), opts)
+		value, err := DropdownLazy(ctx, "Second", lazySeq("a", "b"), opts...)
 		resCh <- struct {
 			value string
 			err   error

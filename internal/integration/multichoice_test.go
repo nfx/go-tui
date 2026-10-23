@@ -70,7 +70,7 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 	keys, out := terst.UseTerminal(t)
 	keys.Type("\r")
 	got, err := tui.Multichoice(t.Context(), "Services", items,
-		tui.WithOptions(tui.WithOneReturn(), tui.WithTemplate(".Name", ".Region"), tui.WithDefault("worker")))
+		tui.WithTemplate(".Name", ".Region"), tui.WithDefault("worker"))
 	if err != nil || !reflect.DeepEqual(got, items[1:]) {
 		t.Fatalf("got %v, %v", got, err)
 	}
