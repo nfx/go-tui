@@ -125,7 +125,7 @@ and `.Value`, regardless of the returned projection.
 
 The answer slot has `.Label`, `.Values` (the projected content of the selected
 items in source order), and `.Count`. Generated answers are collection-aware,
-and an empty default answer explicitly says “none”. `WithHide` suppresses the
+and an empty default answer explicitly says “none”. `WithHideAnswer` suppresses the
 answer. The count of matching choices below the window leads the hint row,
 as in `3 more · ↑↓ move · space toggle · type filter`.
 

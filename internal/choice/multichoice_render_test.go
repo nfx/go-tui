@@ -262,7 +262,7 @@ func TestThemedMultichoiceHiddenAnswerRetainsNothing(t *testing.T) {
 	assert.True(t, strings.HasSuffix(out.String(), erase))
 
 	o, out, _ = themedMultichoiceOpt(t, terst.ASCIITheme(), " ", "\r")
-	_, err = Multichoice(t.Context(), "Fruit", fruits, o, option.WithHide())
+	_, err = Multichoice(t.Context(), "Fruit", fruits, o, option.WithHideAnswer())
 	assert.NoError(t, err)
 	assert.True(t, strings.HasSuffix(out.String(), erase))
 }

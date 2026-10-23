@@ -51,6 +51,9 @@ func numberRat[B Numeric](v B) (*big.Rat, string) {
 	return new(big.Rat).SetInt64(i), strconv.FormatInt(i, 10)
 }
 
+// SetHideAnswer implements [option.AnswerHider] for the owned input.
+func (n *number[T]) SetHideAnswer() { n.prompt.SetHideAnswer() }
+
 // SetDefault seeds the editable number text.
 func (n *number[T]) SetDefault(d any) { n.prompt.SetDefault(n.format(d)) }
 

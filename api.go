@@ -169,9 +169,11 @@ func DropdownIndex(ctx context.Context, label string, items []any, o ...option.O
 	return choice.DropdownIndex(ctx, label, items, o...)
 }
 
-// WithHide skips printing the answer of a dropdown or an input.
-func WithHide() option.Opt {
-	return option.WithHide()
+// WithHideAnswer skips retaining the answer of an input, number, dropdown,
+// multichoice, confirmation or file picker. The theme components set the same
+// default with HideAnswer, and no option shows an answer the theme hides.
+func WithHideAnswer() option.Opt {
+	return option.WithHideAnswer()
 }
 
 func WithOneReturn() option.Opt {

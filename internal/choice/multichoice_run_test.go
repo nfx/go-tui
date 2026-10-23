@@ -517,7 +517,7 @@ func TestMultichoiceLazyDuplicateAndNilProjection(t *testing.T) {
 		}
 	}
 	got, err := answerWhenShown(t, "◉", " \x1b[B \x1b[B \r", func() ([][]int, error) {
-		return MultichoiceLazy(t.Context(), "Equal", seq, option.WithDefault("[2]"), option.WithHide())
+		return MultichoiceLazy(t.Context(), "Equal", seq, option.WithDefault("[2]"), option.WithHideAnswer())
 	})
 	if err != nil || !reflect.DeepEqual(got, [][]int{{1}, {1}}) {
 		t.Fatal(got, err)
@@ -531,7 +531,7 @@ func TestMultichoiceLazyDuplicateAndNilProjection(t *testing.T) {
 		}
 	}
 	values, err := answerWhenShown(t, "◉", " \x1b[B \x1b[B \r", func() ([]any, error) {
-		return MultichoiceLazy(t.Context(), "Nil", anySeq, option.WithDefault("ready"), option.WithHide())
+		return MultichoiceLazy(t.Context(), "Nil", anySeq, option.WithDefault("ready"), option.WithHideAnswer())
 	})
 	if err != nil || !reflect.DeepEqual(values, nils) {
 		t.Fatal(values, err)

@@ -10,7 +10,7 @@ misplaced option fails instead of silently doing nothing.
 | Option | Supported by |
 |---|---|
 | `WithInput`, `WithOutput` | `Input`, `Password`, dropdowns, multichoice, `Confirm`, `FilePicker`, `NewSpinners`, progress bars |
-| `WithDefault`, `WithHide` | `Input`, `Password`, `Number`, dropdowns, multichoice, `Confirm`, `FilePicker` |
+| `WithDefault`, `WithHideAnswer` | `Input`, `Password`, `Number`, dropdowns, multichoice, `Confirm`, `FilePicker` |
 | `WithNonEmpty`, `WithRegex`, `WithValidation` | `Input`, `Password` |
 | `WithTemplate` | dropdowns, multichoice, `Confirm`, `FilePicker` |
 | `WithOneReturn` | dropdowns, `Confirm`, `FilePicker` |

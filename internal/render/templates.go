@@ -91,11 +91,23 @@ func compileSet(t *theme.Theme, funcs template.FuncMap, base templates) (templat
 	var out templates
 	var errs [12]error
 	out.Prompt, errs[0] = compilePrompt(root.nest("Prompt", t.Prompt, base.Prompt))
-	out.Input, errs[1] = compilePrompt(root.nest("Input", theme.Prompt(t.Input), out.Prompt))
+	out.Input, errs[1] = compilePrompt(
+		root.nest(
+			"Input",
+			theme.Prompt{Label: t.Input.Label, Answer: t.Input.Answer, Hint: t.Input.Hint, Feedback: t.Input.Feedback},
+			out.Prompt,
+		),
+	)
 	out.Password, errs[2] = compileSecret(root.nest("Password", t.Password, out.Input))
-	out.Number, errs[3] = compileSecret(root.nest("Number", theme.Password(t.Number), out.Input))
+	out.Number, errs[3] = compileSecret(
+		root.nest(
+			"Number",
+			theme.Password{Label: t.Number.Label, Hint: t.Number.Hint, Feedback: t.Number.Feedback},
+			out.Input,
+		),
+	)
 	out.Choice, errs[4] = compileChoice(root.nest("Choice", t.Choice, base.Choice))
-	family := ChoiceFamily{out.Prompt, out.Choice}
+	family := ChoiceFamily{PromptSlots: out.Prompt, choiceTemplates: out.Choice}
 	out.Dropdown, errs[5] = compileChoiceFamily(root.nest("Dropdown", t.Dropdown, family))
 	out.Multichoice, errs[6] = compileMultichoice(root.nest("Multichoice", t.Multichoice, multichoiceTemplates{
 		ChoiceFamily: family,
@@ -173,11 +185,14 @@ func compileChoice(in templated[theme.Choice, choiceTemplates]) (out choiceTempl
 type ChoiceFamily struct {
 	PromptSlots
 	choiceTemplates
+	// HideAnswer is the family policy, never inherited.
+	HideAnswer bool
 }
 
 // compileChoiceFamily compiles family overrides with shared prompt and choice fallbacks.
 func compileChoiceFamily(in templated[theme.Dropdown, ChoiceFamily]) (out ChoiceFamily, _ error) {
 	var errs [2]error
+	out.HideAnswer = in.Src.HideAnswer
 	out.PromptSlots, errs[0] = compilePrompt(in.nest("", in.Src.Prompt, in.Parent.PromptSlots))
 	out.choiceTemplates, errs[1] = compileChoice(in.nest("", in.Src.Choice, in.Parent.choiceTemplates))
 	return out, errors.Join(errs[:]...)
@@ -194,7 +209,11 @@ func compileMultichoice(in templated[theme.Multichoice, multichoiceTemplates],
 ) (out multichoiceTemplates, _ error) {
 	var errs [3]error
 	out.ChoiceFamily, errs[0] = compileChoiceFamily(
-		in.nest("", theme.Dropdown{Prompt: in.Src.Prompt, Choice: in.Src.Choice}, in.Parent.ChoiceFamily),
+		in.nest(
+			"",
+			theme.Dropdown{Prompt: in.Src.Prompt, Choice: in.Src.Choice, HideAnswer: in.Src.HideAnswer},
+			in.Parent.ChoiceFamily,
+		),
 	)
 	out.Row, errs[1] = compileSlot(in.nest("Row", in.Src.Row, in.Parent.Row), false)
 	out.AnswerValue, errs[2] = compileSlot(in.nest("AnswerValue", in.Src.AnswerValue, in.Parent.AnswerValue), true)

@@ -155,15 +155,19 @@ city, err := tui.Dropdown(ctx, "City", []string{"Amsterdam"},
 )
 ```
 
-## WithHide
+## WithHideAnswer
 
 Hides the final answer line after selection.
 
 ```go
 city, err := tui.Dropdown(ctx, "City", cities,
-	tui.WithHide(),
+	tui.WithHideAnswer(),
 )
 ```
+
+To hide answers by default, set `HideAnswer` on the [theme](themes.md) component, such as
+`Input`, `Number`, `Dropdown`, `Multichoice`, `Confirm` or `FilePicker`. An
+option cannot show an answer that the theme hides, and passwords never keep one.
 
 ## WithTemplate
 

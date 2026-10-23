@@ -22,9 +22,9 @@ type input struct {
 	in  io.Reader
 	out io.Writer
 
-	Label    string
-	Hide     bool
-	Password bool
+	Label      string
+	HideAnswer bool
+	Password   bool
 
 	// theme is the snapshot captured at construction. The prompt renders
 	// through it, and run binds it to the destination: look holds the
@@ -60,9 +60,22 @@ type input struct {
 	input      <-chan inputIncoming
 }
 
-// implement [withPrompt] interface.
-func (i *input) SetHide() {
-	i.Hide = true
+// SetHideAnswer implements [option.AnswerHider].
+func (i *input) SetHideAnswer() {
+	i.HideAnswer = true
+}
+
+// hidesAnswer reports whether the answer is retained no more: a password never
+// is, and the others follow the theme policy of their family or the option.
+func (i *input) hidesAnswer() bool {
+	src := &i.theme.Source
+	switch {
+	case i.Password:
+		return true
+	case i.numeric:
+		return i.HideAnswer || src.Number.HideAnswer
+	}
+	return i.HideAnswer || src.Input.HideAnswer
 }
 
 // implement [withPrompt] interface.
@@ -127,7 +140,7 @@ func (i *input) answerFromDefault(ctx context.Context) (string, error) {
 }
 
 func (i *input) showAnswer() error {
-	if i.Hide || i.Password {
+	if i.hidesAnswer() {
 		return nil
 	}
 	var buf bytes.Buffer

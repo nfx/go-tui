@@ -247,7 +247,16 @@ func TestThemedDropdownHiddenAnswerRetainsNothing(t *testing.T) {
 	assert.True(t, strings.HasSuffix(out.String(), "\x1b[4A\r"))
 
 	o, out, _ = themedDropdownOpt(t, terst.ASCIITheme(), 40, "\r")
-	_, err = Dropdown(t.Context(), "Fruit", fruits, o, option.WithHide())
+	_, err = Dropdown(t.Context(), "Fruit", fruits, o, option.WithHideAnswer())
+	assert.NoError(t, err)
+	assert.True(t, strings.HasSuffix(out.String(), "\x1b[4A\r"))
+}
+
+func TestThemedDropdownHideAnswerPolicy(t *testing.T) {
+	th := terst.ASCIITheme()
+	th.Dropdown.HideAnswer = true
+	o, out, _ := themedDropdownOpt(t, th, 40, "\r")
+	_, err := Dropdown(t.Context(), "Fruit", fruits, o)
 	assert.NoError(t, err)
 	assert.True(t, strings.HasSuffix(out.String(), "\x1b[4A\r"))
 }

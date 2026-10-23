@@ -94,7 +94,7 @@ func (d *dropdown) themedRow(slot render.BoundSlot, view choiceView) (ansi.Text,
 // projecting it now when the prompt answered without drawing it. A hidden or
 // empty answer retains nothing.
 func (d *dropdown) themedAnswer(label string, i int) error {
-	if d.Hide {
+	if d.hidesAnswer() {
 		return nil
 	}
 	err := d.bindOnce()
@@ -114,7 +114,7 @@ func (d *dropdown) themedAnswer(label string, i int) error {
 // several dropdowns of a [FilePicker] chose; a hidden or empty answer writes
 // nothing.
 func (d *dropdown) retain(label, value string) error {
-	if d.Hide {
+	if d.hidesAnswer() {
 		return nil
 	}
 	err := d.bindOnce()

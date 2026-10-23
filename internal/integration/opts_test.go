@@ -24,7 +24,7 @@ func TestEntryPointsRejectOptionsOfOtherWidgets(t *testing.T) {
 	_, err = tui.Dropdown(t.Context(), "Pick", []string{"a"}, tui.WithNonEmpty())
 	assert.ErrorIs(t, err, tui.ErrWrongWidget)
 
-	_, err = tui.NewMaxProgressBar(t.Context(), "bar", 1, tui.WithHide())
+	_, err = tui.NewMaxProgressBar(t.Context(), "bar", 1, tui.WithHideAnswer())
 	assert.ErrorIs(t, err, tui.ErrWrongWidget)
 
 	_, err = tui.NewSpinners(t.Context(), tui.WithPrefixf("group"))
@@ -34,7 +34,7 @@ func TestEntryPointsRejectOptionsOfOtherWidgets(t *testing.T) {
 	group, err := tui.NewSpinners(t.Context())
 	assert.NoError(t, err)
 	defer group.Close()
-	_, err = group.Add(t.Context(), tui.WithHide())
+	_, err = group.Add(t.Context(), tui.WithHideAnswer())
 	assert.ErrorIs(t, err, tui.ErrWrongWidget)
 
 	_, err = tui.FilePicker(t.Context(), "Pick", tui.WithWorkers(2))

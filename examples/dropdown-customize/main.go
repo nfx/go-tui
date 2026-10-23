@@ -27,7 +27,7 @@ func main() {
 	},
 		// the projection picks the fields; details show on the active row only
 		tui.WithTemplate(`.Name`, `"(age: " .Age ")"`),
-		tui.WithHide(),
+		tui.WithHideAnswer(),
 	)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)

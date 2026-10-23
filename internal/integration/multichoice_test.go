@@ -51,7 +51,7 @@ func TestMultichoicePublic(t *testing.T) {
 				t.Context(),
 				"Pick",
 				tc.items,
-				tui.WithHide(),
+				tui.WithHideAnswer(),
 				tui.WithDefault(tc.hint),
 			)
 			if err != nil || !reflect.DeepEqual(got, tc.want) {
@@ -281,7 +281,7 @@ func ExampleMultichoice() {
 		context.Background(),
 		"Instances",
 		[]string{"api", "api", "worker"},
-		tui.WithHide(),
+		tui.WithHideAnswer(),
 	)
 	fmt.Println(selected, err)
 	// Output: [api api] <nil>
@@ -357,7 +357,7 @@ func TestMultichoiceSharesTerminalWithProgressAndLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 	term.AwaitVisible("log line", "+ Pick · a")
-	res = prompt(func() (string, error) { return tui.Input(t.Context(), "Next", tui.WithHide()) })
+	res = prompt(func() (string, error) { return tui.Input(t.Context(), "Next", tui.WithHideAnswer()) })
 	term.press(t, "x")
 	term.press(t, keyEnter)
 	if got := answer(t, res); got != "x" {
@@ -447,7 +447,7 @@ func TestMultichoiceManagedCancelAndDeadline(t *testing.T) {
 				t.Fatal("cancel blocked")
 			}
 			term.AwaitVisible()
-			next := prompt(func() (string, error) { return tui.Input(t.Context(), "Next", tui.WithHide()) })
+			next := prompt(func() (string, error) { return tui.Input(t.Context(), "Next", tui.WithHideAnswer()) })
 			read <- "x\r"
 			if got := answer(t, next); got != "x" {
 				t.Fatal(got)
@@ -484,7 +484,7 @@ func ExampleMultichoiceLazy() {
 		"Components",
 		values("api", "worker"),
 		tui.WithDefault("api"),
-		tui.WithHide(),
+		tui.WithHideAnswer(),
 	)
 	fmt.Println(selected, err)
 	// Output: [api] <nil>

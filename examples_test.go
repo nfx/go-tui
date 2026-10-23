@@ -38,7 +38,7 @@ func ExampleDropdown_withStructs() {
 	},
 		// the projection picks the fields; details show on the active row only
 		tui.WithTemplate(`.Name`, `"(age: " .Age ")"`),
-		tui.WithHide(), // hides the dropdown after selection
+		tui.WithHideAnswer(), // hides the dropdown after selection
 	)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)

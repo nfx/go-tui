@@ -61,7 +61,7 @@ type multichoice struct {
 	def         option.DefaultValue
 	target      choiceTarget
 	typed       string
-	Hide        bool
+	HideAnswer  bool
 	loading     bool
 	manualFocus bool
 
@@ -83,8 +83,8 @@ func newMultichoice(ctx context.Context) *multichoice {
 	}
 }
 
-// SetHide suppresses the final answer while retaining the interactive prompt.
-func (m *multichoice) SetHide() { m.Hide = true }
+// SetHideAnswer suppresses the final answer while retaining the interactive prompt.
+func (m *multichoice) SetHideAnswer() { m.HideAnswer = true }
 
 // SetDefault records the default; a string is also a selection hint that
 // does not pre-fill the filter.
@@ -345,7 +345,7 @@ type multichoiceRow struct {
 
 // showAnswer emits the confirmed collection in input order and reports managed output failures.
 func (m *multichoice) showAnswer() error {
-	if m.Hide {
+	if m.HideAnswer || m.theme.Templates.Multichoice.HideAnswer {
 		return nil
 	}
 	return m.themedAnswer()
