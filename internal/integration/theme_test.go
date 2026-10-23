@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nfx/go-tui/theme"
 	"regexp"
 	"slices"
 	"strconv"
@@ -15,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nfx/go-tui/theme"
 
 	tui "github.com/nfx/go-tui"
 	"github.com/nfx/go-tui/internal/assert"
@@ -247,8 +248,6 @@ const (
 	whiteBackground = "\x1b]11;rgb:ffff/ffff/ffff\x1b\\"
 	blackBackground = "\x1b]11;rgb:0000/0000/0000\x1b\\"
 )
-
-var foreground = regexp.MustCompile(`\x1b\[38;2;[0-9;]+m`)
 
 // textColor is the truecolor SGR right before text in out, or "".
 func textColor(out, text string) string {
