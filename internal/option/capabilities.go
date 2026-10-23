@@ -3,15 +3,6 @@
 
 package option
 
-import (
-	"io"
-)
-
-type IO interface {
-	SetWriter(w io.Writer)
-	SetReader(r io.Reader)
-}
-
 // Default is implemented by widgets that accept a default answer or hint.
 type Default interface {
 	SetDefault(d any)

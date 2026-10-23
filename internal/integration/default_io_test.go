@@ -5,10 +5,7 @@ package integration
 
 import (
 	"bytes"
-	"context"
-	"errors"
 	"io"
-	"os"
 	"testing"
 	"time"
 
@@ -138,28 +135,6 @@ func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
 	}
 }
 
-func TestNewIOWithTTY(t *testing.T) {
-	tty, err := os.Open("/dev/tty")
-	if err != nil {
-		t.Skip("tty not available")
-	}
-	origStderr := os.Stderr
-	os.Stderr = tty
-	t.Cleanup(func() {
-		os.Stderr = origStderr
-		assert.NoError(t, tty.Close())
-	})
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-	cio, err := tui.NewIO(ctx) //nolint:staticcheck // tests the deprecated API
-	if err != nil {
-		t.Fatalf("NewIO failed: %v", err)
-	}
-	if cio == nil {
-		t.Fatalf("expected io")
-	}
-}
-
 func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
 	prevIn := term.Default.Input()
 	prevOut := term.Default.RawOutput()
@@ -235,36 +210,6 @@ func TestDefaultStreamsArePairedUnderSetDefaultIO(t *testing.T) {
 	<-swapped
 }
 
-func TestNewIOWithStubError(t *testing.T) {
-	orig := term.GetSize
-	term.GetSize = func(int) (int, int, error) { return 0, 0, errors.New("boom") }
-	t.Cleanup(func() { term.GetSize = orig })
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-	_, err := tui.NewIO(ctx) //nolint:staticcheck // tests the deprecated API
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-	if !errors.Is(err, tui.ErrNoTTY) {
-		t.Fatalf("expected ErrNoTTY, got %v", err)
-	}
-}
-
-func TestNewIOWithStubSize(t *testing.T) {
-	orig := term.GetSize
-	term.GetSize = func(int) (int, int, error) { return 80, 24, nil }
-	t.Cleanup(func() { term.GetSize = orig })
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-	cio, err := tui.NewIO(ctx) //nolint:staticcheck // tests the deprecated API
-	if err != nil {
-		t.Fatalf("NewIO failed: %v", err)
-	}
-	if cio.Width != 80 || cio.Height != 24 {
-		t.Fatalf("unexpected size %dx%d", cio.Width, cio.Height)
-	}
-}
-
 func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {
 	prevIn := term.Default.Input()
 	prevOut := term.Default.RawOutput()
@@ -291,13 +236,4 @@ func TestConfirmDefaultTerminalHandlesArrowKeys(t *testing.T) {
 	assert.True(t, initial != updated)
 	reader.SendByte(term.KeyEnter)
 	assert.True(t, !<-result)
-}
-
-func TestNewIOReturnsOrErrors(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-	_, err := tui.NewIO(ctx) //nolint:staticcheck // tests the deprecated API
-	if err != nil {
-		return
-	}
 }

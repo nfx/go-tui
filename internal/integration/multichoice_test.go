@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/nfx/go-tui/theme"
 	"io"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -46,12 +47,11 @@ func TestMultichoicePublic(t *testing.T) {
 		{"paste text not keys", "\x1b[200~tw\n\x03\x1b[201~ \r", "", []string{"one", "two"}, []string{"two"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			terst.UseIO(t, strings.NewReader(tc.input), io.Discard)
 			got, err := tui.Multichoice(
 				t.Context(),
 				"Pick",
 				tc.items,
-				tui.WithInput(strings.NewReader(tc.input)),
-				tui.WithOutput(io.Discard),
 				tui.WithHide(),
 				tui.WithDefault(tc.hint),
 			)
@@ -69,8 +69,8 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 	th.Multichoice.Answer = `ANSWER {{ .Count }}{{ range .Values }} {{ . }}{{ else }} none{{ end }}`
 	terst.UseTheme(t, th)
 	var out bytes.Buffer
+	terst.UseIO(t, strings.NewReader("\r"), &out)
 	got, err := tui.Multichoice(t.Context(), "Services", items,
-		tui.WithInput(strings.NewReader("\r")), tui.WithOutput(&out),
 		tui.WithOptions(tui.WithOneReturn(), tui.WithTemplate(".Name", ".Region"), tui.WithDefault("worker")))
 	if err != nil || !reflect.DeepEqual(got, items[1:]) {
 		t.Fatalf("got %v, %v", got, err)
@@ -85,34 +85,33 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 	t.Run("generated collection answer", func(t *testing.T) {
 		terst.UseTheme(t, theme.New())
 		out.Reset()
+		terst.UseIO(t, strings.NewReader("\r"), &out)
 		_, err := tui.Multichoice(
 			t.Context(),
 			"Services",
 			items,
 			tui.WithTemplate(".Name", ".Region"),
 			tui.WithDefault("api"),
-			tui.WithInput(strings.NewReader("\r")),
-			tui.WithOutput(&out),
 		)
 		if err != nil || !strings.Contains(out.String(), "✔ Services") || !strings.Contains(out.String(), "api") {
 			t.Fatalf("%s: %v", out.String(), err)
 		}
 	})
 	t.Run("deprecated fields", func(t *testing.T) {
+		terst.UseIO(t, strings.NewReader("\r"), io.Discard)
 		_, err := tui.Multichoice(
 			t.Context(),
 			"Services",
 			items,
 			tui.WithTemplate(`.Name ", " .Region`),
 			tui.WithDefault("us"),
-			tui.WithInput(strings.NewReader("\r")),
-			tui.WithOutput(io.Discard),
 		)
 		if err != nil {
 			t.Fatal(err)
 		}
 	})
 	t.Run("last hint and clear", func(t *testing.T) {
+		terst.UseIO(t, strings.NewReader("\r"), io.Discard)
 		got, err := tui.Multichoice(
 			t.Context(),
 			"Services",
@@ -121,20 +120,17 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 			tui.WithDefault("api"),
 			tui.WithDefault("worker"),
 			tui.WithDefault(""),
-			tui.WithInput(strings.NewReader("\r")),
-			tui.WithOutput(io.Discard),
 		)
 		if err != nil || got == nil || len(got) != 0 {
 			t.Fatalf("%v, %v", got, err)
 		}
 	})
 	t.Run("nil items", func(t *testing.T) {
+		terst.UseIO(t, strings.NewReader(" \x1b[B \x1b[B \r"), io.Discard)
 		got, err := tui.Multichoice(
 			t.Context(),
 			"Nil",
 			[]any{nil, (*service)(nil), []int{1}},
-			tui.WithInput(strings.NewReader(" \x1b[B \x1b[B \r")),
-			tui.WithOutput(io.Discard),
 		)
 		if err != nil || len(got) != 3 {
 			t.Fatalf("%#v, %v", got, err)
@@ -148,13 +144,12 @@ func TestMultichoiceMapProjections(t *testing.T) {
 	th.Multichoice.Answer = `ANSWER {{ .Count }}{{ range .Values }} {{ . }}{{ end }}`
 	terst.UseTheme(t, th)
 	var out bytes.Buffer
+	terst.UseIO(t, strings.NewReader("\x1b[B \r"), &out)
 	keys, err := tui.MultichoiceKVK(
 		t.Context(),
 		"Keys",
 		values,
 		tui.WithDefault("b"),
-		tui.WithInput(strings.NewReader("\x1b[B \r")),
-		tui.WithOutput(&out),
 	)
 	if err != nil || !reflect.DeepEqual(keys, []string{"alpha", "beta"}) {
 		t.Fatalf("%v, %v", keys, err)
@@ -163,13 +158,12 @@ func TestMultichoiceMapProjections(t *testing.T) {
 		t.Fatal(out.String())
 	}
 	out.Reset()
+	terst.UseIO(t, strings.NewReader("\x1b[B \r"), &out)
 	selected, err := tui.MultichoiceKVV(
 		t.Context(),
 		"Values",
 		values,
 		tui.WithDefault("b"),
-		tui.WithInput(strings.NewReader("\x1b[B \r")),
-		tui.WithOutput(&out),
 	)
 	if err != nil || !reflect.DeepEqual(selected, [][]int{{1}, {1}}) {
 		t.Fatalf("%v, %v", selected, err)
@@ -178,24 +172,22 @@ func TestMultichoiceMapProjections(t *testing.T) {
 		t.Fatal(out.String())
 	}
 	type payload struct{ Name string }
+	terst.UseIO(t, strings.NewReader("\r"), io.Discard)
 	result, err := tui.MultichoiceKVV(
 		t.Context(),
 		"Custom",
 		map[string]payload{"key": {Name: "display"}},
 		tui.WithTemplate(".Value.Name"),
 		tui.WithDefault("dis"),
-		tui.WithInput(strings.NewReader("\r")),
-		tui.WithOutput(io.Discard),
 	)
 	if err != nil || !reflect.DeepEqual(result, []payload{{"display"}}) {
 		t.Fatalf("%v, %v", result, err)
 	}
+	terst.UseIO(t, strings.NewReader("\r"), io.Discard)
 	empty, err := tui.MultichoiceKVV(
 		t.Context(),
 		"None",
 		values,
-		tui.WithInput(strings.NewReader("\r")),
-		tui.WithOutput(io.Discard),
 	)
 	if err != nil || empty == nil || len(empty) != 0 {
 		t.Fatalf("%v, %v", empty, err)
@@ -215,12 +207,11 @@ func TestMultichoiceErrors(t *testing.T) {
 		{"incomplete paste", "\x1b[200~one", nil, io.EOF},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			terst.UseIO(t, strings.NewReader(tc.input), io.Discard)
 			got, err := tui.Multichoice(
 				t.Context(),
 				"Pick",
 				[]string{"one", "two"},
-				tui.WithInput(strings.NewReader(tc.input)),
-				tui.WithOutput(io.Discard),
 			)
 			if !errors.Is(err, tc.err) || !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("%#v, %v; want %#v, %v", got, err, tc.want, tc.err)
@@ -250,7 +241,8 @@ func TestMultichoiceErrors(t *testing.T) {
 	var out bytes.Buffer
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	got, err = tui.Multichoice(ctx, "Canceled", []string{"one"}, tui.WithOutput(&out))
+	terst.UseIO(t, nil, &out)
+	got, err = tui.Multichoice(ctx, "Canceled", []string{"one"})
 	if got != nil || !errors.Is(err, context.Canceled) {
 		t.Fatal(got, err)
 	}
@@ -258,41 +250,44 @@ func TestMultichoiceErrors(t *testing.T) {
 
 func TestMultichoiceSequentialReaders(t *testing.T) {
 	in := strings.NewReader(" \r \rnext\rsecret\r\r")
-	first, err := tui.Multichoice(t.Context(), "First", []string{"one"}, tui.WithInput(in), tui.WithOutput(io.Discard))
+	terst.UseIO(t, in, io.Discard)
+	first, err := tui.Multichoice(t.Context(), "First", []string{"one"})
 	if err != nil || len(first) != 1 {
 		t.Fatal(first, err)
 	}
+	terst.UseIO(t, in, io.Discard)
 	second, err := tui.Multichoice(
 		t.Context(),
 		"Second",
 		[]string{"two"},
-		tui.WithInput(in),
-		tui.WithOutput(io.Discard),
 	)
 	if err != nil || len(second) != 1 {
 		t.Fatal(second, err)
 	}
-	value, err := tui.Input(t.Context(), "Text", tui.WithInput(in), tui.WithOutput(io.Discard))
+	terst.UseIO(t, in, io.Discard)
+	value, err := tui.Input(t.Context(), "Text")
 	if err != nil || value != "next" {
 		t.Fatal(value, err)
 	}
-	secret, err := tui.Password(t.Context(), "Secret", tui.WithInput(in), tui.WithOutput(io.Discard))
+	terst.UseIO(t, in, io.Discard)
+	secret, err := tui.Password(t.Context(), "Secret")
 	if err != nil || secret != "secret" {
 		t.Fatal(secret, err)
 	}
-	_, err = tui.Dropdown(t.Context(), "Last", []string{"one", "two"}, tui.WithInput(in), tui.WithOutput(io.Discard))
+	terst.UseIO(t, in, io.Discard)
+	_, err = tui.Dropdown(t.Context(), "Last", []string{"one", "two"})
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func ExampleMultichoice() {
+	tui.SetDefaultIO(strings.NewReader(" \x1b[B \r"), io.Discard)
+	defer tui.SetDefaultIO(os.Stdin, os.Stderr)
 	selected, err := tui.Multichoice(
 		context.Background(),
 		"Instances",
 		[]string{"api", "api", "worker"},
-		tui.WithInput(strings.NewReader(" \x1b[B \r")),
-		tui.WithOutput(io.Discard),
 		tui.WithHide(),
 	)
 	fmt.Println(selected, err)
@@ -300,26 +295,26 @@ func ExampleMultichoice() {
 }
 
 func ExampleMultichoiceKVK() {
+	tui.SetDefaultIO(strings.NewReader("\r"), io.Discard)
+	defer tui.SetDefaultIO(os.Stdin, os.Stderr)
 	selected, err := tui.MultichoiceKVK(
 		context.Background(),
 		"Protocols",
 		map[string]int{"http": 80, "https": 443},
 		tui.WithDefault("https"),
-		tui.WithInput(strings.NewReader("\r")),
-		tui.WithOutput(io.Discard),
 	)
 	fmt.Println(selected, err)
 	// Output: [https] <nil>
 }
 
 func ExampleMultichoiceKVV() {
+	tui.SetDefaultIO(strings.NewReader("\r"), io.Discard)
+	defer tui.SetDefaultIO(os.Stdin, os.Stderr)
 	selected, err := tui.MultichoiceKVV(
 		context.Background(),
 		"Protocols",
 		map[string]int{"http": 80, "https": 443},
 		tui.WithDefault("https"),
-		tui.WithInput(strings.NewReader("\r")),
-		tui.WithOutput(io.Discard),
 	)
 	fmt.Println(selected, err)
 	// Output: [443] <nil>
@@ -476,13 +471,13 @@ func (s *lazyExampleIO) Read(p []byte) (int, error) { <-s.ready; p[0] = '\r'; re
 
 func ExampleMultichoiceLazy() {
 	stream := &lazyExampleIO{ready: make(chan struct{})}
+	tui.SetDefaultIO(stream, stream)
+	defer tui.SetDefaultIO(os.Stdin, os.Stderr)
 	selected, err := tui.MultichoiceLazy(
 		context.Background(),
 		"Components",
 		values("api", "worker"),
 		tui.WithDefault("api"),
-		tui.WithInput(stream),
-		tui.WithOutput(stream),
 		tui.WithHide(),
 	)
 	fmt.Println(selected, err)

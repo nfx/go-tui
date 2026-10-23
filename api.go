@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"os"
 	"text/template"
 
 	"github.com/nfx/go-tui/internal/choice"
@@ -58,9 +57,12 @@ func Stderr() io.Writer {
 	return term.Default.StderrWriter()
 }
 
-// Deprecated: use [Stderr].
-func NewIO(ctx context.Context) (*term.ChanIO, error) {
-	return term.StartIO(ctx, os.Stderr)
+// SetDefaultIO replaces the input and output of all widgets, os.Stdin and
+// os.Stderr by default. A nil reader or writer keeps the current one. Call it
+// before widgets start: replacing the output stops the renderer that running
+// widgets share with [Stderr].
+func SetDefaultIO(in io.Reader, out io.Writer) {
+	term.Default.SetIO(in, out)
 }
 
 // WithOptions bundles options for reuse across widgets. Each member is applied
@@ -68,12 +70,6 @@ func NewIO(ctx context.Context) (*term.ChanIO, error) {
 // [ErrWrongWidget] only when the widget supports none of its members. Any
 // other error from a member, such as an invalid value, is returned as is.
 func WithOptions(o ...option.Opt) option.Opt { return option.WithOptions(o...) }
-
-// WithInput overrides the input source of an interactive widget.
-func WithInput(r io.Reader) option.Opt { return option.WithInput(r) }
-
-// WithOutput overrides the output destination of an interactive widget.
-func WithOutput(w io.Writer) option.Opt { return option.WithOutput(w) }
 
 // DefaultTheme returns an editable copy of the installed theme, preserving helpers and unset colors.
 func DefaultTheme() theme.Theme { return term.Default.CurrentTheme().Editable() }
@@ -150,7 +146,7 @@ type numberType = prompt.Numeric
 // Up/Down step integers by one and floats at the caret's decimal place.
 // Steps preserve fractional digits and reject overflow or invisible changes.
 //
-// Only [WithDefault], [WithAtLeast], [WithAtMost], [WithInput] and [WithOutput] apply.
+// Only [WithDefault], [WithAtLeast] and [WithAtMost] apply.
 // Bounds are inclusive: typed values outside them are rejected on Enter, and
 // Up/Down refuse to step past them.
 func Number[T numberType](ctx context.Context, label string, opts ...option.Opt) (T, error) {

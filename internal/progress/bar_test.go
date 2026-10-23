@@ -74,9 +74,8 @@ func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
 
+	terst.UseIO(t, cio, cio)
 	p, err := newStartedProgressBar(t.Context(), "download", 20,
-		option.WithInput(cio),
-		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			pb.now = func() time.Time { return now }
 			pb.redrawAt = start
@@ -143,9 +142,8 @@ func TestProgressbarTickRenders(t *testing.T) {
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
 
+	terst.UseIO(t, cio, cio)
 	p, err := newStartedProgressBar(t.Context(), "download", 20,
-		option.WithInput(cio),
-		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			pb.now = func() time.Time { return now }
 			pb.redrawAt = start
@@ -223,9 +221,8 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 	now := start
 	events := make(chan progressEvent, 16)
 
+	terst.UseIO(t, cio, cio)
 	p, err := newStartedProgressBar(t.Context(), "download", 20,
-		option.WithInput(cio),
-		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			pb.eventSink = func(ev progressEvent) {
 				events <- ev
@@ -291,9 +288,8 @@ func TestProgressbarDoneEmitsClosed(t *testing.T) {
 	now := start
 	events := make(chan progressEvent, 16)
 
+	terst.UseIO(t, cio, cio)
 	p, err := newStartedProgressBar(t.Context(), "sync", 2,
-		option.WithInput(cio),
-		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			pb.eventSink = func(ev progressEvent) {
 				events <- ev
@@ -402,9 +398,8 @@ func TestNewFileProgressReader(t *testing.T) {
 	ticks := make(chan time.Time, 1)
 	applied := false
 
+	terst.UseIO(t, cio, cio)
 	r, err := NewFileProgressReader(t.Context(), &statReader{data: []byte("hello world")}, "file",
-		option.WithInput(cio),
-		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			applied = true
 			pb.ticks = ticks
@@ -482,9 +477,10 @@ func TestFileProgressReaderLogsWithoutTTY(t *testing.T) {
 			previous := slog.Default()
 			slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
 			t.Cleanup(func() { slog.SetDefault(previous) })
+			terst.UseIO(t, nil, &out)
 			r, err := NewFileProgressReader(t.Context(), &progressSizedReader{
 				Reader: strings.NewReader(tc.data), size: tc.size,
-			}, "Download", option.WithOutput(&out))
+			}, "Download")
 			assert.NoError(t, err)
 			defer func() { assert.NoError(t, r.Close()) }()
 			var data bytes.Buffer
@@ -928,6 +924,7 @@ type fakeTerminal struct {
 func newFakeTerminal(t *testing.T, width int) fakeTerminal {
 	t.Helper()
 	ft := fakeTerminal{frames: make(terst.FrameWriter), restored: &atomic.Bool{}}
+	terst.UseIO(t, nil, ft.frames)
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	clock := &atomic.Int64{}
@@ -956,7 +953,7 @@ func newFakeTerminal(t *testing.T, width int) fakeTerminal {
 
 // options make a bar write to the terminal.
 func (ft fakeTerminal) options() []option.Opt {
-	return []option.Opt{option.WithOutput(ft.frames), ft.terminal}
+	return []option.Opt{ft.terminal}
 }
 
 // closeOnCleanup closes p after the test, receiving the final clear of a bar

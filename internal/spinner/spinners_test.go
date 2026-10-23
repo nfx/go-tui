@@ -42,6 +42,7 @@ func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*term.
 		close(cio.In)
 		close(cio.Out)
 	})
+	terst.UseIO(t, cio, cio)
 	return cio, func() {
 			go func() {
 				select {
@@ -50,8 +51,6 @@ func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*term.
 				}
 			}()
 		}, option.WithOptions(append(option.Opts{
-			option.WithInput(cio),
-			option.WithOutput(cio),
 			option.OpT(func(s *Spinners) error {
 				s.ticks = ticks
 				s.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
@@ -331,7 +330,8 @@ func TestSpinnersLogFallback(t *testing.T) {
 	assert.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, out.Close()) })
 
-	s, err := NewSpinners(t.Context(), option.WithOutput(out))
+	terst.UseIO(t, nil, out)
+	s, err := NewSpinners(t.Context())
 	assert.NoError(t, err)
 	defer s.Close()
 
@@ -498,8 +498,8 @@ func TestChanIO_Forward(t *testing.T) {
 		}()
 	}
 
+	terst.UseIO(t, nil, cio)
 	s, err := NewSpinners(cio.Ctx,
-		option.WithOutput(cio),
 		option.OpT(func(s *Spinners) error { //nolint:unparam // ..
 			s.ticks = ticks
 			return nil

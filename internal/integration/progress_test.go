@@ -44,23 +44,6 @@ func TestProgressbarUpdatesAfterCompletion(t *testing.T) {
 	term.waitRows(t, "after")
 }
 
-func TestProgressbarOnOutputKeepsBarOnShortTerminal(t *testing.T) {
-	term := newTerminal(t, 2)
-	term.height = 2
-	asciiTheme(t)
-	// a descriptor of its own skips the managed viewport, so the cursor takes
-	// the row below the frame and a stacked frame would scroll the bar off
-	out := &ttyWriter{fd: term.tty.Fd(), screen: term.screen}
-	p, err := tui.NewMaxProgressBar(t.Context(), "Copy", 4, tui.WithOutput(out))
-	assert.NoError(t, err)
-	p.Add(1)
-	term.waitRows(t, "Copy  25%  ...")
-	p.Add(1)
-	term.waitRows(t, "Copy  50%  ...")
-	assert.NoError(t, p.Close())
-	term.waitRows(t)
-}
-
 func TestProgressbarStacksOnTwoRowTerminal(t *testing.T) {
 	term := newTerminal(t, 2)
 	term.height = 2

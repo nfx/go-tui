@@ -19,7 +19,6 @@ import (
 
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/assert"
-	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
@@ -108,14 +107,14 @@ func (r FailReader) Read([]byte) (int, error) {
 	return 0, io.EOF
 }
 
-// Quiet configures a prompt without terminal: no input may be read, and the
-// buffer must stay empty.
-func Quiet(t *testing.T) option.Opt {
+// Quiet makes the default IO a prompt without terminal for the test: no input
+// may be read, and the output must stay empty.
+func Quiet(t *testing.T) {
 	t.Helper()
 	StrictOutput(t)
 	out := &bytes.Buffer{}
 	t.Cleanup(func() { assert.Equal(t, "", out.String()) })
-	return option.WithOptions(option.WithInput(FailReader{t}), option.WithOutput(out))
+	UseIO(t, FailReader{t}, out)
 }
 
 // KeepTheme restores the installed theme after a test.
@@ -393,11 +392,8 @@ func UseIO(t *testing.T, in io.Reader, out io.Writer) {
 	t.Helper()
 	term.Default.SetIO(in, out)
 	t.Cleanup(func() {
-		// a later UseIO of the same test may have restored os.Stderr already
-		closer, ok := term.Default.StderrWriter().(io.Closer)
-		if ok && closer != io.Closer(os.Stderr) {
-			assert.NoError(t, closer.Close())
-		}
+		// close the arbiter only: the test owns out
+		assert.NoError(t, term.Default.Close())
 		term.Default.SetIO(os.Stdin, os.Stderr)
 	})
 }

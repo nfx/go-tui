@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"math/big"
 	"reflect"
@@ -71,12 +70,6 @@ func (n *number[T]) format(d any) string {
 	}
 	return fmt.Sprint(d)
 }
-
-// SetReader routes prompt input through r.
-func (n *number[T]) SetReader(r io.Reader) { n.prompt.SetReader(r) }
-
-// SetWriter routes prompt output through w.
-func (n *number[T]) SetWriter(w io.Writer) { n.prompt.SetWriter(w) }
 
 // setMin records the inclusive lower limit.
 func (n *number[T]) setMin(b *numberBound) { n.min = b }

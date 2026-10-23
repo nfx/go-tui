@@ -6,7 +6,6 @@ package option
 import (
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/nfx/go-tui/internal/errs"
 )
@@ -34,22 +33,6 @@ func WithOptions(o ...Opt) Opt {
 		}
 		return nil
 	}
-}
-
-// WithInput overrides the input source of an interactive widget.
-func WithInput(r io.Reader) Opt {
-	return OpT(func(x IO) error {
-		x.SetReader(r)
-		return nil
-	})
-}
-
-// WithOutput overrides the output destination of an interactive widget.
-func WithOutput(w io.Writer) Opt {
-	return OpT(func(x IO) error {
-		x.SetWriter(w)
-		return nil
-	})
 }
 
 // WithDefault sets the default answer of a widget that accepts one.

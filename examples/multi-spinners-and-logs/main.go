@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
-	"io"
 	"log/slog"
 	"math/rand"
 	"os"
@@ -18,16 +16,7 @@ import (
 //nolint:funlen,gocognit,cyclop // example
 func main() {
 	ctx := context.Background()
-	// without a terminal, spinner stages and logs go to plain stderr via slog
-	var w io.Writer = os.Stderr
-	cio, err := tui.NewIO(ctx) //nolint:all // ...
-	if err == nil {
-		w = cio
-	} else if !errors.Is(err, tui.ErrNoTTY) {
-		panic(err)
-	}
-
-	s, err := tui.NewSpinners(ctx, tui.WithOutput(w))
+	s, err := tui.NewSpinners(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -56,7 +45,7 @@ func main() {
 
 	// set global logger with custom options
 	slog.SetDefault(slog.New(
-		tint.NewHandler(w, &tint.Options{
+		tint.NewTextHandler(tui.Stderr(), &tint.Options{
 			Level:      slog.LevelDebug,
 			TimeFormat: time.Kitchen,
 		}),
@@ -98,7 +87,7 @@ func main() {
 		}
 	}()
 
-	// tui.Confirm(ctx, "Do you want to continue?", tui.WithOutput(w))
+	// tui.Confirm(ctx, "Do you want to continue?")
 
 	<-done
 }

@@ -119,6 +119,31 @@ func (m *multichoice) finishLoading() error {
 	return nil
 }
 
+// addBatch coalesces queued arrivals into one frame. Limit each batch to the
+// queue capacity plus the first arrival so keys and cancellation get a turn
+// even when the producer continuously refills the queue.
+func (m *multichoice) addBatch(arrivals <-chan itPair, pair itPair, more bool) (bool, error) {
+	for n := 0; ; n++ {
+		if !more {
+			return true, m.finishLoading()
+		}
+		if pair.err != nil {
+			return false, fmt.Errorf("producer: %w", pair.err)
+		}
+		if err := m.addItem(pair.item); err != nil {
+			return false, err
+		}
+		if n == cap(arrivals) {
+			return false, nil
+		}
+		select {
+		case pair, more = <-arrivals:
+		default:
+			return false, nil
+		}
+	}
+}
+
 // run emits an answer only after successful interaction and cleanup.
 func (m *multichoice) run(ctx context.Context, o ...option.Opt) error {
 	if err := m.prepare(o); err != nil {
@@ -212,18 +237,12 @@ func (m *multichoice) readLoop(ctx context.Context, tio *term.IO, frame *bytes.B
 			return ctx.Err()
 		case <-tio.OnResize:
 		case pair, ok := <-arrivals:
-			if !ok {
+			exhausted, err := m.addBatch(arrivals, pair, ok)
+			if err != nil {
+				return err
+			}
+			if exhausted {
 				arrivals = nil
-				if err := m.finishLoading(); err != nil {
-					return err
-				}
-			} else {
-				if pair.err != nil {
-					return fmt.Errorf("producer: %w", pair.err)
-				}
-				if err := m.addItem(pair.item); err != nil {
-					return err
-				}
 			}
 		case ev, ok := <-keys:
 			if !ok {

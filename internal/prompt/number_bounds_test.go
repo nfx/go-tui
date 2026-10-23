@@ -12,6 +12,7 @@ import (
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/terst"
 )
 
 func TestNumberBounds(t *testing.T) {
@@ -67,12 +68,11 @@ func TestNumberInvalidBounds(t *testing.T) {
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 	_, _, err = runNumber[float32](t, "1\r", WithAtMost(math.MaxFloat64))
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
+	terst.UseIO(t, strings.NewReader(""), io.Discard)
 	_, err = Input(
 		t.Context(),
 		"x",
 		WithAtLeast(1),
-		option.WithInput(strings.NewReader("")),
-		option.WithOutput(io.Discard),
 	)
 	assert.ErrorIs(t, err, errs.ErrWrongWidget)
 }

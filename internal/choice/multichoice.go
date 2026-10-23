@@ -83,17 +83,6 @@ func newMultichoice(ctx context.Context) *multichoice {
 	}
 }
 
-// SetReader supplies the input used when the prompt acquires its terminal.
-func (m *multichoice) SetReader(r io.Reader) { m.in = r }
-
-// SetWriter unwraps Tui output so prompts share its managed renderer.
-func (m *multichoice) SetWriter(w io.Writer) {
-	if t, ok := w.(*term.Tui); ok {
-		w = t.Out
-	}
-	m.out = w
-}
-
 // SetHide suppresses the final answer while retaining the interactive prompt.
 func (m *multichoice) SetHide() { m.Hide = true }
 
