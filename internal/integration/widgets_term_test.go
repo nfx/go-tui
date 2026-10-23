@@ -11,6 +11,7 @@ import (
 	"github.com/nfx/go-tui/internal/tcommon"
 	"github.com/nfx/go-tui/internal/term"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -40,6 +41,11 @@ func TestSharedInputState_CancelledClosedReaderReleased(t *testing.T) {
 	<-in.Started
 	cancel()
 	tio.AwaitReader()
+	if runtime.GOOS == "windows" {
+		// closing a pipe read end blocks on Windows while a Read is in flight,
+		// so unblock the pending read with EOF from the write end first.
+		assert.NoError(t, pw.Close())
+	}
 	assert.NoError(t, pr.Close())
 	<-tio.Input.Read.Done
 	assert.Error(t, tio.Input.Read.Event.Err)
