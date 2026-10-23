@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"testing"
-	"time"
 
 	"github.com/nfx/go-tui/internal/ansi"
 	"github.com/nfx/go-tui/internal/term"
@@ -33,12 +32,8 @@ func TestDropdownPressKeyCancelledReadKeepsNextInput(t *testing.T) {
 	}()
 	in.AwaitRead()
 	cancel()
-	select {
-	case err := <-finished:
-		assert.ErrorIs(t, err, context.Canceled)
-	case <-time.After(time.Second):
-		t.Fatal("cancelled dropdown did not return")
-	}
+	err := terst.Recv(t, finished)
+	assert.ErrorIs(t, err, context.Canceled)
 	in.Send("x", terst.KeyEnter)
 	assert.Equal(t, 'x', in.NextKey())
 }

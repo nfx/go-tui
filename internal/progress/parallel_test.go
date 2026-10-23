@@ -220,7 +220,7 @@ func TestNewParallelProgressBarPropagatesCloseError(t *testing.T) {
 }
 
 func TestThemedParallelProgressCompletes(t *testing.T) {
-	terst.UseTheme(t, terst.ASCIITheme(false))
+	terst.UseASCII(t)
 	started := make(chan int, 4)
 	gates := []chan struct{}{make(chan struct{}), make(chan struct{}), make(chan struct{}), make(chan struct{})}
 	r := runParallel(t.Context(), t, []int{0, 1, 2, 3}, func(v int) error {
@@ -234,7 +234,7 @@ func TestThemedParallelProgressCompletes(t *testing.T) {
 	receiveN(t, started, 2)
 	r.tick(time.Second)
 	assert.Equal(t, frameOf("build  50%  "+strings.Repeat("=", 13)+">"+strings.Repeat("-", 13),
-		"2 / 4 items | 0.00 items/s"), <-r.frames)
+		"2 / 4 items | 0.00 items/s"), r.frames.Next())
 	close(gates[2])
 	close(gates[3])
 	out, err := r.wait(t)
@@ -245,7 +245,7 @@ func TestThemedParallelProgressCompletes(t *testing.T) {
 }
 
 func TestThemedParallelProgressSharesOneRow(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Symbols.BarEmpty = "_"
 	terst.UseTheme(t, th)
 	var active, maxActive atomic.Int64
@@ -265,12 +265,12 @@ func TestThemedParallelProgressSharesOneRow(t *testing.T) {
 	}, WithWorkers(3))
 	receiveN(t, all, 1)
 	// a theme installed while the workers run does not reach the bar
-	later := terst.ASCIITheme(false)
+	later := terst.ASCIITheme()
 	later.Symbols.BarEmpty = "."
 	assert.NoError(t, term.Default.InstallTheme(later))
 	r.tick(time.Second)
 	// three workers, one bar in the theme captured at the start
-	assert.Equal(t, frameOf("build  0%   "+strings.Repeat("_", 27), "0 / 6 items | 0.00 items/s"), <-r.frames)
+	assert.Equal(t, frameOf("build  0%   "+strings.Repeat("_", 27), "0 / 6 items | 0.00 items/s"), r.frames.Next())
 	close(gate)
 	out, err := r.wait(t)
 	assert.NoError(t, err)
@@ -279,7 +279,7 @@ func TestThemedParallelProgressSharesOneRow(t *testing.T) {
 }
 
 func TestThemedParallelProgressFirstFailure(t *testing.T) {
-	terst.UseTheme(t, terst.ASCIITheme(false))
+	terst.UseASCII(t)
 	fail := errors.New("fail")
 	started := make(chan int, 3)
 	gate0, gate1 := make(chan struct{}), make(chan struct{})
@@ -299,7 +299,7 @@ func TestThemedParallelProgressFirstFailure(t *testing.T) {
 	}, WithWorkers(2))
 	receiveN(t, started, 2)
 	r.tick(time.Second)
-	assert.Equal(t, frameOf("build  0%   "+strings.Repeat("-", 27), "0 / 3 items | 0.00 items/s"), <-r.frames)
+	assert.Equal(t, frameOf("build  0%   "+strings.Repeat("-", 27), "0 / 3 items | 0.00 items/s"), r.frames.Next())
 	close(gate1)
 	close(gate0)
 	out, err := r.wait(t)
@@ -311,7 +311,7 @@ func TestThemedParallelProgressFirstFailure(t *testing.T) {
 }
 
 func TestThemedParallelProgressCancel(t *testing.T) {
-	terst.UseTheme(t, terst.ASCIITheme(false))
+	terst.UseASCII(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	started := make(chan int, 2)
@@ -322,7 +322,7 @@ func TestThemedParallelProgressCancel(t *testing.T) {
 	}, WithWorkers(1))
 	receiveN(t, started, 1)
 	r.tick(time.Second)
-	assert.Equal(t, frameOf("build  0%   "+strings.Repeat("-", 27), "0 / 2 items | 0.00 items/s"), <-r.frames)
+	assert.Equal(t, frameOf("build  0%   "+strings.Repeat("-", 27), "0 / 2 items | 0.00 items/s"), r.frames.Next())
 	cancel()
 	close(gate)
 	out, err := r.wait(t)

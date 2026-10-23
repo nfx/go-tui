@@ -13,7 +13,6 @@ import (
 
 	"github.com/nfx/go-tui/internal/errs"
 	"github.com/nfx/go-tui/internal/option"
-	"github.com/nfx/go-tui/internal/term"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
@@ -54,9 +53,7 @@ func runValidated(t *testing.T, password bool, keys string, o ...option.Opt) (st
 	i.In = in
 	var out bytes.Buffer
 	i.Out = &out
-	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{In: in, Out: out, Width: 40, Height: 3, Restore: func() error { return nil }}, nil
-	}
+	i.makeTermIO = terst.FixedTermIO(40, 3)
 	if err := option.Opts(o).Apply(i); err != nil {
 		return "", "", err
 	}

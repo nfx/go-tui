@@ -62,34 +62,18 @@ func (p *Progressbar) row(width int, now time.Time) (ansi.Text, error) {
 }
 
 func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-
-	cio := &term.ChanIO{
-		Ctx: ctx,
-		In:  make(chan string),
-		Out: make(chan string, 4),
-	}
+	_, frames := terst.UseFrames(t)
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
 
-	terst.UseIO(t, cio, cio)
 	p, err := newStartedProgressBar(t.Context(), "download", 20,
 		option.OpT(func(pb *Progressbar) error {
 			pb.now = func() time.Time { return now }
 			pb.redrawAt = start
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-				return &term.IO{
-					In:      in,
-					Out:     out,
-					Width:   40,
-					Height:  1,
-					Restore: func() error { return nil },
-				}, nil
-			}
+			pb.makeTermIO = terst.FixedTermIO(40, 1)
 			return nil
 		}),
 	)
@@ -101,51 +85,26 @@ func TestProgressbarTickLeavesAutowrapColumnFree(t *testing.T) {
 	p.Add(10)
 	now = start.Add(time.Second)
 
-	select {
-	case ticks <- now:
-	case <-time.After(time.Second):
-		t.Fatalf("tick not delivered")
-	}
+	terst.Send(t, ticks, now)
 
-	var output string
-	select {
-	case output = <-cio.Out:
-	case <-time.After(time.Second):
-		t.Fatalf("no progress output")
-	}
+	output := frames.Next()
 
 	assert.Equal(t, 39, ansi.Text(output).Width())
 }
 
 func TestProgressbarTickRenders(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-
-	cio := &term.ChanIO{
-		Ctx: ctx,
-		In:  make(chan string),
-		Out: make(chan string, 4),
-	}
+	_, frames := terst.UseFrames(t)
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
 
-	terst.UseIO(t, cio, cio)
 	p, err := newStartedProgressBar(t.Context(), "download", 20,
 		option.OpT(func(pb *Progressbar) error {
 			pb.now = func() time.Time { return now }
 			pb.redrawAt = start
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-				return &term.IO{
-					In:      in,
-					Out:     out,
-					Width:   40,
-					Height:  1,
-					Restore: func() error { return nil },
-				}, nil
-			}
+			pb.makeTermIO = terst.FixedTermIO(40, 1)
 			return nil
 		}),
 	)
@@ -157,18 +116,9 @@ func TestProgressbarTickRenders(t *testing.T) {
 	p.Add(10)
 	now = start.Add(time.Second)
 
-	select {
-	case ticks <- now:
-	case <-time.After(time.Second):
-		t.Fatalf("tick not delivered")
-	}
+	terst.Send(t, ticks, now)
 
-	var output string
-	select {
-	case output = <-cio.Out:
-	case <-time.After(time.Second):
-		t.Fatalf("no progress output")
-	}
+	output := frames.Next()
 
 	assert.NotContains(t, output, "\x1b[1A\r\x1b[K\r")
 	// a terminal one row high has no room for the hint row, so the metrics
@@ -178,38 +128,21 @@ func TestProgressbarTickRenders(t *testing.T) {
 	p.Add(5)
 	now = start.Add(2 * time.Second)
 
-	select {
-	case ticks <- now:
-	case <-time.After(time.Second):
-		t.Fatalf("tick not delivered")
-	}
+	terst.Send(t, ticks, now)
 
-	var second string
-	select {
-	case second = <-cio.Out:
-	case <-time.After(time.Second):
-		t.Fatalf("no second progress output")
-	}
+	second := frames.Next()
 
 	assert.Contains(t, second, "\x1b[1A\r\x1b[K\r")
 	assert.Contains(t, terst.StripSGR(second), "download  75% ")
 }
 
 func TestProgressbarEmitsStructuredEvents(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-
-	cio := &term.ChanIO{
-		Ctx: ctx,
-		In:  make(chan string),
-		Out: make(chan string, 4),
-	}
+	_, frames := terst.UseFrames(t)
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
 	events := make(chan progressEvent, 16)
 
-	terst.UseIO(t, cio, cio)
 	p, err := newStartedProgressBar(t.Context(), "download", 20,
 		option.OpT(func(pb *Progressbar) error {
 			pb.eventSink = func(ev progressEvent) {
@@ -219,15 +152,7 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 			pb.redrawAt = start
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-				return &term.IO{
-					In:      in,
-					Out:     out,
-					Width:   40,
-					Height:  1,
-					Restore: func() error { return nil },
-				}, nil
-			}
+			pb.makeTermIO = terst.FixedTermIO(40, 1)
 			return nil
 		}),
 	)
@@ -241,16 +166,8 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 	p.Add(10)
 
 	now = start.Add(time.Second)
-	select {
-	case ticks <- now:
-	case <-time.After(time.Second):
-		t.Fatalf("tick not delivered")
-	}
-	select {
-	case <-cio.Out:
-	case <-time.After(time.Second):
-		t.Fatalf("no progress output")
-	}
+	terst.Send(t, ticks, now)
+	frames.Next()
 	metrics, ok := terst.Recv(t, events).(progressUpdate)
 	assert.True(t, ok)
 	assert.Equal(t, int64(1), metrics.Remaining)
@@ -263,20 +180,12 @@ func TestProgressbarEmitsStructuredEvents(t *testing.T) {
 }
 
 func TestProgressbarDoneEmitsClosed(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-
-	cio := &term.ChanIO{
-		Ctx: ctx,
-		In:  make(chan string),
-		Out: make(chan string, 4),
-	}
+	_, frames := terst.UseFrames(t)
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := start
 	events := make(chan progressEvent, 16)
 
-	terst.UseIO(t, cio, cio)
 	p, err := newStartedProgressBar(t.Context(), "sync", 2,
 		option.OpT(func(pb *Progressbar) error {
 			pb.eventSink = func(ev progressEvent) {
@@ -286,15 +195,7 @@ func TestProgressbarDoneEmitsClosed(t *testing.T) {
 			pb.redrawAt = start
 			pb.ticks = ticks
 			pb.ticker = time.NewTicker(time.Hour)
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-				return &term.IO{
-					In:      in,
-					Out:     out,
-					Width:   40,
-					Height:  1,
-					Restore: func() error { return nil },
-				}, nil
-			}
+			pb.makeTermIO = terst.FixedTermIO(40, 1)
 			return nil
 		}),
 	)
@@ -306,16 +207,8 @@ func TestProgressbarDoneEmitsClosed(t *testing.T) {
 	p.Add(2)
 
 	now = start.Add(time.Second)
-	select {
-	case ticks <- now:
-	case <-time.After(time.Second):
-		t.Fatalf("tick not delivered")
-	}
-	select {
-	case <-cio.Out:
-	case <-time.After(time.Second):
-		t.Fatalf("no progress output")
-	}
+	terst.Send(t, ticks, now)
+	frames.Next()
 	_, ok = terst.Recv(t, events).(progressUpdate)
 	assert.True(t, ok)
 	closed, ok := terst.Recv(t, events).(progressClosed)
@@ -375,18 +268,10 @@ func (r *statReader) Stat() (os.FileInfo, error) {
 }
 
 func TestNewFileProgressReader(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-
-	cio := &term.ChanIO{
-		Ctx: ctx,
-		In:  make(chan string),
-		Out: make(chan string, 4),
-	}
+	terst.UseFrames(t)
 	ticks := make(chan time.Time, 1)
 	applied := false
 
-	terst.UseIO(t, cio, cio)
 	r, err := NewFileProgressReader(t.Context(), &statReader{data: []byte("hello world")}, "file",
 		option.OpT(func(pb *Progressbar) error {
 			applied = true
@@ -395,15 +280,7 @@ func TestNewFileProgressReader(t *testing.T) {
 			pb.increments = make(chan int64, 8)
 			pb.now = func() time.Time { return time.Now() }
 			pb.redrawAt = pb.now()
-			pb.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-				return &term.IO{
-					In:      in,
-					Out:     out,
-					Width:   30,
-					Height:  1,
-					Restore: func() error { return nil },
-				}, nil
-			}
+			pb.makeTermIO = terst.FixedTermIO(30, 1)
 			return nil
 		}),
 	)
@@ -642,12 +519,8 @@ func TestProgressbarCloseWaitsForBackgroundStop(t *testing.T) {
 		t.Fatalf("expected close to block for cleanup, got %v", err)
 	case <-time.After(restoreDelay / 4):
 	}
-	select {
-	case err = <-closeDone:
-		assert.NoError(t, err)
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for close")
-	}
+	err = terst.Recv(t, closeDone)
+	assert.NoError(t, err)
 	assert.True(t, time.Since(start) >= restoreDelay)
 }
 
@@ -786,12 +659,8 @@ func TestProgressBarWithContextCancelBound(t *testing.T) {
 		closeDone <- p.Close()
 	}()
 
-	select {
-	case err := <-closeDone:
-		assert.NoError(t, err)
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("p.Close() timed out because p.cancel was not bound to configured context")
-	}
+	err = terst.Recv(t, closeDone)
+	assert.NoError(t, err)
 
 	select {
 	case <-p.Ctx.Done():
@@ -826,12 +695,8 @@ func TestNewFileProgressReaderWithContextCancelBound(t *testing.T) {
 		closeDone <- w.Close()
 	}()
 
-	select {
-	case err := <-closeDone:
-		assert.NoError(t, err)
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("w.Close() timed out because p.cancel was not bound to configured context")
-	}
+	err = terst.Recv(t, closeDone)
+	assert.NoError(t, err)
 
 	select {
 	case <-w.p.Ctx.Done():
@@ -851,11 +716,7 @@ func TestProgressbarAddAfterStoppedDoesNotBlock(t *testing.T) {
 	}
 	done := make(chan struct{})
 	go func() { p.Add(1); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("Add blocked after renderer stopped")
-	}
+	terst.Recv(t, done)
 }
 
 // themedBar is a bar of the given state rendering through th to a plain
@@ -872,7 +733,7 @@ func themedBar(t *testing.T, th theme.Theme, state progressState) *Progressbar {
 
 // compactTheme is the ASCII theme with the single-row progress layout.
 func compactTheme() theme.Theme {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Progress.Compact = true
 	return th
 }
@@ -896,7 +757,7 @@ func halfDone(now time.Time) progressState {
 // the given time since the start; each write is one receive from frames.
 // restored reports a released terminal.
 type fakeTerminal struct {
-	frames   terst.FrameWriter
+	frames   *terst.Output
 	tick     func(time.Duration)
 	restored *atomic.Bool
 	terminal option.Opt
@@ -905,7 +766,7 @@ type fakeTerminal struct {
 // newFakeTerminal is a terminal width columns wide.
 func newFakeTerminal(t *testing.T, width int) fakeTerminal {
 	t.Helper()
-	ft := fakeTerminal{frames: make(terst.FrameWriter), restored: &atomic.Bool{}}
+	ft := fakeTerminal{frames: terst.NewOutput(t), restored: &atomic.Bool{}}
 	terst.UseIO(t, nil, ft.frames)
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
@@ -924,11 +785,7 @@ func newFakeTerminal(t *testing.T, width int) fakeTerminal {
 	ft.tick = func(at time.Duration) {
 		t.Helper()
 		clock.Store(int64(at))
-		select {
-		case ticks <- time.Time{}:
-		case <-time.After(time.Second):
-			t.Fatal("tick not delivered")
-		}
+		terst.Send(t, ticks, time.Time{})
 	}
 	return ft
 }
@@ -938,17 +795,11 @@ func (ft fakeTerminal) options() []option.Opt {
 	return []option.Opt{ft.terminal}
 }
 
-// closeOnCleanup closes p after the test, receiving the final clear of a bar
-// the test left open.
+// closeOnCleanup closes p after the test.
 func (ft fakeTerminal) closeOnCleanup(t *testing.T, p *Progressbar) {
 	t.Helper()
 	t.Cleanup(func() {
-		go func() {
-			for range ft.frames {
-			}
-		}()
 		_ = p.Close() //nolint:errcheck // test cleanup; tests check their own errors
-		close(ft.frames)
 	})
 }
 
@@ -958,7 +809,7 @@ func themedProgress(
 	t *testing.T,
 	th theme.Theme,
 	size int64,
-) (*Progressbar, terst.FrameWriter, func(time.Duration), *atomic.Bool) {
+) (*Progressbar, *terst.Output, func(time.Duration), *atomic.Bool) {
 	t.Helper()
 	terst.UseTheme(t, th)
 	ft := newFakeTerminal(t, 40)
@@ -968,22 +819,11 @@ func themedProgress(
 	return p, ft.frames, ft.tick, ft.restored
 }
 
-// untilProgressStopped returns everything the bar writes until its loop
-// ends, failing the test unless it ends within a second.
-func untilProgressStopped(t *testing.T, p *Progressbar, frames terst.FrameWriter) string {
+// untilProgressStopped returns everything the bar writes until its loop ends.
+func untilProgressStopped(t *testing.T, p *Progressbar, frames *terst.Output) string {
 	t.Helper()
-	var out strings.Builder
-	timeout := time.After(time.Second)
-	for {
-		select {
-		case f := <-frames:
-			out.WriteString(f)
-		case <-p.stopped:
-			return out.String()
-		case <-timeout:
-			t.Fatal("progress bar did not stop")
-		}
-	}
+	terst.Recv(t, p.stopped)
+	return frames.Unread()
 }
 
 // frameOf is a frame of rows as the bar writes it.
@@ -1023,18 +863,8 @@ func runParallel(ctx context.Context, t *testing.T, items []int, yield func(int)
 // wait returns everything written until the run ends, and its result.
 func (r parallelRun) wait(t *testing.T) (string, error) {
 	t.Helper()
-	var out strings.Builder
-	timeout := time.After(time.Second)
-	for {
-		select {
-		case f := <-r.frames:
-			out.WriteString(f)
-		case err := <-r.done:
-			return out.String(), err
-		case <-timeout:
-			t.Fatal("parallel run did not end")
-		}
-	}
+	err := terst.Recv(t, r.done)
+	return r.frames.Unread(), err
 }
 
 // openedWithin blocks a worker until gate closes, failing its item after a
@@ -1052,11 +882,7 @@ func openedWithin(gate <-chan struct{}) error {
 func receiveN[T any](t *testing.T, ch <-chan T, n int) {
 	t.Helper()
 	for range n {
-		select {
-		case <-ch:
-		case <-time.After(time.Second):
-			t.Fatal("not received")
-		}
+		terst.Recv(t, ch)
 	}
 }
 
@@ -1139,12 +965,9 @@ func TestWithOptionsPropagatesInvalidValues(t *testing.T) {
 }
 
 func TestNewProgressbarUsesDefaultIO(t *testing.T) {
-	prevIn := term.Default.Input()
-	prevOut := term.Default.RawOutput()
-	t.Cleanup(func() { term.Default.SetIO(prevIn, prevOut) })
 	in := bytes.NewBufferString("in")
 	out := &bytes.Buffer{}
-	term.Default.SetIO(in, out)
+	terst.UseIO(t, in, out)
 
 	p := newProgressbar(t.Context())
 	assert.Equal(t, in, p.In)

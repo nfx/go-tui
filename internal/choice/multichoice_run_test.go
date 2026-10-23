@@ -68,15 +68,7 @@ func TestMultichoiceRunNoSpace(t *testing.T) {
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one"}
 	m.out = io.Discard
-	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{
-			In:      in,
-			Out:     out,
-			Width:   10,
-			Height:  2,
-			Restore: func() error { return nil },
-		}, nil
-	}
+	m.makeTermIO = terst.FixedTermIO(10, 2)
 	err := m.run(m.Ctx)
 	assert.ErrorIs(t, err, errs.ErrNoSpace)
 }
@@ -87,15 +79,7 @@ func TestMultichoiceRunHandlesKeys(t *testing.T) {
 	m.Items = []any{"one", "two", "three"}
 	m.in = reader
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{
-			In:      in,
-			Out:     out,
-			Width:   40,
-			Height:  6,
-			Restore: func() error { return nil },
-		}, nil
-	}
+	m.makeTermIO = terst.FixedTermIO(40, 6)
 	assert.NoError(t, m.run(m.Ctx))
 }
 
@@ -105,15 +89,7 @@ func TestMultichoiceRunIgnoresSpecialKeys(t *testing.T) {
 	m.Items = []any{"one", "two", "three"}
 	m.in = reader
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{
-			In:      in,
-			Out:     out,
-			Width:   40,
-			Height:  6,
-			Restore: func() error { return nil },
-		}, nil
-	}
+	m.makeTermIO = terst.FixedTermIO(40, 6)
 	assert.NoError(t, m.run(m.Ctx))
 	assert.Equal(t, []bool{false, true, false}, m.selected)
 }
@@ -125,15 +101,7 @@ func TestMultichoiceRunContextDone(t *testing.T) {
 	m.Items = []any{"one"}
 	m.in = terst.NewKeys(t, terst.KeyEnter)
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{
-			In:      in,
-			Out:     out,
-			Width:   40,
-			Height:  6,
-			Restore: func() error { return nil },
-		}, nil
-	}
+	m.makeTermIO = terst.FixedTermIO(40, 6)
 	err := m.run(m.Ctx)
 	assert.Error(t, err)
 }
@@ -143,15 +111,7 @@ func TestMultichoiceRunCoalescedKeys(t *testing.T) {
 	m.Items = []any{"one"}
 	m.in = terst.NewKeys(t, "ab", terst.KeyEnter)
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{
-			In:      in,
-			Out:     out,
-			Width:   40,
-			Height:  6,
-			Restore: func() error { return nil },
-		}, nil
-	}
+	m.makeTermIO = terst.FixedTermIO(40, 6)
 	assert.NoError(t, m.run(m.Ctx))
 }
 
@@ -160,15 +120,7 @@ func TestMultichoiceRunReadError(t *testing.T) {
 	m.Items = []any{"one"}
 	m.in = bytes.NewBuffer(nil)
 	m.out = &bytes.Buffer{}
-	m.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{
-			In:      in,
-			Out:     out,
-			Width:   40,
-			Height:  6,
-			Restore: func() error { return nil },
-		}, nil
-	}
+	m.makeTermIO = terst.FixedTermIO(40, 6)
 	err := m.run(m.Ctx)
 	assert.Error(t, err)
 }
@@ -177,7 +129,7 @@ func TestMultichoiceRunRerendersOnResize(t *testing.T) {
 	keys, typing := io.Pipe()
 	t.Cleanup(func() { _ = typing.Close() }) //nolint:errcheck // test cleanup
 	resized := make(chan struct{})
-	out := &terst.SyncBuffer{}
+	out := terst.NewOutput(t)
 	var tio *term.IO
 	m := newMultichoice(t.Context())
 	m.Items = []any{"one", "two", "three", "four", "five", "six"}
@@ -196,25 +148,17 @@ func TestMultichoiceRunRerendersOnResize(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() { done <- m.run(m.Ctx) }()
-	waitBufferContains(t, out, "2 more")
+	out.AwaitOutput("2 more")
 
 	// shrink the terminal without pressing a key, to two rows and the count
 	tio.Height = 5
-	select {
-	case resized <- struct{}{}:
-	case <-time.After(time.Second):
-		t.Fatal("resize not delivered")
-	}
-	waitBufferContains(t, out, "4 more")
+	terst.Send(t, resized, struct{}{})
+	out.AwaitOutput("4 more")
 
 	_, err := typing.Write([]byte{term.KeyEnter})
 	assert.NoError(t, err)
-	select {
-	case err := <-done:
-		assert.NoError(t, err)
-	case <-time.After(time.Second):
-		t.Fatal("multichoice did not return after Enter")
-	}
+	err = terst.Recv(t, done)
+	assert.NoError(t, err)
 }
 
 func TestMultichoiceRunReadsPendingEnter(t *testing.T) {
@@ -227,12 +171,8 @@ func TestMultichoiceRunReadsPendingEnter(t *testing.T) {
 	assert.NoError(t, err)
 	done := make(chan error, 1)
 	go func() { done <- m.run(m.Ctx) }()
-	select {
-	case err := <-done:
-		assert.NoError(t, err)
-	case <-time.After(time.Second):
-		t.Fatal("Enter left in pending was not read")
-	}
+	err = terst.Recv(t, done)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, m.active)
 }
 
@@ -245,12 +185,8 @@ func TestMultichoiceRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 	go func() { finished <- m.run(m.Ctx) }()
 	in.AwaitRead()
 	cancel()
-	select {
-	case err := <-finished:
-		assert.ErrorIs(t, err, context.Canceled)
-	case <-time.After(time.Second):
-		t.Fatal("cancelled multichoice did not return")
-	}
+	err := terst.Recv(t, finished)
+	assert.ErrorIs(t, err, context.Canceled)
 	// the blocked read completes only now, after its prompt is gone
 	in.Send("x", terst.KeyEnter)
 	assert.Equal(t, 'x', in.NextKey())
@@ -315,7 +251,7 @@ func TestMultichoiceCancelledPasteDiscardsPartialUpdate(t *testing.T) {
 	defer cancel()
 	in := newPromptReadNotifier(input)
 	m := newPipeMultichoice(ctx, in)
-	m.out = &terst.SyncBuffer{}
+	m.out = terst.NewOutput(t)
 	done := make(chan error, 1)
 	go func() { done <- m.run(m.Ctx) }()
 	waitPromptRead(t, in)
@@ -326,13 +262,9 @@ func TestMultichoiceCancelledPasteDiscardsPartialUpdate(t *testing.T) {
 	// Wait until the opening frame is decoded and the payload read is blocked.
 	waitPromptRead(t, in)
 	cancel()
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatal(err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("cancel blocked")
+	err = terst.Recv(t, done)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
 	}
 	if m.typed != "" {
 		t.Fatal("partial payload applied")
@@ -345,13 +277,9 @@ func TestMultichoiceCancelledPasteDiscardsPartialUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("handoff blocked")
+	err = terst.Recv(t, done)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(next.indices(), []int{0}) || next.typed != "" {
 		t.Fatal(next.indices(), next.typed)
@@ -457,7 +385,7 @@ func TestMultichoiceLazyPublicLoading(t *testing.T) {
 	defer func() { assert.NoError(t, input.Close()) }()
 	defer func() { assert.NoError(t, typing.Close()) }()
 	arrivals := make(chan string)
-	out := &terst.SyncBuffer{}
+	out := terst.NewOutput(t)
 	seq := func(yield func(string, error) bool) {
 		for item := range arrivals {
 			if !yield(item, nil) {
@@ -478,23 +406,23 @@ func TestMultichoiceLazyPublicLoading(t *testing.T) {
 		result <- got
 		failure <- err
 	}()
-	waitBufferContains(t, out, "Lazy")
+	out.AwaitOutput("Lazy")
 	arrivals <- "api"
-	waitBufferContains(t, out, "○ api")
+	out.AwaitOutput("○ api")
 	if _, err := typing.Write([]byte{'\r'}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := typing.Write([]byte{'x'}); err != nil {
 		t.Fatal(err)
 	}
-	waitBufferContains(t, out, "No matches")
+	out.AwaitOutput("No matches")
 	if _, err := typing.Write([]byte{0x7f}); err != nil {
 		t.Fatal(err)
 	}
-	waitBufferContains(t, out, "○ api")
+	out.AwaitOutput("○ api")
 	arrivals <- "worker"
 	close(arrivals)
-	waitBufferContains(t, out, "◉ api")
+	out.AwaitOutput("◉ api")
 	select {
 	case err := <-failure:
 		t.Fatalf("queued Enter confirmed after loading: %v", err)
@@ -503,13 +431,9 @@ func TestMultichoiceLazyPublicLoading(t *testing.T) {
 	if _, err := typing.Write([]byte{'\r'}); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case err := <-failure:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("fresh Enter failed")
+	err := terst.Recv(t, failure)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if got := <-result; !reflect.DeepEqual(got, []string{"api"}) {
 		t.Fatal(got)
@@ -570,20 +494,14 @@ func TestMultichoiceProducerStopsBlockedPublication(t *testing.T) {
 	<-started
 	// No consumer can drain this bounded queue; cancellation must unblock yield.
 	cancel()
-	select {
-	case <-stopped:
-	case <-time.After(time.Second):
-		t.Fatal("yield did not return false")
-	}
+	terst.Recv(t, stopped)
 	if len(publication) > 16 {
 		t.Fatal("unbounded queue")
 	}
 }
 
 func TestMultichoicePasteModeLifetime(t *testing.T) {
-	original := term.InputChecker
-	term.InputChecker = func(int) bool { return true }
-	t.Cleanup(func() { term.InputChecker = original })
+	terst.Swap(t, &term.InputChecker, func(int) bool { return true })
 	for _, keys := range []string{"\r", "\x03"} {
 		var out strings.Builder
 		in := &terst.MockDescriptor{Reader: strings.NewReader(keys), FD: 1}
@@ -671,7 +589,7 @@ func TestMultichoiceLegacyHandoffPreservesPasteFraming(t *testing.T) {
 			})
 			ctx, stop := context.WithTimeout(t.Context(), time.Second)
 			defer stop()
-			out := &terst.SyncBuffer{}
+			out := terst.NewOutput(t)
 			done := make(chan promptChoiceResult, 1)
 			terst.UseIO(t, in, out)
 			go func() {
@@ -682,7 +600,7 @@ func TestMultichoiceLegacyHandoffPreservesPasteFraming(t *testing.T) {
 				)
 				done <- promptChoiceResult{items, err}
 			}()
-			waitBufferContains(t, out, "○ one")
+			out.AwaitOutput("○ one")
 			if _, err := typing.Write([]byte("\x1b[200~" + payload + "\x1b[201~")); err != nil {
 				t.Fatal(err)
 			}
@@ -718,14 +636,14 @@ func TestMultichoiceFreshPasteAfterCancelledRead(t *testing.T) {
 	})
 	ctx, stop := context.WithTimeout(t.Context(), time.Second)
 	defer stop()
-	out := &terst.SyncBuffer{}
+	out := terst.NewOutput(t)
 	done := make(chan promptChoiceResult, 1)
 	terst.UseIO(t, in, out)
 	go func() {
 		items, err := Multichoice(ctx, "Next", []string{"one", "two"})
 		done <- promptChoiceResult{items, err}
 	}()
-	waitBufferContains(t, out, "○ one")
+	out.AwaitOutput("○ one")
 	if _, err := typing.Write([]byte("\x1b[200~two\x1b[201~ \r")); err != nil {
 		t.Fatal(err)
 	}

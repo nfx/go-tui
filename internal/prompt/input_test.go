@@ -99,15 +99,7 @@ func TestInputRunEmitsLifecycleEvents(t *testing.T) {
 	i.In = terst.NewKeys(t, "x", terst.KeyEnter)
 	var out bytes.Buffer
 	i.Out = &out
-	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{
-			In:      in,
-			Out:     out,
-			Width:   20,
-			Height:  2,
-			Restore: func() error { return nil },
-		}, nil
-	}
+	i.makeTermIO = terst.FixedTermIO(20, 2)
 	var events []inputOutgoing
 	i.eventSink = func(ev inputOutgoing) {
 		events = append(events, ev)
@@ -196,15 +188,7 @@ func TestInputRunPasteFollowedByEnter(t *testing.T) {
 	i.In = terst.NewKeys(t, "hi", terst.KeyEnter)
 	var out bytes.Buffer
 	i.Out = &out
-	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{
-			In:      in,
-			Out:     out,
-			Width:   20,
-			Height:  2,
-			Restore: func() error { return nil },
-		}, nil
-	}
+	i.makeTermIO = terst.FixedTermIO(20, 2)
 	got, err := i.run(i.Ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "hi", got)
@@ -216,15 +200,7 @@ func TestInputRunTypeAndPaste(t *testing.T) {
 	i.In = terst.NewKeys(t, "h", "el", "lo", terst.KeyEnter)
 	var out bytes.Buffer
 	i.Out = &out
-	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{
-			In:      in,
-			Out:     out,
-			Width:   20,
-			Height:  2,
-			Restore: func() error { return nil },
-		}, nil
-	}
+	i.makeTermIO = terst.FixedTermIO(20, 2)
 	got, err := i.run(i.Ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "hello", got)
@@ -239,9 +215,6 @@ func TestInputClearError(t *testing.T) {
 
 // regression: multi-byte runes must be typed as runes, not as their bytes
 func TestInputTypesMultiByteFromPipe(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-	cio := terst.StartChanIO(ctx, 40, 6)
 	r, w, err := os.Pipe()
 	assert.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, r.Close()) })
@@ -249,32 +222,26 @@ func TestInputTypesMultiByteFromPipe(t *testing.T) {
 	_, err = w.WriteString("héllo\x1b[D\x1b[D\x1b[D\x7fж\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	terst.UseIO(t, &terst.FDByteReader{F: r}, cio)
+	terst.UseTerminalInput(t, &terst.FDByteReader{F: r})
 	got, err := Input(t.Context(), "Label")
 	assert.NoError(t, err)
 	assert.Equal(t, "hжllo", got)
 }
 
 func TestInputReadsFromPipe(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-	cio := terst.StartChanIO(ctx, 40, 6)
 	r, w, err := os.Pipe()
 	assert.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, r.Close()) })
 	_, err = w.WriteString("hi\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	terst.UseIO(t, &terst.FDByteReader{F: r}, cio)
+	terst.UseTerminalInput(t, &terst.FDByteReader{F: r})
 	got, err := Input(t.Context(), "Label")
 	assert.NoError(t, err)
 	assert.Equal(t, "hi", got)
 }
 
 func TestInputReadsMultipleLeftArrowsFromPipe(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-	cio := terst.StartChanIO(ctx, 40, 6)
 	r, w, err := os.Pipe()
 	assert.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, r.Close()) })
@@ -286,7 +253,7 @@ func TestInputReadsMultipleLeftArrowsFromPipe(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	terst.UseIO(t, &terst.FDByteReader{F: r}, cio)
+	terst.UseTerminalInput(t, &terst.FDByteReader{F: r})
 	got, err := Input(
 		t.Context(),
 		"Label",
@@ -297,25 +264,19 @@ func TestInputReadsMultipleLeftArrowsFromPipe(t *testing.T) {
 }
 
 func TestInputIgnoresSpecialKeysFromPipe(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-	cio := terst.StartChanIO(ctx, 40, 6)
 	r, w, err := os.Pipe()
 	assert.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, r.Close()) })
 	_, err = w.WriteString("a\x1b[3~b\x1b[Hc\x1bxd\x1b\x1bOPe\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	terst.UseIO(t, &terst.FDByteReader{F: r}, cio)
+	terst.UseTerminalInput(t, &terst.FDByteReader{F: r})
 	got, err := Input(t.Context(), "Label")
 	assert.NoError(t, err)
 	assert.Equal(t, "abcde", got)
 }
 
 func TestInputThenPasswordWithPasteDoesNotLoseBytes(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-	cio := terst.StartChanIO(ctx, 200, 8)
 	r, w, err := os.Pipe()
 	assert.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, r.Close()) })
@@ -327,7 +288,7 @@ func TestInputThenPasswordWithPasteDoesNotLoseBytes(t *testing.T) {
 	// step 1: feed login, run Input.
 	_, err = w.WriteString("alice\r")
 	assert.NoError(t, err)
-	terst.UseIO(t, r, cio)
+	terst.UseTerminalInput(t, r)
 	gotLogin, err := Input(t.Context(), "Login")
 	assert.NoError(t, err)
 	assert.Equal(t, "alice", gotLogin)
@@ -337,7 +298,6 @@ func TestInputThenPasswordWithPasteDoesNotLoseBytes(t *testing.T) {
 	wantPassword := "0123456789abcdefghijklmnopqrstuv"
 	_, err = w.WriteString(wantPassword + "\r")
 	assert.NoError(t, err)
-	terst.UseIO(t, r, cio)
 	gotPassword, err := Password(t.Context(), "Password")
 	assert.NoError(t, err)
 	assert.Equal(t, wantPassword, gotPassword)
@@ -367,9 +327,7 @@ func TestInputRunCancelledReadKeepsNextKey(t *testing.T) {
 	assert.NoError(t, err)
 	defer pr.Close() //nolint:errcheck // test cleanup
 	defer pw.Close() //nolint:errcheck // test cleanup
-	mk := func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{In: in, Out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
-	}
+	mk := terst.FixedTermIO(20, 2)
 	ctx, cancel := context.WithCancel(context.Background())
 	i := newInput(t.Context(), "first")
 	i.Ctx, i.In, i.Out, i.makeTermIO = ctx, pr, &bytes.Buffer{}, mk
@@ -416,18 +374,10 @@ func TestInputRunCancelledWrappedReadKeepsNextKey(t *testing.T) {
 		_, err := first.run(first.Ctx)
 		finished <- err
 	}()
-	select {
-	case <-in.Started:
-	case <-time.After(time.Second):
-		t.Fatal("first prompt did not start reading")
-	}
+	terst.Recv(t, in.Started)
 	cancel()
-	select {
-	case err := <-finished:
-		assert.ErrorIs(t, err, context.Canceled)
-	case <-time.After(time.Second):
-		t.Fatal("cancelled prompt did not return")
-	}
+	err = terst.Recv(t, finished)
+	assert.ErrorIs(t, err, context.Canceled)
 	// Write before starting another prompt: the result must survive without a consumer.
 	_, err = pw.Write([]byte{'x', term.KeyEnter})
 	assert.NoError(t, err)
@@ -451,9 +401,7 @@ func TestInputRunBufferedWrappedReader(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	prompt.Ctx, prompt.In, prompt.Out = ctx, in, &bytes.Buffer{}
-	prompt.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{In: in, Out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
-	}
+	prompt.makeTermIO = terst.FixedTermIO(20, 2)
 	got, err := prompt.run(prompt.Ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "x", got)
@@ -476,9 +424,7 @@ func runInputOn(t *testing.T, in io.Reader, opts ...option.Opt) (string, error) 
 	t.Helper()
 	i := newInput(t.Context(), "Label")
 	i.In, i.Out = in, &bytes.Buffer{}
-	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{In: in, Out: out, Width: 20, Height: 2, Restore: func() error { return nil }}, nil
-	}
+	i.makeTermIO = terst.FixedTermIO(20, 2)
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	i.Ctx = ctx
@@ -580,21 +526,13 @@ func TestInputRunResizeDoesNotReadAhead(t *testing.T) {
 		_, err := i.run(i.Ctx)
 		finished <- err
 	}()
-	select {
-	case <-in.started:
-	case <-time.After(time.Second):
-		t.Fatal("prompt did not start reading")
-	}
+	terst.Recv(t, in.started)
 	resized <- struct{}{}
 	in.chunks <- []byte{term.KeyEnter}
 	assert.True(t, !<-secondRead)
 	close(in.chunks)
-	select {
-	case err := <-finished:
-		assert.NoError(t, err)
-	case <-time.After(time.Second):
-		t.Fatal("prompt did not return")
-	}
+	err := terst.Recv(t, finished)
+	assert.NoError(t, err)
 }
 
 func TestInputRejectionClearsOnEditAndKeepsText(t *testing.T) {
@@ -614,21 +552,16 @@ func TestInputNeedsTwoRowsForFeedback(t *testing.T) {
 	i := newInput(t.Context(), "Label")
 	i.In = terst.NewKeys(t, "a", terst.KeyEnter)
 	i.Out = &bytes.Buffer{}
-	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-		return &term.IO{In: in, Out: out, Width: 20, Height: 1, Restore: func() error { return nil }}, nil
-	}
+	i.makeTermIO = terst.FixedTermIO(20, 1)
 	assert.NoError(t, WithValidation(func(context.Context, string) error { return errors.New("no") })(i))
 	_, err := i.run(i.Ctx)
 	assert.ErrorIs(t, err, errs.ErrNoSpace)
 }
 
 func TestNewInputUsesDefaultIO(t *testing.T) {
-	prevIn := term.Default.Input()
-	prevOut := term.Default.RawOutput()
-	t.Cleanup(func() { term.Default.SetIO(prevIn, prevOut) })
 	in := bytes.NewBufferString("in")
 	out := &bytes.Buffer{}
-	term.Default.SetIO(in, out)
+	terst.UseIO(t, in, out)
 
 	i := newInput(t.Context(), "label")
 	assert.Equal(t, in, i.In)

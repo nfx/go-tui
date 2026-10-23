@@ -102,8 +102,7 @@ func TestRoutingWrapperInputBufferOutput(t *testing.T) {
 func TestInteractiveStillWorksOnManagedOutput(t *testing.T) {
 	// production classification: a managed terminal with scripted input
 	terst.StrictOutput(t)
-	cio := terst.StartChanIO(t.Context(), 80, 24)
-	terst.UseIO(t, strings.NewReader("bob\r"), cio)
+	terst.UseTerminalInput(t, strings.NewReader("bob\r"))
 	got, err := tui.Input(t.Context(), "Name")
 	if errors.Is(err, tui.ErrNoTTY) {
 		t.Fatal("managed terminal must stay interactive")

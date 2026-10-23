@@ -21,8 +21,7 @@ import (
 )
 
 func TestInstallAtomicAndIsolation(t *testing.T) {
-	prev := term.Default.CurrentTheme()
-	t.Cleanup(func() { term.Default.Theme.Store(prev) })
+	terst.UseTheme(t, tui.DefaultTheme())
 
 	th := theme.New()
 	th.Palette.Accent = "#112233"
@@ -45,8 +44,7 @@ func TestInstallAtomicAndIsolation(t *testing.T) {
 }
 
 func TestConcurrentInstall(t *testing.T) {
-	prev := term.Default.CurrentTheme()
-	t.Cleanup(func() { term.Default.Theme.Store(prev) })
+	terst.UseTheme(t, tui.DefaultTheme())
 	var wg sync.WaitGroup
 	for i := range 16 {
 		wg.Go(func() {
@@ -69,7 +67,8 @@ func TestConcurrentInstall(t *testing.T) {
 }
 
 func TestWithFnRegistersForFutureOperations(t *testing.T) {
-	before := terst.KeepTheme(t)
+	terst.UseTheme(t, tui.DefaultTheme())
+	before := term.Default.CurrentTheme()
 	tui.WithFn("shout", func(s string) string { return strings.ToUpper(s) + "!" })
 
 	assert.Equal(t, "HI!", execute(t, installedFuncs(), `{{ shout "hi" }}`))
@@ -83,7 +82,7 @@ func TestWithFnRegistersForFutureOperations(t *testing.T) {
 }
 
 func TestWithFnReachesWidgetTemplates(t *testing.T) {
-	terst.KeepTheme(t)
+	terst.UseTheme(t, tui.DefaultTheme())
 	tui.WithFn("shout", strings.ToUpper)
 	funcs := installedFuncs()
 	assert.Equal(t, "A", execute(t, funcs, `{{ shout "a" }}`))
@@ -91,7 +90,7 @@ func TestWithFnReachesWidgetTemplates(t *testing.T) {
 }
 
 func TestWithFnPanicsAndKeepsInstalled(t *testing.T) {
-	terst.KeepTheme(t)
+	terst.UseTheme(t, tui.DefaultTheme())
 	for name, fn := range map[string]any{
 		"bold":                   strings.ToUpper,
 		"fg":                     strings.ToUpper,
@@ -129,7 +128,7 @@ func TestWithFnPanicsAndKeepsInstalled(t *testing.T) {
 }
 
 func TestWithFnAcceptsErrorResult(t *testing.T) {
-	terst.KeepTheme(t)
+	terst.UseTheme(t, tui.DefaultTheme())
 	boom := errors.New("boom")
 	tui.WithFn("fails", func() (string, error) { return "", boom })
 	tmpl, err := template.New("t").Funcs(installedFuncs()).Parse(`{{ fails }}`)
@@ -138,7 +137,7 @@ func TestWithFnAcceptsErrorResult(t *testing.T) {
 }
 
 func TestConcurrentWithFnLosesNothing(t *testing.T) {
-	terst.KeepTheme(t)
+	terst.UseTheme(t, tui.DefaultTheme())
 	var wg sync.WaitGroup
 	for i := range 16 {
 		wg.Go(func() { tui.WithFn(fmt.Sprintf("fn%d", i), strings.ToUpper) })
@@ -152,7 +151,7 @@ func TestConcurrentWithFnLosesNothing(t *testing.T) {
 }
 
 func TestInstallReplacesFuncs(t *testing.T) {
-	terst.KeepTheme(t)
+	terst.UseTheme(t, tui.DefaultTheme())
 	tui.WithFn("forgotten", strings.ToUpper)
 	th := theme.New()
 	th.Funcs = template.FuncMap{"kept": strings.ToLower}
@@ -164,7 +163,7 @@ func TestInstallReplacesFuncs(t *testing.T) {
 }
 
 func TestSetDefaultThemePublishesAndKeepsPreviousOnError(t *testing.T) {
-	terst.KeepTheme(t)
+	terst.UseTheme(t, tui.DefaultTheme())
 	tui.WithFn("shout", strings.ToUpper)
 	th := tui.DefaultTheme()
 	// unset colors stay unset, so they keep adapting
@@ -198,7 +197,7 @@ func TestRemovedColorNamesFailWithTemplatePath(t *testing.T) {
 }
 
 func TestThemeFuncsAreCopied(t *testing.T) {
-	terst.KeepTheme(t)
+	terst.UseTheme(t, tui.DefaultTheme())
 	th := theme.New()
 	th.Funcs = template.FuncMap{"h": strings.ToUpper}
 	assert.NoError(t, term.Default.InstallTheme(th))
@@ -212,7 +211,7 @@ func TestThemeFuncsAreCopied(t *testing.T) {
 }
 
 func TestSpinnerFramesAreCopied(t *testing.T) {
-	terst.KeepTheme(t)
+	terst.UseTheme(t, tui.DefaultTheme())
 	th := theme.New()
 	th.Symbols.Spinner = []string{"a", "b"}
 	assert.NoError(t, term.Default.InstallTheme(th))

@@ -645,9 +645,7 @@ func lines(out string) []string {
 // ttyWidth makes every writer report width columns.
 func ttyWidth(t *testing.T, width int) {
 	t.Helper()
-	orig := term.GetSize
-	term.GetSize = func(int) (int, int, error) { return width, 40, nil }
-	t.Cleanup(func() { term.GetSize = orig })
+	terst.Swap(t, &term.GetSize, func(int) (int, int, error) { return width, 40, nil })
 }
 
 type factsRow struct {

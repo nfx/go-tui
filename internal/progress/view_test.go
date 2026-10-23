@@ -58,7 +58,7 @@ func TestThemedProgressRowDropsMetricsToFit(t *testing.T) {
 
 func TestThemedProgressASCIISymbols(t *testing.T) {
 	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
-	p := themedBar(t, terst.ASCIITheme(false), halfDone(now))
+	p := themedBar(t, terst.ASCIITheme(), halfDone(now))
 	row, err := p.row(47, now)
 	assert.NoError(t, err)
 	// the elapsed time does not fit the hint row, which drops it whole
@@ -91,7 +91,7 @@ func TestThemedProgressBarWidthBounds(t *testing.T) {
 	assert.Equal(t, "build 50%  ==========>---------- 50.00/s", row.String())
 
 	// the stacked bar is bounded the same way; the hint has its own row
-	th = terst.ASCIITheme(false)
+	th = terst.ASCIITheme()
 	th.Progress.MaxBarWidth = 4
 	p = themedBar(t, th, halfDone(now))
 	row, err = p.row(80, now)
@@ -147,7 +147,7 @@ func TestThemedProgressUnknownAndExceededTotals(t *testing.T) {
 			state := halfDone(now)
 			state.showElapsed = false
 			tc.edit(&state)
-			row, err := themedBar(t, terst.ASCIITheme(false), state).row(tc.width, now)
+			row, err := themedBar(t, terst.ASCIITheme(), state).row(tc.width, now)
 			assert.NoError(t, err)
 			assert.Equal(t, tc.stacked, row.String())
 			row, err = themedBar(t, compactTheme(), state).row(tc.width, now)
@@ -294,16 +294,16 @@ func TestThemedProgressRoles(t *testing.T) {
 }
 
 func TestThemedProgressCompletes(t *testing.T) {
-	p, frames, tick, restored := themedProgress(t, terst.ASCIITheme(false), 100)
+	p, frames, tick, restored := themedProgress(t, terst.ASCIITheme(), 100)
 	p.Add(50)
 	tick(time.Second)
 	// the estimate does not fit the hint row, which drops it whole
 	assert.Equal(t, frameOf("build  50%  "+strings.Repeat("=", 13)+">"+strings.Repeat("-", 13),
-		"50 / 100 items | 50.00 items/s"), <-frames)
+		"50 / 100 items | 50.00 items/s"), frames.Next())
 	p.Add(50)
 	tick(2 * time.Second)
 	assert.Equal(t, erased(t, 2)+frameOf("build  100% "+strings.Repeat("=", 27),
-		"100 / 100 items | 50.00 items/s"), <-frames)
+		"100 / 100 items | 50.00 items/s"), frames.Next())
 	// done: both rows are erased, and no completion line is retained
 	assert.Equal(t, erased(t, 2), untilProgressStopped(t, p, frames))
 	assert.True(t, restored.Load())
@@ -311,10 +311,10 @@ func TestThemedProgressCompletes(t *testing.T) {
 }
 
 func TestThemedProgressCloseBeforeDone(t *testing.T) {
-	p, frames, tick, restored := themedProgress(t, terst.ASCIITheme(false), 100)
+	p, frames, tick, restored := themedProgress(t, terst.ASCIITheme(), 100)
 	p.Add(5)
 	tick(time.Second)
-	assert.Equal(t, frameOf("build  5%   =>"+strings.Repeat("-", 25), "5 / 100 items | 0.00 items/s"), <-frames)
+	assert.Equal(t, frameOf("build  5%   =>"+strings.Repeat("-", 25), "5 / 100 items | 0.00 items/s"), frames.Next())
 	closed := make(chan error)
 	go func() { closed <- p.Close() }()
 	// stopping looks like completing: the rows are erased
@@ -324,42 +324,42 @@ func TestThemedProgressCloseBeforeDone(t *testing.T) {
 }
 
 func TestThemedProgressResize(t *testing.T) {
-	p, frames, tick, _ := themedProgress(t, terst.ASCIITheme(false), 100)
+	p, frames, tick, _ := themedProgress(t, terst.ASCIITheme(), 100)
 	p.Add(50)
 	tick(time.Second)
 	assert.Equal(t, frameOf("build  50%  "+strings.Repeat("=", 13)+">"+strings.Repeat("-", 13),
-		"50 / 100 items | 50.00 items/s"), <-frames)
+		"50 / 100 items | 50.00 items/s"), frames.Next())
 	// the 39-column bar row and the 30-column hint row each wrap on 20
 	// columns, so four rows are cleared
 	p.io.Width = 20
 	tick(2 * time.Second)
-	assert.Equal(t, erased(t, 4)+frameOf("build  50%  ===>---", "50 / 100 items"), <-frames)
+	assert.Equal(t, erased(t, 4)+frameOf("build  50%  ===>---", "50 / 100 items"), frames.Next())
 	// the hint row goes once nothing fits
 	p.io.Width = 14
 	tick(3 * time.Second)
-	assert.Equal(t, erased(t, 3)+frameOf("build  50%  >"), <-frames)
+	assert.Equal(t, erased(t, 3)+frameOf("build  50%  >"), frames.Next())
 	p.io.Width = 40
 	tick(4 * time.Second)
 	assert.Equal(t, erased(t, 1)+frameOf("build  50%  "+strings.Repeat("=", 13)+">"+strings.Repeat("-", 13),
-		"50 / 100 items | 50.00 items/s"), <-frames)
+		"50 / 100 items | 50.00 items/s"), frames.Next())
 }
 
 func TestThemedProgressShortTerminal(t *testing.T) {
-	p, frames, tick, _ := themedProgress(t, terst.ASCIITheme(false), 100)
+	p, frames, tick, _ := themedProgress(t, terst.ASCIITheme(), 100)
 	p.Add(50)
 	// one row has no room for the hint, so the metrics join the bar row
 	p.io.Height = 1
 	tick(time.Second)
-	assert.Equal(t, frameOf("build  50%  ==-- 50.00/s · 1s remaining"), <-frames)
+	assert.Equal(t, frameOf("build  50%  ==-- 50.00/s · 1s remaining"), frames.Next())
 	// nor do two, since the cursor takes the row below the frame
 	p.io.Height = 2
 	tick(time.Second)
-	assert.Equal(t, erased(t, 1)+frameOf("build  50%  ==-- 50.00/s · 1s remaining"), <-frames)
+	assert.Equal(t, erased(t, 1)+frameOf("build  50%  ==-- 50.00/s · 1s remaining"), frames.Next())
 	// a taller terminal gets the hint row back
 	p.io.Height = 3
 	tick(2 * time.Second)
 	assert.Equal(t, erased(t, 1)+frameOf("build  50%  "+strings.Repeat("=", 13)+">"+strings.Repeat("-", 13),
-		"50 / 100 items | 50.00 items/s"), <-frames)
+		"50 / 100 items | 50.00 items/s"), frames.Next())
 }
 
 func TestThemedProgressLongLabel(t *testing.T) {
@@ -381,7 +381,7 @@ func TestThemedProgressLongLabel(t *testing.T) {
 		// too narrow for the bar: the start of the row
 		{4, "50%…"},
 	} {
-		p := themedBar(t, terst.ASCIITheme(false), halfDone(now))
+		p := themedBar(t, terst.ASCIITheme(), halfDone(now))
 		p.label = ansi.Text("ファイル build")
 		p.showRate, p.showEstimate, p.showElapsed = false, false, false
 		rows, err := p.rows(tc.width, 0, now)
@@ -392,14 +392,14 @@ func TestThemedProgressLongLabel(t *testing.T) {
 }
 
 func TestThemedProgressRenderErrorEndsBar(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
 	th.Progress.Label = `{{ if eq .Current 150 }}{{ boom }}{{ end }}{{ .Label }}`
 	p, frames, tick, restored := themedProgress(t, th, 200)
 	p.Add(100)
 	tick(time.Second)
 	assert.Equal(t, frameOf("build  50%  "+strings.Repeat("=", 13)+">"+strings.Repeat("-", 13),
-		"100 / 200 items | 100.00 items/s"), <-frames)
+		"100 / 200 items | 100.00 items/s"), frames.Next())
 	p.Add(50)
 	tick(2 * time.Second)
 	// no partial frame: only the drawn rows are cleared
@@ -464,16 +464,16 @@ func TestThemedProgressWithoutTerminal(t *testing.T) {
 }
 
 func TestThemedProgressCapturesTheme(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Symbols.BarFill = "#"
 	p, frames, tick, _ := themedProgress(t, th, 100)
 	// a theme installed later does not reach the running bar
-	later := terst.ASCIITheme(false)
+	later := terst.ASCIITheme()
 	later.Symbols.BarFill = "="
 	later.Progress.Compact = true
 	assert.NoError(t, term.Default.InstallTheme(later))
 	p.Add(60)
 	tick(time.Second)
 	assert.Equal(t, frameOf("build  60%  "+strings.Repeat("#", 16)+">"+strings.Repeat("-", 10),
-		"60 / 100 items | 60.00 items/s"), <-frames)
+		"60 / 100 items | 60.00 items/s"), frames.Next())
 }

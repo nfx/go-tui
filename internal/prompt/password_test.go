@@ -22,16 +22,13 @@ import (
 )
 
 func TestPasswordReadsFromPipe(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	t.Cleanup(cancel)
-	cio := terst.StartChanIO(ctx, 40, 6)
 	r, w, err := os.Pipe()
 	assert.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, r.Close()) })
 	_, err = w.WriteString("secret\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	terst.UseIO(t, &terst.FDByteReader{F: r}, cio)
+	terst.UseTerminalInput(t, &terst.FDByteReader{F: r})
 	got, err := Password(t.Context(), "Label")
 	assert.NoError(t, err)
 	assert.Equal(t, "secret", got)
@@ -72,7 +69,7 @@ func themedPassword(t *testing.T, th theme.Theme, keys ...string) (*input, *byte
 }
 
 func TestThemedPasswordMasksWithThemeSymbol(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Symbols.Mask = "•"
 	i, out := themedPassword(t, th, "abc", "\x1b[D", "\r")
 	got, err := i.read(t.Context())
@@ -85,7 +82,7 @@ func TestThemedPasswordMasksWithThemeSymbol(t *testing.T) {
 }
 
 func TestThemedPasswordMultiRuneMaskKeepsRuneEditing(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Symbols.Mask = "é" // one column, two runes
 	// a typed combining sequence is two runes, so two masks; backspace in
 	// the middle removes one rune, as without a theme
@@ -98,7 +95,8 @@ func TestThemedPasswordMultiRuneMaskKeepsRuneEditing(t *testing.T) {
 }
 
 func TestThemedPasswordMaskClipsToWindow(t *testing.T) {
-	th := terst.ASCIITheme(true)
+	th := terst.ASCIITheme()
+	th.Inline = true
 	th.Symbols.Mask = "#"
 	terst.UseTheme(t, th)
 	i := newInput(t.Context(), "Label")
@@ -118,7 +116,7 @@ func TestThemedPasswordRejectionIsSecretIndependent(t *testing.T) {
 		return nil
 	})
 	var seen []string
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Funcs = map[string]any{"spy": func(s string) string { seen = append(seen, s); return s }}
 	th.Password.Label = `{{ spy .Label }}`
 	th.Password.Feedback = `{{ error (spy .Message) }}`
@@ -145,7 +143,7 @@ func TestThemedPasswordRejectionIsSecretIndependent(t *testing.T) {
 }
 
 func TestThemedPasswordShowsBuiltInRuleMessages(t *testing.T) {
-	i, out := themedPassword(t, terst.ASCIITheme(false), "\r", "ab", "\r", "c", "\r")
+	i, out := themedPassword(t, terst.ASCIITheme(), "\r", "ab", "\r", "c", "\r")
 	got, err := i.read(t.Context(), WithNonEmpty(), WithRegex(`.{3,}`, "at least 3 characters"))
 	assert.NoError(t, err)
 	assert.Equal(t, "abc", got)
@@ -154,7 +152,7 @@ func TestThemedPasswordShowsBuiltInRuleMessages(t *testing.T) {
 }
 
 func TestThemedPasswordFailingFeedbackKeepsSecretOut(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Funcs = map[string]any{"fails": func(s string) (string, error) { return "", fmt.Errorf("cannot show %q", s) }}
 	th.Password.Feedback = `{{ fails .Message }}`
 	leak := WithValidation(func(_ context.Context, s string) error { return errors.New(s) })

@@ -14,7 +14,7 @@ import (
 )
 
 func TestLongRunningShowsMessageWhileCbRuns(t *testing.T) {
-	cio, tick, spinnerOpts := testIOforSpinners(t, 24, 5)
+	frames, tick, spinnerOpts := testIOforSpinners(t, 24, 5)
 	testLongRunningWithNewSpinners(t, func(ctx context.Context, opt ...option.Opt) (*Spinners, error) {
 		return NewSpinners(ctx, append(option.Opts{spinnerOpts}, opt...)...)
 	})
@@ -35,7 +35,7 @@ func TestLongRunningShowsMessageWhileCbRuns(t *testing.T) {
 	default:
 	}
 	tick()
-	assert.Contains(t, <-cio.Out, "refreshing SWS")
+	assert.Contains(t, frames.Next(), "refreshing SWS")
 	close(release)
 	assert.NoError(t, <-done)
 }

@@ -21,10 +21,10 @@ func TestProgressbarUpdatesAfterCompletion(t *testing.T) {
 	p, err := tui.NewMaxProgressBar(t.Context(), "Copy", 4)
 	assert.NoError(t, err)
 	p.Add(2)
-	term.waitRows(t, "Copy  50%  ...", "2 / 4 items...")
+	term.AwaitVisible("Copy  50%  ...", "2 / 4 items...")
 	p.Add(5) // overshoots the maximum
 	// the bar completes on its next redraw and disappears
-	term.waitRows(t)
+	term.AwaitVisible()
 	updated := make(chan struct{})
 	go func() {
 		defer close(updated)
@@ -41,22 +41,22 @@ func TestProgressbarUpdatesAfterCompletion(t *testing.T) {
 	p.Add(1)
 	_, err = fmt.Fprintln(tui.Stderr(), "after")
 	assert.NoError(t, err)
-	term.waitRows(t, "after")
+	term.AwaitVisible("after")
 }
 
 func TestProgressbarStacksOnTwoRowTerminal(t *testing.T) {
 	term := newTerminal(t, 2)
-	term.height = 2
-	terst.UseTheme(t, terst.ASCIITheme(false))
+	term.Resize(40, 2)
+	terst.UseASCII(t)
 	// through the managed viewport, two rows hold the bar and its hint
 	p, err := tui.NewMaxProgressBar(t.Context(), "Copy", 4)
 	assert.NoError(t, err)
 	p.Add(1)
-	term.waitRows(t, "Copy  25%  ...", "1 / 4 items...")
+	term.AwaitVisible("Copy  25%  ...", "1 / 4 items...")
 	p.Add(1)
-	term.waitRows(t, "Copy  50%  ...", "2 / 4 items...")
+	term.AwaitVisible("Copy  50%  ...", "2 / 4 items...")
 	assert.NoError(t, p.Close())
-	term.waitRows(t)
+	term.AwaitVisible()
 }
 
 func TestSpinnerUpdatesAfterCompletion(t *testing.T) {
@@ -80,5 +80,5 @@ func TestSpinnerUpdatesAfterCompletion(t *testing.T) {
 	// spinners apply changes in order, so a frame with this one has all of them
 	_, err = s.Add(context.Background(), tui.WithPrefixf("sentinel"))
 	assert.NoError(t, err)
-	term.waitRows(t, "✖ fetch: timeout", "■ build: done", "- sentinel:")
+	term.AwaitVisible("✖ fetch: timeout", "■ build: done", "- sentinel:")
 }

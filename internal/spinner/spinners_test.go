@@ -21,59 +21,39 @@ import (
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 
-	"fmt"
-
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
 )
 
-func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*term.ChanIO, func(), option.Opt) {
+// testIOforSpinners provides frames for spinners at a fixed terminal size,
+// with manual ticks.
+func testIOforSpinners(t *testing.T, width, height int, o ...option.Opt) (*terst.Output, func(), option.Opt) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(t.Context())
-	cio := &term.ChanIO{
-		Ctx: ctx,
-		In:  make(chan string),
-		Out: make(chan string),
-	}
+	_, frames := terst.UseFrames(t)
 	ticks := make(chan time.Time)
-	t.Cleanup(func() {
-		cancel()
-		// <-cio.Out // clear
-		close(cio.In)
-		close(cio.Out)
-	})
-	terst.UseIO(t, cio, cio)
-	return cio, func() {
+	return frames, func() {
 			go func() {
 				select {
-				case <-ctx.Done():
+				case <-t.Context().Done():
 				case ticks <- time.Now():
 				}
 			}()
 		}, option.WithOptions(append(option.Opts{
 			option.OpT(func(s *Spinners) error {
 				s.ticks = ticks
-				s.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
-					return &term.IO{
-						In:      in,
-						Out:     out,
-						Width:   width,
-						Height:  height,
-						Restore: func() error { return nil },
-					}, nil
-				}
+				s.makeTermIO = terst.FixedTermIO(width, height)
 				return nil
 			}),
 		}, o...,
 		)...)
 }
 
-func spinnersForTest(t *testing.T) (*Spinners, *term.ChanIO, func()) {
+func spinnersForTest(t *testing.T) (*Spinners, *terst.Output, func()) {
 	t.Helper()
-	cio, tick, opts := testIOforSpinners(t, 12, 4)
-	s, err := NewSpinners(cio.Ctx, opts)
+	frames, tick, opts := testIOforSpinners(t, 12, 4)
+	s, err := NewSpinners(t.Context(), opts)
 	assert.NoError(t, err)
-	return s, cio, tick
+	return s, frames, tick
 }
 
 func testLongRunningWithNewSpinners(t *testing.T, cb func(context.Context, ...option.Opt) (*Spinners, error)) {
@@ -86,9 +66,9 @@ func testLongRunningWithNewSpinners(t *testing.T, cb func(context.Context, ...op
 }
 
 func TestNewSpinners(t *testing.T) {
-	s, cio, tick := spinnersForTest(t)
+	s, frames, tick := spinnersForTest(t)
 	assert.NotNil(t, s)
-	assert.NotNil(t, cio)
+	assert.NotNil(t, frames)
 
 	// test that the spinner is created
 	ctx, cancel := context.WithCancel(t.Context())
@@ -98,14 +78,14 @@ func TestNewSpinners(t *testing.T) {
 	first.Update("first: A")
 
 	tick()
-	firstOut := <-cio.Out
+	firstOut := frames.Next()
 	assert.Contains(t, firstOut, "▝ first: A")
 
 	second := s.MustAddBackground()
 	second.Update("second: A")
 
 	tick()
-	secondOut := <-cio.Out
+	secondOut := frames.Next()
 	assert.Contains(t, secondOut, "\x1b[1A\r\x1b[K")
 	assert.Contains(t, secondOut, "▐ first: A")
 	assert.Contains(t, secondOut, "▐ second: A")
@@ -113,7 +93,7 @@ func TestNewSpinners(t *testing.T) {
 	cancel()
 
 	tick()
-	out := <-cio.Out
+	out := frames.Next()
 	assert.Contains(t, out, "\x1b[2A\r\x1b[K") // cleared two lines
 	assert.Contains(t, out, "▗ second: A")
 	// first spinner may already be cancelled before final paint; accept either presence or absence.
@@ -122,12 +102,11 @@ func TestNewSpinners(t *testing.T) {
 	}
 
 	s.Close()
-	// assert.Equal(t, "\x1b[2A", <-cio.Out)
 }
 
 func TestSpinnersContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	cio, tick, opts := testIOforSpinners(t, 12, 4)
+	frames, tick, opts := testIOforSpinners(t, 12, 4)
 	s, err := NewSpinners(ctx, opts)
 	assert.NoError(t, err)
 
@@ -136,7 +115,7 @@ func TestSpinnersContextCancellation(t *testing.T) {
 
 	spinner.Update("before cancel")
 	tick()
-	<-cio.Out // consume output
+	frames.Next() // consume output
 
 	cancel() // cancel the context
 
@@ -379,7 +358,7 @@ func TestSpinnersLogFallbackKeepsTerminalRendering(t *testing.T) {
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(previous) })
-	cio, tick, options := testIOforSpinners(t, 24, 5)
+	frames, tick, options := testIOforSpinners(t, 24, 5)
 	s, err := NewSpinners(t.Context(), options)
 	assert.NoError(t, err)
 	defer s.Close()
@@ -387,7 +366,7 @@ func TestSpinnersLogFallbackKeepsTerminalRendering(t *testing.T) {
 	assert.NoError(t, err)
 	spinner.Update("fetching")
 	tick()
-	assert.Contains(t, <-cio.Out, "fetching")
+	assert.Contains(t, frames.Next(), "fetching")
 	s.Close()
 	assert.Equal(t, "", logs.String())
 }
@@ -410,12 +389,12 @@ func themedSpinners(
 	th theme.Theme,
 	width int,
 	o ...option.Opt,
-) (*Spinners, terst.FrameWriter, func(), *atomic.Bool) {
+) (*Spinners, *terst.Output, func(), *atomic.Bool) {
 	t.Helper()
 	terst.UseTheme(t, th)
 	restored := &atomic.Bool{}
-	frames := make(terst.FrameWriter)
-	cio, tick, options := testIOforSpinners(t, width, 10, append([]option.Opt{option.OpT(func(s *Spinners) error {
+	frames := terst.NewOutput(t)
+	_, tick, options := testIOforSpinners(t, width, 10, append([]option.Opt{option.OpT(func(s *Spinners) error {
 		s.makeTermIO = func(in io.Reader, _ io.Writer) (*term.IO, error) {
 			return &term.IO{In: in, Out: frames, Width: width, Height: 10, Restore: func() error {
 				restored.Store(true)
@@ -424,100 +403,23 @@ func themedSpinners(
 		}
 		return nil
 	})}, o...)...)
-	s, err := NewSpinners(cio.Ctx, options)
+	s, err := NewSpinners(t.Context(), options)
 	assert.NoError(t, err)
-	t.Cleanup(func() {
-		go func() {
-			for range frames { // the final clear of a group a test left open
-			}
-		}()
-		s.Close()
-		close(frames)
-	})
+	t.Cleanup(s.Close)
 	return s, frames, tick, restored
 }
 
-// untilStopped returns everything the group writes until its loop ends,
-// failing the test unless it ends within a second.
-func untilStopped(t *testing.T, s *Spinners, frames terst.FrameWriter) string {
+// untilStopped returns everything the group writes until its loop ends.
+func untilStopped(t *testing.T, s *Spinners, frames *terst.Output) string {
 	t.Helper()
-	var out strings.Builder
-	timeout := time.After(time.Second)
-	for {
-		select {
-		case f := <-frames:
-			out.WriteString(f)
-		case <-s.stopped:
-			return out.String()
-		case <-timeout:
-			t.Fatal("spinner group did not stop")
-		}
-	}
-}
-
-func TestChanIO_Forward(t *testing.T) {
-	t.SkipNow()
-	cio, stdout := terst.ChainIOForTest(t, 12, 3)
-
-	// write 5 lines
-	_, err := fmt.Fprint(cio, "a\nb\nc\nd\ne\n")
-	assert.NoError(t, err)
-
-	// render 3 lines due to the viewport height
-	assert.Equal(t, "\rc           \n\rd           \n\re           ", <-stdout.C)
-
-	// write one more line
-	_, err = fmt.Fprint(cio, "f\n")
-	assert.NoError(t, err)
-
-	// and have the previous two lines still rendered
-	assert.Equal(t,
-		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\rd           \n\re           \n\rf           ",
-		<-stdout.C)
-
-	ticks := make(chan time.Time)
-	defer close(ticks)
-	tick := func() {
-		go func() {
-			select {
-			case <-cio.Ctx.Done():
-			case ticks <- time.Now():
-			}
-		}()
-	}
-
-	terst.UseIO(t, nil, cio)
-	s, err := NewSpinners(cio.Ctx,
-		option.OpT(func(s *Spinners) error { //nolint:unparam // ..
-			s.ticks = ticks
-			return nil
-		}),
-	)
-	assert.NoError(t, err)
-
-	s.MustAddBackground().Update("s: A")
-	tick()
-
-	assert.Equal(t,
-		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\r\r... s: A   \n\r\r           \n\rf           ",
-		<-stdout.C)
-
-	// write one more line
-	_, err = fmt.Fprint(cio, "g\n")
-	assert.NoError(t, err)
-
-	assert.Equal(t,
-		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[3A\r\r\r... s: A   \n\r\r           \n\rg           ",
-		<-stdout.C)
+	terst.Recv(t, s.stopped)
+	return frames.Unread()
 }
 
 func TestNewSpinnersUsesDefaultIO(t *testing.T) {
-	prevIn := term.Default.Input()
-	prevOut := term.Default.RawOutput()
-	t.Cleanup(func() { term.Default.SetIO(prevIn, prevOut) })
 	in := bytes.NewBufferString("in")
 	out := &bytes.Buffer{}
-	term.Default.SetIO(in, out)
+	terst.UseIO(t, in, out)
 
 	s := newSpinners(t.Context())
 	assert.Equal(t, in, s.In)

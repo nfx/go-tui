@@ -127,7 +127,7 @@ func (l themedLayout) theme() theme.Theme {
 	th := theme.New()
 	th.Inline = l.inline
 	if l.ascii {
-		th.Symbols = terst.ASCIISymbols
+		th.Symbols = th.Symbols.ASCII()
 	}
 	th.Symbols.Spinner = []string{"~"} // one frame, so every redraw looks alike
 	return th
@@ -146,7 +146,7 @@ func TestThemedWidgetsShareTerminal(t *testing.T) {
 				term := newTerminal(t, 30)
 				terst.UseTheme(t, l.theme())
 				themedSession(t, term, l)
-				checkProfile(t, profile.name, term.received())
+				checkProfile(t, profile.name, term.String())
 			})
 		}
 	}
@@ -161,15 +161,15 @@ func themedSession(t *testing.T, term *terminal, l themedLayout) {
 	spinner, err := group.Add(t.Context(), tui.WithPrefixf("fetch"))
 	assert.NoError(t, err)
 	spinner.Update("pages")
-	term.waitRows(t, l.spinner)
+	term.AwaitVisible(l.spinner)
 	bar, err := tui.NewMaxProgressBar(t.Context(), "Download", 4)
 	assert.NoError(t, err)
 	bar.Add(1)
-	term.waitRows(t, append([]string{l.spinner}, l.progress...)...)
+	term.AwaitVisible(append([]string{l.spinner}, l.progress...)...)
 	_, err = fmt.Fprintln(tui.Stderr(), "log line")
 	assert.NoError(t, err)
 	live := append([]string{"log line", l.spinner}, l.progress...)
-	term.waitRows(t, live...)
+	term.AwaitVisible(live...)
 
 	var retained []string
 	rows := func(frame ...string) []string {
@@ -177,30 +177,30 @@ func themedSession(t *testing.T, term *terminal, l themedLayout) {
 	}
 	res := prompt(func() (string, error) { return tui.Input(t.Context(), "Name") })
 	term.press(t, "x")
-	term.waitRows(t, rows(l.input...)...)
+	term.AwaitVisible(rows(l.input...)...)
 	term.press(t, keyEnter)
 	assert.Equal(t, "x", answer(t, res))
 	retained = l.answers[:1]
-	term.waitRows(t, rows()...)
+	term.AwaitVisible(rows()...)
 
 	res = prompt(func() (string, error) { return tui.Dropdown(t.Context(), "Pick", []string{"a", "b"}) })
 	term.press(t, keyDown)
-	term.waitRows(t, rows(l.dropdown...)...)
+	term.AwaitVisible(rows(l.dropdown...)...)
 	term.press(t, keyEnter)
 	assert.Equal(t, "b", answer(t, res))
 	retained = l.answers[:2]
-	term.waitRows(t, rows()...)
+	term.AwaitVisible(rows()...)
 
 	res = prompt(func() (string, error) {
 		v, err := tui.Multichoice(t.Context(), "Tags", []string{"x", "y"})
 		return fmt.Sprint(v), err
 	})
 	term.press(t, " ")
-	term.waitRows(t, rows(l.checklist...)...)
+	term.AwaitVisible(rows(l.checklist...)...)
 	term.press(t, keyEnter)
 	assert.Equal(t, "[x]", answer(t, res))
 	retained = l.answers[:3]
-	term.waitRows(t, rows()...)
+	term.AwaitVisible(rows()...)
 
 	res = prompt(func() (string, error) { return strconv.FormatBool(tui.Confirm(t.Context(), "Go")), nil })
 	term.press(t, keyEnter)
@@ -217,7 +217,7 @@ func themedSession(t *testing.T, term *terminal, l themedLayout) {
 	term.press(t, keyEnter)
 	assert.Equal(t, "s", answer(t, res))
 	retained = l.answers // a password retains nothing
-	term.waitRows(t, rows()...)
+	term.AwaitVisible(rows()...)
 
 	// static output goes above the activity, like logs
 	type file struct {
@@ -231,14 +231,14 @@ func themedSession(t *testing.T, term *terminal, l themedLayout) {
 		"NAME   SIZE", "a         1", "bb       22",
 		"NAME   SIZE", "c         3",
 		"{", `"k": [`, "1", "]", "}")
-	term.waitRows(t, rows()...)
+	term.AwaitVisible(rows()...)
 
 	// finished activity leaves nothing behind
 	assert.NoError(t, spinner.Close())
 	bar.Add(3)
 	assert.NoError(t, bar.Close())
 	group.Close()
-	term.waitRows(t, append([]string{"log line"}, retained...)...)
+	term.AwaitVisible(append([]string{"log line"}, retained...)...)
 }
 
 const (
@@ -270,15 +270,15 @@ func TestThemedRouteSharesDetection(t *testing.T) {
 	defer early.Close()
 	_, err = early.Add(t.Context(), tui.WithPrefixf("early"))
 	assert.NoError(t, err)
-	term.waitRows(t, "~ early:")
+	term.AwaitVisible("~ early:")
 
 	res := prompt(func() (string, error) { return tui.Input(t.Context(), "Name") })
 	term.answerProbe(t, 1, whiteBackground)
 	term.press(t, "x")
 	term.press(t, keyEnter)
 	assert.Equal(t, "x", answer(t, res))
-	term.waitRows(t, "✔ Name · x", "~ early:")
-	ink := textColor(term.received(), "x")
+	term.AwaitVisible("✔ Name · x", "~ early:")
+	ink := textColor(term.String(), "x")
 	assert.True(t, ink != "") // measured: the draft is drawn in Foreground
 
 	// later work on the same route reuses the measurement without a query
@@ -292,8 +292,8 @@ func TestThemedRouteSharesDetection(t *testing.T) {
 	res = prompt(func() (string, error) { return tui.Dropdown(t.Context(), "Pick", []string{"item"}) })
 	term.press(t, keyEnter)
 	assert.Equal(t, "item", answer(t, res))
-	term.waitRows(t, "✔ Name · x", "NAME", "cell", "{", `"k": "json"`, "}", "✔ Pick · item", "~ early:", "~ late:")
-	out := term.received()
+	term.AwaitVisible("✔ Name · x", "NAME", "cell", "{", `"k": "json"`, "}", "✔ Pick · item", "~ early:", "~ late:")
+	out := term.String()
 	assert.Equal(t, 1, strings.Count(out, backgroundQuery))
 	for _, text := range []string{"late", "cell", `"json"`, "item"} {
 		assert.Equal(t, ink, textColor(out, text))
@@ -315,8 +315,8 @@ func TestThemedRouteSharesDetection(t *testing.T) {
 	next.press(t, keyEnter)
 	assert.Equal(t, "y", answer(t, res))
 	assert.NoError(t, tui.TableAuto(tui.Stderr(), []struct{ Name string }{{"cell"}}))
-	next.waitRows(t, "✔ Name · y", "NAME", "cell")
-	out = next.received()
+	next.AwaitVisible("✔ Name · y", "NAME", "cell")
+	out = next.String()
 	dark := textColor(out, "y")
 	assert.True(t, dark != "" && dark != ink)
 	assert.Equal(t, dark, textColor(out, "cell"))
@@ -334,8 +334,8 @@ func TestThemedExplicitAppearanceNeverProbes(t *testing.T) {
 	term.press(t, keyEnter)
 	assert.Equal(t, "x", answer(t, res))
 	assert.NoError(t, tui.TableAuto(tui.Stderr(), []struct{ Name string }{{"cell"}}))
-	term.waitRows(t, "✔ Name · x", "NAME", "cell")
-	out := term.received()
+	term.AwaitVisible("✔ Name · x", "NAME", "cell")
+	out := term.String()
 	assert.Equal(t, 0, strings.Count(out, backgroundQuery))
 	// the light variant draws neutrals without a measurement
 	ink := textColor(out, "x")
@@ -359,7 +359,7 @@ func probingSession(t *testing.T) (*terminal, *tui.Spinners) {
 	t.Cleanup(group.Close)
 	_, err = group.Add(t.Context(), tui.WithPrefixf("work"))
 	assert.NoError(t, err)
-	term.waitRows(t, "~ work:")
+	term.AwaitVisible("~ work:")
 	return term, group
 }
 
@@ -369,11 +369,11 @@ func TestThemedProbeTimeoutReplaysKeys(t *testing.T) {
 	read := term.blockedRead(t)
 	term.waitQueries(t, 1)
 	read <- "a" // typed while the terminal does not answer
-	term.waitRows(t, "~ work:", "◆ Name", "│ a")
+	term.AwaitVisible("~ work:", "◆ Name", "│ a")
 	// a reply after the timeout is not typed text
 	term.press(t, whiteBackground)
 	term.press(t, "b")
-	term.waitRows(t, "~ work:", "◆ Name", "│ ab")
+	term.AwaitVisible("~ work:", "◆ Name", "│ ab")
 	term.press(t, keyEnter)
 	assert.Equal(t, "ab", answer(t, res))
 
@@ -383,8 +383,8 @@ func TestThemedProbeTimeoutReplaysKeys(t *testing.T) {
 	term.press(t, keyEnter)
 	assert.Equal(t, "c", answer(t, res))
 	group.Close()
-	term.waitRows(t, "✔ Name · ab", "✔ Next · c")
-	out := term.received()
+	term.AwaitVisible("✔ Name · ab", "✔ Next · c")
+	out := term.String()
 	assert.Equal(t, 1, strings.Count(out, backgroundQuery))
 	// the unknown background keeps neutrals in the terminal default
 	assert.Equal(t, "", textColor(out, "ab"))
@@ -403,18 +403,18 @@ func TestThemedProbeCancellationIsNotRemembered(t *testing.T) {
 	case <-time.After(failsafe):
 		t.Fatal("cancel blocked")
 	}
-	term.waitRows(t, "~ work:")
+	term.AwaitVisible("~ work:")
 	// a key typed after the cancellation stays with the next prompt, which
 	// asks again because a cancelled probe is not remembered
 	read <- "z"
 	res = prompt(func() (string, error) { return tui.Input(t.Context(), "Next") })
 	term.answerProbe(t, 2, whiteBackground)
-	term.waitRows(t, "~ work:", "◆ Next", "│ z")
+	term.AwaitVisible("~ work:", "◆ Next", "│ z")
 	term.press(t, keyEnter)
 	assert.Equal(t, "z", answer(t, res))
 	group.Close()
-	term.waitRows(t, "✔ Next · z")
-	out := term.received()
+	term.AwaitVisible("✔ Next · z")
+	out := term.String()
 	assert.Equal(t, 2, strings.Count(out, backgroundQuery))
 	assert.True(t, textColor(out, "z") != "")
 }
@@ -448,17 +448,17 @@ func TestThemedFailuresStayWithTheirOwner(t *testing.T) {
 	assert.NoError(t, err)
 	bar.Add(1)
 	live := []string{"~ work", "Download  25%  ━...", "1 / 4 items..."}
-	term.waitRows(t, live...)
+	term.AwaitVisible(live...)
 
 	// a prompt whose helper fails returns the error and leaves the screen
 	_, err = tui.Input(t.Context(), "fail")
 	assert.ErrorIs(t, err, errBoom)
-	term.waitRows(t, live...)
+	term.AwaitVisible(live...)
 	res := prompt(func() (string, error) { return tui.Input(t.Context(), "Name") })
 	term.press(t, "x")
 	term.press(t, keyEnter)
 	assert.Equal(t, "x", answer(t, res))
-	term.waitRows(t, append([]string{"✔ Name · x"}, live...)...)
+	term.AwaitVisible(append([]string{"✔ Name · x"}, live...)...)
 
 	// static output with a failing cell writes nothing
 	err = tui.TableAuto(tui.Stderr(), []struct{ Name string }{{"ok"}, {"fail"}})
@@ -476,9 +476,9 @@ func TestThemedFailuresStayWithTheirOwner(t *testing.T) {
 	broken, err := other.Add(t.Context())
 	assert.NoError(t, err)
 	broken.Update("broken")
-	term.waitRows(t, "✔ Name · x", "~ work", "Download  25%  ━...", "1 / 4 items...", "~ broken")
+	term.AwaitVisible("✔ Name · x", "~ work", "Download  25%  ━...", "1 / 4 items...", "~ broken")
 	broken.Update("fail")
-	term.waitRows(t, append([]string{"✔ Name · x"}, live...)...)
+	term.AwaitVisible(append([]string{"✔ Name · x"}, live...)...)
 	assert.ErrorIs(t, broken.Close(), errBoom)
 	_, err = other.Add(t.Context())
 	assert.ErrorIs(t, err, errBoom)
@@ -486,11 +486,11 @@ func TestThemedFailuresStayWithTheirOwner(t *testing.T) {
 	// the survivors still work
 	work.Update("done")
 	bar.Add(3)
-	term.waitRows(t, "✔ Name · x", "~ done")
+	term.AwaitVisible("✔ Name · x", "~ done")
 	assert.NoError(t, bar.Close())
 	assert.NoError(t, work.Close())
 	group.Close()
-	term.waitRows(t, "✔ Name · x")
+	term.AwaitVisible("✔ Name · x")
 }
 
 func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
@@ -508,7 +508,7 @@ func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
 	bar.Add(1)
 	res := prompt(func() (string, error) { return tui.Dropdown(t.Context(), "Pick", []string{"a", "b"}) })
 	picking := []string{"? Pick", "| > a", "|   b", "| ^v move · type filter"}
-	term.waitRows(t, append([]string{"~ first:", "Download  25%  =...", "1 / 4 items..."}, picking...)...)
+	term.AwaitVisible(append([]string{"~ first:", "Download  25%  =...", "1 / 4 items..."}, picking...)...)
 
 	next := themedLayouts[0].theme() // Guided Unicode
 	next.Symbols.Spinner = []string{"*"}
@@ -521,7 +521,7 @@ func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
 	bar.Add(1)
 	term.press(t, keyDown)
 	running := []string{"~ first:", "~ second:", "Download  50%  =...", "2 / 4 items..."}
-	term.waitRows(t, append(running, "? Pick", "|   a", "| > b", "| ^v move · type filter")...)
+	term.AwaitVisible(append(running, "? Pick", "|   a", "| > b", "| ^v move · type filter")...)
 	term.press(t, keyEnter)
 	assert.Equal(t, "b", answer(t, res))
 
@@ -533,7 +533,7 @@ func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
 	assert.NoError(t, err)
 	res = prompt(func() (string, error) { return tui.Input(t.Context(), "Name") })
 	term.press(t, "x")
-	term.waitRows(t, append(append([]string{"+ Pick · b"}, running...), "* third:", "◆ Name", "│ x")...)
+	term.AwaitVisible(append(append([]string{"+ Pick · b"}, running...), "* third:", "◆ Name", "│ x")...)
 	term.press(t, keyEnter)
 	assert.Equal(t, "x", answer(t, res))
 	assert.NoError(t, first.Close())
@@ -541,7 +541,7 @@ func TestThemedRunningWidgetsKeepTheirSnapshot(t *testing.T) {
 	assert.NoError(t, bar.Close())
 	group.Close()
 	fresh.Close()
-	term.waitRows(t, "+ Pick · b", "✔ Name · x")
+	term.AwaitVisible("+ Pick · b", "✔ Name · x")
 }
 
 func TestThemedConcurrentInstallationAndRendering(t *testing.T) {
@@ -636,7 +636,7 @@ func TestThemedConcurrentInstallationAndRendering(t *testing.T) {
 	syncer, ok := tui.Stderr().(interface{ Sync() error })
 	assert.True(t, ok)
 	assert.NoError(t, syncer.Sync())
-	out := regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`).ReplaceAllString(term.received(), "")
+	out := regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`).ReplaceAllString(term.String(), "")
 	for i := range prompts {
 		label := regexp.MustCompile(fmt.Sprintf(`([AB]) p%d\b`, i)).FindAllStringSubmatch(out, -1)
 		// the answer, and the label unless the arbiter merged its frame away

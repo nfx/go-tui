@@ -208,7 +208,7 @@ func themedInput(
 }
 
 func TestThemedInputGuidedFrameAnswerAndClear(t *testing.T) {
-	i, out, restored := themedInput(t, terst.ASCIITheme(false), 20, 5, "a", "\r")
+	i, out, restored := themedInput(t, terst.ASCIITheme(), 20, 5, "a", "\r")
 	got, err := i.read(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, "a", got)
@@ -224,7 +224,9 @@ func TestThemedInputGuidedFrameAnswerAndClear(t *testing.T) {
 }
 
 func TestThemedInputInlineKeepsLabelOnValueRow(t *testing.T) {
-	i, out, _ := themedInput(t, terst.ASCIITheme(true), 20, 5, "a", "\x1b[D", "\r")
+	inline := terst.ASCIITheme()
+	inline.Inline = true
+	i, out, _ := themedInput(t, inline, 20, 5, "a", "\x1b[D", "\r")
 	_, err := i.read(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, ""+
@@ -237,14 +239,16 @@ func TestThemedInputInlineKeepsLabelOnValueRow(t *testing.T) {
 
 func TestThemedInputInlineReservesCaretColumn(t *testing.T) {
 	// "? Label " takes 8 of 12 columns, the last one is the caret's: 3 remain
-	i, out, _ := themedInput(t, terst.ASCIITheme(true), 12, 5, "abcd", "\r")
+	inline := terst.ASCIITheme()
+	inline.Inline = true
+	i, out, _ := themedInput(t, inline, 12, 5, "abcd", "\r")
 	_, err := i.read(t.Context())
 	assert.NoError(t, err)
 	assert.Contains(t, out.String(), "\r? Label bcd\x1b[K\n")
 }
 
 func TestThemedInputGuidedCaretAfterMovingLeft(t *testing.T) {
-	i, out, _ := themedInput(t, terst.ASCIITheme(false), 20, 5, "ab", "\x1b[D", "\r")
+	i, out, _ := themedInput(t, terst.ASCIITheme(), 20, 5, "ab", "\x1b[D", "\r")
 	_, err := i.read(t.Context())
 	assert.NoError(t, err)
 	assert.Contains(t, out.String(), "\x1b[1A\r? Label\x1b[K\n\r| ab\x1b[K\x1b[1D")
@@ -257,7 +261,7 @@ func TestThemedInputRejectionRowGrowsAndShrinks(t *testing.T) {
 		}
 		return nil
 	})
-	i, out, _ := themedInput(t, terst.ASCIITheme(false), 20, 5, "a", "\r", "b", "\r")
+	i, out, _ := themedInput(t, terst.ASCIITheme(), 20, 5, "a", "\r", "b", "\r")
 	got, err := i.read(t.Context(), check)
 	assert.NoError(t, err)
 	assert.Equal(t, "ab", got)
@@ -274,7 +278,7 @@ func TestThemedInputRejectionRowGrowsAndShrinks(t *testing.T) {
 
 func TestThemedInputClearsRejectionRowsOnError(t *testing.T) {
 	reject := WithValidation(func(context.Context, string) error { return errors.New("no") })
-	i, out, restored := themedInput(t, terst.ASCIITheme(false), 20, 5, "a", "\r")
+	i, out, restored := themedInput(t, terst.ASCIITheme(), 20, 5, "a", "\r")
 	_, err := i.read(t.Context(), reject)
 	assert.ErrorIs(t, err, io.EOF)
 	assert.True(t, *restored)
@@ -294,7 +298,7 @@ func renderThemedInput(t *testing.T, i *input, width, height int) (string, error
 }
 
 func TestThemedInputRejectionTruncatesAndRefitsOnResize(t *testing.T) {
-	i, _, _ := themedInput(t, terst.ASCIITheme(false), 0, 0)
+	i, _, _ := themedInput(t, terst.ASCIITheme(), 0, 0)
 	i.typed, i.cursor, i.rejection = "abc", 3, "much too short"
 	got, err := renderThemedInput(t, i, 30, 5)
 	assert.NoError(t, err)
@@ -322,7 +326,7 @@ func TestThemedInputShortTerminals(t *testing.T) {
 		{"unknown size is unbounded", 0, 0, "", "\r? Label\x1b[K\n\r| a\x1b[K", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			i, _, _ := themedInput(t, terst.ASCIITheme(false), 0, 0)
+			i, _, _ := themedInput(t, terst.ASCIITheme(), 0, 0)
 			i.typed, i.cursor, i.rejection = "a", 1, tc.rejection
 			got, err := renderThemedInput(t, i, tc.width, tc.height)
 			if tc.err != nil {
@@ -336,7 +340,7 @@ func TestThemedInputShortTerminals(t *testing.T) {
 }
 
 func TestThemedInputShrinkKeepsValueOnScreen(t *testing.T) {
-	i, _, _ := themedInput(t, terst.ASCIITheme(false), 0, 0)
+	i, _, _ := themedInput(t, terst.ASCIITheme(), 0, 0)
 	i.typed, i.cursor = "a", 1
 	got, err := renderThemedInput(t, i, 20, 2)
 	assert.NoError(t, err)
@@ -350,7 +354,7 @@ func TestThemedInputShrinkKeepsValueOnScreen(t *testing.T) {
 }
 
 func TestThemedInputWideAndCombiningValue(t *testing.T) {
-	i, _, _ := themedInput(t, terst.ASCIITheme(false), 0, 0)
+	i, _, _ := themedInput(t, terst.ASCIITheme(), 0, 0)
 	// "| " and the caret column leave five of eight columns: the third wide
 	// rune does not fit, and the caret after the cluster moves over two
 	i.typed, i.cursor = "e\u0301\u754c\u754c\u754c", 2
@@ -360,7 +364,7 @@ func TestThemedInputWideAndCombiningValue(t *testing.T) {
 }
 
 func TestThemedInputFamilySlotsRender(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Input.Label = `theme {{ .Label }}`
 	th.Input.Answer = `theme {{ .Value }}`
 	th.Input.Feedback = `theme {{ .Message }}`
@@ -380,7 +384,7 @@ func TestThemedInputFamilySlotsRender(t *testing.T) {
 }
 
 func TestThemedInputHiddenSlots(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Prompt.Label = theme.Hidden
 	th.Prompt.Answer = theme.Hidden
 	i, out, _ := themedInput(t, th, 20, 5, "a", "\r")
@@ -391,7 +395,7 @@ func TestThemedInputHiddenSlots(t *testing.T) {
 }
 
 func TestThemedInputFamilySlots(t *testing.T) {
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Input.Label = `input`
 	th.Number.Label = `number`
 	terst.UseTheme(t, th)
@@ -410,7 +414,7 @@ func TestThemedInputFamilySlots(t *testing.T) {
 
 func TestThemedInputHelperErrorsRestoreTerminal(t *testing.T) {
 	boom := errors.New("boom")
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Funcs = map[string]any{"fails": func(string) (string, error) { return "", boom }}
 
 	th.Input.Label = `{{ fails .Label }}`
@@ -441,7 +445,7 @@ func TestThemedInputHelperErrorsRestoreTerminal(t *testing.T) {
 
 func TestThemedInputDefaultWithoutTerminal(t *testing.T) {
 	terst.StrictOutput(t)
-	th := terst.ASCIITheme(false)
+	th := terst.ASCIITheme()
 	th.Input.Label = `{{ fails .Label }}`
 	th.Funcs = map[string]any{"fails": func(string) (string, error) { return "", errors.New("boom") }}
 	terst.UseTheme(t, th)
@@ -460,7 +464,7 @@ func TestThemedInputDefaultWithoutTerminal(t *testing.T) {
 
 func TestThemedInputColorsFollowDestination(t *testing.T) {
 	terst.WithEnv(t, "FORCE_COLOR=3")
-	i, out, _ := themedInput(t, terst.ASCIITheme(false), 20, 5, "a", "\r")
+	i, out, _ := themedInput(t, terst.ASCIITheme(), 20, 5, "a", "\r")
 	_, err := i.read(t.Context())
 	assert.NoError(t, err)
 	accent := string(i.look.Roles.Accent)
@@ -470,7 +474,7 @@ func TestThemedInputColorsFollowDestination(t *testing.T) {
 	assert.Contains(t, out.String(), "\n\r\x1b[2m|\x1b[22m a\x1b[K")
 
 	terst.WithEnv(t)
-	i, out, _ = themedInput(t, terst.ASCIITheme(false), 20, 5, "a", "\r")
+	i, out, _ = themedInput(t, terst.ASCIITheme(), 20, 5, "a", "\r")
 	_, err = i.read(t.Context())
 	assert.NoError(t, err)
 	assert.True(t, !strings.Contains(out.String(), "\x1b[3"))
@@ -492,8 +496,10 @@ func TestThemedInputSymbolsFollowEnvironment(t *testing.T) {
 }
 
 func TestThemedInputCapturesThemeAtConstruction(t *testing.T) {
-	i, out, _ := themedInput(t, terst.ASCIITheme(false), 20, 5, "a", "\r")
-	assert.NoError(t, term.Default.InstallTheme(terst.ASCIITheme(true)))
+	i, out, _ := themedInput(t, terst.ASCIITheme(), 20, 5, "a", "\r")
+	inline := terst.ASCIITheme()
+	inline.Inline = true
+	assert.NoError(t, term.Default.InstallTheme(inline))
 	_, err := i.read(t.Context())
 	assert.NoError(t, err)
 	assert.Contains(t, out.String(), "\r? Label\x1b[K\n\r| a\x1b[K")

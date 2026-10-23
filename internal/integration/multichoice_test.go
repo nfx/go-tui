@@ -327,29 +327,45 @@ func TestMultichoiceSharesTerminalWithProgressAndLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 	progress.Add(1)
-	term.waitRows(t, "Download  25%  ...", "1 / 4 items...")
+	term.AwaitVisible("Download  25%  ...", "1 / 4 items...")
 	res := prompt(func() (string, error) {
 		values, err := tui.Multichoice(t.Context(), "Pick", []string{"a", "b"})
 		return fmt.Sprint(values), err
 	})
-	term.waitRows(t, "Download  25%  ...", "1 / 4 items...", "? Pick", "| > o a", "|   o b", "| ^v move...")
+	term.AwaitVisible("Download  25%  ...", "1 / 4 items...", "? Pick", "| > o a", "|   o b", "| ^v move...")
 	if _, err := fmt.Fprintln(tui.Stderr(), "log line"); err != nil {
 		t.Fatal(err)
 	}
-	term.waitRows(t, "log line", "Download  25%  ...", "1 / 4 items...", "? Pick", "| > o a", "|   o b", "| ^v move...")
+	term.AwaitVisible(
+		"log line",
+		"Download  25%  ...",
+		"1 / 4 items...",
+		"? Pick",
+		"| > o a",
+		"|   o b",
+		"| ^v move...",
+	)
 	term.press(t, " ")
 	term.press(t, keyDown)
-	term.waitRows(t, "log line", "Download  25%  ...", "1 / 4 items...", "? Pick", "|   x a", "| > o b", "| ^v move...")
+	term.AwaitVisible(
+		"log line",
+		"Download  25%  ...",
+		"1 / 4 items...",
+		"? Pick",
+		"|   x a",
+		"| > o b",
+		"| ^v move...",
+	)
 	term.press(t, keyEnter)
 	if got := answer(t, res); got != "[a]" {
 		t.Fatal(got)
 	}
-	term.waitRows(t, "log line", "+ Pick · a", "Download  25%  ...", "1 / 4 items...")
+	term.AwaitVisible("log line", "+ Pick · a", "Download  25%  ...", "1 / 4 items...")
 	progress.Add(3)
 	if err := progress.Close(); err != nil {
 		t.Fatal(err)
 	}
-	term.waitRows(t, "log line", "+ Pick · a")
+	term.AwaitVisible("log line", "+ Pick · a")
 	res = prompt(func() (string, error) { return tui.Input(t.Context(), "Next", tui.WithHide()) })
 	term.press(t, "x")
 	term.press(t, keyEnter)
@@ -365,25 +381,25 @@ func TestMultichoiceLazyManagedFilterAndConfirmation(t *testing.T) {
 		values, err := tui.MultichoiceLazy(t.Context(), "Pick", feed(items), tui.WithDefault("api"))
 		return fmt.Sprint(values), err
 	})
-	term.waitRows(t, "? Pick", "| ^v move...")
+	term.AwaitVisible("? Pick", "| ^v move...")
 	items <- "api"
-	term.waitRows(t, "? Pick", "| > o api", "| ^v move...")
+	term.AwaitVisible("? Pick", "| > o api", "| ^v move...")
 	term.press(t, "z")
-	term.waitRows(t, "? Pick", "| No matches", "| ^v move...")
+	term.AwaitVisible("? Pick", "| No matches", "| ^v move...")
 	items <- "zzz"
-	term.waitRows(t, "? Pick", "| > o zzz", "| ^v move...")
+	term.AwaitVisible("? Pick", "| > o zzz", "| ^v move...")
 	term.press(t, " ")
 	term.press(t, keyEnter)
-	term.waitRows(t, "? Pick", "| > x zzz", "| ^v move...")
+	term.AwaitVisible("? Pick", "| > x zzz", "| ^v move...")
 	read := term.blockedRead(t)
 	close(items)
 	read <- keyBackspace
-	term.waitRows(t, "? Pick", "|   x api", "| > x zzz", "| ^v move...")
+	term.AwaitVisible("? Pick", "|   x api", "| > x zzz", "| ^v move...")
 	term.press(t, keyEnter)
 	if got := answer(t, res); got != "[api zzz]" {
 		t.Fatal(got)
 	}
-	term.waitRows(t, "+ Pick · api, zzz")
+	term.AwaitVisible("+ Pick · api, zzz")
 }
 
 func TestMultichoiceManagedResizePreservesIdentity(t *testing.T) {
@@ -392,16 +408,16 @@ func TestMultichoiceManagedResizePreservesIdentity(t *testing.T) {
 		values, err := tui.Multichoice(t.Context(), "Pick", []string{"a", "b", "c", "d", "e"})
 		return fmt.Sprint(values), err
 	})
-	term.waitRows(t, "? Pick", "| > o a", "|   o b", "|   o c", "|   o d", "|   o e", "| ^v move...")
+	term.AwaitVisible("? Pick", "| > o a", "|   o b", "|   o c", "|   o d", "|   o e", "| ^v move...")
 	term.press(t, keyDown)
 	term.press(t, keyDown)
 	term.press(t, " ")
 	read := term.blockedRead(t)
 	// two rows and the count, with the row below the frame free
 	term.resize(t, 40, 5)
-	term.waitRows(t, "? Pick", "|   o b", "| > x c", "| 2 more · ^v move · space toggle · ty…")
+	term.AwaitVisible("? Pick", "|   o b", "| > x c", "| 2 more · ^v move · space toggle · ty…")
 	term.resize(t, 40, 12)
-	term.waitRows(t, "? Pick", "|   o a", "|   o b", "| > x c", "|   o d", "|   o e", "| ^v move...")
+	term.AwaitVisible("? Pick", "|   o a", "|   o b", "| > x c", "|   o d", "|   o e", "| ^v move...")
 	read <- keyEnter
 	if got := answer(t, res); got != "[c]" {
 		t.Fatal(got)
@@ -422,7 +438,7 @@ func TestMultichoiceManagedCancelAndDeadline(t *testing.T) {
 				values, err := tui.Multichoice(ctx, "Pick", []string{"a"})
 				return fmt.Sprint(values), err
 			})
-			term.waitRows(t, "? Pick", "| > o a", "| ^v move...")
+			term.AwaitVisible("? Pick", "| > o a", "| ^v move...")
 			read := term.blockedRead(t)
 			if !deadline {
 				cancel()
@@ -439,7 +455,7 @@ func TestMultichoiceManagedCancelAndDeadline(t *testing.T) {
 			case <-time.After(failsafe):
 				t.Fatal("cancel blocked")
 			}
-			term.waitRows(t)
+			term.AwaitVisible()
 			next := prompt(func() (string, error) { return tui.Input(t.Context(), "Next", tui.WithHide()) })
 			read <- "x\r"
 			if got := answer(t, next); got != "x" {
@@ -487,7 +503,7 @@ func ExampleMultichoiceLazy() {
 func TestMultichoicePTYKeyboardResizeAndRestore(t *testing.T) {
 	for _, abort := range []bool{false, true} {
 		t.Run(map[bool]string{false: "confirm", true: "cancel"}[abort], func(t *testing.T) {
-			terst.UseTheme(t, terst.ASCIITheme(false))
+			terst.UseASCII(t)
 			master, tty, err := openPty()
 			if err != nil {
 				t.Skipf("no pseudo-terminal: %v", err)
@@ -499,8 +515,9 @@ func TestMultichoicePTYKeyboardResizeAndRestore(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			screen := newScreen(40)
-			terst.UseIO(t, tty, &ttyWriter{fd: tty.Fd(), screen: screen})
+			screen := terst.NewOutput(t)
+			screen.Resize(40, 0)
+			terst.UseIO(t, tty, &ttyWriter{fd: tty.Fd(), out: screen})
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			result := make(chan error, 1)
@@ -510,14 +527,14 @@ func TestMultichoicePTYKeyboardResizeAndRestore(t *testing.T) {
 				selected <- got
 				result <- err
 			}()
-			screen.waitRows(t, "? Pick", "| > o a", "|   o b", "|   o c", "|   o d", "|   o e", "| ^v move...")
+			screen.AwaitVisible("? Pick", "| > o a", "|   o b", "|   o c", "|   o d", "|   o e", "| ^v move...")
 			if _, err := master.WriteString("\x1b[B\x1b[B "); err != nil {
 				t.Fatal(err)
 			}
-			screen.waitRows(t, "? Pick", "|   o a", "|   o b", "| > x c", "|   o d", "|   o e", "| ^v move...")
+			screen.AwaitVisible("? Pick", "|   o a", "|   o b", "| > x c", "|   o d", "|   o e", "| ^v move...")
 			// room for two items and the count, with the row below the frame free
 			resizeTTY(t, tty, 40, 5)
-			screen.waitRows(t, "? Pick", "|   o b", "| > x c", "| 2 more · ^v move · space toggle · ty…")
+			screen.AwaitVisible("? Pick", "|   o b", "| > x c", "| 2 more · ^v move · space toggle · ty…")
 			if abort {
 				cancel()
 			} else {
@@ -525,16 +542,12 @@ func TestMultichoicePTYKeyboardResizeAndRestore(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			select {
-			case err := <-result:
-				if abort && !errors.Is(err, context.Canceled) {
-					t.Fatal(err)
-				}
-				if !abort && err != nil {
-					t.Fatal(err)
-				}
-			case <-time.After(time.Second):
-				t.Fatal("PTY prompt did not finish")
+			err = terst.Recv(t, result)
+			if abort && !errors.Is(err, context.Canceled) {
+				t.Fatal(err)
+			}
+			if !abort && err != nil {
+				t.Fatal(err)
 			}
 			got := <-selected
 			if abort && got != nil {
