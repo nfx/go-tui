@@ -160,10 +160,10 @@ func TestThemedProgressUnknownAndExceededTotals(t *testing.T) {
 func TestThemedProgressView(t *testing.T) {
 	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
 	th := compactTheme()
-	th.Templates.Progress.Label = `<{{ .Label }}>`
-	th.Templates.Progress.Metrics = `{{ .Current }}/{{ .Total }}{{ with .Rate }} at {{ . }}{{ end }}` +
+	th.Progress.Label = `<{{ .Label }}>`
+	th.Progress.Metrics = `{{ .Current }}/{{ .Total }}{{ with .Rate }} at {{ . }}{{ end }}` +
 		`{{ with .Remaining }} eta {{ . }}{{ end }}{{ with .Elapsed }} after {{ . }}{{ end }}`
-	th.Templates.Progress.Frame = `{{ .Label }} {{ .Percent }} [{{ .Bar }}] {{ .Metrics }} {{ len .Values }}`
+	th.Progress.Frame = `{{ .Label }} {{ .Percent }} [{{ .Bar }}] {{ .Metrics }} {{ len .Values }}`
 	state := halfDone(now)
 	state.fmtRate = func(r float64) string { return fmt.Sprintf("%.0f\nitems", r) }
 	p := themedBar(t, th, state)
@@ -189,8 +189,8 @@ func TestThemedProgressView(t *testing.T) {
 
 	// a stacked frame gets no metrics; the hint row gets the pairs that fit
 	th.Progress.Compact = false
-	th.Templates.Progress.Hint = `{{ range . }}[{{ .Left }}{{ with .Right }} {{ . }}{{ end }}]{{ end }}`
-	th.Templates.Progress.Frame = `{{ .Label }} {{ .Percent }} [{{ .Bar }}] {{ len .Hints }}/{{ len .Values }}{{ .Metrics }}`
+	th.Progress.Hint = `{{ range . }}[{{ .Left }}{{ with .Right }} {{ . }}{{ end }}]{{ end }}`
+	th.Progress.Frame = `{{ .Label }} {{ .Percent }} [{{ .Bar }}] {{ len .Hints }}/{{ len .Values }}{{ .Metrics }}`
 	p = themedBar(t, th, state)
 	p.label = ansi.Text("multi\nline\x1b[2K")
 	row, err = p.row(40, now)
@@ -201,8 +201,8 @@ func TestThemedProgressView(t *testing.T) {
 func TestThemedProgressHiddenSlots(t *testing.T) {
 	now := time.Date(2024, time.January, 1, 0, 0, 1, 0, time.UTC)
 	th := compactTheme()
-	th.Templates.Progress.Label = theme.Hidden
-	th.Templates.Progress.Metrics = theme.Hidden
+	th.Progress.Label = theme.Hidden
+	th.Progress.Metrics = theme.Hidden
 	p := themedBar(t, th, halfDone(now))
 	row, err := p.row(16, now)
 	assert.NoError(t, err)
@@ -214,12 +214,12 @@ func TestThemedProgressHiddenSlots(t *testing.T) {
 	row, err = p.row(16, now)
 	assert.NoError(t, err)
 	assert.Equal(t, "50%  =====>-----\n50 / 100 items", row.String())
-	th.Templates.Progress.Hint = theme.Hidden
+	th.Progress.Hint = theme.Hidden
 	p = themedBar(t, th, halfDone(now))
 	row, err = p.row(16, now)
 	assert.NoError(t, err)
 	assert.Equal(t, "50%  =====>-----", row.String())
-	th.Templates.Progress.Metrics = ""
+	th.Progress.Metrics = ""
 	th.Progress.Compact = true
 	p = themedBar(t, th, halfDone(now))
 	row, err = p.row(40, now)
@@ -236,20 +236,20 @@ func TestThemedProgressFrameErrors(t *testing.T) {
 	}{
 		{
 			template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }},
-			`{{ boom }}{{ .Bar }}`, "theme.Templates.Progress.Frame: template: Progress.Frame:1:3: executing",
+			`{{ boom }}{{ .Bar }}`, "theme.Progress.Frame: template: Progress.Frame:1:3: executing",
 		},
 		{
 			template.FuncMap{"raw": func(v any) string { return fmt.Sprint(v) }},
-			`{{ .Bar }}{{ raw . }}`, "theme.Templates.Progress.Frame: want the bar once",
+			`{{ .Bar }}{{ raw . }}`, "theme.Progress.Frame: want the bar once",
 		},
 		{
 			template.FuncMap{"erase": func() string { return "\x1b[2K" }},
-			`{{ erase }}{{ .Bar }}`, `theme.Templates.Progress.Frame: "\x1b[2K": want text and SGR only`,
+			`{{ erase }}{{ .Bar }}`, `theme.Progress.Frame: "\x1b[2K": want text and SGR only`,
 		},
 	} {
 		th := theme.New()
 		th.Funcs = tc.funcs
-		th.Templates.Progress.Frame = tc.frame
+		th.Progress.Frame = tc.frame
 		p := themedBar(t, th, halfDone(now))
 		_, err := p.row(40, now)
 		assert.Error(t, err)
@@ -394,7 +394,7 @@ func TestThemedProgressLongLabel(t *testing.T) {
 func TestThemedProgressRenderErrorEndsBar(t *testing.T) {
 	th := terst.ASCIITheme(false)
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
-	th.Templates.Progress.Label = `{{ if eq .Current 150 }}{{ boom }}{{ end }}{{ .Label }}`
+	th.Progress.Label = `{{ if eq .Current 150 }}{{ boom }}{{ end }}{{ .Label }}`
 	p, frames, tick, restored := themedProgress(t, th, 200)
 	p.Add(100)
 	tick(time.Second)
@@ -407,7 +407,7 @@ func TestThemedProgressRenderErrorEndsBar(t *testing.T) {
 	assert.True(t, restored.Load())
 	err := p.Close()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "redraw: theme.Templates.Progress.Label")
+	assert.Contains(t, err.Error(), "redraw: theme.Progress.Label")
 	assert.Contains(t, err.Error(), "boom")
 	// nobody renders anymore, and Add does not block
 	p.Add(1)
@@ -436,9 +436,9 @@ func TestThemedProgressWriteErrorEndsBar(t *testing.T) {
 func TestThemedProgressWithoutTerminal(t *testing.T) {
 	th := theme.New()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
-	th.Templates.Progress.Label = `{{ boom }}`
-	th.Templates.Progress.Metrics = `{{ boom }}`
-	th.Templates.Progress.Frame = `{{ boom }}{{ .Bar }}`
+	th.Progress.Label = `{{ boom }}`
+	th.Progress.Metrics = `{{ boom }}`
+	th.Progress.Frame = `{{ boom }}{{ .Bar }}`
 	terst.UseTheme(t, th)
 	noTTY := option.OpT(func(pb *Progressbar) error {
 		pb.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) { return nil, errs.ErrNoTTY }

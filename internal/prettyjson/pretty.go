@@ -11,7 +11,7 @@ import (
 	"github.com/nfx/go-tui/internal/term"
 )
 
-// PrettyJSON pretty-prints JSON data, with two-space indentation unless the theme sets another [JSONStyle].
+// PrettyJSON pretty-prints JSON data, with two-space indentation unless the theme sets another [theme.JSON].
 func PrettyJSON(w io.Writer, src any) error {
 	theme := term.Default.CurrentTheme()
 	out, err := jsonIndent(src, theme.Source.JSON)

@@ -12,7 +12,7 @@ func main() {
 	ctx := context.Background()
 	// the feedback slot sees only .Message, so a plain one works without colors
 	theme := tui.DefaultTheme()
-	theme.Templates.Input.Feedback = `[error] {{ .Message }}`
+	theme.Input.Feedback = `[error] {{ .Message }}`
 	if err := tui.SetDefaultTheme(theme); err != nil {
 		panic(err)
 	}

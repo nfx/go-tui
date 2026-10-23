@@ -26,8 +26,8 @@ func compileTemplates(t *testing.T, edit func(*theme.Theme)) (*Compiled, error) 
 
 func TestTemplateZeroInheritsAndEmptyHides(t *testing.T) {
 	c, err := compileTemplates(t, func(th *theme.Theme) {
-		th.Templates.Prompt.Label = theme.Template("{{ bold .Label }}")
-		th.Templates.Dropdown.Hint = theme.Hidden
+		th.Prompt.Label = theme.Template("{{ bold .Label }}")
+		th.Dropdown.Hint = theme.Hidden
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -52,8 +52,8 @@ func TestTemplateZeroInheritsAndEmptyHides(t *testing.T) {
 
 func TestTemplateFamilyOverrideStaysLocal(t *testing.T) {
 	c, err := compileTemplates(t, func(th *theme.Theme) {
-		th.Templates.Prompt.Label = theme.Template("shared")
-		th.Templates.Input.Label = theme.Template("input")
+		th.Prompt.Label = theme.Template("shared")
+		th.Input.Label = theme.Template("input")
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -81,13 +81,13 @@ func TestTemplateRequiredSlotRejectsEmpty(t *testing.T) {
 		_, err := compileTemplates(t, func(th *theme.Theme) {
 			switch path {
 			case "Choice.Active":
-				th.Templates.Choice.Active = theme.Hidden
+				th.Choice.Active = theme.Hidden
 			case "Choice.Inactive":
-				th.Templates.Choice.Inactive = theme.Hidden
+				th.Choice.Inactive = theme.Hidden
 			case "Choice.Value":
-				th.Templates.Choice.Value = theme.Hidden
+				th.Choice.Value = theme.Hidden
 			default:
-				th.Templates.Multichoice.Row = theme.Hidden
+				th.Multichoice.Row = theme.Hidden
 			}
 		})
 		if err == nil || !strings.Contains(err.Error(), path) {
@@ -98,23 +98,23 @@ func TestTemplateRequiredSlotRejectsEmpty(t *testing.T) {
 
 func TestTemplateErrorNamesDefiningSlot(t *testing.T) {
 	_, err := compileTemplates(t, func(th *theme.Theme) {
-		th.Templates.Prompt.Answer = theme.Template("{{ .Value ")
+		th.Prompt.Answer = theme.Template("{{ .Value ")
 	})
-	if err == nil || !strings.Contains(err.Error(), "theme.Templates.Prompt.Answer") {
+	if err == nil || !strings.Contains(err.Error(), "theme.Prompt.Answer") {
 		t.Fatalf("got %v", err)
 	}
 	_, err = compileTemplates(t, func(th *theme.Theme) {
-		th.Templates.Input.Label = theme.Template("{{ nosuchhelper .Label }}")
+		th.Input.Label = theme.Template("{{ nosuchhelper .Label }}")
 	})
-	if err == nil || !strings.Contains(err.Error(), "theme.Templates.Input.Label") {
+	if err == nil || !strings.Contains(err.Error(), "theme.Input.Label") {
 		t.Fatalf("unknown helper: got %v", err)
 	}
 }
 
 func TestTemplateDefineIsIsolatedPerSlot(t *testing.T) {
 	c, err := compileTemplates(t, func(th *theme.Theme) {
-		th.Templates.Prompt.Label = theme.Template(`{{ define "x" }}A{{ end }}{{ template "x" }}`)
-		th.Templates.Prompt.Hint = theme.Template(`{{ define "x" }}B{{ end }}{{ template "x" }}`)
+		th.Prompt.Label = theme.Template(`{{ define "x" }}A{{ end }}{{ template "x" }}`)
+		th.Prompt.Hint = theme.Template(`{{ define "x" }}B{{ end }}{{ template "x" }}`)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -135,11 +135,11 @@ func TestBoundSlotRendersOrFailsWhole(t *testing.T) {
 	boom := errors.New("boom")
 	c, err := compileTemplates(t, func(th *theme.Theme) {
 		th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
-		th.Templates.Prompt.Label = `{{ bold .Label }}`
-		th.Templates.Prompt.Hint = `{{ bold "partial" }}{{ fails .Label }}`
-		th.Templates.Prompt.Feedback = "{{ .Label }}\n"
-		th.Templates.Prompt.Answer = "{{ .Label }}\x1b[2K"
-		th.Templates.Choice.Empty = theme.Hidden
+		th.Prompt.Label = `{{ bold .Label }}`
+		th.Prompt.Hint = `{{ bold "partial" }}{{ fails .Label }}`
+		th.Prompt.Feedback = "{{ .Label }}\n"
+		th.Prompt.Answer = "{{ .Label }}\x1b[2K"
+		th.Choice.Empty = theme.Hidden
 	})
 	assert.NoError(t, err)
 	data := struct{ Label string }{"x"}
@@ -158,7 +158,7 @@ func TestBoundSlotRendersOrFailsWhole(t *testing.T) {
 
 	out, err = render(c.Templates.Prompt.Hint, color.ProfileTrueColor)
 	assert.ErrorIs(t, err, boom)
-	assert.Contains(t, err.Error(), "theme.Templates.Prompt.Hint")
+	assert.Contains(t, err.Error(), "theme.Prompt.Hint")
 	assert.True(t, out == nil)
 
 	for _, s := range []*Slot{c.Templates.Prompt.Feedback, c.Templates.Prompt.Answer} {
@@ -193,7 +193,7 @@ func TestBuiltinPromptSlots(t *testing.T) {
 	assert.Equal(t, "up/down adjust · enter submit", render(tt.Number.Hint, keys))
 	assert.Equal(t, "", render(tt.Number.Hint, HintView{}))
 	// built-ins stay out of the editable configuration
-	assert.Equal(t, theme.Template(""), c.Editable().Templates.Prompt.Label)
+	assert.Equal(t, theme.Template(""), c.Editable().Prompt.Label)
 }
 
 func TestBuiltinMultichoiceSlots(t *testing.T) {
@@ -227,11 +227,12 @@ func TestBuiltinMultichoiceSlots(t *testing.T) {
 
 func TestMultichoiceRowAndAnswerValueFallBackToBuiltins(t *testing.T) {
 	c, err := compileTemplates(t, func(th *theme.Theme) {
-		th.Templates.Multichoice.Label = "family"
-		th.Templates.Multichoice.AnswerValue = theme.Hidden
+		th.Multichoice.Label = "family"
+		th.Multichoice.AnswerValue = theme.Hidden
 	})
 	assert.NoError(t, err)
-	builtin, err := compileSet(&builtinTemplates, c.Funcs(color.ProfilePlain, Roles{}), templates{})
+	src := builtinTheme()
+	builtin, err := compileSet(&src, c.Funcs(color.ProfilePlain, Roles{}), templates{})
 	assert.NoError(t, err)
 	tt := c.Templates.Multichoice
 	assert.Equal(t, builtin.Multichoice.Row.tmpl.Root.String(), tt.Row.tmpl.Root.String())
@@ -252,25 +253,25 @@ func TestColorLiteralsFailInstallation(t *testing.T) {
 		`{{ with .Label }}{{ . }}{{ else }}{{ bg "#FFFFFFFF" "x" }}{{ end }}`,
 		`{{ define "x" }}{{ fg "rgb(0,0,0)" . }}{{ end }}{{ template "x" .Label }}`,
 	} {
-		_, err := compileTemplates(t, func(th *theme.Theme) { th.Templates.Input.Label = src })
-		if err == nil || !strings.Contains(err.Error(), "theme.Templates.Input.Label") ||
+		_, err := compileTemplates(t, func(th *theme.Theme) { th.Input.Label = src })
+		if err == nil || !strings.Contains(err.Error(), "theme.Input.Label") ||
 			!strings.Contains(err.Error(), `want "#RRGGBB" or "#RGB"`) {
 			t.Errorf("%s: got %v", src, err)
 		}
 	}
-	_, err := compileTemplates(t, func(th *theme.Theme) { th.Templates.Input.Label = `{{ fg "#0AD" .Label }}` })
+	_, err := compileTemplates(t, func(th *theme.Theme) { th.Input.Label = `{{ fg "#0AD" .Label }}` })
 	assert.NoError(t, err)
 	// dynamic colors, and text literals in the value position, are not checked
 	_, err = compileTemplates(t, func(th *theme.Theme) {
-		th.Templates.Input.Label = `{{ fg .Color .Label }}{{ fg "#000" "not a color" }}{{ printf "%s" "teal" }}`
+		th.Input.Label = `{{ fg .Color .Label }}{{ fg "#000" "not a color" }}{{ printf "%s" "teal" }}`
 	})
 	assert.NoError(t, err)
 }
 
 func TestColorLiteralErrorHasPosition(t *testing.T) {
-	_, err := compileTemplates(t, func(th *theme.Theme) { th.Templates.Prompt.Answer = "x\n{{ fg \"#12\" .Value }}" })
+	_, err := compileTemplates(t, func(th *theme.Theme) { th.Prompt.Answer = "x\n{{ fg \"#12\" .Value }}" })
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "theme.Templates.Prompt.Answer: Prompt.Answer:2:")
+	assert.Contains(t, err.Error(), "theme.Prompt.Answer: Prompt.Answer:2:")
 	assert.Contains(t, err.Error(), ": fg: ")
 }
 
@@ -293,8 +294,8 @@ func TestBuiltinSpinnerSlots(t *testing.T) {
 }
 
 func TestSpinnerSlotsRejectHidden(t *testing.T) {
-	_, err := compileTemplates(t, func(th *theme.Theme) { th.Templates.Spinner.Stopped = theme.Hidden })
-	assert.Contains(t, err.Error(), "theme.Templates.Spinner.Stopped: empty source is not allowed")
+	_, err := compileTemplates(t, func(th *theme.Theme) { th.Spinner.Stopped = theme.Hidden })
+	assert.Contains(t, err.Error(), "theme.Spinner.Stopped: empty source is not allowed")
 }
 
 func TestSpinnerStyleValidation(t *testing.T) {
@@ -307,7 +308,7 @@ func TestSpinnerStyleValidation(t *testing.T) {
 	assert.Equal(t, []string{"|", "/", "-", `\`}, c.Source.Symbols.Spinner)
 
 	th := theme.New()
-	th.Spinner = theme.SpinnerStyle{Interval: -time.Second}
+	th.Spinner = theme.Spinner{Interval: -time.Second}
 	_, err = Compile(th)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "theme.Spinner.Interval: -1s: must not be negative")
@@ -376,7 +377,7 @@ func TestBuiltinProgressSlots(t *testing.T) {
 	assert.Equal(t, "", hint(tt.Hint, nil))
 	// a prompt hint edit does not reach progress, and ASCII separates with a bar
 	c, err = compileTemplates(t, func(th *theme.Theme) {
-		th.Templates.Prompt.Hint = theme.Hidden
+		th.Prompt.Hint = theme.Hidden
 		th.Symbols = theme.New().Symbols.ASCII()
 		th.Progress.Compact = true
 	})
@@ -395,7 +396,7 @@ func TestProgressFrameInsertsBarOnce(t *testing.T) {
 		`{{ .Label }} [{{- .Bar -}}] {{ with .Metrics }}{{ . }}{{ end }}`,
 		`{{ define "m" }}{{ .Metrics }}{{ end }}{{ .Bar }}{{ template "m" . }}`,
 	} {
-		_, err := compileTemplates(t, func(th *theme.Theme) { th.Templates.Progress.Frame = frame })
+		_, err := compileTemplates(t, func(th *theme.Theme) { th.Progress.Frame = frame })
 		assert.NoError(t, err)
 	}
 	for _, frame := range []theme.Template{
@@ -413,20 +414,20 @@ func TestProgressFrameInsertsBarOnce(t *testing.T) {
 		`{{ define "b" }}{{ .Bar }}{{ end }}{{ template "b" . }}`,
 		`{{ define "b" }}{{ .Bar }}{{ end }}`,
 	} {
-		_, err := compileTemplates(t, func(th *theme.Theme) { th.Templates.Progress.Frame = frame })
+		_, err := compileTemplates(t, func(th *theme.Theme) { th.Progress.Frame = frame })
 		assert.Error(t, err)
 		assert.Contains(
 			t,
 			err.Error(),
-			"theme.Templates.Progress.Frame: want one top-level {{ .Bar }} and no other use of .Bar",
+			"theme.Progress.Frame: want one top-level {{ .Bar }} and no other use of .Bar",
 		)
 	}
-	_, err := compileTemplates(t, func(th *theme.Theme) { th.Templates.Progress.Frame = theme.Hidden })
-	assert.Contains(t, err.Error(), "theme.Templates.Progress.Frame: empty source is not allowed")
+	_, err := compileTemplates(t, func(th *theme.Theme) { th.Progress.Frame = theme.Hidden })
+	assert.Contains(t, err.Error(), "theme.Progress.Frame: empty source is not allowed")
 	// label and metrics may be hidden, and other slots stay unchecked
 	c, err := compileTemplates(t, func(th *theme.Theme) {
-		th.Templates.Progress.Label = theme.Hidden
-		th.Templates.Progress.Metrics = `{{ .Bar }}{{ .Bar }}`
+		th.Progress.Label = theme.Hidden
+		th.Progress.Metrics = `{{ .Bar }}{{ .Bar }}`
 	})
 	assert.NoError(t, err)
 	assert.True(t, c.Templates.Progress.Label.hidden)
@@ -436,25 +437,25 @@ func TestProgressStyleValidation(t *testing.T) {
 	// a theme built by hand stacks the metrics below the bar, like the preset
 	c, err := Compile(theme.Theme{})
 	assert.NoError(t, err)
-	assert.Equal(t, theme.ProgressStyle{MinBarWidth: 1}, c.Source.Progress)
+	assert.Equal(t, theme.Progress{MinBarWidth: 1}, c.Source.Progress)
 	c, err = Compile(theme.New())
 	assert.NoError(t, err)
 	assert.Equal(t, theme.New().Progress, c.Source.Progress)
 	th := theme.New()
-	th.Progress = theme.ProgressStyle{MaxBarWidth: 3}
+	th.Progress = theme.Progress{MaxBarWidth: 3}
 	th.Symbols.BarFill, th.Symbols.BarHead = "#", ""
 	c, err = Compile(th)
 	assert.NoError(t, err)
-	assert.Equal(t, theme.ProgressStyle{MinBarWidth: 1, MaxBarWidth: 3}, c.Source.Progress)
+	assert.Equal(t, theme.Progress{MinBarWidth: 1, MaxBarWidth: 3}, c.Source.Progress)
 	assert.Equal(t, "#", c.Source.Symbols.BarFill)
 	assert.Equal(t, "╸", c.Source.Symbols.BarHead)
 	for _, tc := range []struct {
-		style theme.ProgressStyle
+		style theme.Progress
 		want  string
 	}{
-		{theme.ProgressStyle{MinBarWidth: -1}, "theme.Progress.MinBarWidth: -1: must not be negative"},
-		{theme.ProgressStyle{MaxBarWidth: -1}, "theme.Progress.MaxBarWidth: -1: must not be negative"},
-		{theme.ProgressStyle{MinBarWidth: 5, MaxBarWidth: 4}, "theme.Progress.MaxBarWidth: 4: below MinBarWidth 5"},
+		{theme.Progress{MinBarWidth: -1}, "theme.Progress.MinBarWidth: -1: must not be negative"},
+		{theme.Progress{MaxBarWidth: -1}, "theme.Progress.MaxBarWidth: -1: must not be negative"},
+		{theme.Progress{MinBarWidth: 5, MaxBarWidth: 4}, "theme.Progress.MaxBarWidth: 4: below MinBarWidth 5"},
 	} {
 		th := theme.New()
 		th.Progress = tc.style
@@ -522,15 +523,15 @@ func TestBuiltinTableSlots(t *testing.T) {
 }
 
 func TestTableSlotsHiding(t *testing.T) {
-	c, err := compileTemplates(t, func(th *theme.Theme) { th.Templates.Table.Header = theme.Hidden })
+	c, err := compileTemplates(t, func(th *theme.Theme) { th.Table.Header = theme.Hidden })
 	assert.NoError(t, err)
 	assert.True(t, c.Templates.Table.Header.hidden)
-	_, err = compileTemplates(t, func(th *theme.Theme) { th.Templates.Table.Cell = theme.Hidden })
+	_, err = compileTemplates(t, func(th *theme.Theme) { th.Table.Cell = theme.Hidden })
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "theme.Templates.Table.Cell: empty source is not allowed")
-	_, err = compileTemplates(t, func(th *theme.Theme) { th.Templates.Table.Cell = `{{ fg "#12" .Value }}` })
+	assert.Contains(t, err.Error(), "theme.Table.Cell: empty source is not allowed")
+	_, err = compileTemplates(t, func(th *theme.Theme) { th.Table.Cell = `{{ fg "#12" .Value }}` })
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "theme.Templates.Table.Cell: ")
+	assert.Contains(t, err.Error(), "theme.Table.Cell: ")
 }
 
 func TestTableStyleValidation(t *testing.T) {
@@ -538,16 +539,16 @@ func TestTableStyleValidation(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, theme.New().Table, c.Source.Table)
 	th := theme.New()
-	th.Table = theme.TableStyle{MinColumnWidth: 2}
+	th.Table = theme.Table{MinColumnWidth: 2}
 	c, err = Compile(th)
 	assert.NoError(t, err)
-	assert.Equal(t, theme.TableStyle{ColumnGap: 2, MinColumnWidth: 2}, c.Source.Table)
+	assert.Equal(t, theme.Table{ColumnGap: 2, MinColumnWidth: 2}, c.Source.Table)
 	for _, tc := range []struct {
-		style theme.TableStyle
+		style theme.Table
 		want  string
 	}{
-		{theme.TableStyle{ColumnGap: -1}, "theme.Table.ColumnGap: -1: must not be negative"},
-		{theme.TableStyle{MinColumnWidth: -2}, "theme.Table.MinColumnWidth: -2: must not be negative"},
+		{theme.Table{ColumnGap: -1}, "theme.Table.ColumnGap: -1: must not be negative"},
+		{theme.Table{MinColumnWidth: -2}, "theme.Table.MinColumnWidth: -2: must not be negative"},
 	} {
 		th := theme.New()
 		th.Table = tc.style

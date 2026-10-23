@@ -233,7 +233,7 @@ func TestMultichoiceLifecycleFailures(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			th := theme.New()
-			th.Templates.Multichoice.Answer = `ANSWER {{ .Count }}`
+			th.Multichoice.Answer = `ANSWER {{ .Count }}`
 			terst.UseTheme(t, th)
 			m := newMultichoice(t.Context())
 			m.Items = []any{"one"}

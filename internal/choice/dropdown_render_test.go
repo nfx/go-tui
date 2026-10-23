@@ -235,7 +235,7 @@ func TestThemedDropdownMultiFieldProjects(t *testing.T) {
 
 func TestThemedDropdownHiddenAnswerRetainsNothing(t *testing.T) {
 	th := terst.ASCIITheme(false)
-	th.Templates.Dropdown.Answer = theme.Hidden
+	th.Dropdown.Answer = theme.Hidden
 	o, out, _ := themedDropdownOpt(t, th, 40, "\r")
 	_, err := Dropdown(t.Context(), "Fruit", fruits, o)
 	assert.NoError(t, err)
@@ -249,10 +249,10 @@ func TestThemedDropdownHiddenAnswerRetainsNothing(t *testing.T) {
 
 func TestThemedDropdownSlotPrecedence(t *testing.T) {
 	th := terst.ASCIITheme(false)
-	th.Templates.Choice.Inactive = `{{ printf "-%s" .Value }}`
-	th.Templates.Dropdown.Active = `[{{ .Value }}]`
-	th.Templates.Prompt.Hint = theme.Hidden
-	th.Templates.Dropdown.Label = `{{ .Label }}:`
+	th.Choice.Inactive = `{{ printf "-%s" .Value }}`
+	th.Dropdown.Active = `[{{ .Value }}]`
+	th.Prompt.Hint = theme.Hidden
+	th.Dropdown.Label = `{{ .Label }}:`
 	d, tt := boundDropdown(t, th, 40, 4, []any{"a", "b", "c", "d"})
 	// shared and family edits apply; hidden slots reserve no row
 	assert.Equal(t, "\rFruit:\n\r| > [a]\n\r|   -b\n\r", frame(t, d, tt))
@@ -299,9 +299,9 @@ func TestThemedDropdownAutomaticAnswerMatchesProjection(t *testing.T) {
 	th := terst.ASCIITheme(false)
 	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
 	// no presentation slot runs without a terminal: only the projection
-	th.Templates.Prompt.Label = `{{ fails .Label }}`
-	th.Templates.Choice.Active = `{{ fails .Value }}`
-	th.Templates.Choice.Value = `{{ printf "z%s" . }}`
+	th.Prompt.Label = `{{ fails .Label }}`
+	th.Choice.Active = `{{ fails .Value }}`
+	th.Choice.Value = `{{ printf "z%s" . }}`
 	terst.UseTheme(t, th)
 	var out bytes.Buffer
 	got, err := Dropdown(t.Context(), "Fruit", fruits, option.WithOutput(&out), option.WithDefault("zb"))
@@ -318,8 +318,8 @@ func TestThemedDropdownAutomaticAnswerMatchesProjection(t *testing.T) {
 
 func TestThemedDropdownSearchSkipsDecoration(t *testing.T) {
 	th := terst.ASCIITheme(false)
-	th.Templates.Choice.Active = `{{ .Value }} zzz`
-	th.Templates.Choice.Inactive = `{{ .Value }} zzz`
+	th.Choice.Active = `{{ .Value }} zzz`
+	th.Choice.Inactive = `{{ .Value }} zzz`
 	d, tt := boundDropdown(t, th, 40, 10, []any{"apple", "banana"})
 	frame(t, d, tt)
 	// the presentation of the rows is not searchable, only their content
@@ -358,11 +358,11 @@ func TestThemedDropdownHelperErrorRestoresTerminal(t *testing.T) {
 	boom := errors.New("boom")
 	th := terst.ASCIITheme(false)
 	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
-	th.Templates.Choice.Inactive = `{{ fails .Value }}`
+	th.Choice.Inactive = `{{ fails .Value }}`
 	o, _, restored := themedDropdownOpt(t, th, 40, "\r")
 	_, err := Dropdown(t.Context(), "Fruit", fruits, o)
 	assert.ErrorIs(t, err, boom)
-	assert.Contains(t, err.Error(), "theme.Templates.Choice.Inactive")
+	assert.Contains(t, err.Error(), "theme.Choice.Inactive")
 	assert.True(t, *restored)
 }
 

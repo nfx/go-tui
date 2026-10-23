@@ -7,9 +7,19 @@ import (
 	"fmt"
 )
 
-// ProgressStyle is the geometry of progress bars. Their glyphs are
-// [Symbols.BarFill], [Symbols.BarHead] and [Symbols.BarEmpty].
-type ProgressStyle struct {
+// Progress configures progress bars: their geometry and their rows. The glyphs
+// are [Symbols.BarFill], [Symbols.BarHead] and [Symbols.BarEmpty].
+//
+// Label and Metrics render first; Frame then places their output around the
+// bar, which it must insert exactly once, as a top-level {{ .Bar }} that
+// nothing else refers to, so that the bar can take the columns the rest of the
+// row leaves.
+//
+// Metrics is the end of the bar row of [Progress.Compact] bars. Other bars
+// show the metrics in the Hint row below the bar instead, and their Frame
+// receives an empty .Metrics. Hint renders the hint pairs of the metrics, each
+// with .Left and .Right, such as "6.2" and "MiB/s".
+type Progress struct {
 	// MinBarWidth is the narrowest bar kept by dropping metrics, the last
 	// first, or by shortening the label. Zero takes 1.
 	MinBarWidth int
@@ -20,21 +30,25 @@ type ProgressStyle struct {
 	// percentage and the bar share a row and the metrics go to a hint row
 	// below it; a terminal without room for both rows gets the compact row.
 	Compact bool
+	// Label is the text before the bar.
+	Label Template
+	// Metrics is the values at the end of the compact bar row.
+	Metrics Template
+	// Hint is the row of metric pairs below a stacked bar.
+	Hint Template
+	// Frame places the label, percentage, bar and metrics on the bar row.
+	Frame Template
 }
 
-// progressStyle is the theme preset.
-var progressStyle = ProgressStyle{MinBarWidth: 1}
-
-// normalize fills the preset and validates the widths.
-func (s ProgressStyle) normalize() (ProgressStyle, error) {
-	def := progressStyle
+// normalize takes 1 for a zero MinBarWidth and validates the widths.
+func (s Progress) normalize() (Progress, error) {
 	switch {
 	case s.MinBarWidth < 0:
 		return s, fmt.Errorf("theme.Progress.MinBarWidth: %d: must not be negative", s.MinBarWidth)
 	case s.MaxBarWidth < 0:
 		return s, fmt.Errorf("theme.Progress.MaxBarWidth: %d: must not be negative", s.MaxBarWidth)
 	case s.MinBarWidth == 0:
-		s.MinBarWidth = def.MinBarWidth
+		s.MinBarWidth = 1
 	}
 	if s.MaxBarWidth > 0 && s.MaxBarWidth < s.MinBarWidth {
 		return s, fmt.Errorf("theme.Progress.MaxBarWidth: %d: below MinBarWidth %d", s.MaxBarWidth, s.MinBarWidth)

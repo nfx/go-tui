@@ -78,8 +78,8 @@ func TestThemedTableRoles(t *testing.T) {
 
 func TestThemedTableSlots(t *testing.T) {
 	th := theme.New()
-	th.Templates.Table.Header = `{{ .Name }}:{{ .Kind }}`
-	th.Templates.Table.Cell = `<{{ .Value }}>`
+	th.Table.Header = `{{ .Name }}:{{ .Kind }}`
+	th.Table.Cell = `<{{ .Value }}>`
 	themedTable(t, th)
 	buf := &bytes.Buffer{}
 	assert.NoError(t, TableAuto(buf, themedRows[:2]))
@@ -96,7 +96,7 @@ func TestThemedTableSlots(t *testing.T) {
 
 func TestThemedTableHiddenHeader(t *testing.T) {
 	th := theme.New()
-	th.Templates.Table.Header = theme.Hidden
+	th.Table.Header = theme.Hidden
 	themedTable(t, th)
 	buf := &bytes.Buffer{}
 	assert.NoError(t, TableAuto(buf, themedRows[:2]))
@@ -108,7 +108,7 @@ func TestThemedTableHiddenHeader(t *testing.T) {
 
 func TestThemedTableCellWrapsChosenFormat(t *testing.T) {
 	th := theme.New()
-	th.Templates.Table.Cell = `[{{ .Value }}]`
+	th.Table.Cell = `[{{ .Value }}]`
 	themedTable(t, th)
 	buf := &bytes.Buffer{}
 	assert.NoError(t, TableAuto(buf, themedRows[:1],
@@ -224,7 +224,7 @@ func TestThemedTableMultilineCarriesStyles(t *testing.T) {
 
 func TestThemedTableStyle(t *testing.T) {
 	th := theme.New()
-	th.Table = theme.TableStyle{ColumnGap: 4, MinColumnWidth: 3}
+	th.Table = theme.Table{ColumnGap: 4, MinColumnWidth: 3}
 	themedTable(t, th)
 	buf := &bytes.Buffer{}
 	assert.NoError(t, TableAuto(buf, themedRows))
@@ -294,24 +294,24 @@ func TestThemedTableErrors(t *testing.T) {
 		"bell": func() string { return "\a" },
 	}
 	for _, tc := range []struct {
-		edit func(*theme.TableTemplates)
+		edit func(*theme.Table)
 		want string
 	}{
-		{func(s *theme.TableTemplates) { s.Header = `{{ boom .Header }}` }, "table: headers: theme.Templates.Table.Header: "},
+		{func(s *theme.Table) { s.Header = `{{ boom .Header }}` }, "table: headers: theme.Table.Header: "},
 		{
-			func(s *theme.TableTemplates) {
+			func(s *theme.Table) {
 				s.Cell = `{{ if eq .Name "Amount" }}{{ boom .Value }}{{ end }}{{ .Value }}`
 			},
-			`row 0: append: render: column "Amount": theme.Templates.Table.Cell: `,
+			`row 0: append: render: column "Amount": theme.Table.Cell: `,
 		},
 		{
-			func(s *theme.TableTemplates) { s.Cell = `{{ .Value }}{{ bell }}` },
-			`row 0: append: render: column "Name": theme.Templates.Table.Cell: "\a": want text, SGR and hyperlinks only`,
+			func(s *theme.Table) { s.Cell = `{{ .Value }}{{ bell }}` },
+			`row 0: append: render: column "Name": theme.Table.Cell: "\a": want text, SGR and hyperlinks only`,
 		},
 	} {
 		th := theme.New()
 		th.Funcs = boom
-		tc.edit(&th.Templates.Table)
+		tc.edit(&th.Table)
 		themedTable(t, th)
 		buf := &bytes.Buffer{}
 		err := TableAuto(buf, themedRows)
@@ -369,9 +369,9 @@ func TestThemedTableIterKeepsOneSnapshot(t *testing.T) {
 	assert.NoError(t, TableIter(want, "", iterate(data)))
 
 	other := theme.New()
-	other.Templates.Table.Header = theme.Hidden
-	other.Templates.Table.Cell = `<{{ .Value }}>`
-	other.Table = theme.TableStyle{ColumnGap: 5}
+	other.Table.Header = theme.Hidden
+	other.Table.Cell = `<{{ .Value }}>`
+	other.Table.ColumnGap = 5
 	buf := &bytes.Buffer{}
 	var firstBatch string
 	changing := func(yield func(themedRow, error) bool) {
@@ -449,7 +449,7 @@ func TestThemedTableIterErrors(t *testing.T) {
 	data := streamedRows()
 	th := theme.New()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
-	th.Templates.Table.Cell = `{{ if eq .Value "n10" }}{{ boom }}{{ end }}{{ .Value }}`
+	th.Table.Cell = `{{ if eq .Value "n10" }}{{ boom }}{{ end }}{{ .Value }}`
 	themedTable(t, th)
 	want := &bytes.Buffer{}
 	assert.NoError(t, TableIter(want, "", iterate(data[:10])))
@@ -474,7 +474,7 @@ func TestThemedTableIterErrors(t *testing.T) {
 	buf.Reset()
 	err = TableIter(buf, "", iterate(data))
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), `row 10: append: render: column "Name": theme.Templates.Table.Cell: `)
+	assert.Contains(t, err.Error(), `row 10: append: render: column "Name": theme.Table.Cell: `)
 	assert.Contains(t, err.Error(), "boom")
 	assert.Equal(t, firstBatch, buf.String())
 

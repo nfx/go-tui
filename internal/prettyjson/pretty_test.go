@@ -271,13 +271,13 @@ func TestThemedPrettyJSONIndentation(t *testing.T) {
 	four := &bytes.Buffer{}
 	assert.NoError(t, json.Indent(four, []byte(src), "", "    "))
 	for _, tc := range []struct {
-		style theme.JSONStyle
+		style theme.JSON
 		want  string
 	}{
-		{theme.JSONStyle{}, "{\n  \"a\": [\n    1,\n    {\n      \"b\": \"x y\"\n    }\n  ],\n  \"c\": {},\n  \"d\": []\n}\n"},
-		{theme.JSONStyle{Indent: "\t"}, "{\n\t\"a\": [\n\t\t1,\n\t\t{\n\t\t\t\"b\": \"x y\"\n\t\t}\n\t],\n\t\"c\": {},\n\t\"d\": []\n}\n"},
-		{theme.JSONStyle{Indent: "    "}, four.String() + "\n"},
-		{theme.JSONStyle{Indent: "\t", Compact: true}, `{"a":[1,{"b":"x y"}],"c":{},"d":[]}` + "\n"},
+		{theme.JSON{}, "{\n  \"a\": [\n    1,\n    {\n      \"b\": \"x y\"\n    }\n  ],\n  \"c\": {},\n  \"d\": []\n}\n"},
+		{theme.JSON{Indent: "\t"}, "{\n\t\"a\": [\n\t\t1,\n\t\t{\n\t\t\t\"b\": \"x y\"\n\t\t}\n\t],\n\t\"c\": {},\n\t\"d\": []\n}\n"},
+		{theme.JSON{Indent: "    "}, four.String() + "\n"},
+		{theme.JSON{Indent: "\t", Compact: true}, `{"a":[1,{"b":"x y"}],"c":{},"d":[]}` + "\n"},
 	} {
 		th := theme.New()
 		th.JSON = tc.style

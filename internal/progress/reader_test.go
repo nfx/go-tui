@@ -95,7 +95,7 @@ func TestThemedFileProgressByteMetrics(t *testing.T) {
 	state = halfFile(now)
 	state.fmtRate = func(r float64) string { return fmt.Sprintf("%.0f bytes", r) }
 	th := compactTheme()
-	th.Templates.Progress.Metrics = `{{ .Amount }}|{{ .Rate }}|{{ .Current }}/{{ .Total }}`
+	th.Progress.Metrics = `{{ .Amount }}|{{ .Rate }}|{{ .Current }}/{{ .Total }}`
 	p = themedBar(t, th, state)
 	row, err = p.row(80, now)
 	assert.NoError(t, err)
@@ -227,7 +227,7 @@ func TestThemedFileProgressZeroSize(t *testing.T) {
 func TestThemedFileProgressRenderError(t *testing.T) {
 	th := theme.New()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
-	th.Templates.Progress.Hint = `{{ boom }}`
+	th.Progress.Hint = `{{ boom }}`
 	src := &scriptedFile{size: 100, reads: []fileRead{{30, nil}, {20, nil}}}
 	r, ft := themedFile(t, th, src)
 	buf := make([]byte, 100)
@@ -242,15 +242,15 @@ func TestThemedFileProgressRenderError(t *testing.T) {
 	assert.NoError(t, err)
 	err = r.Close()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "progress: redraw: theme.Templates.Progress.Hint")
+	assert.Contains(t, err.Error(), "progress: redraw: theme.Progress.Hint")
 }
 
 func TestThemedFileProgressLogsWithoutTerminal(t *testing.T) {
 	th := theme.New()
 	th.Funcs = template.FuncMap{"boom": func() (string, error) { return "", errors.New("boom") }}
-	th.Templates.Progress.Label = `{{ boom }}`
-	th.Templates.Progress.Metrics = `{{ boom }}`
-	th.Templates.Progress.Frame = `{{ boom }}{{ .Bar }}`
+	th.Progress.Label = `{{ boom }}`
+	th.Progress.Metrics = `{{ boom }}`
+	th.Progress.Frame = `{{ boom }}{{ .Bar }}`
 	terst.UseTheme(t, th)
 	var logs, out bytes.Buffer
 	previous := slog.Default()

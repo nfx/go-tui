@@ -22,14 +22,22 @@ type Theme struct {
 	// Inline keeps each prompt's label on its value row. Otherwise the label
 	// has its own row, and the value, list and feedback rows start with the
 	// guide symbol. Only geometry differs.
-	Inline    bool
-	Palette   Palette
-	Symbols   Symbols
-	Templates Templates
-	Spinner   SpinnerStyle
-	Progress  ProgressStyle
-	Table     TableStyle
-	JSON      JSONStyle
+	Inline      bool
+	Palette     Palette
+	Symbols     Symbols
+	Prompt      Prompt
+	Choice      Choice
+	Input       Input
+	Password    Password
+	Number      Number
+	Dropdown    Dropdown
+	Multichoice Multichoice
+	Confirm     Confirm
+	FilePicker  FilePicker
+	Spinner     Spinner
+	Progress    Progress
+	Table       Table
+	JSON        JSON
 	// Funcs are custom template helpers, added to the built-in ones. They
 	// cannot replace a built-in helper, and must be safe for concurrent use.
 	Funcs template.FuncMap
@@ -82,10 +90,10 @@ func presetTheme() Theme {
 	return Theme{
 		Palette:  Palette{},
 		Symbols:  unicodeSymbols.clone(),
-		Spinner:  SpinnerStyle{Interval: spinnerInterval},
-		Progress: progressStyle,
-		Table:    tableStyle,
-		JSON:     jsonStyle,
+		Spinner:  Spinner{Interval: spinnerInterval},
+		Progress: Progress{MinBarWidth: 1},
+		Table:    Table{ColumnGap: 2, MinColumnWidth: 1},
+		JSON:     JSON{Indent: "  "},
 	}
 }
 

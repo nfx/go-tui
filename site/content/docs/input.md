@@ -113,7 +113,7 @@ The single feedback row for either `Input` or `Password` is drawn by the
 
 ```go
 th := tui.DefaultTheme()
-th.Templates.Input.Feedback = `{{ accent "Check: " }}{{ .Message }}`
+th.Input.Feedback = `{{ accent "Check: " }}{{ .Message }}`
 if err := tui.SetDefaultTheme(th); err != nil {
 	return err
 }

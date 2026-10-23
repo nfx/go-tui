@@ -39,12 +39,12 @@ func Compile(in theme.Theme) (*Compiled, error) {
 		return nil, err
 	}
 	funcs := withCustomFuncs(t, builtins)
-	sources := progressBuiltins(t.Progress)
-	base, err := compileSet(&sources, funcs, templates{})
+	builtin := builtinTheme()
+	base, err := compileSet(&builtin, funcs, templates{})
 	if err != nil {
 		return nil, fmt.Errorf("built-in %w", err)
 	}
-	c.Templates, err = compileSet(&t.Templates, funcs, base)
+	c.Templates, err = compileSet(&t, funcs, base)
 	if err != nil {
 		return nil, err
 	}

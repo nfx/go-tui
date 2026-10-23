@@ -104,20 +104,17 @@ leaving your terminal. See [Testing in Other Terminals](testing.md) for the vari
 
 ## Templates
 
-`theme.Templates` holds one template per slot, such as the label, the answer,
-the key hint and the feedback of a prompt, the rows of a choice list, the
-states of a spinner, the parts of a progress bar and the header and cells of
-a table.
+Each widget owns its template slots beside its settings: `theme.Progress.Frame` sits with `theme.Progress.Compact`, and `theme.Table.Header` with `theme.Table.ColumnGap`. The slots are the label, the answer, the key hint and the feedback of a prompt, the rows of a choice list, the states of a spinner, the parts of a progress bar and the header and cells of a table.
 
-Slots inherit: `Templates.Prompt` applies to Input, Password, Number,
-Dropdown, Multichoice, Confirm and FilePicker, and `Templates.Choice` to every
-choice list. A family slot such as `Templates.Dropdown.Label` overrides only
+Slots inherit: `Prompt` applies to Input, Password, Number,
+Dropdown, Multichoice, Confirm and FilePicker, and `Choice` to every
+choice list. A family slot such as `Dropdown.Label` overrides only
 that family. An empty `Template` inherits; `theme.Hidden` hides an optional slot,
 such as the key hint:
 
 ```go
-th.Templates.Prompt.Hint = theme.Hidden
-th.Templates.Multichoice.Row = `{{ if .Active }}→{{ else }} {{ end }} ` +
+th.Prompt.Hint = theme.Hidden
+th.Multichoice.Row = `{{ if .Active }}→{{ else }} {{ end }} ` +
 	`[{{ if .Selected }}x{{ else }} {{ end }}] {{ .Value }}`
 ```
 
@@ -127,7 +124,7 @@ the window leads with their count, as in `3 more · ↑↓ move · type filter`.
 A hidden hint hides the count too.
 
 ```go
-th.Templates.Prompt.Hint = `{{ range . }}[{{ .Left }}] {{ .Right }} {{ end }}`
+th.Prompt.Hint = `{{ range . }}[{{ .Left }}] {{ .Right }} {{ end }}`
 ```
 
 Slot templates can use the role helpers `text`, `muted`, `guide` (the
@@ -142,7 +139,7 @@ Add helpers in `theme.Funcs`. They are validated by `SetDefaultTheme`:
 
 ```go
 th.Funcs = template.FuncMap{"shout": strings.ToUpper}
-th.Templates.Prompt.Label = `{{ accent (symbol "Prompt") }} {{ bold (shout .Label) }}`
+th.Prompt.Label = `{{ accent (symbol "Prompt") }} {{ bold (shout .Label) }}`
 ```
 
 `theme.Funcs` replaces every helper registered before, including through

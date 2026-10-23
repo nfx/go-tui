@@ -289,8 +289,8 @@ func TestThemedFactsRoles(t *testing.T) {
 func TestThemedFactsSlots(t *testing.T) {
 	ttyWidth(t, 120)
 	th := theme.New()
-	th.Templates.Table.Header = `{{ .Name }}:{{ .Kind }}`
-	th.Templates.Table.Cell = `[{{ .Value }}]`
+	th.Table.Header = `{{ .Name }}:{{ .Kind }}`
+	th.Table.Cell = `[{{ .Value }}]`
 	themedTable(t, th)
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Facts(buf, factsRow{Left: "l", Count: 3, Owner: Person{Name: "Bo"}},
@@ -305,7 +305,7 @@ func TestThemedFactsSlots(t *testing.T) {
 func TestThemedFactsHiddenKey(t *testing.T) {
 	ttyWidth(t, 120)
 	th := theme.New()
-	th.Templates.Table.Header = theme.Hidden
+	th.Table.Header = theme.Hidden
 	themedTable(t, th)
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Facts(buf, factsData))
@@ -315,7 +315,7 @@ func TestThemedFactsHiddenKey(t *testing.T) {
 func TestThemedFactsStyle(t *testing.T) {
 	ttyWidth(t, 120)
 	th := theme.New()
-	th.Table = theme.TableStyle{ColumnGap: 4, MinColumnWidth: 3}
+	th.Table = theme.Table{ColumnGap: 4, MinColumnWidth: 3}
 	themedTable(t, th)
 	buf := &bytes.Buffer{}
 	assert.NoError(t, Facts(buf, tableFormatRow{"A", 0.5, 1}))
@@ -344,7 +344,7 @@ func TestThemedFactsValueLine(t *testing.T) {
 		Link string
 	}
 	th := theme.New()
-	th.Templates.Table.Cell = `<{{ .Value }}>`
+	th.Table.Cell = `<{{ .Value }}>`
 	themedTable(t, th)
 	link := "\x1b]8;;https://example.com\x1b\\site\x1b]8;;\x1b\\"
 	buf := &bytes.Buffer{}
@@ -360,28 +360,28 @@ func TestThemedFactsErrors(t *testing.T) {
 		"bell": func() string { return "\a" },
 	}
 	for _, tc := range []struct {
-		edit func(*theme.TableTemplates)
+		edit func(*theme.Table)
 		want string
 	}{
 		{
-			func(s *theme.TableTemplates) {
+			func(s *theme.Table) {
 				s.Header = `{{ if eq .Name "Count" }}{{ boom .Header }}{{ end }}{{ .Header }}`
 			},
-			`facts: column "Count": theme.Templates.Table.Header: `,
+			`facts: column "Count": theme.Table.Header: `,
 		},
 		{
-			func(s *theme.TableTemplates) { s.Header = `{{ .Header }}{{ bell }}` },
-			`facts: column "Left": theme.Templates.Table.Header: "\a": want text and SGR only`,
+			func(s *theme.Table) { s.Header = `{{ .Header }}{{ bell }}` },
+			`facts: column "Left": theme.Table.Header: "\a": want text and SGR only`,
 		},
-		{func(s *theme.TableTemplates) { s.Cell = `{{ boom .Value }}` }, `facts: column "Left": theme.Templates.Table.Cell: `},
+		{func(s *theme.Table) { s.Cell = `{{ boom .Value }}` }, `facts: column "Left": theme.Table.Cell: `},
 		{
-			func(s *theme.TableTemplates) { s.Cell = `{{ .Value }}{{ bell }}` },
-			`facts: column "Left": theme.Templates.Table.Cell: "\a": want text, SGR and hyperlinks only`,
+			func(s *theme.Table) { s.Cell = `{{ .Value }}{{ bell }}` },
+			`facts: column "Left": theme.Table.Cell: "\a": want text, SGR and hyperlinks only`,
 		},
 	} {
 		th := theme.New()
 		th.Funcs = boom
-		tc.edit(&th.Templates.Table)
+		tc.edit(&th.Table)
 		themedTable(t, th)
 		buf := &bytes.Buffer{}
 		err := Facts(buf, factsData)

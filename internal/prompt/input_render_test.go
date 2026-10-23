@@ -171,7 +171,7 @@ func TestInputFeedbackSanitizesMessage(t *testing.T) {
 
 func TestInputFeedbackClippedToOneRow(t *testing.T) {
 	th := theme.New()
-	th.Templates.Input.Feedback = `{{ .Message }}`
+	th.Input.Feedback = `{{ .Message }}`
 	terst.UseTheme(t, th)
 	_, out, err := runValidated(t, false, "a\r",
 		WithValidation(func(context.Context, string) error { return errors.New(strings.Repeat("é", 60)) }))
@@ -183,7 +183,7 @@ func TestInputFeedbackClippedToOneRow(t *testing.T) {
 
 func TestInputFeedbackTemplateIsPlain(t *testing.T) {
 	th := theme.New()
-	th.Templates.Input.Feedback = `!! {{ .Message }}`
+	th.Input.Feedback = `!! {{ .Message }}`
 	terst.UseTheme(t, th)
 	_, out, err := runValidated(t, false, "a\r",
 		WithValidation(func(context.Context, string) error { return errors.New("bad") }))
@@ -370,9 +370,9 @@ func TestThemedInputWideAndCombiningValue(t *testing.T) {
 
 func TestThemedInputFamilySlotsRender(t *testing.T) {
 	th := terst.ASCIITheme(false)
-	th.Templates.Input.Label = `theme {{ .Label }}`
-	th.Templates.Input.Answer = `theme {{ .Value }}`
-	th.Templates.Input.Feedback = `theme {{ .Message }}`
+	th.Input.Label = `theme {{ .Label }}`
+	th.Input.Answer = `theme {{ .Value }}`
+	th.Input.Feedback = `theme {{ .Message }}`
 	reject := WithValidation(func(_ context.Context, s string) error {
 		if s == "a" {
 			return errors.New("no")
@@ -390,8 +390,8 @@ func TestThemedInputFamilySlotsRender(t *testing.T) {
 
 func TestThemedInputHiddenSlots(t *testing.T) {
 	th := terst.ASCIITheme(false)
-	th.Templates.Prompt.Label = theme.Hidden
-	th.Templates.Prompt.Answer = theme.Hidden
+	th.Prompt.Label = theme.Hidden
+	th.Prompt.Answer = theme.Hidden
 	i, out, _ := themedInput(t, th, 20, 5, "a", "\r")
 	_, err := i.read(t.Context())
 	assert.NoError(t, err)
@@ -401,8 +401,8 @@ func TestThemedInputHiddenSlots(t *testing.T) {
 
 func TestThemedInputFamilySlots(t *testing.T) {
 	th := terst.ASCIITheme(false)
-	th.Templates.Input.Label = `input`
-	th.Templates.Number.Label = `number`
+	th.Input.Label = `input`
+	th.Number.Label = `number`
 	terst.UseTheme(t, th)
 	label := func(i *input) string {
 		t.Helper()
@@ -422,16 +422,16 @@ func TestThemedInputHelperErrorsRestoreTerminal(t *testing.T) {
 	th := terst.ASCIITheme(false)
 	th.Funcs = map[string]any{"fails": func(string) (string, error) { return "", boom }}
 
-	th.Templates.Input.Label = `{{ fails .Label }}`
+	th.Input.Label = `{{ fails .Label }}`
 	i, out, restored := themedInput(t, th, 20, 5, "a", "\r")
 	_, err := i.read(t.Context())
 	assert.ErrorIs(t, err, boom)
-	assert.Contains(t, err.Error(), "theme.Templates.Input.Label")
+	assert.Contains(t, err.Error(), "theme.Input.Label")
 	assert.True(t, *restored)
 	assert.Equal(t, "", out.String()) // nothing drawn
 
-	th.Templates.Input.Label = ""
-	th.Templates.Input.Feedback = `{{ fails .Message }}`
+	th.Input.Label = ""
+	th.Input.Feedback = `{{ fails .Message }}`
 	reject := WithValidation(func(context.Context, string) error { return errors.New("no") })
 	i, out, restored = themedInput(t, th, 20, 5, "a", "\r")
 	_, err = i.read(t.Context(), reject)
@@ -440,8 +440,8 @@ func TestThemedInputHelperErrorsRestoreTerminal(t *testing.T) {
 	// the frame of the rejection is not drawn, the previous one is cleared
 	assert.True(t, strings.HasSuffix(out.String(), "| a\x1b[K\n\x1b[2A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1A\r"))
 
-	th.Templates.Input.Feedback = ""
-	th.Templates.Input.Answer = `{{ fails .Value }}`
+	th.Input.Feedback = ""
+	th.Input.Answer = `{{ fails .Value }}`
 	i, _, restored = themedInput(t, th, 20, 5, "a", "\r")
 	_, err = i.read(t.Context())
 	assert.ErrorIs(t, err, boom)
@@ -451,7 +451,7 @@ func TestThemedInputHelperErrorsRestoreTerminal(t *testing.T) {
 func TestThemedInputDefaultWithoutTerminal(t *testing.T) {
 	terst.StrictOutput(t)
 	th := terst.ASCIITheme(false)
-	th.Templates.Input.Label = `{{ fails .Label }}`
+	th.Input.Label = `{{ fails .Label }}`
 	th.Funcs = map[string]any{"fails": func(string) (string, error) { return "", errors.New("boom") }}
 	terst.UseTheme(t, th)
 	i := newInput(t.Context(), "Label")

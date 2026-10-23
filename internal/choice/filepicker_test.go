@@ -186,7 +186,7 @@ func TestThemedFilePickerParentEntryAndFileView(t *testing.T) {
 	root := pickerTree(t)
 	th := terst.ASCIITheme(false)
 	th.Funcs = template.FuncMap{"under": func(p string) string { return strings.TrimPrefix(p, root) }}
-	th.Templates.FilePicker.Value = `{{ if .Parent }}up{{ else }}{{ under .Path }}{{ if .IsDir }} dir{{ end }}{{ end }}`
+	th.FilePicker.Value = `{{ if .Parent }}up{{ else }}{{ under .Path }}{{ if .IsDir }} dir{{ end }}{{ end }}`
 	o, out, _ := themedDropdownOpt(t, th, 60, "\x1b[B", "\r", "\r", "\r")
 	got, err := FilePicker(t.Context(), "File", WithStartDir(root), o)
 	assert.NoError(t, err)
@@ -216,8 +216,8 @@ func TestThemedFilePickerKeepsOneThemeAcrossDirectories(t *testing.T) {
 	root := pickerTree(t)
 	o, out, _ := themedDropdownOpt(t, terst.ASCIITheme(false), 40, "\x1b[B", "\r", "\x1b[B", "\r")
 	other := terst.ASCIITheme(false)
-	other.Templates.Prompt.Label = `other {{ .Label }}`
-	other.Templates.Prompt.Answer = `other {{ .Value }}`
+	other.Prompt.Label = `other {{ .Label }}`
+	other.Prompt.Answer = `other {{ .Value }}`
 	terminals := 0
 	install := option.OpT(func(d *dropdown) error {
 		next := d.makeTermIO
@@ -265,18 +265,18 @@ func TestThemedFilePickerSlotPrecedence(t *testing.T) {
 	}
 	// a shared projection reaches the picker's entries
 	th := terst.ASCIITheme(false)
-	th.Templates.Choice.Value = `{{ .Name }}!`
-	th.Templates.Prompt.Answer = `{{ .Label }}={{ .Value }}`
-	th.Templates.Dropdown.Label = `dropdown {{ .Label }}`
-	th.Templates.Dropdown.Value = `dropdown`
+	th.Choice.Value = `{{ .Name }}!`
+	th.Prompt.Answer = `{{ .Label }}={{ .Value }}`
+	th.Dropdown.Label = `dropdown {{ .Label }}`
+	th.Dropdown.Value = `dropdown`
 	got := run(th)
 	assert.True(t, strings.HasPrefix(got, "\r? File\n\r| > a.txt!\n"))
 	assert.True(t, strings.HasSuffix(got, "File="+filepath.Join(dir, "a.txt")+"\n"))
 
 	// the family wins locally; Hidden hides the hint
-	th.Templates.FilePicker.Value = `[{{ .Name }}]`
-	th.Templates.FilePicker.Label = `pick {{ .Label }}`
-	th.Templates.FilePicker.Hint = theme.Hidden
+	th.FilePicker.Value = `[{{ .Name }}]`
+	th.FilePicker.Label = `pick {{ .Label }}`
+	th.FilePicker.Hint = theme.Hidden
 	got = run(th)
 	assert.True(t, strings.HasPrefix(got, "\rpick File\n\r| > [a.txt]\n\r\x1b[2A"))
 }
@@ -285,7 +285,7 @@ func TestThemedFilePickerHiddenAnswer(t *testing.T) {
 	dir := t.TempDir()
 	assert.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), nil, 0o600))
 	th := terst.ASCIITheme(false)
-	th.Templates.FilePicker.Answer = theme.Hidden
+	th.FilePicker.Answer = theme.Hidden
 	o, out, _ := themedDropdownOpt(t, th, 40, "\r")
 	_, err := FilePicker(t.Context(), "File", WithStartDir(dir), o)
 	assert.NoError(t, err)
@@ -304,10 +304,10 @@ func TestThemedFilePickerDefaultsWithoutTerminal(t *testing.T) {
 	th := terst.ASCIITheme(false)
 	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
 	// without a terminal only the projection runs, never a presentation slot
-	th.Templates.Prompt.Label = `{{ fails .Label }}`
-	th.Templates.FilePicker.Active = `{{ fails .Value }}`
-	th.Templates.FilePicker.Inactive = `{{ fails .Value }}`
-	th.Templates.FilePicker.Answer = `{{ fails .Value }}`
+	th.Prompt.Label = `{{ fails .Label }}`
+	th.FilePicker.Active = `{{ fails .Value }}`
+	th.FilePicker.Inactive = `{{ fails .Value }}`
+	th.FilePicker.Answer = `{{ fails .Value }}`
 	terst.UseTheme(t, th)
 	io := terst.Quiet(t)
 	ctx := t.Context()
@@ -331,7 +331,7 @@ func TestThemedFilePickerDefaultsWithoutTerminal(t *testing.T) {
 	assert.ErrorIs(t, err, errs.ErrNoTTY)
 
 	// hints match the FilePicker projection
-	th.Templates.FilePicker.Value = `x{{ .Name }}`
+	th.FilePicker.Value = `x{{ .Name }}`
 	terst.UseTheme(t, th)
 	got, err = FilePicker(ctx, "File", io, dir, option.WithDefault("xma"))
 	assert.NoError(t, err)
@@ -359,7 +359,7 @@ func TestThemedFilePickerHelperErrorRestoresTerminal(t *testing.T) {
 	boom := errors.New("boom")
 	th := terst.ASCIITheme(false)
 	th.Funcs = template.FuncMap{"fails": func(string) (string, error) { return "", boom }}
-	th.Templates.FilePicker.Inactive = `{{ fails .Value }}`
+	th.FilePicker.Inactive = `{{ fails .Value }}`
 	o, out, restored := themedDropdownOpt(t, th, 40, "\r")
 	_, err := FilePicker(t.Context(), "File", WithStartDir(pickerTree(t)), o)
 	assert.ErrorIs(t, err, boom)

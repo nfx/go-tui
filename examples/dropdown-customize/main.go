@@ -15,7 +15,7 @@ func main() {
 	// presentation lives in the theme: a custom focus mark and active row
 	theme := tui.DefaultTheme()
 	theme.Symbols.Focus = "→"
-	theme.Templates.Dropdown.Active = `{{ bold .Value }}{{ with .Details }} {{ dim . }}{{ end }}`
+	theme.Dropdown.Active = `{{ bold .Value }}{{ with .Details }} {{ dim . }}{{ end }}`
 	if err := tui.SetDefaultTheme(theme); err != nil {
 		panic(err)
 	}

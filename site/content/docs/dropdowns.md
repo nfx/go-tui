@@ -190,18 +190,18 @@ unless a family slot overrides them.
 
 | Slot | Payload | Draws |
 | --- | --- | --- |
-| `Templates.Dropdown.Label` | `.Label` | the prompt label |
-| `Templates.Dropdown.Active` | `.Value`, `.Details`, `.Index` | the focused row |
-| `Templates.Dropdown.Inactive` | `.Value`, `.Index` | the other rows |
-| `Templates.Dropdown.Hint` | a list with `.Left`, `.Right` | the key hints, led by the count of hidden items |
-| `Templates.Dropdown.Answer` | `.Label`, `.Value` | the confirmation line |
+| `Dropdown.Label` | `.Label` | the prompt label |
+| `Dropdown.Active` | `.Value`, `.Details`, `.Index` | the focused row |
+| `Dropdown.Inactive` | `.Value`, `.Index` | the other rows |
+| `Dropdown.Hint` | a list with `.Left`, `.Right` | the key hints, led by the count of hidden items |
+| `Dropdown.Answer` | `.Label`, `.Value` | the confirmation line |
 
 ```go
 th := tui.DefaultTheme()
-th.Templates.Dropdown.Label = `{{ accent "Select:" }} {{ bold .Label }}`
-th.Templates.Dropdown.Active = `{{ success .Value }}`
-th.Templates.Dropdown.Hint = `{{ range . }}{{ .Left }}={{ .Right }} {{ end }}`
-th.Templates.Dropdown.Answer = `{{ success "selected:" }} {{ .Value }}`
+th.Dropdown.Label = `{{ accent "Select:" }} {{ bold .Label }}`
+th.Dropdown.Active = `{{ success .Value }}`
+th.Dropdown.Hint = `{{ range . }}{{ .Left }}={{ .Right }} {{ end }}`
+th.Dropdown.Answer = `{{ success "selected:" }} {{ .Value }}`
 if err := tui.SetDefaultTheme(th); err != nil {
 	return err
 }
@@ -246,8 +246,8 @@ city, err := tui.Dropdown(ctx, "City", cities, opts)
 ## Default appearance
 
 A dropdown draws through the installed theme:
-the `Templates.Dropdown` slots, which inherit from `Templates.Prompt` and
-`Templates.Choice`. See [Themes](themes.md) to change it for every widget.
+the `Dropdown` slots, which inherit from `Prompt` and
+`Choice`. See [Themes](themes.md) to change it for every widget.
 
 ## Label resolution for struct items
 

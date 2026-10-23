@@ -426,7 +426,7 @@ type Spinners = spinner.Spinners
 type Spinner = spinner.Spinner
 
 // PrettyJSON pretty-prints JSON data, with two-space indentation unless the
-// theme sets another [JSONStyle]. When the destination writer accepts color,
+// theme sets another [theme.JSON]. When the destination writer accepts color,
 // keys use the accent color, dimmed with nesting depth, values the
 // foreground and brackets a muted shade. Color follows the writer and the
 // NO_COLOR, FORCE_COLOR and CLICOLOR_FORCE conventions, never os.Stdout, and
