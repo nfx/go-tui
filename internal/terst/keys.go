@@ -6,9 +6,11 @@ package terst
 import (
 	"context"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/term"
@@ -49,6 +51,47 @@ func NewKeys(t *testing.T, chunks ...string) *Keys {
 func (k *Keys) Send(chunks ...string) {
 	for _, c := range chunks {
 		k.ch <- []byte(c)
+	}
+}
+
+// Type queues script one key per chunk, as a terminal delivers keystrokes:
+// a chunk of several keys reads as a paste. Escape sequences, Alt+key and a
+// bracketed paste stay whole.
+func (k *Keys) Type(script string) {
+	for script != "" {
+		n := k.keyLen(script)
+		k.Send(script[:n])
+		script = script[n:]
+	}
+}
+
+// keyLen is the length of the key at the start of script.
+func (*Keys) keyLen(script string) int {
+	const pasteStart, pasteEnd = "\x1b[200~", "\x1b[201~"
+	if strings.HasPrefix(script, pasteStart) {
+		if end := strings.Index(script, pasteEnd); end >= 0 {
+			return end + len(pasteEnd)
+		}
+		return len(script)
+	}
+	if script[0] != KeyEsc[0] || len(script) == 1 {
+		_, size := utf8.DecodeRuneInString(script)
+		return size
+	}
+	switch b := script[1]; {
+	case b == '[':
+		for i := 2; i < len(script); i++ {
+			if script[i] >= 0x40 && script[i] <= 0x7e {
+				return i + 1
+			}
+		}
+		return len(script)
+	case b == 'O' && len(script) > 2:
+		return 3
+	case b >= 0x20 && b <= 0x7e:
+		return 2 // Alt+key
+	default:
+		return 1
 	}
 }
 

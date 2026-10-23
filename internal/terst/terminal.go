@@ -39,6 +39,13 @@ func UseTerminal(t *testing.T) (*Keys, *Output) {
 	return keys, UseTerminalInput(t, &MockDescriptor{Reader: keys})
 }
 
+// UseKeys is [UseTerminal] for a test that only types.
+func UseKeys(t *testing.T) *Keys {
+	t.Helper()
+	keys, _ := UseTerminal(t)
+	return keys
+}
+
 // UseTerminalInput is [UseTerminal] reading from in, such as a pipe. A nil in
 // fails the test when it is read.
 func UseTerminalInput(t *testing.T, in io.Reader) *Output {

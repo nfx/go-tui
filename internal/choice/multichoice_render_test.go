@@ -54,7 +54,7 @@ func (x choiceTemplateFailure) Label() (string, error) { return "", x.err }
 
 func TestMultichoiceTemplateErrorPreservesUnderlyingCause(t *testing.T) {
 	cause := errors.New("label failed")
-	terst.UseIO(t, nil, io.Discard)
+	terst.UseKeys(t)
 	eager, err := Multichoice(
 		t.Context(),
 		"Eager",
@@ -64,11 +64,7 @@ func TestMultichoiceTemplateErrorPreservesUnderlyingCause(t *testing.T) {
 	if eager != nil || !errors.Is(err, cause) {
 		t.Fatal(eager, err)
 	}
-	input, typing := io.Pipe()
-	defer func() { assert.NoError(t, input.Close()) }()
-	defer func() { assert.NoError(t, typing.Close()) }()
 	seq := func(yield func(choiceTemplateFailure, error) bool) { yield(choiceTemplateFailure{cause}, nil) }
-	terst.UseIO(t, input, io.Discard)
 	lazy, err := MultichoiceLazy(
 		t.Context(),
 		"Lazy",

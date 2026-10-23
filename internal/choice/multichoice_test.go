@@ -248,7 +248,7 @@ func TestMultichoiceLifecycleFailures(t *testing.T) {
 	for range 20 {
 		m := newMultichoice(t.Context())
 		m.Items = []any{"one"}
-		terst.UseIO(t, strings.NewReader("\r"), io.Discard)
+		terst.UseKeys(t).Type(terst.KeyEnter)
 		if err := m.run(m.Ctx); err != nil {
 			t.Fatal(err)
 		}
@@ -345,7 +345,7 @@ func TestMultichoiceIndependentReaders(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- first.run(first.Ctx) }()
 	out.AwaitOutput("○ one")
-	terst.UseIO(t, strings.NewReader(" \r"), io.Discard)
+	terst.UseKeys(t).Type(" \r")
 	got, err := Multichoice(
 		t.Context(),
 		"Independent",
@@ -371,7 +371,7 @@ func TestMultichoiceStaticAndLazyLargeLists(t *testing.T) {
 	for i := range items {
 		items[i] = fmt.Sprintf("item-%05d", i)
 	}
-	terst.UseIO(t, strings.NewReader("\r"), io.Discard)
+	terst.UseKeys(t).Type(terst.KeyEnter)
 	got, err := Multichoice(
 		ctx,
 		"Large",
@@ -767,11 +767,11 @@ func TestMultichoiceMapDefaults(t *testing.T) {
 }
 
 func TestTypedDefaultChecksInteractiveMultichoice(t *testing.T) {
-	var out bytes.Buffer
-	terst.UseIO(t, strings.NewReader("\r"), &out)
+	keys, out := terst.UseTerminal(t)
+	keys.Type(terst.KeyEnter)
 	got, err := Multichoice(t.Context(), "Pick", []string{"a", "b", "c"},
 		option.WithDefault([]string{"c", "a"}))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"a", "c"}, got)
-	assert.Contains(t, out.String(), "◉ c")
+	out.AwaitOutput("◉ c")
 }

@@ -92,7 +92,7 @@ func TestInputDefaultTerminalPreservesCursorAcrossLogs(t *testing.T) {
 }
 
 func TestInputDefaultTerminalHandlesTypedChars(t *testing.T) {
-	reader, _ := terst.UseTerminal(t)
+	reader := terst.UseKeys(t)
 	reader.Send("h", "i", terst.KeyEnter)
 
 	result := make(chan string, 1)

@@ -87,19 +87,40 @@ func TestNumberNativeWidth(t *testing.T) {
 	assert.True(t, !u.signed)
 }
 
-func runNumber[T Numeric](t *testing.T, keys string, opts ...option.Opt) (T, string, error) {
+// numberAnswer is what a number prompt returned.
+type numberAnswer[T Numeric] struct {
+	v   T
+	err error
+}
+
+// startNumber runs a number prompt on a test terminal, for keys typed while
+// it waits.
+func startNumber[T Numeric](t *testing.T, opts ...option.Opt) (*terst.Keys, *terst.Output, <-chan numberAnswer[T]) {
 	t.Helper()
-	var out bytes.Buffer
-	terst.UseIO(t, strings.NewReader(keys), &out)
-	v, err := Number[T](t.Context(), "Count:", opts...)
-	return v, out.String(), err
+	keys, out := terst.UseTerminal(t)
+	answer := make(chan numberAnswer[T], 1)
+	go func() {
+		v, err := Number[T](t.Context(), "Count:", opts...)
+		answer <- numberAnswer[T]{v, err}
+	}()
+	return keys, out, answer
+}
+
+// runNumber answers a number prompt with keys, then the end of input.
+func runNumber[T Numeric](t *testing.T, keys string, opts ...option.Opt) (T, *terst.Output, error) {
+	t.Helper()
+	in, out, answer := startNumber[T](t, opts...)
+	in.Type(keys)
+	in.Close()
+	got := terst.Recv(t, answer)
+	return got.v, out, got.err
 }
 
 func TestNumberTypedAndAdjusted(t *testing.T) {
 	v, out, err := runNumber[int](t, "41"+keyUp+"\r")
 	assert.NoError(t, err)
 	assert.Equal(t, 42, v)
-	assert.Contains(t, out, "42")
+	out.AwaitOutput("42")
 
 	u, _, err := runNumber[uint64](t, "18446744073709551614"+keyUp+"\r")
 	assert.NoError(t, err)
@@ -108,7 +129,7 @@ func TestNumberTypedAndAdjusted(t *testing.T) {
 	f, out, err := runNumber[float32](t, "1.25"+keyLeft+keyLeft+keyUp+"\r")
 	assert.NoError(t, err)
 	assert.Equal(t, float32(1.35), f)
-	assert.Contains(t, out, "1.35")
+	out.AwaitOutput("1.35")
 
 	p, _, err := runNumber[port](t, keyUp+keyUp+"\r", option.WithDefault("8080"))
 	assert.NoError(t, err)
@@ -118,22 +139,28 @@ func TestNumberTypedAndAdjusted(t *testing.T) {
 	f64, out, err := runNumber[float64](t, "\r", option.WithDefault("1.00"))
 	assert.NoError(t, err)
 	assert.Equal(t, 1.0, f64)
-	assert.Contains(t, out, "1.00")
+	out.AwaitOutput("1.00")
 }
 
 func TestNumberInvalidDraftStaysEditable(t *testing.T) {
 	// "x" is rejected on Enter, then removed and replaced
-	v, out, err := runNumber[int](t, "x\r\x7f7\r")
-	assert.NoError(t, err)
-	assert.Equal(t, 7, v)
-	assert.Contains(t, out, "enter a whole number")
-	assert.NotContains(t, out, "Count: x")
+	keys, out, answer := startNumber[int](t)
+	keys.Type("x\r")
+	out.AwaitOutput("enter a whole number")
+	keys.Type("\x7f7\r")
+	got := terst.Recv(t, answer)
+	assert.NoError(t, got.err)
+	assert.Equal(t, 7, got.v)
+	out.AwaitVisible("✔ Count: · 7")
 
 	// an empty answer is rejected instead of returning zero
-	v, out, err = runNumber[int](t, "\r5\r")
-	assert.NoError(t, err)
-	assert.Equal(t, 5, v)
-	assert.Contains(t, out, "a number is required")
+	keys, out, answer = startNumber[int](t)
+	keys.Type("\r")
+	out.AwaitOutput("a number is required")
+	keys.Type("5\r")
+	got = terst.Recv(t, answer)
+	assert.NoError(t, got.err)
+	assert.Equal(t, 5, got.v)
 
 	// an invalid default is an editable draft
 	v8, _, err := runNumber[int8](t, "\r\x7f\x7f\x7f9\r", option.WithDefault("300"))
@@ -142,13 +169,17 @@ func TestNumberInvalidDraftStaysEditable(t *testing.T) {
 }
 
 func TestNumberArrowFeedback(t *testing.T) {
-	_, out, err := runNumber[uint](t, keyDown+"3\r")
-	assert.NoError(t, err)
-	assert.Contains(t, out, "value cannot go below zero")
+	keys, out, answer := startNumber[uint](t)
+	keys.Type(keyDown)
+	out.AwaitOutput("value cannot go below zero")
+	keys.Type("3\r")
+	assert.NoError(t, terst.Recv(t, answer).err)
 
-	_, out, err = runNumber[int](t, "1x"+keyUp+"\x7f\r")
-	assert.NoError(t, err)
-	assert.Contains(t, out, "fix the number before using the arrows")
+	keys, out, answer2 := startNumber[int](t)
+	keys.Type("1x" + keyUp)
+	out.AwaitOutput("fix the number before using the arrows")
+	keys.Type("\x7f\r")
+	assert.NoError(t, terst.Recv(t, answer2).err)
 }
 
 func TestNumberCaretMovementKeepsFeedback(t *testing.T) {
@@ -186,7 +217,8 @@ func TestNumberErrorsReturnZero(t *testing.T) {
 	v, out, err := runNumber[int](t, "12")
 	assert.ErrorIs(t, err, io.EOF)
 	assert.Equal(t, 0, v)
-	assert.NotContains(t, out, "Count: 12")
+	out.AwaitVisible()
+	assert.NotContains(t, out.String(), "Count: 12")
 
 	v, _, err = runNumber[int](t, "12\x03")
 	assert.Error(t, err)
@@ -194,36 +226,36 @@ func TestNumberErrorsReturnZero(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	terst.UseIO(t, strings.NewReader("1\r"), io.Discard)
+	keys := terst.UseKeys(t)
+	keys.Type("1\r")
 	f, err := Number[float64](ctx, "x")
 	assert.Error(t, err)
 	assert.Equal(t, 0.0, f)
 }
 
 func TestNumberSharesReaderWithInput(t *testing.T) {
-	in := strings.NewReader("7\rhello\r")
-	var out bytes.Buffer
-	terst.UseIO(t, in, &out)
+	keys := terst.UseKeys(t)
+	keys.Type("7\rhello\r")
 	n, err := Number[int](t.Context(), "n")
 	assert.NoError(t, err)
 	assert.Equal(t, 7, n)
-	terst.UseIO(t, in, &out)
 	s, err := Input(t.Context(), "s")
 	assert.NoError(t, err)
 	assert.Equal(t, "hello", s)
 }
 
 func TestInputIgnoresArrows(t *testing.T) {
-	var out bytes.Buffer
-	terst.UseIO(t, strings.NewReader("a"+keyUp+keyDown+"b\r"), &out)
+	keys, out := terst.UseTerminal(t)
+	keys.Type("a" + keyUp + keyDown + "b\r")
 	s, err := Input(
 		t.Context(),
 		"s",
 	)
 	assert.NoError(t, err)
 	assert.Equal(t, "ab", s)
+	out.AwaitVisible("✔ s · ab")
 	assert.NotContains(t, out.String(), "Error")
-	terst.UseIO(t, strings.NewReader("a"+keyUp+"b\r"), io.Discard)
+	keys.Type("a" + keyUp + "b\r")
 	p, err := Password(
 		t.Context(),
 		"p",

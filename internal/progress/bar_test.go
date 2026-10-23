@@ -338,11 +338,11 @@ func TestFileProgressReaderLogsWithoutTTY(t *testing.T) {
 		{"truncated file", strings.Repeat("x", 20), 100, 10, []int{10, 20}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var logs, out bytes.Buffer
+			var logs bytes.Buffer
 			previous := slog.Default()
 			slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
 			t.Cleanup(func() { slog.SetDefault(previous) })
-			terst.UseIO(t, nil, &out)
+			terst.Quiet(t)
 			r, err := NewFileProgressReader(t.Context(), &progressSizedReader{
 				Reader: strings.NewReader(tc.data), size: tc.size,
 			}, "Download")
@@ -364,7 +364,6 @@ func TestFileProgressReaderLogsWithoutTTY(t *testing.T) {
 			assert.NoError(t, r.Close())
 			assert.ErrorIs(t, r.p.Ctx.Err(), context.Canceled)
 			assert.Equal(t, tc.data, data.String())
-			assert.Equal(t, "", out.String())
 			var percentages []int
 			decoder := json.NewDecoder(&logs)
 			for decoder.More() {
@@ -766,8 +765,8 @@ type fakeTerminal struct {
 // newFakeTerminal is a terminal width columns wide.
 func newFakeTerminal(t *testing.T, width int) fakeTerminal {
 	t.Helper()
-	ft := fakeTerminal{frames: terst.NewOutput(t), restored: &atomic.Bool{}}
-	terst.UseIO(t, nil, ft.frames)
+	ft := fakeTerminal{restored: &atomic.Bool{}}
+	_, ft.frames = terst.UseFrames(t)
 	ticks := make(chan time.Time)
 	start := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)
 	clock := &atomic.Int64{}
@@ -854,6 +853,7 @@ type parallelRun struct {
 // installed theme and gate.
 func runParallel(ctx context.Context, t *testing.T, items []int, yield func(int) error, o ...option.Opt) parallelRun {
 	t.Helper()
+	//nolint:contextcheck // the terminal lives as long as the test
 	r := parallelRun{fakeTerminal: newFakeTerminal(t, 40), done: make(chan error, 1)}
 	o = append(r.options(), o...)
 	go func() { r.done <- NewParallelProgressBar(ctx, "build", items, yield, o...) }()

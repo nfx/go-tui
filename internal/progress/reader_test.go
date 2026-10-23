@@ -251,11 +251,11 @@ func TestThemedFileProgressLogsWithoutTerminal(t *testing.T) {
 	th.Progress.Metrics = `{{ boom }}`
 	th.Progress.Frame = `{{ boom }}{{ .Bar }}`
 	terst.UseTheme(t, th)
-	var logs, out bytes.Buffer
+	var logs bytes.Buffer
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(previous) })
-	terst.UseIO(t, nil, &out)
+	terst.Quiet(t)
 	r, err := NewFileProgressReader(t.Context(), &progressSizedReader{
 		Reader: strings.NewReader(strings.Repeat("x", 100)), size: 100,
 	}, "Download")
@@ -265,7 +265,6 @@ func TestThemedFileProgressLogsWithoutTerminal(t *testing.T) {
 	assert.Equal(t, 100, len(data))
 	assert.NoError(t, r.Close())
 	// the same milestones as without a theme, and nothing on the output
-	assert.Equal(t, "", out.String())
 	var percentages []int
 	decoder := json.NewDecoder(&logs)
 	for decoder.More() {

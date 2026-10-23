@@ -4,9 +4,7 @@
 package prompt
 
 import (
-	"io"
 	"math"
-	"strings"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
@@ -16,17 +14,24 @@ import (
 )
 
 func TestNumberBounds(t *testing.T) {
-	v, out, err := runNumber[int](t, "1\r\x7f11\r\x7f\x7f5\r", WithAtLeast(2), WithAtMost(10))
-	assert.NoError(t, err)
-	assert.Equal(t, 5, v)
-	assert.Contains(t, out, "value must be between 2 and 10")
+	keys, out, answer := startNumber[int](t, WithAtLeast(2), WithAtMost(10))
+	keys.Type("1\r")
+	out.AwaitOutput("value must be between 2 and 10")
+	keys.Type("\x7f11\r\x7f\x7f5\r")
+	got := terst.Recv(t, answer)
+	assert.NoError(t, got.err)
+	assert.Equal(t, 5, got.v)
 
-	_, out, err = runNumber[int](t, "1\r", WithAtLeast(2))
-	assert.Error(t, err)
-	assert.Contains(t, out, "value must be at least 2")
-	_, out, err = runNumber[int](t, "9\r", WithAtMost(2))
-	assert.Error(t, err)
-	assert.Contains(t, out, "value must be at most 2")
+	keys, out, answer = startNumber[int](t, WithAtLeast(2))
+	keys.Type("1\r")
+	out.AwaitOutput("value must be at least 2")
+	keys.Close()
+	assert.Error(t, terst.Recv(t, answer).err)
+	keys, out, answer = startNumber[int](t, WithAtMost(2))
+	keys.Type("9\r")
+	out.AwaitOutput("value must be at most 2")
+	keys.Close()
+	assert.Error(t, terst.Recv(t, answer).err)
 
 	// bounds are exact and may have another type than the answer
 	u, _, err := runNumber[uint64](
@@ -68,7 +73,8 @@ func TestNumberInvalidBounds(t *testing.T) {
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 	_, _, err = runNumber[float32](t, "1\r", WithAtMost(math.MaxFloat64))
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
-	terst.UseIO(t, strings.NewReader(""), io.Discard)
+	keys := terst.UseKeys(t)
+	keys.Close()
 	_, err = Input(
 		t.Context(),
 		"x",

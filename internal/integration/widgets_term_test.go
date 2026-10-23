@@ -9,7 +9,6 @@ import (
 	"errors"
 	tui "github.com/nfx/go-tui"
 	"github.com/nfx/go-tui/internal/term"
-	"io"
 	"os"
 	"strings"
 	"testing"
@@ -19,12 +18,12 @@ import (
 )
 
 func TestInput_ScriptedReaderAndWriter(t *testing.T) {
-	var out bytes.Buffer
-	terst.UseIO(t, strings.NewReader("alice\r"), &out)
+	keys, out := terst.UseTerminal(t)
+	keys.Type("alice\r")
 	value, err := tui.Input(context.Background(), "Name")
 	assert.NoError(t, err)
 	assert.Equal(t, "alice", value)
-	assert.Contains(t, out.String(), "Name")
+	out.AwaitOutput("Name")
 }
 
 func TestSharedInputState_CancelledClosedReaderReleased(t *testing.T) {
@@ -52,7 +51,8 @@ func TestSharedInputState_CancelledClosedReaderReleased(t *testing.T) {
 }
 
 func TestInput_ScriptedInputDefaultOutput(t *testing.T) {
-	terst.UseIO(t, strings.NewReader("bob\r"), io.Discard)
+	keys := terst.UseKeys(t)
+	keys.Type("bob\r")
 	value, err := tui.Input(
 		context.Background(),
 		"Name",
@@ -62,17 +62,16 @@ func TestInput_ScriptedInputDefaultOutput(t *testing.T) {
 }
 
 func TestDropdown_ScriptedReaderAndWriter(t *testing.T) {
-	var out bytes.Buffer
-	// Down, Enter
-	terst.UseIO(t, strings.NewReader("\x1b[B\r"), &out)
+	keys := terst.UseKeys(t)
+	keys.Type(terst.KeyDown + terst.KeyEnter)
 	value, err := tui.Dropdown(context.Background(), "Pick", []string{"a", "b", "c"})
 	assert.NoError(t, err)
 	assert.Equal(t, "b", value)
 }
 
 func TestConfirm_ScriptedReaderAndWriter(t *testing.T) {
-	var out bytes.Buffer
-	terst.UseIO(t, strings.NewReader("\r"), &out)
+	keys := terst.UseKeys(t)
+	keys.Type(terst.KeyEnter)
 	ok := tui.Confirm(context.Background(), "Proceed")
 	assert.True(t, ok)
 }

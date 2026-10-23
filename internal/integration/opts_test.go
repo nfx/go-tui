@@ -6,7 +6,6 @@ package integration
 import (
 	tui "github.com/nfx/go-tui"
 	"github.com/nfx/go-tui/internal/terst"
-	"io"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
@@ -54,7 +53,7 @@ func TestEntryPointsRejectOptionsOfOtherWidgets(t *testing.T) {
 	_, err = tui.NewSpinners(t.Context(), tui.WithPrefixf("group"))
 	assert.ErrorIs(t, err, tui.ErrWrongWidget)
 
-	terst.UseIO(t, nil, io.Discard)
+	terst.UseFrames(t)
 	group, err := tui.NewSpinners(t.Context())
 	assert.NoError(t, err)
 	defer group.Close()
