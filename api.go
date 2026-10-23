@@ -39,15 +39,6 @@ var (
 	ErrInvalidOption = errs.ErrInvalidOption
 )
 
-// Tui is a terminal session: the widgets apply their options to it, and it
-// exposes the raw terminal as an [io.ReadWriter].
-type Tui = term.Tui
-
-// NewTUI starts a terminal session on the standard streams.
-func NewTUI(ctx context.Context, opts ...option.Opt) (*Tui, error) {
-	return term.NewTUI(ctx, opts...)
-}
-
 // Stderr returns the package-default append-only terminal writer.
 //
 // On interactive TTYs this routes writes through go-tui's shared terminal

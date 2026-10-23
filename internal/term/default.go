@@ -132,7 +132,7 @@ func (t *Terminal) Close() error {
 }
 
 // ProfileFor resolves the color profile for one destination writer.
-// Managed writers (the arbiter, viewports, [Tui]) draw on t's raw output.
+// Managed writers (the arbiter and viewports) draw on t's raw output.
 // The first matching rule wins:
 //
 //  1. FORCE_COLOR: 0/false is plain, 2 is ansi256, 3 is truecolor, others ansi16.
@@ -158,7 +158,7 @@ func (t *Terminal) ProfileFor(w io.Writer) color.Profile {
 		return color.ProfileANSI16
 	}
 	switch w.(type) {
-	case *ChanIO, *Viewport, *Tui:
+	case *ChanIO, *Viewport:
 		w = t.RawOutput()
 	}
 	terminal := t.isTerminalWriter(w)

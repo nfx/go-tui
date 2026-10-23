@@ -24,7 +24,7 @@ var OutputIsTerminal = HostsTerminal
 // a real one in CI, where nobody answers prompts.
 func HostsTerminal(out io.Writer) bool {
 	switch w := out.(type) {
-	case *ChanIO, *Viewport, *Tui:
+	case *ChanIO, *Viewport:
 		return true
 	case Descriptor:
 		if Default.Env.Ci {
