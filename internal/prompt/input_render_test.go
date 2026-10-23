@@ -186,7 +186,7 @@ func TestInputFeedbackTemplateIsPlain(t *testing.T) {
 }
 
 // themedInput is an input rendering through th on a scripted terminal of the
-// given size. Each key is one read. restored reports a released terminal.
+// given size. Each key is one read, then EOF. restored reports a released terminal.
 func themedInput(
 	t *testing.T,
 	th theme.Theme,
@@ -196,12 +196,10 @@ func themedInput(
 	t.Helper()
 	terst.UseTheme(t, th)
 	i = newInput(t.Context(), "Label")
-	var chunks [][]byte
-	for _, k := range keys {
-		chunks = append(chunks, []byte(k))
-	}
 	out, restored = &bytes.Buffer{}, new(bool)
-	i.In, i.Out = &terst.ChunkReader{Chunks: chunks}, out
+	in := terst.NewKeys(t, keys...)
+	in.Close() // input ends after the keys
+	i.In, i.Out = in, out
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 		restore := func() error { *restored = true; return nil }
 		return &term.IO{In: in, Out: out, Width: width, Height: height, Restore: restore}, nil

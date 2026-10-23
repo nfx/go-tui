@@ -81,26 +81,10 @@ func NewTermIO(width, height int) *term.IO {
 	}
 }
 
-type ChunkReader struct {
-	Chunks [][]byte
-	idx    int
-}
+// failReader fails the test when a prompt reads from it.
+type failReader struct{ t *testing.T }
 
-// Read returns the next chunk to simulate multi-byte key sequences.
-func (r *ChunkReader) Read(p []byte) (int, error) {
-	if r.idx >= len(r.Chunks) {
-		return 0, io.EOF
-	}
-	chunk := r.Chunks[r.idx]
-	r.idx++
-	n := copy(p, chunk)
-	return n, nil
-}
-
-// FailReader fails the test when a prompt reads from it.
-type FailReader struct{ t *testing.T }
-
-func (r FailReader) Read([]byte) (int, error) {
+func (r failReader) Read([]byte) (int, error) {
 	r.t.Helper()
 	r.t.Error("automatic answer must not read input")
 	return 0, io.EOF
@@ -113,7 +97,7 @@ func Quiet(t *testing.T) {
 	StrictOutput(t)
 	out := &bytes.Buffer{}
 	t.Cleanup(func() { assert.Equal(t, "", out.String()) })
-	UseIO(t, FailReader{t}, out)
+	UseIO(t, failReader{t}, out)
 }
 
 // KeepTheme restores the installed theme after a test.
@@ -297,48 +281,72 @@ func ProbingKeyboard(t *testing.T, fd uintptr) {
 // ASCIISymbols replace the presets on terminals without the Unicode glyphs.
 var ASCIISymbols = theme.New().Symbols.ASCII()
 
-// BlockingByteReader feeds scripted chunks to a blocking Read.
-type BlockingByteReader struct {
+// Key sequences as a terminal sends them.
+const (
+	KeyEnter     = "\r"
+	KeyEsc       = "\x1b"
+	KeyTab       = "\t"
+	KeyBackspace = "\x7f"
+	KeyUp        = "\x1b[A"
+	KeyDown      = "\x1b[B"
+	KeyRight     = "\x1b[C"
+	KeyLeft      = "\x1b[D"
+)
+
+// Keys is scripted keyboard input: Read returns one chunk, blocking until one is sent.
+type Keys struct {
+	t       *testing.T
 	ch      chan []byte
+	reads   chan struct{}
 	waiters atomic.Int32
+	closed  sync.Once
 }
 
-// NewBlockingByteReader returns a reader whose Read blocks until a chunk is
-// sent; buffer is the number of chunks that can be sent without a reader.
-func NewBlockingByteReader(buffer int) *BlockingByteReader {
-	return &BlockingByteReader{ch: make(chan []byte, buffer)}
+// NewKeys returns input that serves chunks, one per Read, and then blocks until
+// more are sent. It stays open until [Keys.Close] or the end of the test.
+func NewKeys(t *testing.T, chunks ...string) *Keys {
+	t.Helper()
+	k := &Keys{t: t, ch: make(chan []byte, 256), reads: make(chan struct{}, 16)}
+	t.Cleanup(k.Close)
+	k.Send(chunks...)
+	return k
 }
 
-func (r *BlockingByteReader) Read(p []byte) (int, error) {
-	r.waiters.Add(1)
-	chunk, ok := <-r.ch
-	r.waiters.Add(-1)
+// Send queues chunks, one per Read.
+func (k *Keys) Send(chunks ...string) {
+	for _, c := range chunks {
+		k.ch <- []byte(c)
+	}
+}
+
+// Close makes Read return io.EOF after the queued chunks. It is idempotent.
+func (k *Keys) Close() {
+	k.closed.Do(func() { close(k.ch) })
+}
+
+// Waiters is the number of Reads blocked for a chunk.
+func (k *Keys) Waiters() int {
+	return int(k.waiters.Load())
+}
+
+// AwaitRead waits until a Read starts that has not been awaited yet.
+func (k *Keys) AwaitRead() {
+	k.t.Helper()
+	Recv(k.t, k.reads)
+}
+
+func (k *Keys) Read(p []byte) (int, error) {
+	select {
+	case k.reads <- struct{}{}:
+	default:
+	}
+	k.waiters.Add(1)
+	chunk, ok := <-k.ch
+	k.waiters.Add(-1)
 	if !ok {
 		return 0, io.EOF
 	}
-	if len(chunk) == 0 || len(p) == 0 {
-		return 0, nil
-	}
-	n := copy(p, chunk)
-	return n, nil
-}
-
-func (r *BlockingByteReader) SendByte(b byte) {
-	r.SendBytes([]byte{b})
-}
-
-func (r *BlockingByteReader) SendBytes(bs []byte) {
-	cp := make([]byte, len(bs))
-	copy(cp, bs)
-	r.ch <- cp
-}
-
-func (r *BlockingByteReader) Waiters() int {
-	return int(r.waiters.Load())
-}
-
-func (r *BlockingByteReader) Close() {
-	close(r.ch)
+	return copy(p, chunk), nil
 }
 
 // FrameWriter delivers every write as one receive. Unlike a [term.ChanIO]

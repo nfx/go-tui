@@ -123,8 +123,7 @@ func TestInputAndStderrShareDefaultTerminal(t *testing.T) {
 		term.Default.SetIO(prevIn, prevOut)
 	})
 	cio, stdout := terst.ChainIOForTest(t, 60, 8)
-	reader := terst.NewBlockingByteReader(3)
-	t.Cleanup(reader.Close)
+	reader := terst.NewKeys(t)
 	input := &terst.MockDescriptor{Reader: reader, FD: 0}
 	term.Default.SetIO(input, cio)
 
@@ -144,11 +143,10 @@ func TestInputAndStderrShareDefaultTerminal(t *testing.T) {
 	assert.NoError(t, err)
 	logged := terst.WaitOutputContains(t, stdout.C, "PROMPT", "INF background")
 	assert.Equal(t, 1, strings.Count(logged, "PROMPT"))
-	reader.SendByte('a')
-	reader.SendByte('b')
+	reader.Send("a", "b")
 	updated := terst.WaitOutputContains(t, stdout.C, "PROMPT", "ab")
 	assert.Equal(t, 1, strings.Count(updated, "PROMPT"))
-	reader.SendByte(term.KeyEnter)
+	reader.Send(terst.KeyEnter)
 	select {
 	case err := <-errs:
 		assert.NoError(t, err)

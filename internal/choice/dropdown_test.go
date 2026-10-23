@@ -391,10 +391,7 @@ func TestDropdownKVMultipleItems(t *testing.T) {
 }
 
 func TestDropdownRunSelectsWithArrow(t *testing.T) {
-	reader := &terst.ChunkReader{Chunks: [][]byte{
-		{0x1b, 0x5b, 0x42},
-		{byte(term.KeyEnter)},
-	}}
+	reader := terst.NewKeys(t, terst.KeyDown, terst.KeyEnter)
 	d := newDropdown(t.Context())
 	d.Items = []any{"one", "two"}
 	d.in = reader
@@ -414,12 +411,7 @@ func TestDropdownRunSelectsWithArrow(t *testing.T) {
 }
 
 func TestDropdownRunIgnoresSpecialKeys(t *testing.T) {
-	reader := &terst.ChunkReader{Chunks: [][]byte{
-		[]byte("\x1b[3~"),
-		[]byte("\x1bx"),
-		{0x1b, 0x1b, 0x5b, 0x42}, // Esc, then down
-		{byte(term.KeyEnter)},
-	}}
+	reader := terst.NewKeys(t, "\x1b[3~", "\x1bx", terst.KeyEsc+terst.KeyDown, terst.KeyEnter)
 	d := newDropdown(t.Context())
 	d.Items = []any{"one", "two"}
 	d.in = reader
@@ -463,9 +455,7 @@ func TestDropdownRunConsumesInputEvents(t *testing.T) {
 }
 
 func TestDropdownRunOneReturn(t *testing.T) {
-	reader := &terst.ChunkReader{Chunks: [][]byte{
-		{'b'},
-	}}
+	reader := terst.NewKeys(t, "b")
 	d := newDropdown(t.Context())
 	d.Items = []any{"alpha", "beta"}
 	d.OneReturn = true
@@ -886,7 +876,7 @@ func waitForOutputContaining(t *testing.T, out <-chan string, substr string, tim
 	}
 }
 
-func assertNoWaitersFor(t *testing.T, r *terst.BlockingByteReader, d time.Duration) {
+func assertNoWaitersFor(t *testing.T, r *terst.Keys, d time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(d)
 	for time.Now().Before(deadline) {
@@ -1189,16 +1179,10 @@ func scripted(t *testing.T, th theme.Theme, width int, keys ...string) *scripted
 	terst.UseTheme(t, th)
 	s := &scriptedTerminal{out: &bytes.Buffer{}, restored: new(bool), width: width}
 	if len(keys) == 0 {
-		blocking := terst.NewBlockingByteReader(0)
-		t.Cleanup(blocking.Close)
-		s.in = blocking
+		s.in = terst.NewKeys(t)
 		return s
 	}
-	var chunks [][]byte
-	for _, k := range keys {
-		chunks = append(chunks, []byte(k))
-	}
-	s.in = &terst.ChunkReader{Chunks: chunks}
+	s.in = terst.NewKeys(t, keys...)
 	return s
 }
 
@@ -1211,7 +1195,7 @@ func (s *scriptedTerminal) makeTermIO(in io.Reader, out io.Writer) (*term.IO, er
 func TestDropdownConfirmClearsFrameOnce(t *testing.T) {
 	terst.UseTheme(t, terst.ASCIITheme(false))
 	var out bytes.Buffer
-	terst.UseIO(t, &terst.ChunkReader{Chunks: [][]byte{[]byte("\r")}}, &out)
+	terst.UseIO(t, terst.NewKeys(t, terst.KeyEnter), &out)
 	_, err := Dropdown(t.Context(), "Fruit", fruits, option.OpT(func(d *dropdown) error {
 		d.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
 			return &term.IO{In: in, Out: out, Width: 40, Height: 10, Restore: func() error { return nil }}, nil

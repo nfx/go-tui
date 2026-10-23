@@ -603,7 +603,7 @@ func TestMultichoiceBufferedEnterRetainsArrival(t *testing.T) {
 			if err := m.addItem("one"); err != nil {
 				t.Fatal(err)
 			}
-			in := &terst.ChunkReader{Chunks: [][]byte{[]byte("\t\r"), []byte("\r")}}
+			in := terst.NewKeys(t, "\t\r", "\r")
 			old := &term.IO{In: in, SplitKeys: tc.split}
 			read, accept := old.StartRead(t.Context())
 			<-read.Done

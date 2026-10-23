@@ -46,11 +46,12 @@ func runValidated(t *testing.T, password bool, keys string, o ...option.Opt) (st
 	t.Helper()
 	i := newInput(t.Context(), "Label")
 	i.Password = password
-	var chunks [][]byte
+	in := terst.NewKeys(t)
 	for _, k := range keys {
-		chunks = append(chunks, []byte(string(k)))
+		in.Send(string(k))
 	}
-	i.In = &terst.ChunkReader{Chunks: chunks}
+	in.Close() // input ends after the script
+	i.In = in
 	var out bytes.Buffer
 	i.Out = &out
 	i.makeTermIO = func(in io.Reader, out io.Writer) (*term.IO, error) {
