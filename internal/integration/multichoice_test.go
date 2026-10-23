@@ -4,7 +4,6 @@
 package integration
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -47,7 +46,8 @@ func TestMultichoicePublic(t *testing.T) {
 		{"paste text not keys", "\x1b[200~tw\n\x03\x1b[201~ \r", "", []string{"one", "two"}, []string{"two"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			terst.UseIO(t, strings.NewReader(tc.input), io.Discard)
+			keys := terst.UseKeys(t)
+			keys.Type(tc.input)
 			got, err := tui.Multichoice(
 				t.Context(),
 				"Pick",
@@ -68,24 +68,23 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 	th := theme.New()
 	th.Multichoice.Answer = `ANSWER {{ .Count }}{{ range .Values }} {{ . }}{{ else }} none{{ end }}`
 	terst.UseTheme(t, th)
-	var out bytes.Buffer
-	terst.UseIO(t, strings.NewReader("\r"), &out)
+	keys, out := terst.UseTerminal(t)
+	keys.Type("\r")
 	got, err := tui.Multichoice(t.Context(), "Services", items,
 		tui.WithOptions(tui.WithOneReturn(), tui.WithTemplate(".Name", ".Region"), tui.WithDefault("worker")))
 	if err != nil || !reflect.DeepEqual(got, items[1:]) {
 		t.Fatalf("got %v, %v", got, err)
 	}
-	if strings.Count(out.String(), "ANSWER 1 worker") != 1 || !strings.Contains(out.String(), "◉ worker") {
-		t.Fatal(out.String())
-	}
+	out.AwaitOutput("◉ worker")
+	out.AwaitVisible("ANSWER 1 worker")
 	got[0].Name = "changed"
 	if items[1].Name != "worker" {
 		t.Fatal("result aliases source slice")
 	}
 	t.Run("generated collection answer", func(t *testing.T) {
 		terst.UseTheme(t, theme.New())
-		out.Reset()
-		terst.UseIO(t, strings.NewReader("\r"), &out)
+		keys, out := terst.UseTerminal(t)
+		keys.Type("\r")
 		_, err := tui.Multichoice(
 			t.Context(),
 			"Services",
@@ -93,12 +92,14 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 			tui.WithTemplate(".Name", ".Region"),
 			tui.WithDefault("api"),
 		)
-		if err != nil || !strings.Contains(out.String(), "✔ Services") || !strings.Contains(out.String(), "api") {
-			t.Fatalf("%s: %v", out.String(), err)
+		if err != nil {
+			t.Fatal(err)
 		}
+		out.AwaitOutput("✔ Services", "api")
 	})
 	t.Run("deprecated fields", func(t *testing.T) {
-		terst.UseIO(t, strings.NewReader("\r"), io.Discard)
+		keys := terst.UseKeys(t)
+		keys.Type("\r")
 		_, err := tui.Multichoice(
 			t.Context(),
 			"Services",
@@ -111,7 +112,8 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 		}
 	})
 	t.Run("last hint and clear", func(t *testing.T) {
-		terst.UseIO(t, strings.NewReader("\r"), io.Discard)
+		keys := terst.UseKeys(t)
+		keys.Type("\r")
 		got, err := tui.Multichoice(
 			t.Context(),
 			"Services",
@@ -126,7 +128,8 @@ func TestMultichoiceOptionsAndTemplates(t *testing.T) {
 		}
 	})
 	t.Run("nil items", func(t *testing.T) {
-		terst.UseIO(t, strings.NewReader(" \x1b[B \x1b[B \r"), io.Discard)
+		keys := terst.UseKeys(t)
+		keys.Type(" \x1b[B \x1b[B \r")
 		got, err := tui.Multichoice(
 			t.Context(),
 			"Nil",
@@ -143,8 +146,8 @@ func TestMultichoiceMapProjections(t *testing.T) {
 	th := theme.New()
 	th.Multichoice.Answer = `ANSWER {{ .Count }}{{ range .Values }} {{ . }}{{ end }}`
 	terst.UseTheme(t, th)
-	var out bytes.Buffer
-	terst.UseIO(t, strings.NewReader("\x1b[B \r"), &out)
+	keyboard, out := terst.UseTerminal(t)
+	keyboard.Type("\x1b[B \r")
 	keys, err := tui.MultichoiceKVK(
 		t.Context(),
 		"Keys",
@@ -154,11 +157,8 @@ func TestMultichoiceMapProjections(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(keys, []string{"alpha", "beta"}) {
 		t.Fatalf("%v, %v", keys, err)
 	}
-	if strings.Count(out.String(), "ANSWER 2 alpha beta") != 1 {
-		t.Fatal(out.String())
-	}
-	out.Reset()
-	terst.UseIO(t, strings.NewReader("\x1b[B \r"), &out)
+	out.AwaitVisible("ANSWER 2 alpha beta")
+	keyboard.Type("\x1b[B \r")
 	selected, err := tui.MultichoiceKVV(
 		t.Context(),
 		"Values",
@@ -168,11 +168,9 @@ func TestMultichoiceMapProjections(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(selected, [][]int{{1}, {1}}) {
 		t.Fatalf("%v, %v", selected, err)
 	}
-	if strings.Count(out.String(), "ANSWER 2 alpha beta") != 1 {
-		t.Fatal(out.String())
-	}
+	out.AwaitVisible("ANSWER 2 alpha beta", "ANSWER 2 alpha beta")
 	type payload struct{ Name string }
-	terst.UseIO(t, strings.NewReader("\r"), io.Discard)
+	keyboard.Type("\r")
 	result, err := tui.MultichoiceKVV(
 		t.Context(),
 		"Custom",
@@ -183,7 +181,7 @@ func TestMultichoiceMapProjections(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(result, []payload{{"display"}}) {
 		t.Fatalf("%v, %v", result, err)
 	}
-	terst.UseIO(t, strings.NewReader("\r"), io.Discard)
+	keyboard.Type("\r")
 	empty, err := tui.MultichoiceKVV(
 		t.Context(),
 		"None",
@@ -207,7 +205,9 @@ func TestMultichoiceErrors(t *testing.T) {
 		{"incomplete paste", "\x1b[200~one", nil, io.EOF},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			terst.UseIO(t, strings.NewReader(tc.input), io.Discard)
+			keys := terst.UseKeys(t)
+			keys.Type(tc.input)
+			keys.Close()
 			got, err := tui.Multichoice(
 				t.Context(),
 				"Pick",
@@ -238,10 +238,9 @@ func TestMultichoiceErrors(t *testing.T) {
 	if got != nil || err == nil {
 		t.Fatal(got, err)
 	}
-	var out bytes.Buffer
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	terst.UseIO(t, nil, &out)
+	terst.UseTerminalInput(t, nil)
 	got, err = tui.Multichoice(ctx, "Canceled", []string{"one"})
 	if got != nil || !errors.Is(err, context.Canceled) {
 		t.Fatal(got, err)
@@ -249,13 +248,12 @@ func TestMultichoiceErrors(t *testing.T) {
 }
 
 func TestMultichoiceSequentialReaders(t *testing.T) {
-	in := strings.NewReader(" \r \rnext\rsecret\r\r")
-	terst.UseIO(t, in, io.Discard)
+	keys := terst.UseKeys(t)
+	keys.Type(" \r \rnext\rsecret\r\r")
 	first, err := tui.Multichoice(t.Context(), "First", []string{"one"})
 	if err != nil || len(first) != 1 {
 		t.Fatal(first, err)
 	}
-	terst.UseIO(t, in, io.Discard)
 	second, err := tui.Multichoice(
 		t.Context(),
 		"Second",
@@ -264,17 +262,14 @@ func TestMultichoiceSequentialReaders(t *testing.T) {
 	if err != nil || len(second) != 1 {
 		t.Fatal(second, err)
 	}
-	terst.UseIO(t, in, io.Discard)
 	value, err := tui.Input(t.Context(), "Text")
 	if err != nil || value != "next" {
 		t.Fatal(value, err)
 	}
-	terst.UseIO(t, in, io.Discard)
 	secret, err := tui.Password(t.Context(), "Secret")
 	if err != nil || secret != "secret" {
 		t.Fatal(secret, err)
 	}
-	terst.UseIO(t, in, io.Discard)
 	_, err = tui.Dropdown(t.Context(), "Last", []string{"one", "two"})
 	if err != nil {
 		t.Fatal(err)

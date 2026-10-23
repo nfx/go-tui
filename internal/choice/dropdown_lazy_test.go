@@ -529,7 +529,7 @@ func TestDropdownLazyStopsProducerOnEarlyError(t *testing.T) {
 		for i := 0; yield(i, nil); i++ {
 		}
 	}
-	terst.UseIO(t, bytes.NewBuffer(nil), io.Discard)
+	terst.UseTerminalInput(t, nil)
 	_, err := DropdownLazy(t.Context(), "pick", seq,
 		fixedTermOpt(), WithTemplate("{{"))
 	assert.Error(t, err)
@@ -650,7 +650,7 @@ func TestDropdownLazyAutomaticAnswerCancelsWhileProducerBlocked(t *testing.T) {
 		<-release
 	}
 	done := make(chan error, 1)
-	terst.UseIO(t, nil, &bytes.Buffer{})
+	terst.Quiet(t)
 	go func() {
 		_, err := DropdownLazy(ctx, "Pick", seq, option.WithDefault("a"))
 		done <- err

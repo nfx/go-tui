@@ -18,8 +18,6 @@ import (
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 
-	"bytes"
-
 	"github.com/nfx/go-tui/internal/assert"
 	"github.com/nfx/go-tui/internal/terst"
 )
@@ -370,8 +368,8 @@ func TestThemedFilePickerHelperErrorRestoresTerminal(t *testing.T) {
 }
 
 func TestFilePickerSplitsOptionsBetweenParts(t *testing.T) {
-	writer := &bytes.Buffer{}
-	terst.UseIO(t, nil, writer)
+	terst.UseTerminalInput(t, nil)
+	_, writer := term.DefaultStreams(t.Context())
 	f, d, err := newFilePicker(t.Context(),
 		WithStartDir(t.TempDir()),
 		option.WithOptions(WithShowHidden(), option.WithHide()),
@@ -379,5 +377,5 @@ func TestFilePickerSplitsOptionsBetweenParts(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, f.showHidden)
 	assert.True(t, d.Hide)
-	assert.Equal(t, io.Writer(writer), d.out)
+	assert.Equal(t, writer, d.out)
 }

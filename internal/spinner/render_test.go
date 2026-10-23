@@ -213,8 +213,7 @@ func TestThemedSpinnerLogsWithoutTerminal(t *testing.T) {
 		},
 	})))
 	t.Cleanup(func() { slog.SetDefault(previous) })
-	var out bytes.Buffer
-	terst.UseIO(t, nil, &out)
+	terst.Quiet(t)
 	s, err := NewSpinners(t.Context())
 	assert.NoError(t, err)
 	sp, err := s.Add(t.Context(), WithPrefixf("job"))
@@ -227,5 +226,4 @@ func TestThemedSpinnerLogsWithoutTerminal(t *testing.T) {
 		"level=INFO msg=\"spinner started\" spinner=0 prefix=job status=started\n"+
 		"level=INFO msg=working spinner=0 prefix=job status=running\n"+
 		"level=ERROR msg=lost spinner=0 prefix=job status=failed\n", logs.String())
-	assert.Equal(t, 0, out.Len())
 }

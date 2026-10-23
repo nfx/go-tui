@@ -690,7 +690,7 @@ func TestMultichoiceLazyAutomaticAnswerCancelsWhileProducerBlocked(t *testing.T)
 		<-release
 	}
 	done := make(chan error, 1)
-	terst.UseIO(t, nil, &bytes.Buffer{})
+	terst.Quiet(t)
 	go func() {
 		_, err := MultichoiceLazy(ctx, "Pick", seq, option.WithDefault("a"))
 		done <- err

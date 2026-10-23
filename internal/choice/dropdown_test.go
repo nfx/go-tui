@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -793,13 +792,12 @@ func fixedTermOpt() option.Opt {
 }
 
 func TestDropdownIndexUniqueDefaultReturnsOriginalIndex(t *testing.T) {
-	terst.UseIO(t, bytes.NewBuffer(nil), io.Discard)
+	terst.UseTerminalInput(t, nil)
 	i, err := DropdownIndex(t.Context(), "pick", []any{"xxx", "b", "a"},
 		fixedTermOpt(), option.WithDefault("a"))
 	assert.NoError(t, err)
 	assert.Equal(t, 2, i)
 
-	terst.UseIO(t, bytes.NewBuffer(nil), io.Discard)
 	v, err := Dropdown(t.Context(), "pick", []string{"xxx", "b", "a"},
 		fixedTermOpt(), option.WithDefault("a"))
 	assert.NoError(t, err)
@@ -1016,14 +1014,12 @@ func TestDropdownOneReturn(t *testing.T) {
 func TestTypedDefaultSeedsInteractiveDropdown(t *testing.T) {
 	// the typed default is the first row, and Enter confirms it
 	servers := []server{{"alpha", 1}, {"beta", 2}, {"gamma", 3}}
-	var out bytes.Buffer
-	terst.UseIO(t, strings.NewReader("\r"), &out)
+	terst.UseKeys(t).Type(terst.KeyEnter)
 	got, err := Dropdown(t.Context(), "Pick", servers,
 		option.WithDefault(server{"gamma", 3}))
 	assert.NoError(t, err)
 	assert.Equal(t, servers[2], got)
 
-	terst.UseIO(t, strings.NewReader("\r"), &out)
 	_, err = Dropdown(t.Context(), "Pick", servers,
 		option.WithDefault(server{"nope", 3}))
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
@@ -1070,13 +1066,14 @@ func (s *scriptedTerminal) makeTermIO(in io.Reader, out io.Writer) (*term.IO, er
 
 func TestDropdownConfirmClearsFrameOnce(t *testing.T) {
 	terst.UseASCII(t)
-	var out bytes.Buffer
-	terst.UseIO(t, terst.NewKeys(t, terst.KeyEnter), &out)
+	keys, out := terst.UseFrames(t)
+	keys.Send(terst.KeyEnter)
 	_, err := Dropdown(t.Context(), "Fruit", fruits, option.OpT(func(d *dropdown) error {
 		d.makeTermIO = terst.FixedTermIO(40, 10)
 		return nil
 	}))
 	assert.NoError(t, err)
+	out.AwaitOutput("+ Fruit · apple")
 	assert.Equal(t, ""+
 		"\r? Fruit\n\r| > apple\n\r|   banana\n\r|   cherry\n\r| ^v move · type filter\n\r"+
 		"\x1b[5A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[4A\r"+

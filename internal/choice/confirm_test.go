@@ -4,7 +4,6 @@
 package choice
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -33,13 +32,11 @@ func TestConfirmfRunsWithFormattedAction(t *testing.T) {
 }
 
 func TestDefaultConfirmRunnerReturnsTrue(t *testing.T) {
-	in := bytes.NewBuffer([]byte{term.KeyEnter})
-	out := &bytes.Buffer{}
 	opt := option.OpT(func(d *dropdown) error {
 		d.makeTermIO = terst.FixedTermIO(20, 6)
 		return nil
 	})
-	terst.UseIO(t, in, out)
+	terst.UseKeys(t).Type(terst.KeyEnter)
 	assert.True(t, defaultConfirmRunner(t.Context(), "Proceed?", opt))
 }
 

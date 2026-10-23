@@ -75,7 +75,7 @@ func TestInputReadOptionError(t *testing.T) {
 }
 
 func TestInputReadRunError(t *testing.T) {
-	terst.UseIO(t, nil, io.Discard)
+	terst.UseTerminalInput(t, nil)
 	_, err := Input(t.Context(), "Label", option.OpT(func(i *input) error {
 		i.makeTermIO = func(io.Reader, io.Writer) (*term.IO, error) {
 			return nil, io.EOF
