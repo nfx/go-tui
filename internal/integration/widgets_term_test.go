@@ -20,8 +20,8 @@ import (
 
 func TestInput_ScriptedReaderAndWriter(t *testing.T) {
 	var out bytes.Buffer
-	value, err := tui.Input(context.Background(), "Name",
-		tui.WithInput(strings.NewReader("alice\r")), tui.WithOutput(&out))
+	terst.UseIO(t, strings.NewReader("alice\r"), &out)
+	value, err := tui.Input(context.Background(), "Name")
 	assert.NoError(t, err)
 	assert.Equal(t, "alice", value)
 	assert.Contains(t, out.String(), "Name")
@@ -52,11 +52,10 @@ func TestSharedInputState_CancelledClosedReaderReleased(t *testing.T) {
 }
 
 func TestInput_ScriptedInputDefaultOutput(t *testing.T) {
+	terst.UseIO(t, strings.NewReader("bob\r"), io.Discard)
 	value, err := tui.Input(
 		context.Background(),
 		"Name",
-		tui.WithInput(strings.NewReader("bob\r")),
-		tui.WithOutput(io.Discard),
 	)
 	assert.NoError(t, err)
 	assert.Equal(t, "bob", value)
@@ -65,35 +64,38 @@ func TestInput_ScriptedInputDefaultOutput(t *testing.T) {
 func TestDropdown_ScriptedReaderAndWriter(t *testing.T) {
 	var out bytes.Buffer
 	// Down, Enter
-	value, err := tui.Dropdown(context.Background(), "Pick", []string{"a", "b", "c"},
-		tui.WithInput(strings.NewReader("\x1b[B\r")), tui.WithOutput(&out))
+	terst.UseIO(t, strings.NewReader("\x1b[B\r"), &out)
+	value, err := tui.Dropdown(context.Background(), "Pick", []string{"a", "b", "c"})
 	assert.NoError(t, err)
 	assert.Equal(t, "b", value)
 }
 
 func TestConfirm_ScriptedReaderAndWriter(t *testing.T) {
 	var out bytes.Buffer
-	ok := tui.Confirm(context.Background(), "Proceed",
-		tui.WithInput(strings.NewReader("\r")), tui.WithOutput(&out))
+	terst.UseIO(t, strings.NewReader("\r"), &out)
+	ok := tui.Confirm(context.Background(), "Proceed")
 	assert.True(t, ok)
 }
 
 func TestRoutingWrapperInputBufferOutput(t *testing.T) {
 	terst.StrictOutput(t)
 	var out bytes.Buffer
+	terst.UseIO(t, strings.NewReader("typed\r"), &out)
 	got, err := tui.Input(t.Context(), "Name",
-		tui.WithInput(strings.NewReader("typed\r")), tui.WithOutput(&out), tui.WithDefault("dflt"))
+		tui.WithDefault("dflt"))
 	assert.NoError(t, err)
 	assert.Equal(t, "dflt", got)
 	assert.Equal(t, "", out.String())
 
-	_, err = tui.Input(t.Context(), "Name", tui.WithInput(strings.NewReader("typed\r")), tui.WithOutput(&out))
+	terst.UseIO(t, strings.NewReader("typed\r"), &out)
+	_, err = tui.Input(t.Context(), "Name")
 	assert.ErrorIs(t, err, tui.ErrNoTTY)
 
 	f, ferr := os.CreateTemp(t.TempDir(), "out")
 	assert.NoError(t, ferr)
 	defer f.Close() //nolint:errcheck
-	_, err = tui.Dropdown(t.Context(), "Pick", []string{"a"}, tui.WithOutput(f), tui.WithInput(f))
+	terst.UseIO(t, f, f)
+	_, err = tui.Dropdown(t.Context(), "Pick", []string{"a"})
 	assert.ErrorIs(t, err, tui.ErrNoTTY)
 }
 
@@ -101,7 +103,8 @@ func TestInteractiveStillWorksOnManagedOutput(t *testing.T) {
 	// production classification: a managed terminal with scripted input
 	terst.StrictOutput(t)
 	cio := terst.StartChanIO(t.Context(), 80, 24)
-	got, err := tui.Input(t.Context(), "Name", tui.WithInput(strings.NewReader("bob\r")), tui.WithOutput(cio))
+	terst.UseIO(t, strings.NewReader("bob\r"), cio)
+	got, err := tui.Input(t.Context(), "Name")
 	if errors.Is(err, tui.ErrNoTTY) {
 		t.Fatal("managed terminal must stay interactive")
 	}

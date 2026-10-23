@@ -54,12 +54,12 @@ func (x choiceTemplateFailure) Label() (string, error) { return "", x.err }
 
 func TestMultichoiceTemplateErrorPreservesUnderlyingCause(t *testing.T) {
 	cause := errors.New("label failed")
+	terst.UseIO(t, nil, io.Discard)
 	eager, err := Multichoice(
 		t.Context(),
 		"Eager",
 		[]choiceTemplateFailure{{cause}},
 		WithTemplate(".Label"),
-		option.WithOutput(io.Discard),
 	)
 	if eager != nil || !errors.Is(err, cause) {
 		t.Fatal(eager, err)
@@ -68,13 +68,12 @@ func TestMultichoiceTemplateErrorPreservesUnderlyingCause(t *testing.T) {
 	defer func() { assert.NoError(t, input.Close()) }()
 	defer func() { assert.NoError(t, typing.Close()) }()
 	seq := func(yield func(choiceTemplateFailure, error) bool) { yield(choiceTemplateFailure{cause}, nil) }
+	terst.UseIO(t, input, io.Discard)
 	lazy, err := MultichoiceLazy(
 		t.Context(),
 		"Lazy",
 		seq,
 		WithTemplate(".Label"),
-		option.WithInput(input),
-		option.WithOutput(io.Discard),
 	)
 	if lazy != nil || !errors.Is(err, cause) {
 		t.Fatal(lazy, err)
@@ -357,20 +356,21 @@ func TestThemedMultichoiceAutomaticAnswerRunsOnlyProjection(t *testing.T) {
 	th.Choice.Value = `{{ printf "z%s" . }}`
 	terst.UseTheme(t, th)
 	var out bytes.Buffer
-	got, err := Multichoice(t.Context(), "Fruit", fruits, option.WithOutput(&out), option.WithDefault("zb"))
+	terst.UseIO(t, nil, &out)
+	got, err := Multichoice(t.Context(), "Fruit", fruits, option.WithDefault("zb"))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"banana"}, got)
 
-	got, err = Multichoice(t.Context(), "Fruit", fruits, option.WithOutput(&out),
-		WithTemplate(`(printf "y%s" .)`), option.WithDefault("yc"))
+	terst.UseIO(t, nil, &out)
+	got, err = Multichoice(t.Context(), "Fruit", fruits, WithTemplate(`(printf "y%s" .)`), option.WithDefault("yc"))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"cherry"}, got)
 
+	terst.UseIO(t, nil, &out)
 	got, err = MultichoiceLazy(
 		t.Context(),
 		"Fruit",
 		lazySeq("apple", "banana"),
-		option.WithOutput(&out),
 		option.WithDefault("zb"),
 	)
 	assert.NoError(t, err)
@@ -420,8 +420,9 @@ func TestThemedMultichoiceProjectsOnceAndDrawsLazily(t *testing.T) {
 func TestThemedMultichoiceLazyConfirmsAfterExhaustion(t *testing.T) {
 	terst.UseTheme(t, terst.ASCIITheme(false))
 	stream := &completionChecklistIO{ready: make(chan struct{}), marker: "x banana"}
+	terst.UseIO(t, stream, stream)
 	got, err := MultichoiceLazy(t.Context(), "Fruit", lazySeq("apple", "banana"),
-		option.WithDefault("banana"), option.WithInput(stream), option.WithOutput(stream))
+		option.WithDefault("banana"))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"banana"}, got)
 }

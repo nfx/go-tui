@@ -31,7 +31,8 @@ func TestPasswordReadsFromPipe(t *testing.T) {
 	_, err = w.WriteString("secret\r")
 	assert.NoError(t, err)
 	assert.NoError(t, w.Close())
-	got, err := Password(t.Context(), "Label", option.WithInput(&terst.FDByteReader{F: r}), option.WithOutput(cio))
+	terst.UseIO(t, &terst.FDByteReader{F: r}, cio)
+	got, err := Password(t.Context(), "Label")
 	assert.NoError(t, err)
 	assert.Equal(t, "secret", got)
 }
@@ -51,12 +52,12 @@ func TestPasswordRejectionStaysMasked(t *testing.T) {
 }
 
 func TestPasswordDefaultKeepsSecretOut(t *testing.T) {
-	io := terst.Quiet(t)
-	got, err := Password(t.Context(), "Secret", io, option.WithDefault("hunter2"))
+	terst.Quiet(t)
+	got, err := Password(t.Context(), "Secret", option.WithDefault("hunter2"))
 	assert.NoError(t, err)
 	assert.Equal(t, "hunter2", got)
 
-	_, err = Password(t.Context(), "Secret", io, option.WithDefault("hunter2"),
+	_, err = Password(t.Context(), "Secret", option.WithDefault("hunter2"),
 		WithValidation(func(context.Context, string) error { return errors.New("too weak") }))
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 	assert.True(t, !strings.Contains(err.Error(), "hunter2"))

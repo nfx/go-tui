@@ -47,7 +47,8 @@ func TestDefaultConfirmRunnerReturnsTrue(t *testing.T) {
 		}
 		return nil
 	})
-	assert.True(t, defaultConfirmRunner(t.Context(), "Proceed?", option.WithInput(in), option.WithOutput(out), opt))
+	terst.UseIO(t, in, out)
+	assert.True(t, defaultConfirmRunner(t.Context(), "Proceed?", opt))
 }
 
 func TestDefaultConfirmRunnerReturnsFalseOnError(t *testing.T) {
@@ -62,21 +63,21 @@ func TestDefaultConfirmRunnerReturnsFalseOnError(t *testing.T) {
 }
 
 func TestConfirmDefaults(t *testing.T) {
-	io := terst.Quiet(t)
+	terst.Quiet(t)
 	ctx := t.Context()
-	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault(true)))
-	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault(false)))
-	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault("Yes")))
-	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault("y")))
-	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault("no")))
-	assert.True(t, !Confirm(ctx, "Go?", io))
-	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault(42)))
+	assert.True(t, Confirm(ctx, "Go?", option.WithDefault(true)))
+	assert.True(t, !Confirm(ctx, "Go?", option.WithDefault(false)))
+	assert.True(t, Confirm(ctx, "Go?", option.WithDefault("Yes")))
+	assert.True(t, Confirm(ctx, "Go?", option.WithDefault("y")))
+	assert.True(t, !Confirm(ctx, "Go?", option.WithDefault("no")))
+	assert.True(t, !Confirm(ctx, "Go?"))
+	assert.True(t, !Confirm(ctx, "Go?", option.WithDefault(42)))
 	cctx, cancel := context.WithCancel(ctx)
 	cancel()
-	assert.True(t, !Confirm(cctx, "Go?", io, option.WithDefault(true)))
+	assert.True(t, !Confirm(cctx, "Go?", option.WithDefault(true)))
 
 	// the error behind the false is visible one level down
-	_, err := Dropdown(ctx, "Go?", []string{"Yes", "No"}, io)
+	_, err := Dropdown(ctx, "Go?", []string{"Yes", "No"})
 	assert.ErrorIs(t, err, errs.ErrNoTTY)
 }
 
@@ -149,23 +150,23 @@ func TestThemedConfirmDefaultsWithoutTerminal(t *testing.T) {
 	th.Confirm.Inactive = `{{ fails .Value }}`
 	th.Confirm.Answer = `{{ fails .Value }}`
 	terst.UseTheme(t, th)
-	io := terst.Quiet(t)
+	terst.Quiet(t)
 	ctx := t.Context()
-	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault(true)))
-	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault(false)))
-	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault("Yes")))
-	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault("y")))
-	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault("no")))
-	assert.True(t, !Confirm(ctx, "Go?", io))
-	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault(42)))
+	assert.True(t, Confirm(ctx, "Go?", option.WithDefault(true)))
+	assert.True(t, !Confirm(ctx, "Go?", option.WithDefault(false)))
+	assert.True(t, Confirm(ctx, "Go?", option.WithDefault("Yes")))
+	assert.True(t, Confirm(ctx, "Go?", option.WithDefault("y")))
+	assert.True(t, !Confirm(ctx, "Go?", option.WithDefault("no")))
+	assert.True(t, !Confirm(ctx, "Go?"))
+	assert.True(t, !Confirm(ctx, "Go?", option.WithDefault(42)))
 
 	// a Confirm projection is what hints match; an exact boolean still wins
 	th.Confirm.Value = `{{ if eq . "Yes" }}sure{{ else }}never{{ end }}`
 	terst.UseTheme(t, th)
-	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault("s")))
-	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault("never")))
-	assert.True(t, Confirm(ctx, "Go?", io, option.WithDefault(true)))
-	assert.True(t, !Confirm(ctx, "Go?", io, option.WithDefault("y")))
+	assert.True(t, Confirm(ctx, "Go?", option.WithDefault("s")))
+	assert.True(t, !Confirm(ctx, "Go?", option.WithDefault("never")))
+	assert.True(t, Confirm(ctx, "Go?", option.WithDefault(true)))
+	assert.True(t, !Confirm(ctx, "Go?", option.WithDefault("y")))
 }
 
 func TestThemedConfirmHelperErrorIsFalseAndRestoresTerminal(t *testing.T) {

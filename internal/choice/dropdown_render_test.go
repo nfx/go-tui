@@ -304,12 +304,13 @@ func TestThemedDropdownAutomaticAnswerMatchesProjection(t *testing.T) {
 	th.Choice.Value = `{{ printf "z%s" . }}`
 	terst.UseTheme(t, th)
 	var out bytes.Buffer
-	got, err := Dropdown(t.Context(), "Fruit", fruits, option.WithOutput(&out), option.WithDefault("zb"))
+	terst.UseIO(t, nil, &out)
+	got, err := Dropdown(t.Context(), "Fruit", fruits, option.WithDefault("zb"))
 	assert.NoError(t, err)
 	assert.Equal(t, "banana", got)
 
-	got, err = Dropdown(t.Context(), "Fruit", fruits, option.WithOutput(&out),
-		WithTemplate(`(printf "y%s" .)`), option.WithDefault("yc"))
+	terst.UseIO(t, nil, &out)
+	got, err = Dropdown(t.Context(), "Fruit", fruits, WithTemplate(`(printf "y%s" .)`), option.WithDefault("yc"))
 	assert.NoError(t, err)
 	assert.Equal(t, "cherry", got)
 

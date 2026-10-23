@@ -4,50 +4,32 @@
 package integration
 
 import (
-	"bytes"
 	tui "github.com/nfx/go-tui"
-	"github.com/nfx/go-tui/internal/option"
+	"github.com/nfx/go-tui/internal/terst"
 	"io"
 	"testing"
 
 	"github.com/nfx/go-tui/internal/assert"
 )
 
+// optsDummy accepts a default and nothing else.
 type optsDummy struct {
-	option.Config
+	def any
 }
 
-func TestWithIOOptions(t *testing.T) {
-	reader := &bytes.Buffer{}
-	writer := &bytes.Buffer{}
-	d := &optsDummy{}
-
-	if err := tui.WithInput(reader)(d); err != nil {
-		t.Fatalf("WithInput failed: %v", err)
-	}
-	if err := tui.WithOutput(writer)(d); err != nil {
-		t.Fatalf("WithOutput failed: %v", err)
-	}
-	if d.In != reader {
-		t.Fatalf("reader not set")
-	}
-	if d.Out != writer {
-		t.Fatalf("writer not set")
-	}
-}
+func (d *optsDummy) SetDefault(v any) { d.def = v }
 
 func TestOptTRejectsWrongWidget(t *testing.T) {
-	err := tui.WithOutput(&bytes.Buffer{})("nope")
+	err := tui.WithDefault("x")("nope")
 	assert.ErrorIs(t, err, tui.ErrWrongWidget)
-	assert.Contains(t, err.Error(), "need option.IO, got string")
+	assert.Contains(t, err.Error(), "need option.Default, got string")
 }
 
 func TestWithOptionsSkipsUnsupportedMembers(t *testing.T) {
-	writer := &bytes.Buffer{}
 	d := &optsDummy{}
-	err := tui.WithOptions(tui.WithHide(), tui.WithOutput(writer), tui.WithWorkers(2))(d)
+	err := tui.WithOptions(tui.WithHide(), tui.WithDefault("x"), tui.WithWorkers(2))(d)
 	assert.NoError(t, err)
-	assert.Equal(t, io.Writer(writer), d.Out)
+	assert.Equal(t, any("x"), d.def)
 }
 
 func TestWithOptionsFailsWhenNoMemberApplies(t *testing.T) {
@@ -72,7 +54,8 @@ func TestEntryPointsRejectOptionsOfOtherWidgets(t *testing.T) {
 	_, err = tui.NewSpinners(t.Context(), tui.WithPrefixf("group"))
 	assert.ErrorIs(t, err, tui.ErrWrongWidget)
 
-	group, err := tui.NewSpinners(t.Context(), tui.WithOutput(io.Discard))
+	terst.UseIO(t, nil, io.Discard)
+	group, err := tui.NewSpinners(t.Context())
 	assert.NoError(t, err)
 	defer group.Close()
 	_, err = group.Add(t.Context(), tui.WithHide())

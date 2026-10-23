@@ -261,7 +261,8 @@ func TestMultichoiceLifecycleFailures(t *testing.T) {
 	for range 20 {
 		m := newMultichoice(t.Context())
 		m.Items = []any{"one"}
-		if err := m.run(m.Ctx, option.WithInput(strings.NewReader("\r")), option.WithOutput(io.Discard)); err != nil {
+		terst.UseIO(t, strings.NewReader("\r"), io.Discard)
+		if err := m.run(m.Ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -306,14 +307,16 @@ func (r *countedChecklistReader) Read(p []byte) (int, error) { r.reads++; return
 
 func TestMultichoiceNoReadAfterEnterOrConsumedReplay(t *testing.T) {
 	in := &countedChecklistReader{reader: strings.NewReader(" \r")}
-	got, err := Multichoice(t.Context(), "Pick", []string{"one"}, option.WithInput(in), option.WithOutput(io.Discard))
+	terst.UseIO(t, in, io.Discard)
+	got, err := Multichoice(t.Context(), "Pick", []string{"one"})
 	if err != nil || len(got) != 1 {
 		t.Fatal(got, err)
 	}
 	if in.reads != 1 {
 		t.Fatal("read started after Enter", in.reads)
 	}
-	got, err = Multichoice(t.Context(), "Next", []string{"two"}, option.WithInput(in), option.WithOutput(io.Discard))
+	terst.UseIO(t, in, io.Discard)
+	got, err = Multichoice(t.Context(), "Next", []string{"two"})
 	if !errors.Is(err, io.EOF) || got != nil {
 		t.Fatal("consumed keys replayed", got, err)
 	}
@@ -359,12 +362,11 @@ func TestMultichoiceIndependentReaders(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- first.run(first.Ctx) }()
 	waitBufferContains(t, out, "○ one")
+	terst.UseIO(t, strings.NewReader(" \r"), io.Discard)
 	got, err := Multichoice(
 		t.Context(),
 		"Independent",
 		[]string{"two"},
-		option.WithInput(strings.NewReader(" \r")),
-		option.WithOutput(io.Discard),
 	)
 	if err != nil || !reflect.DeepEqual(got, []string{"two"}) {
 		t.Fatal(got, err)
@@ -390,13 +392,12 @@ func TestMultichoiceStaticAndLazyLargeLists(t *testing.T) {
 	for i := range items {
 		items[i] = fmt.Sprintf("item-%05d", i)
 	}
+	terst.UseIO(t, strings.NewReader("\r"), io.Discard)
 	got, err := Multichoice(
 		ctx,
 		"Large",
 		items,
 		option.WithDefault("item-09999"),
-		option.WithInput(strings.NewReader("\r")),
-		option.WithOutput(io.Discard),
 	)
 	if err != nil || !reflect.DeepEqual(got, []string{"item-09999"}) {
 		t.Fatal(got, err)
@@ -520,13 +521,12 @@ func TestMultichoiceBurstyLazyPublicSmoke(t *testing.T) {
 		}
 	}
 	stream := &completionChecklistIO{ready: make(chan struct{})}
+	terst.UseIO(t, stream, stream)
 	got, err := MultichoiceLazy(
 		ctx,
 		"Burst",
 		seq,
 		option.WithDefault("1999"),
-		option.WithInput(stream),
-		option.WithOutput(stream),
 		option.WithHide(),
 	)
 	if err != nil || !reflect.DeepEqual(got, []int{1999}) {
@@ -719,92 +719,93 @@ func TestMultichoiceDefaultStreams(t *testing.T) {
 }
 
 func TestMultichoiceDefaults(t *testing.T) {
-	io := terst.Quiet(t)
+	terst.Quiet(t)
 	ctx := t.Context()
 	items := []string{"a", "b", "c", "d"}
 
-	got, err := Multichoice(ctx, "Pick", items, io, option.WithDefault("b"))
+	got, err := Multichoice(ctx, "Pick", items, option.WithDefault("b"))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"b"}, got)
 
 	// source order, not default order
-	got, err = Multichoice(ctx, "Pick", items, io, option.WithDefault([]string{"d", "b"}))
+	got, err = Multichoice(ctx, "Pick", items, option.WithDefault([]string{"d", "b"}))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"b", "d"}, got)
 
-	got, err = Multichoice(ctx, "Pick", items, io, option.WithDefault([]string{}))
+	got, err = Multichoice(ctx, "Pick", items, option.WithDefault([]string{}))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{}, got)
 	assert.True(t, got != nil)
 
-	got, err = Multichoice(ctx, "Pick", items, io, option.WithDefault([]string(nil)))
+	got, err = Multichoice(ctx, "Pick", items, option.WithDefault([]string(nil)))
 	assert.NoError(t, err)
 	assert.True(t, got != nil && len(got) == 0)
 
 	for _, bad := range []any{[]string{"x"}, []string{"a", "a"}, []int{1}, 5} {
-		_, err = Multichoice(ctx, "Pick", items, io, option.WithDefault(bad))
+		_, err = Multichoice(ctx, "Pick", items, option.WithDefault(bad))
 		assert.ErrorIs(t, err, errs.ErrInvalidOption)
 	}
-	_, err = Multichoice(ctx, "Pick", []string{"a", "a"}, io, option.WithDefault([]string{"a"}))
+	_, err = Multichoice(ctx, "Pick", []string{"a", "a"}, option.WithDefault([]string{"a"}))
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 
 	// a sole item is not consent
-	_, err = Multichoice(ctx, "Pick", []string{"a"}, io)
+	_, err = Multichoice(ctx, "Pick", []string{"a"})
 	assert.ErrorIs(t, err, errs.ErrNoTTY)
-	_, err = Multichoice(ctx, "Pick", []string{"a"}, io, WithOneReturn())
+	_, err = Multichoice(ctx, "Pick", []string{"a"}, WithOneReturn())
 	assert.ErrorIs(t, err, errs.ErrWrongWidget)
 
 	// when T is a slice, the whole value is one item first
 	groups := [][]string{{"a"}, {"b", "c"}}
-	grp, err := Multichoice(ctx, "Pick", groups, io, option.WithDefault([]string{"b", "c"}))
+	grp, err := Multichoice(ctx, "Pick", groups, option.WithDefault([]string{"b", "c"}))
 	assert.NoError(t, err)
 	assert.Equal(t, [][]string{{"b", "c"}}, grp)
-	grp, err = Multichoice(ctx, "Pick", groups, io, option.WithDefault([][]string{{"b", "c"}, {"a"}}))
+	grp, err = Multichoice(ctx, "Pick", groups, option.WithDefault([][]string{{"b", "c"}, {"a"}}))
 	assert.NoError(t, err)
 	assert.Equal(t, groups, grp)
 
 	structs := []server{{"alpha", 1}, {"beta", 2}}
-	st, err := Multichoice(ctx, "Pick", structs, io, option.WithDefault(server{"beta", 2}))
+	st, err := Multichoice(ctx, "Pick", structs, option.WithDefault(server{"beta", 2}))
 	assert.NoError(t, err)
 	assert.Equal(t, structs[1:], st)
 }
 
 func TestMultichoiceMapDefaults(t *testing.T) {
-	io := terst.Quiet(t)
+	terst.Quiet(t)
 	ctx := t.Context()
 	items := map[string]int{"one": 1, "two": 2, "three": 3}
 
-	keys, err := MultichoiceKVK(ctx, "Pick", items, io, option.WithDefault([]string{"two", "one"}))
+	keys, err := MultichoiceKVK(ctx, "Pick", items, option.WithDefault([]string{"two", "one"}))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"one", "two"}, keys)
 
-	values, err := MultichoiceKVV(ctx, "Pick", items, io, option.WithDefault([]int{3, 1}))
+	values, err := MultichoiceKVV(ctx, "Pick", items, option.WithDefault([]int{3, 1}))
 	assert.NoError(t, err)
 	assert.Equal(t, []int{1, 3}, values)
 
-	value, err := MultichoiceKVV(ctx, "Pick", items, io, option.WithDefault(2))
+	value, err := MultichoiceKVV(ctx, "Pick", items, option.WithDefault(2))
 	assert.NoError(t, err)
 	assert.Equal(t, []int{2}, value)
 
 	// the API decides the projection when K == V
 	same := map[int]int{1: 2, 2: 1}
-	k, err := MultichoiceKVK(ctx, "Pick", same, io, option.WithDefault(1))
+	k, err := MultichoiceKVK(ctx, "Pick", same, option.WithDefault(1))
 	assert.NoError(t, err)
 	assert.Equal(t, []int{1}, k)
-	v, err := MultichoiceKVV(ctx, "Pick", same, io, option.WithDefault(1))
+	v, err := MultichoiceKVV(ctx, "Pick", same, option.WithDefault(1))
 	assert.NoError(t, err)
 	assert.Equal(t, []int{1}, v)
 
-	_, err = MultichoiceKVV(ctx, "Pick", map[string]int{"a": 1, "b": 1}, io, option.WithDefault(1))
+	_, err = MultichoiceKVV(ctx, "Pick", map[string]int{"a": 1, "b": 1}, option.WithDefault(1))
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
-	_, err = MultichoiceKVK(ctx, "Pick", items, io, option.WithDefault([]int{1}))
+	_, err = MultichoiceKVK(ctx, "Pick", items, option.WithDefault([]int{1}))
 	assert.ErrorIs(t, err, errs.ErrInvalidOption)
 }
 
 func TestTypedDefaultChecksInteractiveMultichoice(t *testing.T) {
 	var out bytes.Buffer
+	terst.UseIO(t, strings.NewReader("\r"), &out)
 	got, err := Multichoice(t.Context(), "Pick", []string{"a", "b", "c"},
-		option.WithInput(strings.NewReader("\r")), option.WithOutput(&out), option.WithDefault([]string{"c", "a"}))
+		option.WithDefault([]string{"c", "a"}))
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"a", "c"}, got)
 	assert.Contains(t, out.String(), "◉ c")

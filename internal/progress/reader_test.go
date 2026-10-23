@@ -16,7 +16,6 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/nfx/go-tui/internal/option"
 	"github.com/nfx/go-tui/internal/term"
 	"github.com/nfx/go-tui/theme"
 
@@ -256,9 +255,10 @@ func TestThemedFileProgressLogsWithoutTerminal(t *testing.T) {
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(previous) })
+	terst.UseIO(t, nil, &out)
 	r, err := NewFileProgressReader(t.Context(), &progressSizedReader{
 		Reader: strings.NewReader(strings.Repeat("x", 100)), size: 100,
-	}, "Download", option.WithOutput(&out))
+	}, "Download")
 	assert.NoError(t, err)
 	data, err := io.ReadAll(iotest.OneByteReader(r))
 	assert.NoError(t, err)

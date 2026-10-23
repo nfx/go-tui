@@ -221,7 +221,8 @@ func TestThemedSpinnerLogsWithoutTerminal(t *testing.T) {
 	})))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	var out bytes.Buffer
-	s, err := NewSpinners(t.Context(), option.WithOutput(&out))
+	terst.UseIO(t, nil, &out)
+	s, err := NewSpinners(t.Context())
 	assert.NoError(t, err)
 	sp, err := s.Add(t.Context(), WithPrefixf("job"))
 	assert.NoError(t, err)

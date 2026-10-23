@@ -35,9 +35,8 @@ func TestNewSliceProgressBar(t *testing.T) {
 	var seen *Progressbar
 
 	items := []int{1, 2, 3}
+	terst.UseIO(t, cio, cio)
 	seq := NewSliceProgressBar(t.Context(), "items", items,
-		option.WithInput(cio),
-		option.WithOutput(cio),
 		option.OpT(func(pb *Progressbar) error {
 			seen = pb
 			pb.ticks = ticks
