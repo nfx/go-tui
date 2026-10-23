@@ -411,14 +411,14 @@ func TestDropdownOptionHelpers(t *testing.T) {
 
 	for _, opt := range []option.Opt{
 		WithOneReturn(),
-		option.WithHide(),
+		option.WithHideAnswer(),
 		WithTemplate(".Label"),
 		WithTemplate(".Label"),
 	} {
 		assert.NoError(t, opt(d))
 	}
 	assert.True(t, d.OneReturn)
-	assert.True(t, d.Hide)
+	assert.True(t, d.HideAnswer)
 }
 
 func TestShowAnswerWritesWhenVisible(t *testing.T) {

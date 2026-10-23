@@ -41,7 +41,18 @@ type Choice struct {
 }
 
 // Input holds the slots of text input prompts, inheriting from [Prompt].
-type Input Prompt
+type Input struct {
+	// Label is the question row.
+	Label Template
+	// Answer is the line kept after the prompt is answered.
+	Answer Template
+	// Hint is the row of key hints.
+	Hint Template
+	// Feedback is the validation error row.
+	Feedback Template
+	// HideAnswer retains no answer line, without changing the slots.
+	HideAnswer bool
+}
 
 // Password holds the slots of password prompts, inheriting from [Input]. A
 // password retains no answer line, so it has no Answer slot.
@@ -55,13 +66,24 @@ type Password struct {
 }
 
 // Number holds the slots of number prompts, inheriting from [Input]. Its
-// answer line is [Input.Answer].
-type Number Password
+// answer line is [Input.Answer], but it hides it by its own HideAnswer.
+type Number struct {
+	// Label is the question row.
+	Label Template
+	// Hint is the row of key hints.
+	Hint Template
+	// Feedback is the validation error row.
+	Feedback Template
+	// HideAnswer retains no answer line, without changing the slots.
+	HideAnswer bool
+}
 
 // Dropdown specializes both the shared [Prompt] and [Choice] slots.
 type Dropdown struct {
 	Prompt
 	Choice
+	// HideAnswer retains no answer line, without changing the slots.
+	HideAnswer bool
 }
 
 // Confirm specializes both the shared [Prompt] and [Choice] slots.
@@ -80,4 +102,6 @@ type Multichoice struct {
 	Row Template
 	// AnswerValue is the collection of selected values in the answer.
 	AnswerValue Template
+	// HideAnswer retains no answer line, without changing the slots.
+	HideAnswer bool
 }

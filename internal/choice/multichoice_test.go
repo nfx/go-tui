@@ -482,7 +482,7 @@ func TestMultichoiceBurstyLazyPublicSmoke(t *testing.T) {
 		}
 	}
 	got, err := answerWhenShown(t, "◉", terst.KeyEnter, func() ([]int, error) {
-		return MultichoiceLazy(ctx, "Burst", seq, option.WithDefault("1999"), option.WithHide())
+		return MultichoiceLazy(ctx, "Burst", seq, option.WithDefault("1999"), option.WithHideAnswer())
 	})
 	if err != nil || !reflect.DeepEqual(got, []int{1999}) {
 		t.Fatal(got, err)

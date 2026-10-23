@@ -32,7 +32,7 @@ type dropdown struct {
 	relevant     []int
 	displayed    []int
 	Default      any
-	Hide         bool
+	HideAnswer   bool
 	OneReturn    bool
 
 	projection
@@ -219,10 +219,13 @@ func newDropdown(ctx context.Context) *dropdown {
 	}
 }
 
-// implement [withPrompt] interface.
-func (d *dropdown) SetHide() {
-	d.Hide = true
+// SetHideAnswer implements [option.AnswerHider].
+func (d *dropdown) SetHideAnswer() {
+	d.HideAnswer = true
 }
+
+// hidesAnswer reports whether the option or the policy of the family hides the answer.
+func (d *dropdown) hidesAnswer() bool { return d.HideAnswer || d.family.HideAnswer }
 
 // implement [withPrompt] interface.
 func (d *dropdown) SetDefault(v any) {

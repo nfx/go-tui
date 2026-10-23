@@ -202,11 +202,21 @@ func TestNumberOptions(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 5, v)
 
-	for _, o := range []option.Opt{WithNonEmpty(), option.WithHide(), WithValidation(func(context.Context, string) error { return nil }),
+	for _, o := range []option.Opt{WithNonEmpty(), WithValidation(func(context.Context, string) error { return nil }),
 		WithRegex(`[0-9]`, "one digit"), foreign} {
 		_, _, err = runNumber[int](t, "5\r", o)
 		assert.ErrorIs(t, err, errs.ErrWrongWidget)
 	}
+}
+
+func TestNumberAcceptsHideAnswer(t *testing.T) {
+	v, _, err := runNumber[int](t, "7\r", option.WithHideAnswer())
+	assert.NoError(t, err)
+	assert.Equal(t, 7, v)
+
+	n := &number[int]{prompt: &input{}}
+	n.SetHideAnswer()
+	assert.True(t, n.prompt.HideAnswer)
 }
 
 func TestNumberErrorsReturnZero(t *testing.T) {

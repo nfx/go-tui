@@ -11,10 +11,11 @@ func WithDefault(d any) Opt {
 	})
 }
 
-// WithHide skips printing the answer of a widget that asks a question.
-func WithHide() Opt {
-	return OpT(func(x Prompt) error {
-		x.SetHide()
+// WithHideAnswer skips retaining the answer of a widget that asks a question.
+// It cannot show an answer that the theme hides.
+func WithHideAnswer() Opt {
+	return OpT(func(x AnswerHider) error {
+		x.SetHideAnswer()
 		return nil
 	})
 }

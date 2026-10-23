@@ -294,7 +294,7 @@ func TestThemedFilePickerHiddenAnswer(t *testing.T) {
 		"\x1b[3A\r\x1b[K\x1b[1B\r\x1b[K\x1b[1B\r\x1b[K\x1b[2A\r"))
 
 	o, out, _ = themedDropdownOpt(t, terst.ASCIITheme(), 40, "\r")
-	_, err = FilePicker(t.Context(), "File", WithStartDir(dir), o, option.WithHide())
+	_, err = FilePicker(t.Context(), "File", WithStartDir(dir), o, option.WithHideAnswer())
 	assert.NoError(t, err)
 	assert.True(t, !strings.Contains(out.String(), "+ File"))
 }
@@ -373,10 +373,10 @@ func TestFilePickerSplitsOptionsBetweenParts(t *testing.T) {
 	f, d, err := newFilePicker(t.Context(),
 		WithStartDir(t.TempDir()),
 		WithShowHidden(),
-		option.WithHide(),
+		option.WithHideAnswer(),
 	)
 	assert.NoError(t, err)
 	assert.True(t, f.showHidden)
-	assert.True(t, d.Hide)
+	assert.True(t, d.HideAnswer)
 	assert.Equal(t, writer, d.out)
 }

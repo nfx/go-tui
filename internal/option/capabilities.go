@@ -8,10 +8,9 @@ type Default interface {
 	SetDefault(d any)
 }
 
-// Prompt is implemented by widgets that ask a question and print the answer.
-type Prompt interface {
-	SetHide()
-	Default
+// AnswerHider is implemented by widgets that retain an answer after a question.
+type AnswerHider interface {
+	SetHideAnswer()
 }
 
 // Private capabilities keep existing option constructors shared by choice widgets.

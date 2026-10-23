@@ -96,13 +96,13 @@ if err := tui.SetDefaultTheme(th); err != nil {
 path, err := tui.FilePicker(ctx, "Pick file")
 ```
 
-## WithHide
+## WithHideAnswer
 
-Forwarded to dropdown answer visibility. See [WithHide](dropdowns.md#withhide).
+Forwarded to dropdown answer visibility. See [WithHideAnswer](dropdowns.md#withhideanswer).
 
 ```go
 path, err := tui.FilePicker(ctx, "Pick file",
-	tui.WithHide(),
+	tui.WithHideAnswer(),
 )
 ```
 

@@ -19,6 +19,7 @@ import (
 	"github.com/nfx/go-tui/theme"
 
 	"github.com/nfx/go-tui/internal/assert"
+	"github.com/nfx/go-tui/internal/render"
 	"github.com/nfx/go-tui/terst"
 )
 
@@ -56,12 +57,12 @@ func TestInputShowAnswerVisibility(t *testing.T) {
 	assert.Contains(t, out.String(), "value")
 
 	out.Reset()
-	i.Hide = true
+	i.HideAnswer = true
 	err = i.showAnswer()
 	assert.NoError(t, err)
 	assert.Equal(t, "", out.String())
 
-	i.Hide = false
+	i.HideAnswer = false
 	i.Password = true
 	err = i.showAnswer()
 	assert.NoError(t, err)
@@ -566,4 +567,27 @@ func TestNewInputUsesDefaultIO(t *testing.T) {
 	i := newInput(t.Context(), "label")
 	assert.Equal(t, in, i.in)
 	assert.Equal(t, out, i.out)
+}
+
+func TestInputHidesAnswerByFamilyPolicy(t *testing.T) {
+	th := terst.ASCIITheme()
+	th.Number.HideAnswer = true
+	c, err := render.Compile(th)
+	assert.NoError(t, err)
+
+	i := &input{theme: c}
+	assert.True(t, !i.hidesAnswer())
+	i.numeric = true
+	assert.True(t, i.hidesAnswer())
+
+	th = terst.ASCIITheme()
+	th.Input.HideAnswer = true
+	c, err = render.Compile(th)
+	assert.NoError(t, err)
+	i = &input{theme: c}
+	assert.True(t, i.hidesAnswer())
+	i.numeric = true
+	assert.True(t, !i.hidesAnswer())
+	i.HideAnswer = true
+	assert.True(t, i.hidesAnswer())
 }
