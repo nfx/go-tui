@@ -165,5 +165,5 @@ Use one active input prompt per shared reader. Independent terminals remain
 independent. Default output participates in the terminal arbiter alongside logs
 and progress; this widget does not provide simultaneous input prompt admission.
 
-Runnable examples are in `examples/multichoice`, `examples/multichoice-kvk`,
-`examples/multichoice-kvv`, and `examples/multichoice-lazy`.
+Runnable examples are in `examples/choice/multichoice`, `examples/choice/multichoice-kvk`,
+`examples/choice/multichoice-kvv`, and `examples/choice/multichoice-lazy`.
