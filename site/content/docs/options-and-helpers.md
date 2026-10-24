@@ -40,7 +40,7 @@ default is `ErrInvalidOption`, with the validation error still reachable through
 returns `false` where the others return an error.
 
 To verify it, redirect the prompt's output away from the terminal, for
-example `go run ./examples/number/main.go 2>/dev/null` (prompts draw on stderr),
+example `go run ./examples/prompt/number/main.go 2>/dev/null` (prompts draw on stderr),
 or pipe stderr, not stdout, through `cat` with `2>&1 | cat`:
 a prompt with `WithDefault` prints nothing and returns the
 default, and one without it fails with `no tty`.

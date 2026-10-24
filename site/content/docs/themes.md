@@ -24,7 +24,7 @@ if err := tui.SetDefaultTheme(th); err != nil {
 }
 ```
 
-See `examples/theme` for a runnable program.
+See `examples/theme/basic` for a runnable program.
 
 ## Layout
 

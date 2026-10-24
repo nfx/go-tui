@@ -1,6 +1,7 @@
 #!/bin/sh
-# Runs every example in sequence (except browser).
-# Usage: ./all.sh [--ci] [name ...]
+# Runs every example (any directory with a main.go) in sequence, except
+# those containing a .run-skip file.
+# Usage: ./run.sh [--ci] [dir ...]   e.g. ./run.sh choice/dropdown
 #   --ci  run with CI=true, so prompts answer their defaults and nothing
 #         redraws, as in a CI job
 cd "$(dirname "$0")" || exit 1
@@ -14,7 +15,10 @@ fi
 if [ $# -gt 0 ]; then
 	names="$*"
 else
-	names=$(for d in */; do echo "${d%/}"; done | grep -vx browser)
+	names=$(find . -name main.go | sort | while read -r f; do
+		d=$(dirname "$f")
+		[ -e "$d/.run-skip" ] || echo "${d#./}"
+	done)
 fi
 
 failed=""
