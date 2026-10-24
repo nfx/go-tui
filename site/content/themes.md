@@ -16,15 +16,11 @@ API:
 - `th.Normalize()` validates a theme and fills every zero field with its
   default, and `th.Symbols.ASCII()` returns the [ASCII](https://en.wikipedia.org/wiki/ASCII) counterpart of the symbols.
 
-```go
-th := theme.New()
-th.Palette.Accent = "#00ADD8"
-if err := tui.SetDefaultTheme(th); err != nil {
-	log.Fatal(err)
-}
-```
-
 See `examples/theme/basic` for a runnable program.
+
+{{< demo src="demos/theme/basic.gif" alt="Prompts drawn with a custom theme" >}}
+
+{{< code filename="examples/theme/basic/main.go" func="main" >}}
 
 ## Layout
 
@@ -225,20 +221,15 @@ for the default template and clipping behavior.
 
 Add helpers in `theme.Funcs`. They are validated by `SetDefaultTheme`:
 
-```go
-th.Funcs = template.FuncMap{"shout": strings.ToUpper}
-th.Prompt.Label = `{{ accent (symbol "Prompt") }} {{ bold (shout .Label) }}`
-```
-
 `theme.Funcs` replaces every helper registered before, including through
 [`WithFn`](options.md#withfn). Start from `tui.DefaultTheme()` to keep them. Helpers cannot take
 the name of a built-in helper.
 
 [`WithFn(name, fn)`](options.md#withfn) adds one helper to the installed theme:
 
-```go
-tui.WithFn("upper", strings.ToUpper)
-```
+{{< demo src="demos/theme/custom-template-func.gif" alt="A custom template function in a table and a dropdown" >}}
+
+{{< code filename="examples/theme/custom-template-func/main.go" func="main" >}}
 
 The helper applies to prompts, tables, and other operations started after the
 call; an operation already running keeps its helpers. Registering the same name

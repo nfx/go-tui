@@ -7,19 +7,11 @@ weight: 70
 
 Creates a mutable progress bar with explicit max size.
 
-```go
-p, err := tui.NewMaxProgressBar(ctx, "Upload", 100)
-if err != nil {
-	return err
-}
-defer p.Close()
-
-for range 100 {
-	p.Add(1)
-}
-```
-
 Use this when your total work count is known.
+
+{{< demo src="demos/progress/progress-bar.gif" alt="A progress bar advancing to completion" >}}
+
+{{< code filename="examples/progress/progress-bar/main.go" func="main" >}}
 
 ## NewSliceProgressBar
 
@@ -40,32 +32,19 @@ Use this for sequential processing loops.
 
 Processes slice items concurrently and updates one shared progress bar.
 
-```go
-err := tui.NewParallelProgressBar(ctx, "Jobs", jobs, func(job Job) error {
-	return run(job)
-}, tui.WithWorkers(8))
-if err != nil {
-	return err
-}
-```
-
 Returns the first worker error and cancels remaining work.
+
+{{< demo src="demos/progress/progress-parallel.gif" alt="Parallel workers advancing one progress bar" >}}
+
+{{< code filename="examples/progress/progress-parallel/main.go" func="main" >}}
 
 ## NewFileProgressReader
 
 Wraps a reader and advances progress by bytes read.
 
-```go
-wrapped, err := tui.NewFileProgressReader(ctx, file, "Download")
-if err != nil {
-	return err
-}
-defer wrapped.Close()
-
-_, err = io.Copy(dst, wrapped)
-```
-
 Requires size discovery through `Stat().Size()` or `Size() int64`.
+
+{{< code filename="examples/progress/progress-reader/main.go" func="main" >}}
 
 Without a terminal, reads continue normally and progress is logged as
 `file progress` records with `read` and `size` in bytes, see
@@ -173,18 +152,24 @@ as earlier versions did, and drops metrics from the end to keep the bar:
 Download 62%  ━━━━━━━╸──── 6.2 MiB/s · 12s remaining
 ```
 
+{{< demo src="demos/progress/progress-multi-compact.gif" alt="Several compact progress bars advancing together" >}}
+
+{{< code filename="examples/progress/progress-multi-compact/main.go" func="main" >}}
+
 In the stacked layout, `Progress.Frame` receives an empty
 `.Metrics`. A custom frame that shows `.Metrics` after the bar keeps
 working once it selects the compact layout:
 
-```go
-th := theme.New()
-th.Progress.Compact = true
-th.Progress.Frame = `{{ .Label }} [{{ .Bar }}] {{ .Metrics }}`
-```
-
 `Progress.Metrics` applies to the compact layout only, and
 `Progress.Hint` to the stacked layout only.
+
+## Several bars
+
+Every bar registers with the same coordinator, so goroutines can advance their own bars concurrently.
+
+{{< demo src="demos/progress/progress-multi.gif" alt="Multiple progress bars advancing concurrently" >}}
+
+{{< code filename="examples/progress/progress-multi/main.go" func="main" >}}
 
 ## Behavior notes
 
