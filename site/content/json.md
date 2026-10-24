@@ -1,13 +1,13 @@
 ---
 title: "Pretty JSON"
-weight: 90
+weight: 110
 ---
 
 API:
 
 - `PrettyJSON(w, src)`
 
-`PrettyJSON` indents JSON and applies depth-aware ANSI coloring when writing to a terminal.
+`PrettyJSON` indents [JSON](https://en.wikipedia.org/wiki/JSON) and applies depth-aware [ANSI](https://en.wikipedia.org/wiki/ANSI_escape_code) coloring when writing to a terminal.
 
 ## Input types
 

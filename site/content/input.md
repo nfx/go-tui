@@ -1,6 +1,6 @@
 ---
 title: "Input and Password"
-weight: 40
+weight: 20
 ---
 
 APIs:
@@ -39,9 +39,9 @@ When the output is not a terminal (a pipe, a redirected file, a `bytes.Buffer`),
 wrapping the input in a `strings.Reader` does not make it one. `Input` and
 `Password` then read nothing, print nothing and return the default after
 running the validation rules once with the call context. A rejection is an
-error wrapping `ErrInvalidOption` and the validator's own error, so
+error wrapping [`ErrInvalidOption`](options.md#common-errors) and the validator's own error, so
 `errors.Is` finds both; it never loops. `Password` keeps the secret out of its
-errors. Without a default the error wraps `ErrNoTTY`.
+errors. Without a default the error wraps [`ErrNoTTY`](options.md#common-errors).
 
 ```go
 name, err := tui.Input(ctx, "Project name",
@@ -72,11 +72,11 @@ username, err := tui.Input(ctx, "Username",
 
 A pattern that matches an empty string permits an empty answer; combine it
 with [WithNonEmpty](#withnonempty) to require a value. An invalid pattern or a blank message
-returns an error wrapping `ErrInvalidOption` before interaction starts.
+returns an error wrapping [`ErrInvalidOption`](options.md#common-errors) before interaction starts.
 
 ## WithValidation
 
-Use `WithValidation(func(context.Context, string) error)` for custom checks.
+Use [`WithValidation(func(context.Context, string) error)`](#withvalidation) for custom checks.
 Return `nil` to accept the value or an error containing feedback to reject it.
 Combine it with [WithNonEmpty](#withnonempty) and [WithRegex](#withregex)
 to run basic checks before custom validation.
@@ -98,12 +98,12 @@ This example uses the standard `errors` package. A validator receives the prompt
 context and runs synchronously: key handling waits until it returns. Pass that
 context to network requests or other blocking work so cancellation can finish
 promptly. Validation errors keep the prompt open; prompt cancellation returns
-the context error. A nil validator returns `ErrInvalidOption`.
+the context error. A nil validator returns [`ErrInvalidOption`](options.md#common-errors).
 
 Password validators receive the unmasked value, but the user never sees their
 error messages: a rejected password shows `Invalid value` instead, so a message
 cannot repeat the secret. See the [feedback row](#feedback-row).
-Messages of `WithNonEmpty` and `WithRegex` still show.
+Messages of [`WithNonEmpty`](#withnonempty) and [`WithRegex`](#withregex) still show.
 
 ## Feedback row
 
@@ -127,31 +127,11 @@ the available terminal width. Keep custom templates to one row.
 
 By default feedback is `✖ message`; see [Themes](themes.md).
 Templates support the same color and style helpers listed in
-[Template Functions](template-functions.md). A password always shows
+[Template functions](themes.md#template-functions). A password always shows
 `Invalid value` instead of a custom validator message, which could repeat
-the secret; messages of `WithNonEmpty` and `WithRegex` still show.
+the secret; messages of [`WithNonEmpty`](#withnonempty) and [`WithRegex`](#withregex) still show.
 Showing rejection feedback requires two terminal rows; a shorter terminal
-returns `ErrNoSpace`.
-
-## WithInput
-
-Overrides input source.
-
-```go
-value, err := tui.Input(ctx, "Project name",
-	tui.WithInput(in),
-)
-```
-
-## WithOutput
-
-Overrides output destination.
-
-```go
-value, err := tui.Input(ctx, "Project name",
-	tui.WithOutput(out),
-)
-```
+returns [`ErrNoSpace`](options.md#common-errors).
 
 ## Notes
 
@@ -169,5 +149,5 @@ Prompts can share the default terminal output with running progress bars and
 spinners. Validation feedback stays below the input while progress updates
 continue, including while a validator runs. Closing a progress bar or spinner
 does not change the active prompt's terminal input mode. Route accompanying
-logs through [`tui.Stderr()`](options-and-helpers.md#stderr) to keep them
+logs through [`tui.Stderr()`](options.md#stderr) to keep them
 coordinated with widget rendering.

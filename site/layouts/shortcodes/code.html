@@ -13,6 +13,7 @@
 {{ $allLines := split $content "\n" }}
 {{ $totalLines := len $allLines }}
 {{ $exampleOutput := .Get "example_output" | default "" }}
+{{ $func := .Get "func" | default "" }}
 
 {{ if $exampleOutput }}
   {{ $language := "text" }}
@@ -43,6 +44,26 @@
       {{ $outputLines = first (sub (len $outputLines) $trimEnd) $outputLines }}
     {{ end }}
     {{ $content = delimit $outputLines "\n" }}
+  {{ end }}
+{{ else if $func }}
+  {{ $funcMarker := printf "func %s(" $func }}
+  {{ $inFunc := false }}
+  {{ $bodyLines := slice }}
+
+  {{ range $allLines }}
+    {{ if and (not $inFunc) (strings.HasPrefix . $funcMarker) }}
+      {{ $inFunc = true }}
+    {{ else if $inFunc }}
+      {{ if eq . "}" }}
+        {{ $inFunc = false }}
+      {{ else }}
+        {{ $bodyLines = $bodyLines | append (replaceRE "^\t" "" .) }}
+      {{ end }}
+    {{ end }}
+  {{ end }}
+
+  {{ if gt (len $bodyLines) 0 }}
+    {{ $content = delimit $bodyLines "\n" }}
   {{ end }}
 {{ else if $section }}
   {{ $startMarker := printf "// BEGIN %s" $section }}
@@ -94,8 +115,8 @@
   {{ $options = merge $options (dict "hl_lines" "") }}
 {{ end }}
 
-<div class="hextra-code-block hx-relative hx-mt-6 first:hx-mt-0 hx-group/code">
-  <div class="filename not-prose" dir="auto">
+<div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
+  <div class="hextra-code-filename not-prose" dir="auto">
     {{- replace $filename "static/" "" -}}
   </div>
 
@@ -107,4 +128,5 @@
   {{- else -}}
     <div><pre><code>{{ $content }}</code></pre></div>
   {{- end -}}
+  {{- partialCached "components/codeblock-copy-button" (dict "filename" $filename) $filename -}}
 </div>

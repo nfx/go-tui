@@ -1,6 +1,6 @@
 ---
 title: "Spinners"
-weight: 60
+weight: 80
 ---
 
 APIs:
@@ -35,7 +35,7 @@ sp.Close()
 
 ## Without a TTY
 
-When spinner output has no TTY, stage changes are logged through `slog.Default()`
+When spinner output has no [TTY](https://en.wikipedia.org/wiki/Computer_terminal#Text_terminals), stage changes are logged through `slog.Default()`
 instead. On a TTY, the group renders animated spinners as usual and emits no
 fallback logs.
 
@@ -60,7 +60,7 @@ logs at ERROR. Records include `spinner` (the group's spinner index), `prefix`,
 and `status` (`started`, `running`, `stopped`, or `failed`). Repeated identical
 updates and animation ticks produce no logs. Failed spinners do not also log a
 stop. A stop can result from `Close` or context cancellation; it does not imply
-that the work succeeded. `WithKeep` affects terminal display only.
+that the work succeeded. [`WithKeep`](#withkeep) affects terminal display only.
 
 The configured default logger controls the destination, format, and level
 filtering. Other initialization errors are still returned. Nested spinners add
@@ -134,7 +134,7 @@ api.Update("uploading image")
   child stopping or failing never affects its parent or siblings, and finishing
   the last child does not finish the parent.
 - A stopped or failed spinner takes no children: `Add` returns
-  `ErrSpinnerStopped`.
+  [`ErrSpinnerStopped`](options.md#common-errors).
 - A kept or failed child stays visible, and so do the stopped ancestors above
   it, drawn as a neutral row.
 - The parent's time includes its children's work; it is not their sum.
@@ -143,22 +143,6 @@ api.Update("uploading image")
 - Every spinner takes one row. When the rows do not fit the terminal, the last
   visible row reads `… N more` and stands for the rows after it. They are not
   scrolled, and they show again when the terminal grows or other rows end.
-
-## WithInput
-
-Overrides group input source.
-
-```go
-group, err := tui.NewSpinners(tui.WithInput(in))
-```
-
-## WithOutput
-
-Overrides spinner output writer.
-
-```go
-group, err := tui.NewSpinners(tui.WithOutput(out))
-```
 
 ## Frames
 
@@ -189,11 +173,11 @@ err := tui.SetDefaultTheme(th)
 
 ## Sharing a terminal with prompts
 
-Spinners can share the default terminal output with `Input` and `Password`,
+Spinners can share the default terminal output with [`Input`](input.md) and [`Password`](input.md),
 including their validation feedback. Spinner updates continue while a validator
 runs. Closing a spinner group releases its rendering resources without changing
 the active prompt's terminal input mode.
 
-Route accompanying logs through [`tui.Stderr()`](options-and-helpers.md#stderr)
+Route accompanying logs through [`tui.Stderr()`](options.md#stderr)
 so they participate in the same rendering coordination. See
 [Input and Password](input.md#withvalidation) for validation and feedback options.

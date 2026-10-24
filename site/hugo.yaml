@@ -23,7 +23,7 @@ menu:
   main:
     - identifier: documentation
       name: Documentation
-      pageRef: docs.html
+      pageRef: getting-started
       weight: 1
     - name: Search
       weight: 5

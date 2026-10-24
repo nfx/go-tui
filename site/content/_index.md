@@ -1,6 +1,8 @@
 ---
 title: go-tui
 layout: hextra-home
+cascade:
+  type: docs
 ---
 
 <div class="hx:mt-6 hx:mb-6">
@@ -15,9 +17,7 @@ layout: hextra-home
 {{< /hextra/hero-subtitle >}}
 </div>
 
-<div class="hx:mb-6">
-{{< hextra/hero-button text="Get Started" link="docs/getting-started/" >}}
-</div>
+
 
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card
@@ -36,8 +36,3 @@ layout: hextra-home
     subtitle="Without a TTY, prompts validate explicit defaults without reading input; progress becomes structured logs."
   >}}
 {{< /hextra/feature-grid >}}
-
-go-tui directly depends only on `golang.org/x/sys` and `golang.org/x/term`.
-It fits commands that need interactivity alongside their existing work.
-Rich applications with grids, pages, trees and navigable views are outside
-its scope; read [Alternatives](docs/alternatives/) for the tradeoffs.
