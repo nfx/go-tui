@@ -3,4 +3,6 @@
 
 **go-tui adds interactivity to your CLI without changing its architecture.** Call typed prompts, selections, tables and progress bars from ordinary Go functions; keep your contexts, readers, writers and application control flow. Prompts and progress share a terminal coordinator with logs routed through `tui.Stderr()`, so you can combine them without stitching together competing renderers. The library directly depends only on `golang.org/x/sys` and `golang.org/x/term`.
 
+![demo](site/static/demos/misc/everything-and-logs.gif)
+
 **The same command works at a terminal and in automation.** Non-TTY defaults are a first-class contract: explicit answers are validated and returned without reading input or printing prompts, so CI jobs and redirected commands never wait for an interactive answer. Missing or invalid defaults fail instead of opening a prompt; progress falls back to structured `slog` records. That combination of typed answers, coordinated output and predictable batch behavior makes go-tui a strong fit for operational CLIs. Rich interactive applications with grids, pages, trees and navigable views are outside its scope; see [Alternatives](site/content/alternatives.md) for the tradeoffs. See the [getting started guide](site/content/getting-started.md).

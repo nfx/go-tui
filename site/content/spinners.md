@@ -17,21 +17,9 @@ APIs:
 
 ## Basic example
 
-```go
-group, err := tui.NewSpinners(ctx)
-if err != nil {
-	return err
-}
-defer group.Close()
+{{< demo src="demos/spinner/multi-spinners.gif" alt="Several spinners updating independently" >}}
 
-sp, err := group.Add(context.Background())
-if err != nil {
-	return err
-}
-sp.Update("fetching")
-sp.Update("processing")
-sp.Close()
-```
+{{< code filename="examples/spinner/multi-spinners/main.go" func="main" >}}
 
 ## Without a TTY
 
@@ -108,20 +96,6 @@ group, err := tui.NewSpinners(ctx, tui.WithNoElapsed())
 their parent in the order they were added, hanging from branches drawn with
 `Theme.Symbols` (`Branch`, `End` and `Guide`).
 
-```go
-parent, err := group.Add(ctx, tui.WithPrefixf("deploy"))
-if err != nil {
-	return err
-}
-defer parent.Close()
-api, err := parent.Add(ctx, tui.WithPrefixf("api"))
-if err != nil {
-	return err
-}
-defer api.Close()
-api.Update("uploading image")
-```
-
 ```text
 ▘ deploy: updating services (12s)
 ├ ▀ api: uploading image (8s)
@@ -143,6 +117,18 @@ api.Update("uploading image")
 - Every spinner takes one row. When the rows do not fit the terminal, the last
   visible row reads `… N more` and stands for the rows after it. They are not
   scrolled, and they show again when the terminal grows or other rows end.
+
+{{< demo src="demos/spinner/spinner-options.gif" alt="Nested spinners with WithKeep and WithNoElapsed" >}}
+
+{{< code filename="examples/spinner/spinner-options/main.go" func="main" >}}
+
+## LongRunning
+
+`LongRunning(ctx, message, fn)` shows a spinner for as long as the callback runs and returns its error.
+
+{{< demo src="demos/spinner/long-running.gif" alt="A spinner while a callback runs" >}}
+
+{{< code filename="examples/spinner/long-running/main.go" func="main" >}}
 
 ## Frames
 
@@ -181,3 +167,7 @@ the active prompt's terminal input mode.
 Route accompanying logs through [`tui.Stderr()`](options.md#stderr)
 so they participate in the same rendering coordination. See
 [Input and Password](input.md#withvalidation) for validation and feedback options.
+
+{{< demo src="demos/spinner/multi-spinners-and-logs.gif" alt="Spinners and structured logs sharing one terminal" >}}
+
+{{< code filename="examples/spinner/multi-spinners-and-logs/main.go" func="main" >}}

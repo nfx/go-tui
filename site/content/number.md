@@ -7,11 +7,9 @@ weight: 30
 or float type, including defined types such as `type Port uint16`; `uintptr`
 is unsupported.
 
-```go
-count, err := tui.Number[int](ctx, "Workers", tui.WithDefault(4))
-gain, err := tui.Number[float32](ctx, "Gain", tui.WithDefault("1.00"))
-port, err := tui.Number[Port](ctx, "Port", tui.WithDefault(8080))
-```
+{{< demo src="demos/prompt/number.gif" alt="Number prompts for int, defined and float types" >}}
+
+{{< code filename="examples/prompt/number/main.go" func="main" >}}
 
 ## Without a terminal
 

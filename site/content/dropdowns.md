@@ -7,81 +7,55 @@ weight: 40
 
 Selects a value from a typed list.
 
-```go
-cities := []string{"Amsterdam", "Berlin", "Paris"}
-city, err := tui.Dropdown(ctx, "City", cities)
-if err != nil {
-	return err
-}
-fmt.Println(city)
-```
-
 Use this for the common case where you need the selected value.
+
+{{< demo src="demos/choice/dropdown.gif" alt="Selecting a city from a dropdown" >}}
+
+{{< code filename="examples/choice/dropdown/main.go" func="main" >}}
 
 ## DropdownIndex
 
 Like [`Dropdown`](#dropdown), but returns the selected index in `[]any`.
 
-```go
-items := []any{"dev", "staging", "prod"}
-idx, err := tui.DropdownIndex(ctx, "Environment", items)
-if err != nil {
-	return err
-}
-fmt.Println("selected index:", idx)
-```
-
 Use this when you want to keep value lookup separate.
+
+{{< demo src="demos/choice/dropdown-index.gif" alt="Selecting an item and printing its index" >}}
+
+{{< code filename="examples/choice/dropdown-index/main.go" func="main" >}}
 
 ## DropdownKV
 
 Selects from a map and returns both key and value.
 
-```go
-ports := map[string]int{
-	"http":  80,
-	"https": 443,
-}
-name, port, err := tui.DropdownKV(ctx, "Port", ports)
-if err != nil {
-	return err
-}
-fmt.Println(name, port)
-```
-
 The map is sorted by key string representation before rendering.
+
+{{< demo src="demos/choice/dropdown-kv.gif" alt="Selecting a key and value from a map" >}}
+
+{{< code filename="examples/choice/dropdown-kv/main.go" func="main" >}}
 
 ## DropdownLazy
 
 Streams items progressively via `iter.Seq2`.
 
-```go
-seq := func(yield func(string, error) bool) {
-	for i := 1; i <= 100; i++ {
-		if !yield(fmt.Sprintf("item-%03d", i), nil) {
-			return
-		}
-	}
-}
-selected, err := tui.DropdownLazy(ctx, "Pick one", seq)
-if err != nil {
-	return err
-}
-fmt.Println(selected)
-```
-
 Use this for large or slow data sources.
+
+{{< demo src="demos/choice/dropdown-lazy.gif" alt="Items appearing progressively in a lazy dropdown" >}}
+
+{{< code filename="examples/choice/dropdown-lazy/main.go" func="main" >}}
+
+A slow producer keeps the prompt usable while items arrive:
+
+{{< demo src="demos/choice/dropdown-lazy-slow.gif" alt="A lazy dropdown fed by a slow producer" >}}
+
+{{< code filename="examples/choice/dropdown-lazy-slow/main.go" func="main" >}}
 
 ## Confirm
 
 Renders a yes/no dropdown and returns `true` for "yes".
 
-```go
-ok := tui.Confirm(ctx, "Delete cache?")
-if !ok {
-	return nil
-}
-```
+{{< demo src="demos/choice/confirm.gif" alt="Confirm and Confirmf prompts" >}}
+
+{{< code filename="examples/choice/confirm/main.go" func="main" >}}
 
 ## Confirmf
 
@@ -173,18 +147,11 @@ option cannot show an answer that the theme hides, and passwords never keep one.
 
 Sets main and active-details templates in one call.
 
-```go
-type City struct {
-	Name    string
-	Country string
-}
-
-city, err := tui.Dropdown(ctx, "City", data,
-	tui.WithTemplate(".Name", ".Country"),
-)
-```
-
 Use this to choose the fields an item shows.
+
+{{< demo src="demos/choice/dropdown-customize.gif" alt="A dropdown with a custom focus mark and template" >}}
+
+{{< code filename="examples/choice/dropdown-customize/main.go" func="main" >}}
 
 ## Presentation
 

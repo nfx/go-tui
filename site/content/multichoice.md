@@ -34,6 +34,8 @@ returns [`ErrNoItems`](options.md#common-errors).
 The example selects from a slice of `type Service struct{ Name, Region string }`,
 using [`WithTemplate`](#templates) to show the region as active details.
 
+{{< demo src="demos/choice/multichoice.gif" alt="Toggling services in a multichoice prompt" >}}
+
 {{< code filename="examples/choice/multichoice/main.go" func="main" >}}
 
 ## MultichoiceKVK
@@ -48,6 +50,8 @@ values are needed from one interaction, call `MultichoiceKVK` and look up the
 values in the unchanged map. Empty input returns
 [`ErrNoItems`](options.md#common-errors).
 
+{{< demo src="demos/choice/multichoice-kvk.gif" alt="Selecting map keys in a multichoice prompt" >}}
+
 {{< code filename="examples/choice/multichoice-kvk/main.go" func="main" >}}
 
 ## MultichoiceKVV
@@ -59,6 +63,8 @@ Ordering and snapshot rules match [`MultichoiceKVK`](#multichoicekvk). Duplicate
 map values remain independently selectable, because each row is a key; in the
 example below `https` and `https-alt` both map to `443`, and choosing both
 returns `443` twice. Values need not be comparable.
+
+{{< demo src="demos/choice/multichoice-kvv.gif" alt="Selecting map values by their keys" >}}
 
 {{< code filename="examples/choice/multichoice-kvv/main.go" func="main" >}}
 
@@ -72,6 +78,8 @@ sequence returns [`ErrEmptyLazyResult`](options.md#common-errors).
 Choices appear progressively. Enter is disabled until successful exhaustion;
 Enter during loading is not queued. Producer errors, including late errors,
 abort with a nil result.
+
+{{< demo src="demos/choice/multichoice-lazy.gif" alt="Choices arriving progressively in a lazy multichoice" >}}
 
 {{< code filename="examples/choice/multichoice-lazy/main.go" func="main" >}}
 

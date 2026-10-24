@@ -10,12 +10,15 @@ APIs:
 
 ## Basic example
 
-```go
-value, err := tui.Input(ctx, "Project name")
-password, err := tui.Password(ctx, "API token")
-```
-
 `Password` masks entered text and does not print an answer line.
+
+{{< demo src="demos/prompt/text-input.gif" alt="A basic text input prompt" >}}
+
+{{< code filename="examples/prompt/text-input/main.go" func="main" >}}
+
+{{< demo src="demos/prompt/password.gif" alt="A masked password prompt" >}}
+
+{{< code filename="examples/prompt/password/main.go" func="main" >}}
 
 Validate answers with [WithNonEmpty](#withnonempty), [WithRegex](#withregex),
 or [WithValidation](#withvalidation), and customize rejection feedback with
@@ -27,11 +30,9 @@ Sets initial text and cursor position. The text is `fmt.Sprint(d)`, so strings
 keep their content exactly; `""`, `0` and `nil` are defaults too (`nil` is
 `<nil>`).
 
-```go
-value, err := tui.Input(ctx, "Project name",
-	tui.WithDefault("demo-service"),
-)
-```
+{{< demo src="demos/prompt/text-input-options.gif" alt="Default text, Unicode editing and required input" >}}
+
+{{< code filename="examples/prompt/text-input-options/main.go" func="main" >}}
 
 ### Without a terminal
 
@@ -81,19 +82,6 @@ Return `nil` to accept the value or an error containing feedback to reject it.
 Combine it with [WithNonEmpty](#withnonempty) and [WithRegex](#withregex)
 to run basic checks before custom validation.
 
-```go
-username, err := tui.Input(ctx, "Username",
-	tui.WithNonEmpty(),
-	tui.WithRegex(`[a-z][a-z0-9]{2,15}`, "Use 3-16 lowercase letters or digits"),
-	tui.WithValidation(func(ctx context.Context, value string) error {
-		if value == "admin" || value == "root" {
-			return errors.New("This name is reserved")
-		}
-		return nil
-	}),
-)
-```
-
 This example uses the standard `errors` package. A validator receives the prompt
 context and runs synchronously: key handling waits until it returns. Pass that
 context to network requests or other blocking work so cancellation can finish
@@ -105,25 +93,28 @@ error messages: a rejected password shows `Invalid value` instead, so a message
 cannot repeat the secret. See the [feedback row](#feedback-row).
 Messages of [`WithNonEmpty`](#withnonempty) and [`WithRegex`](#withregex) still show.
 
+{{< demo src="demos/prompt/input-validation.gif" alt="Rejected usernames keep the prompt open" >}}
+
+{{< code filename="examples/prompt/input-validation/main.go" func="main" >}}
+
+{{< demo src="demos/prompt/password-validation.gif" alt="A rejected password shows a generic message" >}}
+
+{{< code filename="examples/prompt/password-validation/main.go" func="main" >}}
+
 ## Feedback row
 
 The single feedback row for either `Input` or `Password` is drawn by the
 `Feedback` slot of the theme when [WithNonEmpty](#withnonempty),
 [WithRegex](#withregex), or [WithValidation](#withvalidation) rejects an answer.
 
-```go
-th := tui.DefaultTheme()
-th.Input.Feedback = `{{ accent "Check: " }}{{ .Message }}`
-if err := tui.SetDefaultTheme(th); err != nil {
-	return err
-}
-value, err := tui.Input(ctx, "Project name", tui.WithNonEmpty())
-```
-
 The slot receives only `.Message`, with no typed value. The message has
 line breaks and tabs replaced with spaces and terminal control characters
 removed. The rendered feedback is limited to its first line and clipped to
 the available terminal width. Keep custom templates to one row.
+
+{{< demo src="demos/prompt/input-feedback-template.gif" alt="A custom validation feedback row" >}}
+
+{{< code filename="examples/prompt/input-feedback-template/main.go" func="main" >}}
 
 By default feedback is `✖ message`; see [Themes](themes.md).
 Templates support the same color and style helpers listed in
@@ -151,3 +142,7 @@ continue, including while a validator runs. Closing a progress bar or spinner
 does not change the active prompt's terminal input mode. Route accompanying
 logs through [`tui.Stderr()`](options.md#stderr) to keep them
 coordinated with widget rendering.
+
+{{< demo src="demos/prompt/input-validation-progress.gif" alt="A validated prompt next to a running progress bar" >}}
+
+{{< code filename="examples/prompt/input-validation-progress/main.go" func="main" >}}

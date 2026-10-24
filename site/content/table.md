@@ -7,63 +7,39 @@ weight: 90
 
 Renders rows with an explicit row template.
 
-```go
-type Row struct {
-	Name   string
-	Active bool
-	Score  float64
-}
-
-rows := []Row{{"alice", true, 95.2}, {"bob", false, 71.0}}
-tmpl := `{{bold .Name}}\t{{if .Active}}yes{{else}}no{{end}}\t{{printf "%.1f" .Score}}`
-err := tui.Table(os.Stdout, tmpl, rows)
-if err != nil {
-	return err
-}
-```
-
 Use this when you want complete control over rendered columns.
+
+{{< demo src="demos/table/basic.gif" alt="A table rendered with an explicit row template" >}}
+
+{{< code filename="examples/table/basic/main.go" func="main" >}}
+
+Wide characters, emoji and escape sequences are measured in columns, and multiline cells stay aligned:
+
+{{< demo src="demos/table/table-multiline.gif" alt="A table with multiline cells" >}}
+
+{{< code filename="examples/table/table-multiline/main.go" func="main" >}}
 
 ## TableIter
 
 Consumes an iterator (`iter.Seq2`) and renders rows incrementally.
 
-```go
-seq := func(yield func(Row, error) bool) {
-	for _, r := range rows {
-		if !yield(r, nil) {
-			return
-		}
-	}
-}
-
-err := tui.TableIter(os.Stdout, `{{.Name}}\t{{.Score}}`, seq)
-if err != nil {
-	return err
-}
-```
-
 Iterator fetch errors are reported with row numbers.
+
+{{< demo src="demos/table/table-iter.gif" alt="Rows streaming into a table from an iterator" >}}
+
+{{< code filename="examples/table/table-iter/main.go" func="main" >}}
 
 ## TableX
 
 Auto-generates a row template from struct metadata.
 
-```go
-type Row struct {
-	Name   string  `json:"name"`
-	Active bool    `json:"active"`
-	Score  float64 `json:"score"`
-}
-
-rows := []Row{{"alice", true, 95.2}, {"bob", false, 71.0}}
-err := tui.TableX(os.Stdout, rows)
-if err != nil {
-	return err
-}
-```
-
 Use this for quick tabular output with minimal setup.
+
+`TableAuto` takes options to skip, include, format and color columns, and `Facts` prints a single struct.
+
+{{< demo src="demos/table/table-auto.gif" alt="Automatic tables with column options and facts" >}}
+
+{{< code filename="examples/table/table-auto/main.go" func="main" >}}
 
 ## Header inference and tags
 

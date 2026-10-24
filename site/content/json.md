@@ -17,17 +17,7 @@ API:
 
 ## Example
 
-```go
-payload := map[string]any{
-	"id": 42,
-	"name": "service-a",
-	"tags": []string{"prod", "api"},
-}
-
-if err := tui.PrettyJSON(os.Stdout, payload); err != nil {
-	return err
-}
-```
+{{< code filename="examples/prettyjson/pretty-json/main.go" func="main" >}}
 
 ## Behavior
 

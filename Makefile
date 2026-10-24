@@ -69,4 +69,4 @@ $(BIN)/agg: | $(BIN)
 	@echo "742b2b6230529b72f310acb835e9479496000f2eabc97b0993cabe1d7fe70171  $@.tmp" | shasum -a 256 -c - || { rm -f $@.tmp; exit 1; }
 	@chmod +x $@.tmp && mv $@.tmp $@
 
-.PHONY: check fmt lint test cross-build examples lint-site configure
+.PHONY: check fmt lint test cross-build examples lint-site configure site/public/
