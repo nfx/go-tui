@@ -24,6 +24,8 @@ jobs:
           extended: true
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
         id: pages
+      - name: Collect examples for site
+        run: make site/examples
       - name: Build site with Hugo
         env:
           HUGO_ENVIRONMENT: production
