@@ -1,6 +1,6 @@
 ---
 title: "Number"
-weight: 45
+weight: 30
 ---
 
 `Number[T](ctx, label, opts...)` prompts for a decimal number. Specify an integer
@@ -16,12 +16,12 @@ port, err := tui.Number[Port](ctx, "Port", tui.WithDefault(8080))
 ## Without a terminal
 
 When the output is not a terminal, `Number` reads no input, prints nothing and
-returns [`WithDefault`](options-and-helpers.md#defaults-without-a-terminal) after the usual checks. A numeric default, including a
+returns [`WithDefault`](options.md#defaults-without-a-terminal) after the usual checks. A numeric default, including a
 defined type, is written in plain decimal notation at its own width (never
 `1e+21`), then parsed as `T` and checked against the range and the bounds.
 Anything else is used as text. A default that is not a valid `T`, overflows it
-or is out of bounds fails with `ErrInvalidOption` and returns the zero value;
-no default fails with `ErrNoTTY`.
+or is out of bounds fails with [`ErrInvalidOption`](options.md#common-errors) and returns the zero value;
+no default fails with [`ErrNoTTY`](options.md#common-errors).
 
 ```go
 port, err := tui.Number[Port](ctx, "Port", tui.WithDefault(8080)) // 8080 in a CI job
@@ -57,15 +57,15 @@ Cancellation or errors return T's zero value.
 
 ## Options
 
-Only [`WithDefault`](options-and-helpers.md#defaults-without-a-terminal), `WithAtLeast`, `WithAtMost`, `WithInput` and `WithOutput` apply;
-other [input](../input/) options, such as `WithValidation` and `WithRegex`,
-fail with `ErrWrongWidget`.
+Only [`WithDefault`](options.md#defaults-without-a-terminal), `WithAtLeast`, `WithAtMost`, `WithInput` and `WithOutput` apply;
+other [input](input.md) options, such as [`WithValidation`](input.md#withvalidation) and [`WithRegex`](input.md#withregex),
+fail with [`ErrWrongWidget`](options.md#common-errors).
 
 `WithAtLeast` and `WithAtMost` set inclusive bounds of any numeric type, compared
 exactly (`WithAtMost(0.1)` accepts a `float32` `0.1`). Enter rejects values outside
 them, and Up/Down refuse to step past them, though they still step toward the
 range from outside. A bound above the other, or a NaN, infinite, or
-out-of-range bound, fails with `ErrInvalidOption`.
+out-of-range bound, fails with [`ErrInvalidOption`](options.md#common-errors).
 
 ```go
 port, err := tui.Number[Port](ctx, "Port", tui.WithAtLeast(1024), tui.WithAtMost(65535))

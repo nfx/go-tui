@@ -18,7 +18,11 @@ test: $(wildcard *.go)
 $(BIN)/hugo: | $(BIN)
 	GOBIN=$(BIN) go install github.com/gohugoio/hugo@v0.165.0
 
-site/public/: $(BIN)/hugo $(shell find site -name "*.md")
+site/examples: $(shell find examples -name "*.go" -not -name "*_test.go")
+	rm -rf $@
+	rsync -a --prune-empty-dirs --include='*/' --include='main.go' --exclude='*' examples/ $@/
+
+site/public/: $(BIN)/hugo site/examples $(shell find site -name "*.md")
 	rm -rf site/public
 	$(BIN)/hugo build --source site --buildDrafts --baseURL / --minify
 
@@ -28,7 +32,7 @@ $(BIN)/htmltest: | $(BIN)
 lint-site: $(BIN)/htmltest site/public/
 	cd site && $(BIN)/htmltest
 
-site-preview: $(BIN)/hugo
+site-preview: $(BIN)/hugo site/examples
 	$(BIN)/hugo server --source site --buildDrafts --disableFastRender
 
 examples:

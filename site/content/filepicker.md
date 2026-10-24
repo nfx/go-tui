@@ -1,24 +1,13 @@
 ---
 title: "File Picker"
-weight: 100
+weight: 60
 ---
 
 ## FilePicker
 
-Opens an interactive file picker and returns selected path.
+Opens an interactive file picker and returns selected path and is implemented on top of [Dropdown](dropdowns.md#dropdown).
 
-```go
-path, err := tui.FilePicker(ctx, "Select config",
-	tui.WithStartDir("/etc"),
-	tui.WithExtensions(".yaml", ".yml", ".json"),
-)
-if err != nil {
-	return err
-}
-fmt.Println(path)
-```
-
-`FilePicker` is implemented on top of [Dropdown](dropdowns.md#dropdown).
+{{< code filename="examples/choice/file-picker/main.go" func="main" >}}
 
 ## WithStartDir
 
@@ -82,7 +71,7 @@ path, err := tui.FilePicker(ctx, "Pick file",
 
 ## Presentation
 
-`FilePicker` draws with the `FilePicker` slots of the theme, which
+[`FilePicker`](#filepicker) draws with the `FilePicker` slots of the theme, which
 inherit from the dropdown and choice slots. See
 [Presentation](dropdowns.md#presentation).
 
@@ -129,17 +118,15 @@ path, err := tui.FilePicker(ctx, "Pick file",
 Without a terminal the picker answers at every directory level from the
 default, after the extension, hidden and directory filters. A string is an entry
 name first and a prefix hint second; an `os.DirEntry` is found by name and kind.
-Other types, and missing or ambiguous entries, fail with `ErrInvalidOption`; a
+Other types, and missing or ambiguous entries, fail with [`ErrInvalidOption`](options.md#common-errors); a
 hint is never taken as a path. A directory continues the walk and only a file is
 returned. A directory seen twice is an error, not a loop. Without a default or
-[`WithOneReturn`](#withonereturn) the call fails with `ErrNoTTY` before listing anything;
+[`WithOneReturn`](#withonereturn) the call fails with [`ErrNoTTY`](options.md#common-errors) before listing anything;
 filesystem errors are returned.
 
 ## Option compatibility note
 
-`FilePicker` accepts:
+[`FilePicker`](#filepicker) accepts:
 
-- picker options (`WithStartDir`, `WithExtensions`, `WithIgnoreUp`, `WithIgnoreDirs`, `WithShowHidden`)
+- picker options ([`WithStartDir`](#withstartdir), [`WithExtensions`](#withextensions), [`WithIgnoreUp`](#withignoreup), [`WithIgnoreDirs`](#withignoredirs), [`WithShowHidden`](#withshowhidden))
 - dropdown-targeted options (see links above)
-
-It does not accept shared IO/context options directly (`WithInput`, `WithOutput`).

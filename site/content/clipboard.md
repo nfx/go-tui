@@ -1,13 +1,13 @@
 ---
 title: "Clipboard"
-weight: 70
+weight: 100
 ---
 
 API:
 
 - `ShouldPasteFromClipboard() string`
 
-This helper returns clipboard text (trimmed trailing CR/LF) or an empty string when clipboard access fails.
+This helper returns clipboard text (trimmed trailing [CR](https://en.wikipedia.org/wiki/Carriage_return)/LF) or an empty string when clipboard access fails.
 
 ## Platform backends
 
@@ -15,7 +15,7 @@ This helper returns clipboard text (trimmed trailing CR/LF) or an empty string w
 - Linux: `xclip`, then `xsel`, then `wl-paste`
 - Windows: `powershell -command Get-Clipboard`
 
-If no implementation is available for the platform, it fails internally with `ErrUnsupportedPlatform` and returns an empty string.
+If no implementation is available for the platform, it fails internally with [`ErrUnsupportedPlatform`](options.md#common-errors) and returns an empty string.
 
 ## Example
 

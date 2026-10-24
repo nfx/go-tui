@@ -1,6 +1,6 @@
 ---
 title: "Dropdowns"
-weight: 30
+weight: 40
 ---
 
 ## Dropdown
@@ -20,7 +20,7 @@ Use this for the common case where you need the selected value.
 
 ## DropdownIndex
 
-Like `Dropdown`, but returns the selected index in `[]any`.
+Like [`Dropdown`](#dropdown), but returns the selected index in `[]any`.
 
 ```go
 items := []any{"dev", "staging", "prod"}
@@ -85,7 +85,7 @@ if !ok {
 
 ## Confirmf
 
-Formatted variant of `Confirm`.
+Formatted variant of [`Confirm`](#confirm).
 
 ```go
 ok := tui.Confirmf(ctx, "Delete %d files?", 12)
@@ -96,7 +96,7 @@ if !ok {
 
 ## WithDefault
 
-Sets a match hint, not a pre-filled filter. The dropdown ranks items by similarity to the hint and returns early only when exactly one item matches it as a prefix; the typed filter stays empty. Also useful with `WithOneReturn`.
+Sets a match hint, not a pre-filled filter. The dropdown ranks items by similarity to the hint and returns early only when exactly one item matches it as a prefix; the typed filter stays empty. Also useful with [`WithOneReturn`](#withonereturn).
 
 ```go
 city, err := tui.Dropdown(ctx, "City", cities,
@@ -105,12 +105,12 @@ city, err := tui.Dropdown(ctx, "City", cities,
 ```
 
 A default can also be a typed value. It is kept as is, never turned into a
-label: `Dropdown[T]`, `DropdownLazy[T]` and `DropdownIndex` take the item,
-`DropdownKV` takes the **key** (a value of the map is not looked up). It must be
+label: [`Dropdown[T]`](#dropdown), [`DropdownLazy[T]`](#dropdownlazy) and [`DropdownIndex`](#dropdownindex) take the item,
+[`DropdownKV`](#dropdownkv) takes the **key** (a value of the map is not looked up). It must be
 assignable to the item type, without conversions, and is compared with `==`, or
 with `reflect.DeepEqual` for slices and maps; pointers compare by identity. It
 must identify exactly one item: a value that is missing, repeated, a non-nil
-function or `NaN` fails with `ErrInvalidOption`. An untyped `nil` matches a nil
+function or `NaN` fails with [`ErrInvalidOption`](options.md#common-errors). An untyped `nil` matches a nil
 item. Items with identical labels stay distinct.
 
 ```go
@@ -127,23 +127,23 @@ that is not an item keeps working as the hint above.
 
 ### Without a terminal
 
-When the output is not a terminal, every dropdown answers from [`WithDefault`](options-and-helpers.md#defaults-without-a-terminal)
+When the output is not a terminal, every dropdown answers from [`WithDefault`](options.md#defaults-without-a-terminal)
 without reading input or printing anything, and fails otherwise:
 
-- no default: an error wrapping `ErrNoTTY`; `DropdownLazy` does not start its
+- no default: an error wrapping [`ErrNoTTY`](options.md#common-errors); [`DropdownLazy`](#dropdownlazy) does not start its
   producer;
-- a missing, ambiguous or wrongly typed default: `ErrInvalidOption`;
+- a missing, ambiguous or wrongly typed default: [`ErrInvalidOption`](options.md#common-errors);
 - a string is first an exact item, so `"a"` selects `"a"` even when `"ab"` exists;
   otherwise it is a word-prefix hint that must match exactly one label;
 - with [`WithOneReturn`](#withonereturn), a single item is returned without a default, ahead of any hint.
 
-`DropdownLazy` consumes the whole sequence first, so a later duplicate or a late
-producer error is not hidden; an empty sequence is `ErrEmptyLazyResult`.
+[`DropdownLazy`](#dropdownlazy) consumes the whole sequence first, so a later duplicate or a late
+producer error is not hidden; an empty sequence is [`ErrEmptyLazyResult`](options.md#common-errors).
 
-`Confirm` keeps its `bool` result and cannot show errors: [`WithDefault(true)`](options-and-helpers.md#defaults-without-a-terminal) or
-`"Yes"` returns true, `WithDefault(false)` or `"No"` false, and no default, an
-invalid default or any error returns false. Call `Dropdown` with `"Yes"` and
-`"No"` to see `ErrNoTTY`.
+[`Confirm`](#confirm) keeps its `bool` result and cannot show errors: [`WithDefault(true)`](options.md#defaults-without-a-terminal) or
+`"Yes"` returns true, [`WithDefault(false)`](#withdefault) or `"No"` false, and no default, an
+invalid default or any error returns false. Call [`Dropdown`](#dropdown) with `"Yes"` and
+`"No"` to see [`ErrNoTTY`](options.md#common-errors).
 
 ## WithOneReturn
 
@@ -166,7 +166,7 @@ city, err := tui.Dropdown(ctx, "City", cities,
 ```
 
 To hide answers by default, set `HideAnswer` on the [theme](themes.md) component, such as
-`Input`, `Number`, `Dropdown`, `Multichoice`, `Confirm` or `FilePicker`. An
+[`Input`](input.md), [`Number`](number.md), [`Dropdown`](#dropdown), [`Multichoice`](multichoice.md), [`Confirm`](#confirm) or [`FilePicker`](filepicker.md#filepicker). An
 option cannot show an answer that the theme hides, and passwords never keep one.
 
 ## WithTemplate
@@ -189,7 +189,7 @@ Use this to choose the fields an item shows.
 ## Presentation
 
 A dropdown draws through the theme. Set the slots once with
-[SetDefaultTheme](themes.md); the same slots serve `Confirm` and `FilePicker`
+[SetDefaultTheme](themes.md); the same slots serve [`Confirm`](#confirm) and [`FilePicker`](filepicker.md#filepicker)
 unless a family slot overrides them.
 
 | Slot | Payload | Draws |
@@ -212,38 +212,18 @@ if err := tui.SetDefaultTheme(th); err != nil {
 city, err := tui.Dropdown(ctx, "City", cities)
 ```
 
-`.Value` is the item as projected by `WithTemplate`, so a struct item needs a
+`.Value` is the item as projected by [`WithTemplate`](#withtemplate), so a struct item needs a
 projection to show its fields.
-
-## WithInput
-
-Overrides input source.
-
-```go
-city, err := tui.Dropdown(ctx, "City", cities,
-	tui.WithInput(in),
-)
-```
-
-## WithOutput
-
-Overrides output target.
-
-```go
-city, err := tui.Dropdown(ctx, "City", cities,
-	tui.WithOutput(out),
-)
-```
 
 ## Default appearance
 
 A dropdown draws through the installed theme:
-the `Dropdown` slots, which inherit from `Prompt` and
+the [`Dropdown`](#dropdown) slots, which inherit from `Prompt` and
 `Choice`. See [Themes](themes.md) to change it for every widget.
 
 ## Label resolution for struct items
 
-`Dropdown` resolves labels in this order:
+[`Dropdown`](#dropdown) resolves labels in this order:
 
 1. Explicit label tags (`header:"label"`, `tui:"label"`, or `label:"true"`)
 2. Heuristic field names (`Label`, `Name`, `Title`, `Description`, `DisplayName`, `FullName`, `Summary`, `Text`, `Subject`)

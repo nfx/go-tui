@@ -1,6 +1,6 @@
 ---
 title: "Tables"
-weight: 80
+weight: 90
 ---
 
 ## Table
@@ -75,4 +75,4 @@ Use this for quick tabular output with minimal setup.
 ## Template helpers
 
 Table templates use predefined helper functions documented in
-[Template Functions](template-functions.md).
+[Template functions](themes.md#template-functions).

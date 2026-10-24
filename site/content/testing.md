@@ -1,13 +1,17 @@
 ---
 title: "Testing"
-weight: 110
+weight: 140
 ---
 
 Color depth, symbols and whether prompts are interactive all come from the
-environment. The first part of this page previews other terminals by hand, and
-[Tests with terst](#tests-with-terst) checks your prompts in `go test`. Setting a few variables lets you preview, from your own terminal,
-how a program looks and behaves for someone else. Every recipe below works
-with any program, for example:
+environment. [Manual Testing](#manual-testing) previews other terminals by hand,
+and [Automated Testing](#automated-testing) checks your prompts in `go test`.
+
+## Manual Testing
+
+Setting a few variables lets you preview, from your own terminal, how a program
+looks and behaves for someone else. Every recipe below works with any program,
+for example:
 
 ```sh
 TERM=linux COLORTERM= go -C examples run ./theme
@@ -19,7 +23,7 @@ There are examples in the source repository to try these recipes on. They are
 a Go module of their own, in the `examples` directory, so the commands on this
 page run them from the repository root with `go -C examples`.
 
-## Color depth
+### Color depth
 
 | Looks like | Variables |
 | --- | --- |
@@ -37,7 +41,7 @@ colors pipes and files too, at the depth `TERM` and `COLORTERM` suggest. With
 16 colors, your terminal draws them from its own palette, not the palette of
 the terminal you preview.
 
-## Symbols
+### Symbols
 
 | Looks like | Variables |
 | --- | --- |
@@ -48,9 +52,9 @@ the terminal you preview.
 
 The locale comes from the first of `LC_ALL`, `LC_CTYPE` and `LANG` that is
 set, so `LC_ALL` overrides whatever your shell exports. See
-[Symbols](../themes/#symbols) for the full rule, including Windows.
+[Symbols](themes.md#symbols) for the full rule, including Windows.
 
-## Interactivity
+### Interactivity
 
 | Looks like | Command |
 | --- | --- |
@@ -59,18 +63,18 @@ set, so `LC_ALL` overrides whatever your shell exports. See
 | A script that pipes the prompts away | `go -C examples run ./number 2>&1 \| cat` |
 | A script that discards the prompts | `go -C examples run ./number 2>/dev/null` |
 
-Without a terminal, a prompt with `WithDefault` prints nothing and returns
-its default, and one without it fails with `no tty`. Spinners and progress
-bars draw nothing and log their updates through `slog.Default()` instead. See
-[Defaults without a terminal](../options-and-helpers/#defaults-without-a-terminal)
-and [Progress bars without a terminal](../progressbar/#without-a-terminal).
+Without a terminal, a prompt with [`WithDefault`](options.md#defaults-without-a-terminal) prints nothing and returns
+its default, and one without it fails with `no tty`. [Spinners](spinners.md) and [progress
+bars](progressbar.md) draw nothing and log their updates through `slog.Default()` instead. See
+[Defaults without a terminal](options.md#defaults-without-a-terminal)
+and [Progress bars without a terminal](progressbar.md#without-a-terminal).
 
 `CI` counts as set for any value but an empty one, `0` and `false`, so
-`CI=0` previews an ordinary terminal even inside a CI job. Prompts draw on
+`CI=0` previews an ordinary terminal even inside a [CI](https://en.wikipedia.org/wiki/Continuous_integration) job. Prompts draw on
 stderr, so it is stderr that must leave the terminal: `| cat` alone pipes
 only stdout and keeps the prompts interactive.
 
-## Background
+### Background
 
 | Looks like | Variables |
 | --- | --- |
@@ -78,12 +82,12 @@ only stdout and keeps the prompts interactive.
 | A dark background | `COLORFGBG=15;0` |
 
 Quote the value in a shell, as in `COLORFGBG='0;15'`, since `;` ends a
-command. `COLORFGBG` applies to spinners, progress bars and tables. A prompt
+command. `COLORFGBG` applies to [spinners](spinners.md), [progress bars](progressbar.md) and [tables](table.md). A prompt
 asks the terminal for its background, so your own terminal decides how a
 prompt looks. Set `theme.Light = true` to preview prompts on a light
 background.
 
-## Combining them
+### Combining them
 
 The variables are independent, so one preview can combine several:
 
@@ -95,7 +99,7 @@ TERM=xterm-256color COLORTERM= LC_ALL=en_US.ISO-8859-1 COLORFGBG='0;15' go -C ex
 CI=true FORCE_COLOR=3 go -C examples run ./progress-bar
 ```
 
-## Tests with terst
+## Automated Testing
 
 The `terst` package runs your prompts in `go test` against an emulated
 terminal: the test types keys and waits for what the screen shows. Its
@@ -164,7 +168,7 @@ screen.AwaitVisible("? Color", "|   red", "| > green", "|   blue", "| ^v move...
 keys.Send(terst.KeyEnter)
 ```
 
-`UseASCII` installs the default theme with ASCII symbols, so the rows in the
+`UseASCII` installs the default theme with [ASCII](https://en.wikipedia.org/wiki/ASCII) symbols, so the rows in the
 test read the same in every editor. `UseTheme` installs your own theme.
 
 | Helper | Does |
@@ -184,7 +188,7 @@ for.
 ### Without a terminal
 
 `terst.Quiet` runs the test as a script without a terminal would run your
-program. Prompts with `WithDefault` return their default, and the test fails
+program. Prompts with [`WithDefault`](options.md#defaults-without-a-terminal) return their default, and the test fails
 when a widget reads input or writes anything:
 
 ```go

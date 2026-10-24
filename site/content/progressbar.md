@@ -1,6 +1,6 @@
 ---
 title: "Progress Bars"
-weight: 50
+weight: 70
 ---
 
 ## NewMaxProgressBar
@@ -69,7 +69,7 @@ Requires size discovery through `Stat().Size()` or `Size() int64`.
 
 Without a terminal, reads continue normally and progress is logged as
 `file progress` records with `read` and `size` in bytes, see
-[Without a terminal](#without-a-terminal). An empty file logs 100% on EOF; an
+[Without a terminal](#without-a-terminal). An empty file logs 100% on [EOF](https://en.wikipedia.org/wiki/End-of-file); an
 early EOF does not report unread bytes as complete.
 
 ## Without a terminal
@@ -96,7 +96,7 @@ p, err := tui.NewMaxProgressBar(ctx, "Upload", 100,
 
 ## WithWorkers
 
-Sets worker count for `NewParallelProgressBar`.
+Sets worker count for [`NewParallelProgressBar`](#newparallelprogressbar).
 
 ```go
 err := tui.NewParallelProgressBar(ctx, "Jobs", jobs, runJob,
@@ -144,7 +144,7 @@ Download  62%  ===================>------------
 ```
 
 The percentage always takes four columns, so the bar never moves as it
-grows. A bar without a total shows `—` (`?` in ASCII) instead of a
+grows. A bar without a total shows `—` (`?` in [ASCII](https://en.wikipedia.org/wiki/ASCII)) instead of a
 percentage. The hint row shows the amount, the rate, the time left and, with
 the elapsed time enabled, the elapsed time. When the row is too narrow, it
 drops whole entries from the end; when even the first entry does not fit,
@@ -188,9 +188,9 @@ th.Progress.Frame = `{{ .Label }} [{{ .Bar }}] {{ .Metrics }}`
 
 ## Behavior notes
 
-- `NewMaxProgressBar`, `NewSliceProgressBar`, and `NewParallelProgressBar` tolerate non-TTY output and report milestones through `slog` instead of redrawing.
+- [`NewMaxProgressBar`](#newmaxprogressbar), [`NewSliceProgressBar`](#newsliceprogressbar), and [`NewParallelProgressBar`](#newparallelprogressbar) tolerate non-TTY output and report milestones through `slog` instead of redrawing.
 - `Close()` stops rendering, erases every row of the bar and releases its terminal resources.
-- Progress bars can share the default output with `Input` and `Password`, including their validation feedback. They do not change terminal input mode, so closing a bar leaves an active prompt's editing functional.
+- Progress bars can share the default output with [`Input`](input.md) and [`Password`](input.md), including their validation feedback. They do not change terminal input mode, so closing a bar leaves an active prompt's editing functional.
 
 For a runnable example combining background progress and validated prompts, run
 `go -C examples run ./input-validation-progress` from the repository root. See
