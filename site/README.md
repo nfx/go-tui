@@ -34,12 +34,19 @@ override that:
 Optional: `language` (defaults to the file extension), `trim`, `trim_start`
 and `trim_end` (drop lines from a `section`).
 
-Demo recordings use the `demo` shortcode, where `src` is the path under
-`static/demos/` without the `.gif` suffix:
+## Showing a recording next to its code with `recorded`
+
+Most examples have a demo recording. The `recorded` shortcode renders both as
+"Demo" and "Code" tabs:
 
 ```text
-{{< demo src="progress/progress-multi" alt="Multiple progress bars advancing concurrently" >}}
+{{< recorded name="progress/progress-multi" title="Multiple progress bars advancing concurrently" >}}
 ```
+
+`name` is the example path (also the GIF path under `static/demos/` without the
+`.gif` suffix) and `title` is the alt text. Every other parameter is passed to
+`example`, so `func`, `section`, `lines` and `trim` work as above. Use the
+plain `example` shortcode for examples without a recording.
 
 ## Cross-linking API references
 

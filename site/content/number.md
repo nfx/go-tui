@@ -7,9 +7,7 @@ weight: 30
 or float type, including defined types such as `type Port uint16`; `uintptr`
 is unsupported.
 
-{{< demo src="prompt/number" alt="Number prompts for int, defined and float types" >}}
-
-{{< example name="prompt/number" >}}
+{{< recorded name="prompt/number" title="Number prompts for int, defined and float types" >}}
 
 ## Without a terminal
 

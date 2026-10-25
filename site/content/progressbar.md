@@ -3,19 +3,17 @@ title: "Progress Bars"
 weight: 70
 ---
 
+[`NewMaxProgressBar`](#newmaxprogressbar), [`NewSliceProgressBar`](#newsliceprogressbar), and [`NewParallelProgressBar`](#newparallelprogressbar) tolerate non-TTY output and report milestones through `slog` instead of redrawing. `Close()` stops rendering, erases every row of the bar and releases its terminal resources. Progress bars can [share the default output](#several-bars) with [`Input`](input.md), [`Password`](input.md), [`Dropdown`](dropdowns.md), and [`Multichoice`](multichoice.md), including their validation feedback. They do not change terminal input mode, so closing a bar leaves an active prompt's editing functional.
+
 ## NewMaxProgressBar
 
-Creates a mutable progress bar with explicit max size.
+Creates a mutable progress bar with explicit max size. Use this when your total work count is known.
 
-Use this when your total work count is known.
-
-{{< demo src="progress/progress-bar" alt="A progress bar advancing to completion" >}}
-
-{{< example name="progress/progress-bar" >}}
+{{< recorded name="progress/progress-bar" title="A progress bar advancing to completion" >}}
 
 ## NewSliceProgressBar
 
-Wraps slice iteration and auto-advances progress as items are consumed.
+Wraps slice iteration and auto-advances progress as items are consumed. Use this for sequential processing loops.
 
 ```go
 for item, err := range tui.NewSliceProgressBar(ctx, "Items", items) {
@@ -26,22 +24,18 @@ for item, err := range tui.NewSliceProgressBar(ctx, "Items", items) {
 }
 ```
 
-Use this for sequential processing loops.
+
 
 ## NewParallelProgressBar
 
 Processes slice items concurrently and updates one shared progress bar.
-
 Returns the first worker error and cancels remaining work.
 
-{{< demo src="progress/progress-parallel" alt="Parallel workers advancing one progress bar" >}}
-
-{{< example name="progress/progress-parallel" >}}
+{{< recorded name="progress/progress-parallel" title="Parallel workers advancing one progress bar" >}}
 
 ## NewFileProgressReader
 
 Wraps a reader and advances progress by bytes read.
-
 Requires size discovery through `Stat().Size()` or `Size() int64`.
 
 {{< example name="progress/progress-reader" >}}
@@ -53,7 +47,7 @@ early EOF does not report unread bytes as complete.
 
 ## Without a terminal
 
-When the output is not a terminal, or `CI` is set, a bar draws nothing and
+When the output is not a terminal, or [`CI` env is set](testing.md#without-a-terminal), a bar draws nothing and
 logs its progress through `slog.Default()` at INFO instead. A record is
 emitted when the bar reaches a new 10% milestone and includes `label`,
 `percent`, `done` and `total`. Large steps log only the latest milestone
@@ -75,33 +69,11 @@ p, err := tui.NewMaxProgressBar(ctx, "Upload", 100,
 
 ## WithWorkers
 
-Sets worker count for [`NewParallelProgressBar`](#newparallelprogressbar).
+Sets worker count for [`NewParallelProgressBar`](#newparallelprogressbar). Value must be greater than zero.
 
 ```go
 err := tui.NewParallelProgressBar(ctx, "Jobs", jobs, runJob,
 	tui.WithWorkers(8),
-)
-```
-
-Value must be greater than zero.
-
-## WithInput
-
-Overrides input reader for widget internals.
-
-```go
-p, err := tui.NewMaxProgressBar(ctx, "Upload", 100,
-	tui.WithInput(in),
-)
-```
-
-## WithOutput
-
-Overrides output destination.
-
-```go
-p, err := tui.NewMaxProgressBar(ctx, "Upload", 100,
-	tui.WithOutput(out),
 )
 ```
 
@@ -152,9 +124,7 @@ as earlier versions did, and drops metrics from the end to keep the bar:
 Download 62%  ━━━━━━━╸──── 6.2 MiB/s · 12s remaining
 ```
 
-{{< demo src="progress/progress-multi-compact" alt="Several compact progress bars advancing together" >}}
-
-{{< example name="progress/progress-multi-compact" >}}
+{{< recorded name="progress/progress-multi-compact" title="Several compact progress bars advancing together" >}}
 
 In the stacked layout, `Progress.Frame` receives an empty
 `.Metrics`. A custom frame that shows `.Metrics` after the bar keeps
@@ -167,16 +137,5 @@ working once it selects the compact layout:
 
 Every bar registers with the same coordinator, so goroutines can advance their own bars concurrently.
 
-{{< demo src="progress/progress-multi" alt="Multiple progress bars advancing concurrently" >}}
+{{< recorded name="progress/progress-multi" title="Multiple progress bars advancing concurrently" >}}
 
-{{< example name="progress/progress-multi" >}}
-
-## Behavior notes
-
-- [`NewMaxProgressBar`](#newmaxprogressbar), [`NewSliceProgressBar`](#newsliceprogressbar), and [`NewParallelProgressBar`](#newparallelprogressbar) tolerate non-TTY output and report milestones through `slog` instead of redrawing.
-- `Close()` stops rendering, erases every row of the bar and releases its terminal resources.
-- Progress bars can share the default output with [`Input`](input.md) and [`Password`](input.md), including their validation feedback. They do not change terminal input mode, so closing a bar leaves an active prompt's editing functional.
-
-For a runnable example combining background progress and validated prompts, run
-`go -C examples run ./input-validation-progress` from the repository root. See
-[Input and Password](input.md#withvalidation) for validation options.

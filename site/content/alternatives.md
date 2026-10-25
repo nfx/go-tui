@@ -34,8 +34,6 @@ useful companion: give its handler [`tui.Stderr()`](options.md#stderr) as the de
 
 ### Multiple progress bars without a separate library
 
-{{< demo src="progress/progress-multi" alt="Multiple progress bars advancing concurrently" >}}
-
 Libraries such as [mpb](https://github.com/vbauerster/mpb) exist largely to
 manage several bars drawing to one terminal. With go-tui you do not need one:
 every bar created with [`tui.NewMaxProgressBar`](progressbar.md#newmaxprogressbar) registers with the same
@@ -43,7 +41,7 @@ coordinator, so concurrent goroutines can advance their own bars while each
 keeps its own rate and estimate, and logs written through `tui.Stderr()` stay
 ordered above them. No container, wait group wrapper or render loop is involved.
 
-{{< example name="progress/progress-multi" >}}
+{{< recorded name="progress/progress-multi" title="Multiple progress bars advancing concurrently" >}}
 
 Dynamic totals and custom decorators are not supported; if you need those,
 mpb remains the better fit. See [Progress Bars](progressbar.md) for the full API.

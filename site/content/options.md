@@ -9,11 +9,11 @@ misplaced option fails instead of silently doing nothing.
 
 | Option | Supported by |
 |---|---|
-| [`WithDefault`](#defaults-without-a-terminal), [`WithHideAnswer`](dropdowns.md#withhideanswer) | [`Input`](input.md), [`Password`](input.md), [`Number`](number.md), [dropdowns](dropdowns.md), [multichoice](multichoice.md), [`Confirm`](dropdowns.md#confirm), [`FilePicker`](filepicker.md#filepicker) |
+| [`WithDefault`](#defaults-without-a-terminal), [`WithHideAnswer`](dropdowns.md#withhideanswer) | [`Input`](input.md), [`Password`](input.md), [`Number`](number.md), [dropdowns](dropdowns.md), [multichoice](multichoice.md), [`Confirm`](dropdowns.md#confirm), [`FilePicker`](filepicker.md) |
 | [`WithNonEmpty`](input.md#withnonempty), [`WithRegex`](input.md#withregex), [`WithValidation`](input.md#withvalidation) | [`Input`](input.md), [`Password`](input.md) |
-| [`WithTemplate`](dropdowns.md#withtemplate) | [dropdowns](dropdowns.md), [multichoice](multichoice.md), [`Confirm`](dropdowns.md#confirm), [`FilePicker`](filepicker.md#filepicker) |
-| [`WithOneReturn`](dropdowns.md#withonereturn) | [dropdowns](dropdowns.md), [`Confirm`](dropdowns.md#confirm), [`FilePicker`](filepicker.md#filepicker) |
-| [`WithStartDir`](filepicker.md#withstartdir), [`WithExtensions`](filepicker.md#withextensions), [`WithIgnoreUp`](filepicker.md#withignoreup), [`WithIgnoreDirs`](filepicker.md#withignoredirs), [`WithShowHidden`](filepicker.md#withshowhidden) | [`FilePicker`](filepicker.md#filepicker) |
+| [`WithTemplate`](dropdowns.md#withtemplate) | [dropdowns](dropdowns.md), [multichoice](multichoice.md), [`Confirm`](dropdowns.md#confirm), [`FilePicker`](filepicker.md) |
+| [`WithOneReturn`](dropdowns.md#withonereturn) | [dropdowns](dropdowns.md), [`Confirm`](dropdowns.md#confirm), [`FilePicker`](filepicker.md) |
+| [`WithStartDir`](filepicker.md#withstartdir), [`WithExtensions`](filepicker.md#withextensions), [`WithIgnoreUp`](filepicker.md#withignoreup), [`WithIgnoreDirs`](filepicker.md#withignoredirs), [`WithShowHidden`](filepicker.md#withshowhidden) | [`FilePicker`](filepicker.md) |
 | [`WithPrefixf`](spinners.md#withprefixf), [`WithKeep`](spinners.md#withkeep) | [`Spinners.Add`](spinners.md) |
 | [`WithFormatRate`](progressbar.md#withformatrate), [`WithWorkers`](progressbar.md#withworkers) | [progress bars](progressbar.md) |
 | `WithColumn*`, `WithIncludeColumns`, `WithSkipColumns`, `WithMaxWidth`, `WithMultilineCells`, `WithFloat64*` | [`Table`](table.md#table), [`TableAuto`](table.md#tablex), [`TableIter`](table.md#tableiter), [`Facts`](table.md) |
@@ -35,7 +35,7 @@ prints no prompt, answer or escape codes. An invalid, missing or ambiguous
 default is [`ErrInvalidOption`](#common-errors), with the validation error still reachable through
 `errors.Is`. There is no extra option to enable this. See
 [Input](input.md), [Number](number.md), [dropdowns](dropdowns.md),
-[multichoice](multichoice.md) and [FilePicker](filepicker.md#filepicker); [`Confirm`](dropdowns.md#confirm)
+[multichoice](multichoice.md) and [FilePicker](filepicker.md); [`Confirm`](dropdowns.md#confirm)
 returns `false` where the others return an error.
 
 To verify it, redirect the prompt's output away from the terminal, for
@@ -47,7 +47,7 @@ default, and one without it fails with `no tty`.
 ## Context
 
 Interactive and long-running widgets ([`Input`](input.md), [`Password`](input.md), [dropdowns](dropdowns.md), [multichoice](multichoice.md), [`Confirm`](dropdowns.md#confirm),
-[`FilePicker`](filepicker.md#filepicker), [`NewSpinners`](spinners.md) and [progress bars](progressbar.md)) take a `context.Context` as the
+[`FilePicker`](filepicker.md), [`NewSpinners`](spinners.md) and [progress bars](progressbar.md)) take a `context.Context` as the
 first argument. Cancelling it, for example on Ctrl-C or a parent shutdown,
 stops the widget and its workers. For an upper bound on interaction time,
 derive the context with `context.WithTimeout` and cancel it when done.

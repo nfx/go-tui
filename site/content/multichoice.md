@@ -7,42 +7,23 @@ A multichoice prompt returns checked items. Use Up/Down to focus, Space to toggl
 and Enter to confirm. Enter does not check the focused item. Every invocation
 requires confirmation, including a single item or a unique default.
 
-```go
-regions, err := tui.Multichoice(ctx, "Deploy to regions",
-    []string{"Amsterdam", "Berlin", "Paris"},
-    tui.WithDefault("am"),
-)
-```
-
-There are four entry points. Each one opens its own prompt, and the sections
-below describe what is specific to each. Behavior they share is described under
-[Typed defaults](#typed-defaults) and the sections after it.
-
 ## Multichoice
 
 `Multichoice(ctx, label, []T, opts...)` returns `[]T` in original input order.
-
 The eager input is shallowly copied. Checks belong to source entries,
 independent of filtering, ranking, focus, or click order. Duplicate labels
 remain independently selectable; values need not be comparable. Do not mutate
 the input or referenced item internals concurrently.
-
 No checks is a valid answer. Success always returns a fresh, non-nil
 slice, including an empty slice. Every error returns a nil slice. Empty input
 returns [`ErrNoItems`](options.md#common-errors).
 
-The example selects from a slice of `type Service struct{ Name, Region string }`,
-using [`WithTemplate`](#templates) to show the region as active details.
-
-{{< demo src="choice/multichoice" alt="Toggling services in a multichoice prompt" >}}
-
-{{< example name="choice/multichoice" >}}
+{{< recorded name="choice/multichoice" title="Toggling services in a multichoice prompt" >}}
 
 ## MultichoiceKVK
 
 `MultichoiceKVK(ctx, label, map[K]V, opts...)` shows the keys of a map and
 returns the selected `[]K`.
-
 The map is snapshotted once and sorted by `fmt.Sprint(key)`. Equal formatted
 keys have unspecified relative order; pass an ordered slice to
 [`Multichoice`](#multichoice) when a total order matters. When both keys and
@@ -50,23 +31,16 @@ values are needed from one interaction, call `MultichoiceKVK` and look up the
 values in the unchanged map. Empty input returns
 [`ErrNoItems`](options.md#common-errors).
 
-{{< demo src="choice/multichoice-kvk" alt="Selecting map keys in a multichoice prompt" >}}
-
-{{< example name="choice/multichoice-kvk" >}}
+{{< recorded name="choice/multichoice-kvk" title="Selecting map keys in a multichoice prompt" >}}
 
 ## MultichoiceKVV
 
 `MultichoiceKVV(ctx, label, map[K]V, opts...)` also shows the keys, but returns
 the selected `[]V`.
-
 Ordering and snapshot rules match [`MultichoiceKVK`](#multichoicekvk). Duplicate
-map values remain independently selectable, because each row is a key; in the
-example below `https` and `https-alt` both map to `443`, and choosing both
-returns `443` twice. Values need not be comparable.
+map values remain independently selectable, because each row is a key.
 
-{{< demo src="choice/multichoice-kvv" alt="Selecting map values by their keys" >}}
-
-{{< example name="choice/multichoice-kvv" >}}
+{{< recorded name="choice/multichoice-kvv" title="Selecting map values by their keys" >}}
 
 ## MultichoiceLazy
 
@@ -74,14 +48,11 @@ returns `443` twice. Values need not be comparable.
 producer arrival order after the finite sequence finishes. A nil sequence
 returns [`ErrInvalidOption`](options.md#common-errors); an empty completed
 sequence returns [`ErrEmptyLazyResult`](options.md#common-errors).
-
 Choices appear progressively. Enter is disabled until successful exhaustion;
 Enter during loading is not queued. Producer errors, including late errors,
 abort with a nil result.
 
-{{< demo src="choice/multichoice-lazy" alt="Choices arriving progressively in a lazy multichoice" >}}
-
-{{< example name="choice/multichoice-lazy" >}}
+{{< recorded name="choice/multichoice-lazy" title="Choices arriving progressively in a lazy multichoice" >}}
 
 Default resolution stays pending until all choices are known. A unique default
 is added only if the user has not explicitly toggled it. An already checked

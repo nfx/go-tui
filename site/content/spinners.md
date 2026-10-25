@@ -17,9 +17,7 @@ APIs:
 
 ## Basic example
 
-{{< demo src="spinner/multi-spinners" alt="Several spinners updating independently" >}}
-
-{{< example name="spinner/multi-spinners" >}}
+{{< recorded name="spinner/multi-spinners" title="Several spinners updating independently" >}}
 
 ## Without a TTY
 
@@ -118,17 +116,13 @@ their parent in the order they were added, hanging from branches drawn with
   visible row reads `… N more` and stands for the rows after it. They are not
   scrolled, and they show again when the terminal grows or other rows end.
 
-{{< demo src="spinner/spinner-options" alt="Nested spinners with WithKeep and WithNoElapsed" >}}
-
-{{< example name="spinner/spinner-options" >}}
+{{< recorded name="spinner/spinner-options" title="Nested spinners with WithKeep and WithNoElapsed" >}}
 
 ## LongRunning
 
 `LongRunning(ctx, message, fn)` shows a spinner for as long as the callback runs and returns its error.
 
-{{< demo src="spinner/long-running" alt="A spinner while a callback runs" >}}
-
-{{< example name="spinner/long-running" >}}
+{{< recorded name="spinner/long-running" title="A spinner while a callback runs" >}}
 
 ## Frames
 
@@ -168,6 +162,4 @@ Route accompanying logs through [`tui.Stderr()`](options.md#stderr)
 so they participate in the same rendering coordination. See
 [Input and Password](input.md#withvalidation) for validation and feedback options.
 
-{{< demo src="spinner/multi-spinners-and-logs" alt="Spinners and structured logs sharing one terminal" >}}
-
-{{< example name="spinner/multi-spinners-and-logs" >}}
+{{< recorded name="spinner/multi-spinners-and-logs" title="Spinners and structured logs sharing one terminal" >}}

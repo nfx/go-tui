@@ -3,26 +3,28 @@ title: "Input and Password"
 weight: 20
 ---
 
-APIs:
-
-- `Input(ctx, label, opts...)`
-- `Password(ctx, label, opts...)`
-
-## Basic example
-
-`Password` masks entered text and does not print an answer line.
-
-{{< demo src="prompt/text-input" alt="A basic text input prompt" >}}
-
-{{< example name="prompt/text-input" >}}
-
-{{< demo src="prompt/password" alt="A masked password prompt" >}}
-
-{{< example name="prompt/password" >}}
-
+[`Input`](#input) and [`Password`](#password) validate when you press Enter. 
+Arrow-left/right and backspace editing are supported. Paste buffers are handled 
+as one input event. Timeout/cancel returns context error.
 Validate answers with [WithNonEmpty](#withnonempty), [WithRegex](#withregex),
 or [WithValidation](#withvalidation), and customize rejection feedback with
-the [feedback slot](#feedback-row) of the theme.
+the [feedback slot](#feedback-row) of the theme. Rules run in option order
+and stop at the first error. A rejected answer stays editable, with the error
+shown below it using the [feedback row](#feedback-row). Editing the
+text clears the feedback; moving the cursor keeps it visible. Validation runs
+again on the next Enter.
+
+## Input
+
+`Input(ctx, label, opts...)` expects a text from the user.
+
+{{< recorded name="prompt/text-input" title="A basic text input prompt" >}}
+
+## Password
+
+`Password(ctx, label, opts...)` masks entered text and does not print an answer line.
+
+{{< recorded name="prompt/password" title="A masked password prompt" >}}
 
 ## WithDefault
 
@@ -30,9 +32,7 @@ Sets initial text and cursor position. The text is `fmt.Sprint(d)`, so strings
 keep their content exactly; `""`, `0` and `nil` are defaults too (`nil` is
 `<nil>`).
 
-{{< demo src="prompt/text-input-options" alt="Default text, Unicode editing and required input" >}}
-
-{{< example name="prompt/text-input-options" >}}
+{{< recorded name="prompt/text-input-options" title="Default text, Unicode editing and required input" >}}
 
 ### Without a terminal
 
@@ -82,24 +82,14 @@ Return `nil` to accept the value or an error containing feedback to reject it.
 Combine it with [WithNonEmpty](#withnonempty) and [WithRegex](#withregex)
 to run basic checks before custom validation.
 
-This example uses the standard `errors` package. A validator receives the prompt
-context and runs synchronously: key handling waits until it returns. Pass that
-context to network requests or other blocking work so cancellation can finish
-promptly. Validation errors keep the prompt open; prompt cancellation returns
-the context error. A nil validator returns [`ErrInvalidOption`](options.md#common-errors).
+{{< recorded name="prompt/input-validation" title="Rejected usernames keep the prompt open" >}}
 
 Password validators receive the unmasked value, but the user never sees their
 error messages: a rejected password shows `Invalid value` instead, so a message
 cannot repeat the secret. See the [feedback row](#feedback-row).
 Messages of [`WithNonEmpty`](#withnonempty) and [`WithRegex`](#withregex) still show.
 
-{{< demo src="prompt/input-validation" alt="Rejected usernames keep the prompt open" >}}
-
-{{< example name="prompt/input-validation" >}}
-
-{{< demo src="prompt/password-validation" alt="A rejected password shows a generic message" >}}
-
-{{< example name="prompt/password-validation" >}}
+{{< recorded name="prompt/password-validation" title="A rejected password shows a generic message" >}}
 
 ## Feedback row
 
@@ -112,9 +102,7 @@ line breaks and tabs replaced with spaces and terminal control characters
 removed. The rendered feedback is limited to its first line and clipped to
 the available terminal width. Keep custom templates to one row.
 
-{{< demo src="prompt/input-feedback-template" alt="A custom validation feedback row" >}}
-
-{{< example name="prompt/input-feedback-template" >}}
+{{< recorded name="prompt/input-feedback-template" title="A custom validation feedback row" >}}
 
 By default feedback is `✖ message`; see [Themes](themes.md).
 Templates support the same color and style helpers listed in
@@ -124,25 +112,12 @@ the secret; messages of [`WithNonEmpty`](#withnonempty) and [`WithRegex`](#withr
 Showing rejection feedback requires two terminal rows; a shorter terminal
 returns [`ErrNoSpace`](options.md#common-errors).
 
-## Notes
+## Stderr
 
-- Arrow-left/right and backspace editing are supported.
-- Paste buffers are handled as one input event.
-- Timeout/cancel returns context error.
-
-`Input` and `Password` validate when you press Enter. Rules run in option order
-and stop at the first error. A rejected answer stays editable, with the error
-shown below it using the [feedback row](#feedback-row). Editing the
-text clears the feedback; moving the cursor keeps it visible. Validation runs
-again on the next Enter.
-
-Prompts can share the default terminal output with running progress bars and
-spinners. Validation feedback stays below the input while progress updates
+Prompts can share the default terminal output with running [progress bars](progressbar.md) and
+[spinners](spinners.md). [Validation feedback](#feedback-row) stays below the input while progress updates
 continue, including while a validator runs. Closing a progress bar or spinner
 does not change the active prompt's terminal input mode. Route accompanying
-logs through [`tui.Stderr()`](options.md#stderr) to keep them
-coordinated with widget rendering.
+[logs](alternatives.md#prompts-progress-and-logs-together) through [`tui.Stderr()`](options.md#stderr) to keep them coordinated with widget rendering.
 
-{{< demo src="prompt/input-validation-progress" alt="A validated prompt next to a running progress bar" >}}
-
-{{< example name="prompt/input-validation-progress" >}}
+{{< recorded name="prompt/input-validation-progress" title="A validated prompt next to a running progress bar" >}}
