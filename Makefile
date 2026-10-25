@@ -38,6 +38,9 @@ site-preview: $(BIN)/hugo site/examples
 examples:
 	cd examples && go build ./... && go vet ./...
 
+examples/README.md:
+	bash examples/index.sh
+
 run-examples:
 	sh examples/run.sh
 
