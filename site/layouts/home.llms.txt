@@ -1,0 +1,11 @@
+# {{ .Site.Title }}
+
+> {{ .Site.Params.description }}
+
+Full documentation in a single file: {{ "llms-full.txt" | absURL }}
+
+## Docs
+
+{{ range .Site.RegularPages.ByWeight -}}
+- [{{ .Title }}]({{ .Permalink }}){{ with (.Description | default .Summary | plainify | htmlUnescape | replaceRE `\s+` " " | strings.TrimSpace) }}: {{ . | truncate 160 }}{{ end }}
+{{ end -}}

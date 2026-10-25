@@ -40,12 +40,12 @@ cascade:
 <div style="width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:1.5rem;align-items:start;margin-top:3rem">
 <div style="min-width:0">
 
-{{< code filename="examples/misc/everything-and-logs/main.go" func="main" >}}
+{{< example name="misc/everything-and-logs" >}}
 
 </div>
 <div style="min-width:0">
 
-{{< demo src="demos/misc/everything-and-logs.gif" alt="Prompts, spinners, progress and logs sharing one terminal" >}}
+{{< demo src="misc/everything-and-logs" alt="Prompts, spinners, progress and logs sharing one terminal" >}}
 
 </div>
 </div>

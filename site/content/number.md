@@ -7,9 +7,9 @@ weight: 30
 or float type, including defined types such as `type Port uint16`; `uintptr`
 is unsupported.
 
-{{< demo src="demos/prompt/number.gif" alt="Number prompts for int, defined and float types" >}}
+{{< demo src="prompt/number" alt="Number prompts for int, defined and float types" >}}
 
-{{< code filename="examples/prompt/number/main.go" func="main" >}}
+{{< example name="prompt/number" >}}
 
 ## Without a terminal
 

@@ -9,9 +9,9 @@ Selects a value from a typed list.
 
 Use this for the common case where you need the selected value.
 
-{{< demo src="demos/choice/dropdown.gif" alt="Selecting a city from a dropdown" >}}
+{{< demo src="choice/dropdown" alt="Selecting a city from a dropdown" >}}
 
-{{< code filename="examples/choice/dropdown/main.go" func="main" >}}
+{{< example name="choice/dropdown" >}}
 
 ## DropdownIndex
 
@@ -19,9 +19,9 @@ Like [`Dropdown`](#dropdown), but returns the selected index in `[]any`.
 
 Use this when you want to keep value lookup separate.
 
-{{< demo src="demos/choice/dropdown-index.gif" alt="Selecting an item and printing its index" >}}
+{{< demo src="choice/dropdown-index" alt="Selecting an item and printing its index" >}}
 
-{{< code filename="examples/choice/dropdown-index/main.go" func="main" >}}
+{{< example name="choice/dropdown-index" >}}
 
 ## DropdownKV
 
@@ -29,9 +29,9 @@ Selects from a map and returns both key and value.
 
 The map is sorted by key string representation before rendering.
 
-{{< demo src="demos/choice/dropdown-kv.gif" alt="Selecting a key and value from a map" >}}
+{{< demo src="choice/dropdown-kv" alt="Selecting a key and value from a map" >}}
 
-{{< code filename="examples/choice/dropdown-kv/main.go" func="main" >}}
+{{< example name="choice/dropdown-kv" >}}
 
 ## DropdownLazy
 
@@ -39,23 +39,23 @@ Streams items progressively via `iter.Seq2`.
 
 Use this for large or slow data sources.
 
-{{< demo src="demos/choice/dropdown-lazy.gif" alt="Items appearing progressively in a lazy dropdown" >}}
+{{< demo src="choice/dropdown-lazy" alt="Items appearing progressively in a lazy dropdown" >}}
 
-{{< code filename="examples/choice/dropdown-lazy/main.go" func="main" >}}
+{{< example name="choice/dropdown-lazy" >}}
 
 A slow producer keeps the prompt usable while items arrive:
 
-{{< demo src="demos/choice/dropdown-lazy-slow.gif" alt="A lazy dropdown fed by a slow producer" >}}
+{{< demo src="choice/dropdown-lazy-slow" alt="A lazy dropdown fed by a slow producer" >}}
 
-{{< code filename="examples/choice/dropdown-lazy-slow/main.go" func="main" >}}
+{{< example name="choice/dropdown-lazy-slow" >}}
 
 ## Confirm
 
 Renders a yes/no dropdown and returns `true` for "yes".
 
-{{< demo src="demos/choice/confirm.gif" alt="Confirm and Confirmf prompts" >}}
+{{< demo src="choice/confirm" alt="Confirm and Confirmf prompts" >}}
 
-{{< code filename="examples/choice/confirm/main.go" func="main" >}}
+{{< example name="choice/confirm" >}}
 
 ## Confirmf
 
@@ -149,9 +149,9 @@ Sets main and active-details templates in one call.
 
 Use this to choose the fields an item shows.
 
-{{< demo src="demos/choice/dropdown-customize.gif" alt="A dropdown with a custom focus mark and template" >}}
+{{< demo src="choice/dropdown-customize" alt="A dropdown with a custom focus mark and template" >}}
 
-{{< code filename="examples/choice/dropdown-customize/main.go" func="main" >}}
+{{< example name="choice/dropdown-customize" >}}
 
 ## Presentation
 

@@ -17,7 +17,7 @@ API:
 
 ## Example
 
-{{< code filename="examples/prettyjson/pretty-json/main.go" func="main" >}}
+{{< example name="prettyjson/pretty-json" >}}
 
 ## Behavior
 

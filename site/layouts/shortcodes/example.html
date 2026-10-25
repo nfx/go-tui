@@ -1,4 +1,8 @@
-{{ $filename := .Get "filename" }}
+{{ $name := .Get "name" }}
+{{ $filename := printf "examples/%s" $name }}
+{{ if not (strings.HasSuffix $name ".go") }}
+  {{ $filename = printf "examples/%s/main.go" $name }}
+{{ end }}
 {{ $extension := path.Ext $filename }}
 {{ $defaultLang := strings.TrimPrefix "." $extension }}
 {{ $lang := .Get "language" | default $defaultLang }}
@@ -7,45 +11,17 @@
 {{ $trim := .Get "trim" | default 0 | int }}
 {{ $trimStart := .Get "trim_start" | default $trim | int }}
 {{ $trimEnd := .Get "trim_end" | default $trim | int }}
+{{ $func := .Get "func" | default "" }}
+{{ if and (not $func) (not $section) (not $lines) }}
+  {{ $func = "main" }}
+{{ end }}
 
 {{ $options := dict }}
 {{ $content := readFile $filename }}
 {{ $allLines := split $content "\n" }}
 {{ $totalLines := len $allLines }}
-{{ $exampleOutput := .Get "example_output" | default "" }}
-{{ $func := .Get "func" | default "" }}
 
-{{ if $exampleOutput }}
-  {{ $language := "text" }}
-  {{ $exampleMarker := printf "func %s" $exampleOutput }}
-  {{ $outputMarker := "// Output:" }}
-  {{ $inExample := false }}
-  {{ $inOutput := false }}
-  {{ $outputLines := slice }}
-
-  {{ range $allLines }}
-    {{ if and (not $inExample) (strings.Contains . $exampleMarker) }}
-      {{ $inExample = true }}
-    {{ else if and $inExample (not $inOutput) (strings.Contains . $outputMarker) }}
-      {{ $inOutput = true }}
-    {{ else if $inOutput }}
-      {{ if findRE "^\\s+//" . }}
-        {{ $cleanLine := replaceRE "^\\s+//" "" . | strings.TrimPrefix " " }}
-        {{ $outputLines = $outputLines | append $cleanLine }}
-      {{ else if eq . "}" }}
-        {{ $inOutput = false }}
-        {{ $inExample = false }}
-      {{ end }}
-    {{ end }}
-  {{ end }}
-
-  {{ if gt (len $outputLines) 0 }}
-    {{ if gt $trimEnd 0 }}
-      {{ $outputLines = first (sub (len $outputLines) $trimEnd) $outputLines }}
-    {{ end }}
-    {{ $content = delimit $outputLines "\n" }}
-  {{ end }}
-{{ else if $func }}
+{{ if $func }}
   {{ $funcMarker := printf "func %s(" $func }}
   {{ $inFunc := false }}
   {{ $bodyLines := slice }}
