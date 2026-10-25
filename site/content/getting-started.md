@@ -5,37 +5,19 @@ weight: 10
 
 Add prompts and progress to existing command handlers while keeping normal Go
 control flow. See [Alternatives](alternatives.md) for its strengths and scope.
-
-Install:
+Install with:
 
 ```shell
 go get github.com/nfx/go-tui@latest
 ```
 
-Minimal [dropdown](dropdowns.md#dropdown):
+{{< recorded name="choice/dropdown-kv" title="Selecting a key and value from a map" >}}
 
-```go
-package main
+Interactive widgets take a `context.Context` as the first argument: 
+[dropdowns](dropdowns.md), [prompts](input.md), [numbers](number.md), 
+[multichoices](multichoice.md), [filepickers](filepicker.md), 
+[spinners](spinners.md). [Tables](table.md) don't need a context.
 
-import (
-	"context"
-	"log"
-
-	tui "github.com/nfx/go-tui"
-)
-
-func main() {
-	ctx := context.Background()
-	choice, err := tui.Dropdown(ctx, "Select environment", []string{"dev", "staging", "prod"})
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Println("selected:", choice)
-}
-```
-
-Interactive widgets take a `context.Context` as the first argument.
-Start with [Shared Options and Helpers](options.md), then see each widget page.
 
 ## Run the same command in automation
 

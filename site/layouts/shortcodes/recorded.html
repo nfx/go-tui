@@ -1,0 +1,15 @@
+{{- /*
+Show a demo recording next to the example program that produced it.
+
+@param {string} name  Path under examples/, also the path of the GIF under static/demos/.
+@param {string} title Alt text of the recording.
+
+Any other parameter is passed through to the `example` shortcode.
+*/ -}}
+{{- $name := .Get "name" -}}
+{{- $demo := printf `<img src="%s" alt="%s" loading="lazy" style="max-width:100%%;margin-top:-0.5rem">` (printf "demos/%s.gif" $name | relURL) (.Get "title" | htmlEscape) -}}
+{{- $tabs := slice
+  (dict "id" 0 "name" "Demo" "icon" "terminal" "content" $demo "selected" true)
+  (dict "id" 1 "name" "Code" "icon" "simple:go" "content" (partial "example.html" .))
+-}}
+{{- partial "shortcodes/tabs" (dict "tabs" $tabs "enableSync" true "id" .Ordinal) -}}

@@ -6,40 +6,28 @@ weight: 90
 ## Table
 
 Renders rows with an explicit row template.
-
 Use this when you want complete control over rendered columns.
 
-{{< demo src="table/basic" alt="A table rendered with an explicit row template" >}}
-
-{{< example name="table/basic" >}}
+{{< recorded name="table/basic" title="A table rendered with an explicit row template" >}}
 
 Wide characters, emoji and escape sequences are measured in columns, and multiline cells stay aligned:
 
-{{< demo src="table/table-multiline" alt="A table with multiline cells" >}}
-
-{{< example name="table/table-multiline" >}}
+{{< recorded name="table/table-multiline" title="A table with multiline cells" >}}
 
 ## TableIter
 
 Consumes an iterator (`iter.Seq2`) and renders rows incrementally.
-
 Iterator fetch errors are reported with row numbers.
 
-{{< demo src="table/table-iter" alt="Rows streaming into a table from an iterator" >}}
-
-{{< example name="table/table-iter" >}}
+{{< recorded name="table/table-iter" title="Rows streaming into a table from an iterator" >}}
 
 ## TableX
 
 Auto-generates a row template from struct metadata.
-
 Use this for quick tabular output with minimal setup.
-
 `TableAuto` takes options to skip, include, format and color columns, and `Facts` prints a single struct.
 
-{{< demo src="table/table-auto" alt="Automatic tables with column options and facts" >}}
-
-{{< example name="table/table-auto" >}}
+{{< recorded name="table/table-auto" title="Automatic tables with column options and facts" >}}
 
 ## Header inference and tags
 

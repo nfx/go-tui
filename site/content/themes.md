@@ -3,11 +3,8 @@ title: "Themes"
 weight: 160
 ---
 
-Every widget draws through one theme: prompts, choice lists, [spinners](spinners.md),
-[progress bars](progressbar.md), [tables](table.md), [facts](table.md) and [pretty JSON](json.md). Configure it once at startup
-and all of them change together.
-
-API:
+Every widget draws through one theme: [prompts](input.md), [dropdowns](dropdowns.md), [spinners](spinners.md),
+[progress bars](progressbar.md), [tables](table.md), [facts](table.md) and [pretty JSON](json.md). Configure it once at startup and all of them change together.
 
 - `theme.New() theme.Theme` returns the built-in theme to edit. The types of a
   theme live in the `github.com/nfx/go-tui/theme` package.
@@ -16,11 +13,7 @@ API:
 - `th.Normalize()` validates a theme and fills every zero field with its
   default, and `th.Symbols.ASCII()` returns the [ASCII](https://en.wikipedia.org/wiki/ASCII) counterpart of the symbols.
 
-See `examples/theme/basic` for a runnable program.
-
-{{< demo src="theme/basic" alt="Prompts drawn with a custom theme" >}}
-
-{{< example name="theme/basic" >}}
+{{< recorded name="theme/basic" title="Prompts drawn with a custom theme" >}}
 
 ## Layout
 
@@ -103,7 +96,7 @@ leaving your terminal. See [Testing](testing.md) for the variables to set.
 Each widget owns its template slots beside its settings: `theme.Progress.Frame` sits with `theme.Progress.Compact`, and `theme.Table.Header` with `theme.Table.ColumnGap`. The slots are the label, the answer, the key hint and the feedback of a prompt, the rows of a choice list, the states of a spinner, the parts of a progress bar and the header and cells of a table.
 
 Slots inherit: `Prompt` applies to [Input](input.md), [Password](input.md), [Number](number.md),
-[Dropdown](dropdowns.md#dropdown), [Multichoice](multichoice.md), [Confirm](dropdowns.md#confirm) and [FilePicker](filepicker.md#filepicker), and `Choice` to every
+[Dropdown](dropdowns.md#dropdown), [Multichoice](multichoice.md), [Confirm](dropdowns.md#confirm) and [FilePicker](filepicker.md), and `Choice` to every
 choice list. A family slot such as `Dropdown.Label` overrides only
 that family. An empty `Template` inherits; `theme.Hidden` hides an optional slot,
 such as the key hint:
@@ -158,10 +151,6 @@ adapted to the terminal's color support.
 ```go
 th.Dropdown.Active = `{{ bg "#005F87" " " }} {{ fg "#FFFFFF" .Value }}`
 ```
-
-The fixed 16-color names (`red`, `green`, `brightCyan`, `bgBlue`, and so on)
-are gone. A template that still uses one fails with `function "red" not
-defined` and the path of the template, when it is installed or parsed.
 
 ### Text styles
 
@@ -227,9 +216,7 @@ the name of a built-in helper.
 
 [`WithFn(name, fn)`](options.md#withfn) adds one helper to the installed theme:
 
-{{< demo src="theme/custom-template-func" alt="A custom template function in a table and a dropdown" >}}
-
-{{< example name="theme/custom-template-func" >}}
+{{< recorded name="theme/custom-template-func" title="A custom template function in a table and a dropdown" >}}
 
 The helper applies to prompts, tables, and other operations started after the
 call; an operation already running keeps its helpers. Registering the same name
@@ -257,7 +244,7 @@ use.
 - An invalid theme returns an error naming the field, and the previous theme
   stays installed.
 - Each widget keeps the theme it started with: a running [spinner](spinners.md) group, a
-  [FilePicker](filepicker.md#filepicker) moving between directories or a [`TableIter`](table.md#tableiter) never mixes two
+  [FilePicker](filepicker.md) moving between directories or a [`TableIter`](table.md#tableiter) never mixes two
   themes.
 - Per-call [`WithTemplate`](dropdowns.md#withtemplate) picks the projection; it does not change how a
   slot draws it.

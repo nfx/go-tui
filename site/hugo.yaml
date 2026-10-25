@@ -60,6 +60,7 @@ services:
 params:
   description: "Add interactivity to Go CLIs without changing their architecture: typed prompts, coordinated progress and logs, and non-TTY defaults for automation."
   keywords: "tui, terminal, go, golang, dropdown, spinner, progress bar"
+  sourceURL: "https://github.com/nfx/go-tui/blob/main"
   copyright: "© 2026 nfx"
 
   navbar:
@@ -72,6 +73,8 @@ params:
 
   page:
     width: normal
+    tabs:
+      sync: true
 
   theme:
     default: system

@@ -3,13 +3,9 @@ title: "File Picker"
 weight: 60
 ---
 
-## FilePicker
-
 Opens an interactive file picker and returns selected path and is implemented on top of [Dropdown](dropdowns.md#dropdown).
 
-{{< demo src="choice/file-picker" alt="Browsing directories in the file picker" >}}
-
-{{< example name="choice/file-picker" >}}
+{{< recorded name="choice/file-picker" title="Browsing directories in the file picker" >}}
 
 ## WithStartDir
 
@@ -73,7 +69,7 @@ path, err := tui.FilePicker(ctx, "Pick file",
 
 ## Presentation
 
-[`FilePicker`](#filepicker) draws with the `FilePicker` slots of the theme, which
+`FilePicker` draws with the `FilePicker` slots of the theme, which
 inherit from the dropdown and choice slots. See
 [Presentation](dropdowns.md#presentation).
 
@@ -125,10 +121,3 @@ hint is never taken as a path. A directory continues the walk and only a file is
 returned. A directory seen twice is an error, not a loop. Without a default or
 [`WithOneReturn`](#withonereturn) the call fails with [`ErrNoTTY`](options.md#common-errors) before listing anything;
 filesystem errors are returned.
-
-## Option compatibility note
-
-[`FilePicker`](#filepicker) accepts:
-
-- picker options ([`WithStartDir`](#withstartdir), [`WithExtensions`](#withextensions), [`WithIgnoreUp`](#withignoreup), [`WithIgnoreDirs`](#withignoredirs), [`WithShowHidden`](#withshowhidden))
-- dropdown-targeted options (see links above)

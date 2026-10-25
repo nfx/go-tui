@@ -5,57 +5,37 @@ weight: 40
 
 ## Dropdown
 
-Selects a value from a typed list.
+Selects a value from a typed list. Use this for the common case where you need the selected value.
 
-Use this for the common case where you need the selected value.
-
-{{< demo src="choice/dropdown" alt="Selecting a city from a dropdown" >}}
-
-{{< example name="choice/dropdown" >}}
+{{< recorded name="choice/dropdown" title="Selecting a city from a dropdown" >}}
 
 ## DropdownIndex
 
-Like [`Dropdown`](#dropdown), but returns the selected index in `[]any`.
+Like [`Dropdown`](#dropdown), but returns the selected index in `[]any`. Use this when you want to keep value lookup separate.
 
-Use this when you want to keep value lookup separate.
-
-{{< demo src="choice/dropdown-index" alt="Selecting an item and printing its index" >}}
-
-{{< example name="choice/dropdown-index" >}}
+{{< recorded name="choice/dropdown-index" title="Selecting an item and printing its index" >}}
 
 ## DropdownKV
 
-Selects from a map and returns both key and value.
+Selects from a map and returns both key and value. The map is sorted by key string representation before rendering.
 
-The map is sorted by key string representation before rendering.
-
-{{< demo src="choice/dropdown-kv" alt="Selecting a key and value from a map" >}}
-
-{{< example name="choice/dropdown-kv" >}}
+{{< recorded name="choice/dropdown-kv" title="Selecting a key and value from a map" >}}
 
 ## DropdownLazy
 
-Streams items progressively via `iter.Seq2`.
+Streams items progressively via `iter.Seq2`. Use this for large or slow data sources.
 
-Use this for large or slow data sources.
-
-{{< demo src="choice/dropdown-lazy" alt="Items appearing progressively in a lazy dropdown" >}}
-
-{{< example name="choice/dropdown-lazy" >}}
+{{< recorded name="choice/dropdown-lazy" title="Items appearing progressively in a lazy dropdown" >}}
 
 A slow producer keeps the prompt usable while items arrive:
 
-{{< demo src="choice/dropdown-lazy-slow" alt="A lazy dropdown fed by a slow producer" >}}
-
-{{< example name="choice/dropdown-lazy-slow" >}}
+{{< recorded name="choice/dropdown-lazy-slow" title="A lazy dropdown fed by a slow producer" >}}
 
 ## Confirm
 
 Renders a yes/no dropdown and returns `true` for "yes".
 
-{{< demo src="choice/confirm" alt="Confirm and Confirmf prompts" >}}
-
-{{< example name="choice/confirm" >}}
+{{< recorded name="choice/confirm" title="Confirm and Confirmf prompts" >}}
 
 ## Confirmf
 
@@ -140,23 +120,19 @@ city, err := tui.Dropdown(ctx, "City", cities,
 ```
 
 To hide answers by default, set `HideAnswer` on the [theme](themes.md) component, such as
-[`Input`](input.md), [`Number`](number.md), [`Dropdown`](#dropdown), [`Multichoice`](multichoice.md), [`Confirm`](#confirm) or [`FilePicker`](filepicker.md#filepicker). An
+[`Input`](input.md), [`Number`](number.md), [`Dropdown`](#dropdown), [`Multichoice`](multichoice.md), [`Confirm`](#confirm) or [`FilePicker`](filepicker.md). An
 option cannot show an answer that the theme hides, and passwords never keep one.
 
 ## WithTemplate
 
-Sets main and active-details templates in one call.
+Sets main and active-details templates in one call. Use this to choose the fields an item shows.
 
-Use this to choose the fields an item shows.
-
-{{< demo src="choice/dropdown-customize" alt="A dropdown with a custom focus mark and template" >}}
-
-{{< example name="choice/dropdown-customize" >}}
+{{< recorded name="choice/dropdown-customize" title="A dropdown with a custom focus mark and template" >}}
 
 ## Presentation
 
 A dropdown draws through the theme. Set the slots once with
-[SetDefaultTheme](themes.md); the same slots serve [`Confirm`](#confirm) and [`FilePicker`](filepicker.md#filepicker)
+[SetDefaultTheme](themes.md); the same slots serve [`Confirm`](#confirm) and [`FilePicker`](filepicker.md)
 unless a family slot overrides them.
 
 | Slot | Payload | Draws |
