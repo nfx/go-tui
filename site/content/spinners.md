@@ -17,9 +17,9 @@ APIs:
 
 ## Basic example
 
-{{< demo src="demos/spinner/multi-spinners.gif" alt="Several spinners updating independently" >}}
+{{< demo src="spinner/multi-spinners" alt="Several spinners updating independently" >}}
 
-{{< code filename="examples/spinner/multi-spinners/main.go" func="main" >}}
+{{< example name="spinner/multi-spinners" >}}
 
 ## Without a TTY
 
@@ -118,17 +118,17 @@ their parent in the order they were added, hanging from branches drawn with
   visible row reads `… N more` and stands for the rows after it. They are not
   scrolled, and they show again when the terminal grows or other rows end.
 
-{{< demo src="demos/spinner/spinner-options.gif" alt="Nested spinners with WithKeep and WithNoElapsed" >}}
+{{< demo src="spinner/spinner-options" alt="Nested spinners with WithKeep and WithNoElapsed" >}}
 
-{{< code filename="examples/spinner/spinner-options/main.go" func="main" >}}
+{{< example name="spinner/spinner-options" >}}
 
 ## LongRunning
 
 `LongRunning(ctx, message, fn)` shows a spinner for as long as the callback runs and returns its error.
 
-{{< demo src="demos/spinner/long-running.gif" alt="A spinner while a callback runs" >}}
+{{< demo src="spinner/long-running" alt="A spinner while a callback runs" >}}
 
-{{< code filename="examples/spinner/long-running/main.go" func="main" >}}
+{{< example name="spinner/long-running" >}}
 
 ## Frames
 
@@ -168,6 +168,6 @@ Route accompanying logs through [`tui.Stderr()`](options.md#stderr)
 so they participate in the same rendering coordination. See
 [Input and Password](input.md#withvalidation) for validation and feedback options.
 
-{{< demo src="demos/spinner/multi-spinners-and-logs.gif" alt="Spinners and structured logs sharing one terminal" >}}
+{{< demo src="spinner/multi-spinners-and-logs" alt="Spinners and structured logs sharing one terminal" >}}
 
-{{< code filename="examples/spinner/multi-spinners-and-logs/main.go" func="main" >}}
+{{< example name="spinner/multi-spinners-and-logs" >}}

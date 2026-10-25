@@ -9,15 +9,15 @@ Renders rows with an explicit row template.
 
 Use this when you want complete control over rendered columns.
 
-{{< demo src="demos/table/basic.gif" alt="A table rendered with an explicit row template" >}}
+{{< demo src="table/basic" alt="A table rendered with an explicit row template" >}}
 
-{{< code filename="examples/table/basic/main.go" func="main" >}}
+{{< example name="table/basic" >}}
 
 Wide characters, emoji and escape sequences are measured in columns, and multiline cells stay aligned:
 
-{{< demo src="demos/table/table-multiline.gif" alt="A table with multiline cells" >}}
+{{< demo src="table/table-multiline" alt="A table with multiline cells" >}}
 
-{{< code filename="examples/table/table-multiline/main.go" func="main" >}}
+{{< example name="table/table-multiline" >}}
 
 ## TableIter
 
@@ -25,9 +25,9 @@ Consumes an iterator (`iter.Seq2`) and renders rows incrementally.
 
 Iterator fetch errors are reported with row numbers.
 
-{{< demo src="demos/table/table-iter.gif" alt="Rows streaming into a table from an iterator" >}}
+{{< demo src="table/table-iter" alt="Rows streaming into a table from an iterator" >}}
 
-{{< code filename="examples/table/table-iter/main.go" func="main" >}}
+{{< example name="table/table-iter" >}}
 
 ## TableX
 
@@ -37,9 +37,9 @@ Use this for quick tabular output with minimal setup.
 
 `TableAuto` takes options to skip, include, format and color columns, and `Facts` prints a single struct.
 
-{{< demo src="demos/table/table-auto.gif" alt="Automatic tables with column options and facts" >}}
+{{< demo src="table/table-auto" alt="Automatic tables with column options and facts" >}}
 
-{{< code filename="examples/table/table-auto/main.go" func="main" >}}
+{{< example name="table/table-auto" >}}
 
 ## Header inference and tags
 

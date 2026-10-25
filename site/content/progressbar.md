@@ -9,9 +9,9 @@ Creates a mutable progress bar with explicit max size.
 
 Use this when your total work count is known.
 
-{{< demo src="demos/progress/progress-bar.gif" alt="A progress bar advancing to completion" >}}
+{{< demo src="progress/progress-bar" alt="A progress bar advancing to completion" >}}
 
-{{< code filename="examples/progress/progress-bar/main.go" func="main" >}}
+{{< example name="progress/progress-bar" >}}
 
 ## NewSliceProgressBar
 
@@ -34,9 +34,9 @@ Processes slice items concurrently and updates one shared progress bar.
 
 Returns the first worker error and cancels remaining work.
 
-{{< demo src="demos/progress/progress-parallel.gif" alt="Parallel workers advancing one progress bar" >}}
+{{< demo src="progress/progress-parallel" alt="Parallel workers advancing one progress bar" >}}
 
-{{< code filename="examples/progress/progress-parallel/main.go" func="main" >}}
+{{< example name="progress/progress-parallel" >}}
 
 ## NewFileProgressReader
 
@@ -44,7 +44,7 @@ Wraps a reader and advances progress by bytes read.
 
 Requires size discovery through `Stat().Size()` or `Size() int64`.
 
-{{< code filename="examples/progress/progress-reader/main.go" func="main" >}}
+{{< example name="progress/progress-reader" >}}
 
 Without a terminal, reads continue normally and progress is logged as
 `file progress` records with `read` and `size` in bytes, see
@@ -152,9 +152,9 @@ as earlier versions did, and drops metrics from the end to keep the bar:
 Download 62%  ━━━━━━━╸──── 6.2 MiB/s · 12s remaining
 ```
 
-{{< demo src="demos/progress/progress-multi-compact.gif" alt="Several compact progress bars advancing together" >}}
+{{< demo src="progress/progress-multi-compact" alt="Several compact progress bars advancing together" >}}
 
-{{< code filename="examples/progress/progress-multi-compact/main.go" func="main" >}}
+{{< example name="progress/progress-multi-compact" >}}
 
 In the stacked layout, `Progress.Frame` receives an empty
 `.Metrics`. A custom frame that shows `.Metrics` after the bar keeps
@@ -167,9 +167,9 @@ working once it selects the compact layout:
 
 Every bar registers with the same coordinator, so goroutines can advance their own bars concurrently.
 
-{{< demo src="demos/progress/progress-multi.gif" alt="Multiple progress bars advancing concurrently" >}}
+{{< demo src="progress/progress-multi" alt="Multiple progress bars advancing concurrently" >}}
 
-{{< code filename="examples/progress/progress-multi/main.go" func="main" >}}
+{{< example name="progress/progress-multi" >}}
 
 ## Behavior notes
 

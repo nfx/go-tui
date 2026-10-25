@@ -1,0 +1,8 @@
+{{- $name := .Get "name" -}}
+{{- $filename := printf "examples/%s" $name -}}
+{{- if not (strings.HasSuffix $name ".go") -}}
+  {{- $filename = printf "examples/%s/main.go" $name -}}
+{{- end -}}
+```go
+{{ readFile $filename | strings.TrimSuffix "\n" }}
+```

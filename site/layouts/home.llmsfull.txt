@@ -1,0 +1,12 @@
+# {{ .Site.Title }}
+
+> {{ .Site.Params.description }}
+{{ range .Site.RegularPages.ByWeight }}
+---
+
+# {{ .Title }}
+
+Source: {{ .Permalink }}
+
+{{ .RenderShortcodes }}
+{{ end -}}

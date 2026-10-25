@@ -7,9 +7,9 @@ weight: 60
 
 Opens an interactive file picker and returns selected path and is implemented on top of [Dropdown](dropdowns.md#dropdown).
 
-{{< demo src="demos/choice/file-picker.gif" alt="Browsing directories in the file picker" >}}
+{{< demo src="choice/file-picker" alt="Browsing directories in the file picker" >}}
 
-{{< code filename="examples/choice/file-picker/main.go" func="main" >}}
+{{< example name="choice/file-picker" >}}
 
 ## WithStartDir
 

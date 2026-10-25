@@ -12,13 +12,13 @@ APIs:
 
 `Password` masks entered text and does not print an answer line.
 
-{{< demo src="demos/prompt/text-input.gif" alt="A basic text input prompt" >}}
+{{< demo src="prompt/text-input" alt="A basic text input prompt" >}}
 
-{{< code filename="examples/prompt/text-input/main.go" func="main" >}}
+{{< example name="prompt/text-input" >}}
 
-{{< demo src="demos/prompt/password.gif" alt="A masked password prompt" >}}
+{{< demo src="prompt/password" alt="A masked password prompt" >}}
 
-{{< code filename="examples/prompt/password/main.go" func="main" >}}
+{{< example name="prompt/password" >}}
 
 Validate answers with [WithNonEmpty](#withnonempty), [WithRegex](#withregex),
 or [WithValidation](#withvalidation), and customize rejection feedback with
@@ -30,9 +30,9 @@ Sets initial text and cursor position. The text is `fmt.Sprint(d)`, so strings
 keep their content exactly; `""`, `0` and `nil` are defaults too (`nil` is
 `<nil>`).
 
-{{< demo src="demos/prompt/text-input-options.gif" alt="Default text, Unicode editing and required input" >}}
+{{< demo src="prompt/text-input-options" alt="Default text, Unicode editing and required input" >}}
 
-{{< code filename="examples/prompt/text-input-options/main.go" func="main" >}}
+{{< example name="prompt/text-input-options" >}}
 
 ### Without a terminal
 
@@ -93,13 +93,13 @@ error messages: a rejected password shows `Invalid value` instead, so a message
 cannot repeat the secret. See the [feedback row](#feedback-row).
 Messages of [`WithNonEmpty`](#withnonempty) and [`WithRegex`](#withregex) still show.
 
-{{< demo src="demos/prompt/input-validation.gif" alt="Rejected usernames keep the prompt open" >}}
+{{< demo src="prompt/input-validation" alt="Rejected usernames keep the prompt open" >}}
 
-{{< code filename="examples/prompt/input-validation/main.go" func="main" >}}
+{{< example name="prompt/input-validation" >}}
 
-{{< demo src="demos/prompt/password-validation.gif" alt="A rejected password shows a generic message" >}}
+{{< demo src="prompt/password-validation" alt="A rejected password shows a generic message" >}}
 
-{{< code filename="examples/prompt/password-validation/main.go" func="main" >}}
+{{< example name="prompt/password-validation" >}}
 
 ## Feedback row
 
@@ -112,9 +112,9 @@ line breaks and tabs replaced with spaces and terminal control characters
 removed. The rendered feedback is limited to its first line and clipped to
 the available terminal width. Keep custom templates to one row.
 
-{{< demo src="demos/prompt/input-feedback-template.gif" alt="A custom validation feedback row" >}}
+{{< demo src="prompt/input-feedback-template" alt="A custom validation feedback row" >}}
 
-{{< code filename="examples/prompt/input-feedback-template/main.go" func="main" >}}
+{{< example name="prompt/input-feedback-template" >}}
 
 By default feedback is `✖ message`; see [Themes](themes.md).
 Templates support the same color and style helpers listed in
@@ -143,6 +143,6 @@ does not change the active prompt's terminal input mode. Route accompanying
 logs through [`tui.Stderr()`](options.md#stderr) to keep them
 coordinated with widget rendering.
 
-{{< demo src="demos/prompt/input-validation-progress.gif" alt="A validated prompt next to a running progress bar" >}}
+{{< demo src="prompt/input-validation-progress" alt="A validated prompt next to a running progress bar" >}}
 
-{{< code filename="examples/prompt/input-validation-progress/main.go" func="main" >}}
+{{< example name="prompt/input-validation-progress" >}}

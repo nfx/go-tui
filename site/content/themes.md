@@ -18,9 +18,9 @@ API:
 
 See `examples/theme/basic` for a runnable program.
 
-{{< demo src="demos/theme/basic.gif" alt="Prompts drawn with a custom theme" >}}
+{{< demo src="theme/basic" alt="Prompts drawn with a custom theme" >}}
 
-{{< code filename="examples/theme/basic/main.go" func="main" >}}
+{{< example name="theme/basic" >}}
 
 ## Layout
 
@@ -227,9 +227,9 @@ the name of a built-in helper.
 
 [`WithFn(name, fn)`](options.md#withfn) adds one helper to the installed theme:
 
-{{< demo src="demos/theme/custom-template-func.gif" alt="A custom template function in a table and a dropdown" >}}
+{{< demo src="theme/custom-template-func" alt="A custom template function in a table and a dropdown" >}}
 
-{{< code filename="examples/theme/custom-template-func/main.go" func="main" >}}
+{{< example name="theme/custom-template-func" >}}
 
 The helper applies to prompts, tables, and other operations started after the
 call; an operation already running keeps its helpers. Registering the same name
