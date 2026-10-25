@@ -35,6 +35,10 @@ menu:
       params:
         icon: github
 
+services:
+  googleAnalytics:
+    id: G-VH404N29H1
+
 params:
   description: "Add interactivity to Go CLIs without changing their architecture: typed prompts, coordinated progress and logs, and non-TTY defaults for automation."
   keywords: "tui, terminal, go, golang, dropdown, spinner, progress bar"

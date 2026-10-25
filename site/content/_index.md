@@ -13,7 +13,7 @@ cascade:
 
 <div class="hx:mb-12">
 {{< hextra/hero-subtitle >}}
-  Typed prompts, coordinated progress and logs, and explicit defaults for automation. Keep your application's control flow.
+  Typed <a href="{{< relref "input" >}}" class="hx:text-primary-600 hx:underline hx:underline-offset-2">prompts</a>, coordinated <a href="{{< relref "progressbar" >}}" class="hx:text-primary-600 hx:underline hx:underline-offset-2">progress</a> and <a href="{{< relref "options#stderr" >}}" class="hx:text-primary-600 hx:underline hx:underline-offset-2">logs</a>, and explicit <a href="{{< relref "options#defaults-without-a-terminal" >}}" class="hx:text-primary-600 hx:underline hx:underline-offset-2">defaults for automation</a>. Keep your application's control flow.
 {{< /hextra/hero-subtitle >}}
 </div>
 
