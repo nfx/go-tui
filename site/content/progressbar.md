@@ -3,7 +3,7 @@ title: "Progress Bars"
 weight: 70
 ---
 
-[`NewMaxProgressBar`](#newmaxprogressbar), [`NewSliceProgressBar`](#newsliceprogressbar), and [`NewParallelProgressBar`](#newparallelprogressbar) tolerate non-TTY output and report milestones through `slog` instead of redrawing. `Close()` stops rendering, erases every row of the bar and releases its terminal resources. Progress bars can [share the default output](#several-bars) with [`Input`](input.md), [`Password`](input.md), [`Dropdown`](dropdowns.md), and [`Multichoice`](multichoice.md), including their validation feedback. They do not change terminal input mode, so closing a bar leaves an active prompt's editing functional.
+[`NewMaxProgressBar`](#newmaxprogressbar), [`NewSliceProgressBar`](#newsliceprogressbar), [`NewParallelProgressBar`](#newparallelprogressbar), and [`NewTransformProgressBar`](#newtransformprogressbar) tolerate non-TTY output and report milestones through `slog` instead of redrawing. `Close()` stops rendering, erases every row of the bar and releases its terminal resources. Progress bars can [share the default output](#several-bars) with [`Input`](input.md), [`Password`](input.md), [`Dropdown`](dropdowns.md), and [`Multichoice`](multichoice.md), including their validation feedback. They do not change terminal input mode, so closing a bar leaves an active prompt's editing functional.
 
 ## NewMaxProgressBar
 
@@ -29,9 +29,23 @@ for item, err := range tui.NewSliceProgressBar(ctx, "Items", items) {
 ## NewParallelProgressBar
 
 Processes slice items concurrently and updates one shared progress bar.
-Returns the first worker error and cancels remaining work.
+Returns the first worker error and cancels remaining work. Returning
+`tui.ErrSkip` is not a failure: the bar advances and the remaining items run.
 
 {{< recorded name="progress/progress-parallel" title="Parallel workers advancing one progress bar" >}}
+
+## NewTransformProgressBar
+
+Works like [`NewParallelProgressBar`](#newparallelprogressbar), and returns what
+the callback produced for each item, in the order of the input slice. Returning
+`tui.ErrSkip` leaves the item out of the results and still advances the bar. Any
+other error returns no results, including the ones completed before it.
+
+```go
+sizes, err := tui.NewTransformProgressBar(ctx, "Sizes", urls, fetchSize,
+	tui.WithWorkers(8),
+)
+```
 
 ## NewFileProgressReader
 
@@ -69,7 +83,7 @@ p, err := tui.NewMaxProgressBar(ctx, "Upload", 100,
 
 ## WithWorkers
 
-Sets worker count for [`NewParallelProgressBar`](#newparallelprogressbar). Value must be greater than zero.
+Sets worker count for [`NewParallelProgressBar`](#newparallelprogressbar) and [`NewTransformProgressBar`](#newtransformprogressbar). Value must be greater than zero.
 
 ```go
 err := tui.NewParallelProgressBar(ctx, "Jobs", jobs, runJob,

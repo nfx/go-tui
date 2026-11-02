@@ -29,6 +29,7 @@ var (
 	ErrInvalidState        = errs.ErrInvalidState
 	ErrUnsupportedPlatform = errs.ErrUnsupportedPlatform
 	ErrWrongWidget         = errs.ErrWrongWidget
+	ErrSkip                = errs.ErrSkip
 	// ErrNoTTY is returned when a prompt needs a terminal and there is none.
 	ErrNoTTY = errs.ErrNoTTY
 	// ErrSpinnerStopped is returned when a child is added to a spinner that has
@@ -334,7 +335,8 @@ func WithFormatRate(f func(float64) string) option.Opt {
 	return progress.WithFormatRate(f)
 }
 
-// WithWorkers configures the amount of parallel workers for NewParallelProgressBar.
+// WithWorkers configures the amount of parallel workers for NewParallelProgressBar
+// and NewTransformProgressBar.
 func WithWorkers(workers int) option.Opt {
 	return progress.WithWorkers(workers)
 }
@@ -350,6 +352,8 @@ func NewSliceProgressBar[T any](ctx context.Context, label string, slice []T, op
 }
 
 // NewParallelProgressBar executes yield in parallel while updating progress.
+// An item whose yield returns [ErrSkip] advances progress without failing; any
+// other error cancels the remaining items.
 func NewParallelProgressBar[T any](
 	ctx context.Context,
 	label string,
@@ -358,6 +362,20 @@ func NewParallelProgressBar[T any](
 	opts ...option.Opt,
 ) error {
 	return progress.NewParallelProgressBar[T](ctx, label, slice, yield, opts...)
+}
+
+// NewTransformProgressBar maps slice through yield in parallel while updating
+// progress. Results keep the order of slice. An item whose yield returns
+// [ErrSkip] advances progress and is left out of the results; any other error
+// returns nil results.
+func NewTransformProgressBar[IN any, OUT any](
+	ctx context.Context,
+	label string,
+	slice []IN,
+	yield func(IN) (OUT, error),
+	opts ...option.Opt,
+) ([]OUT, error) {
+	return progress.NewTransformProgressBar[IN, OUT](ctx, label, slice, yield, opts...)
 }
 
 func NewFileProgressReader(ctx context.Context, r io.Reader, label string, o ...option.Opt) (*wrapReader, error) {

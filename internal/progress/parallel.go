@@ -5,6 +5,7 @@ package progress
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
 	"runtime/debug"
@@ -70,7 +71,8 @@ func (r *parallelProgressRunner[T]) startWorkers() {
 	}
 }
 
-// worker processes jobs and reports only the first callback error.
+// worker processes jobs and reports only the first callback error; a skipped
+// item counts as processed.
 func (r *parallelProgressRunner[T]) worker() {
 	defer r.wg.Done()
 	for {
@@ -82,7 +84,7 @@ func (r *parallelProgressRunner[T]) worker() {
 				return
 			}
 			err := r.runYield(r.slice[idx])
-			if err != nil {
+			if err != nil && !errors.Is(err, errs.ErrSkip) {
 				r.setErr(err)
 				continue
 			}
