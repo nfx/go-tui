@@ -49,7 +49,7 @@ func TestFormatElapsed(t *testing.T) {
 		time.Hour:                             "1h00m00s",
 		25*time.Hour + 2*time.Minute + time.Second: "25h02m01s",
 	} {
-		assert.Equal(t, want, formatElapsed(d))
+		assert.Equal(t, want, new(spinnerState).formatElapsed(d))
 	}
 }
 

@@ -64,11 +64,11 @@ func (ss *spinnerState) elapsedAt(now time.Time) string {
 	if ss.frozen {
 		now = ss.ended
 	}
-	return formatElapsed(now.Sub(ss.started))
+	return ss.formatElapsed(now.Sub(ss.started))
 }
 
 // formatElapsed shows whole seconds as 12s, 1m05s or 1h00m00s. Hours do not wrap.
-func formatElapsed(d time.Duration) string {
+func (ss *spinnerState) formatElapsed(d time.Duration) string {
 	secs := max(int64(d/time.Second), 0)
 	switch {
 	case secs < 60:

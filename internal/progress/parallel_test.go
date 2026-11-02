@@ -278,6 +278,29 @@ func TestThemedParallelProgressSharesOneRow(t *testing.T) {
 	assert.Equal(t, int64(3), maxActive.Load())
 }
 
+func TestThemedParallelProgressSkipAdvancesWithoutFailing(t *testing.T) {
+	terst.UseASCII(t)
+	started := make(chan struct{})
+	gate := make(chan struct{})
+	r := runParallel(t.Context(), t, []int{0, 1, 2, 3}, func(v int) error {
+		if v < 2 {
+			return errs.ErrSkip
+		}
+		if v == 2 {
+			close(started)
+		}
+		return openedWithin(gate)
+	}, WithWorkers(1))
+	receiveN(t, started, 1)
+	r.tick(time.Second)
+	assert.Equal(t, frameOf("build  50%  "+strings.Repeat("=", 13)+">"+strings.Repeat("-", 13),
+		"2 / 4 items | 0.00 items/s"), r.frames.Next())
+	close(gate)
+	out, err := r.wait(t)
+	assert.NoError(t, err)
+	assert.Equal(t, erased(t, 2), out)
+}
+
 func TestThemedParallelProgressFirstFailure(t *testing.T) {
 	terst.UseASCII(t)
 	fail := errors.New("fail")

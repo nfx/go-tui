@@ -22,7 +22,8 @@ func WithFormatRate(f func(float64) string) option.Opt {
 	})
 }
 
-// WithWorkers configures the amount of parallel workers for NewParallelProgressBar.
+// WithWorkers configures the amount of parallel workers for NewParallelProgressBar
+// and NewTransformProgressBar.
 func WithWorkers(workers int) option.Opt {
 	return option.OpT(func(p *Progressbar) error {
 		if workers <= 0 {
@@ -65,6 +66,8 @@ func NewSliceProgressBar[T any](ctx context.Context, label string, slice []T, op
 }
 
 // NewParallelProgressBar executes yield in parallel while updating progress.
+// An item whose yield returns [errs.ErrSkip] advances progress without failing;
+// any other error cancels the remaining items.
 func NewParallelProgressBar[T any](
 	ctx context.Context,
 	label string,
@@ -98,6 +101,43 @@ func NewParallelProgressBar[T any](
 	err = errors.Join(runErr, closeErr)
 	cancel(err)
 	return err
+}
+
+// NewTransformProgressBar maps slice through yield in parallel while updating
+// progress. Results keep the order of slice. An item whose yield returns
+// [errs.ErrSkip] advances progress and is left out of the results; any other
+// error returns nil results.
+func NewTransformProgressBar[IN any, OUT any](
+	ctx context.Context,
+	label string,
+	slice []IN,
+	yield func(IN) (OUT, error),
+	opts ...option.Opt,
+) ([]OUT, error) {
+	// workers receive indexes, because results land in the slot of their input
+	indexes := make([]int, len(slice))
+	for i := range indexes {
+		indexes[i] = i
+	}
+	slots := make([]*OUT, len(slice))
+	err := NewParallelProgressBar(ctx, label, indexes, func(i int) error {
+		out, err := yield(slice[i])
+		if err != nil {
+			return err
+		}
+		slots[i] = &out
+		return nil
+	}, opts...)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]OUT, 0, len(slots))
+	for _, slot := range slots {
+		if slot != nil {
+			results = append(results, *slot)
+		}
+	}
+	return results, nil
 }
 
 func NewFileProgressReader(ctx context.Context, r io.Reader, label string, o ...option.Opt) (*WrapReader, error) {
